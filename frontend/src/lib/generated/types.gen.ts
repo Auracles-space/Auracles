@@ -5982,6 +5982,16 @@ export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostResponse = (Framewor
 
 export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostError = (HTTPValidationError);
 
+export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostResponse = (FrameworkResponse);
+
+export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostError = (HTTPValidationError);
+
 export type AcknowledgeSoftFailV1FrameworksFrameworkIdAcknowledgeSoftFailPostData = {
     path: {
         framework_id: string;
@@ -6245,6 +6255,17 @@ export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostData = {
 export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostResponse = (FrameworkResponse);
 
 export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostError = (HTTPValidationError);
+
+export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostResponse = (FrameworkResponse);
+
+export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostError = (HTTPValidationError);
 
 export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostData = {
     path: {

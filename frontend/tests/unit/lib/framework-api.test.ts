@@ -75,6 +75,36 @@ describe("frameworkApiFor", () => {
     );
   });
 
+  it("revises an org Framework through the organization revise endpoint", async () => {
+    vi.mocked(
+      sdk.reviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePost,
+    ).mockResolvedValue({ data: { id: "framework-1", status: "draft" } } as never);
+
+    await frameworkApiFor({ kind: "org", orgId: "org-1" }).revise("framework-1");
+
+    expect(
+      sdk.reviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePost,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { org_id: "org-1", framework_id: "framework-1" },
+      }),
+    );
+  });
+
+  it("revises a personal Framework through the personal revise endpoint", async () => {
+    vi.mocked(
+      sdk.reviseFrameworkV1FrameworksFrameworkIdRevisePost,
+    ).mockResolvedValue({ data: { id: "framework-1", status: "draft" } } as never);
+
+    await frameworkApiFor({ kind: "user" }).revise("framework-1");
+
+    expect(
+      sdk.reviseFrameworkV1FrameworksFrameworkIdRevisePost,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { framework_id: "framework-1" } }),
+    );
+  });
+
   it("binds both path ids when relisting an org Framework", async () => {
     vi.mocked(
       sdk.relistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPost,

@@ -31,6 +31,7 @@ const { api, frameworkApiFor } = vi.hoisted(() => ({
     listArtifacts: vi.fn(),
     publish: vi.fn(),
     relist: vi.fn(),
+    revise: vi.fn(),
     startVersion: vi.fn(),
     submit: vi.fn(),
     unpublish: vi.fn(),
@@ -283,6 +284,35 @@ describe("FrameworkEditor", () => {
       "fw_1",
       expect.objectContaining({ pricing: expect.any(Object) }),
     );
+  });
+
+  it("returns a passed framework to draft through the revise action", async () => {
+    // A checks-passed framework locks every edit. The revise action resets it
+    // to draft so the author can correct metadata, pricing, or files.
+    mockLoad(makeFramework({ status: "pipeline_passed" }), [
+      makeArtifact({ id: "art_1", processing_status: "processed" }),
+    ]);
+    api.revise.mockResolvedValue(makeFramework({ status: "draft" }));
+
+    renderWithToast(
+      <FrameworkEditor
+        frameworkId="fw_1"
+        seller={{ kind: "org", orgId: "org-1" }}
+        canManageLiveState={false}
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    await screen.findByText("Test Framework");
+    fireEvent.click(screen.getByRole("button", { name: /return to draft to edit/i }));
+
+    await waitFor(() => {
+      expect(api.revise).toHaveBeenCalledWith("fw_1");
+    });
+    // Back in draft, metadata editing (Save changes) is unlocked again.
+    expect(
+      await screen.findByRole("button", { name: /save changes/i }),
+    ).toBeInTheDocument();
   });
 
   it("hides the org pricing form while metadata is locked mid-pipeline", async () => {

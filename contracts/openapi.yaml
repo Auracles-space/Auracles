@@ -4847,6 +4847,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/frameworks/{framework_id}/revise:
+    post:
+      tags:
+      - Frameworks
+      summary: Revise Framework
+      description: Return a checks-passed owned Framework to an editable draft.
+      operationId: revise_framework_v1_frameworks__framework_id__revise_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/frameworks/{framework_id}/acknowledge-soft-fail:
     post:
       tags:
@@ -5723,6 +5753,45 @@ paths:
       description: Submit an organization-owned Framework to the processing gate as
         an organization member while the contributor capability is active.
       operationId: submit_org_framework_v1_orgs__org_id__frameworks__framework_id__submit_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: org_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Org Id
+      - name: framework_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Framework Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FrameworkResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/orgs/{org_id}/frameworks/{framework_id}/revise:
+    post:
+      tags:
+      - Frameworks
+      summary: Return an organization Framework to draft
+      description: Reset a checks-passed organization-owned Framework to draft so an
+        organization member holding the contributor capability can correct its
+        metadata, pricing, or files before re-running the pipeline.
+      operationId: revise_org_framework_v1_orgs__org_id__frameworks__framework_id__revise_post
       security:
       - HTTPBearer: []
       parameters:

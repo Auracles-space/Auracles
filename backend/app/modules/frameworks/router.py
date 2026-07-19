@@ -578,6 +578,47 @@ async def submit_org_framework(
     )
 
 
+@router.post("/{framework_id}/revise", response_model=FrameworkResponse)
+async def revise_framework(
+    framework_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Return a checks-passed owned Framework to an editable draft."""
+    return await service.revise_framework(
+        db=db,
+        owner=_self_owner(contributor),
+        framework_id=framework_id,
+    )
+
+
+@org_router.post(
+    "/{framework_id}/revise",
+    response_model=FrameworkResponse,
+    summary="Return an organization Framework to draft",
+    description=(
+        "Reset a checks-passed organization-owned Framework to draft so an "
+        "organization member holding the contributor capability can correct "
+        "its metadata, pricing, or files before re-running the pipeline."
+    ),
+)
+async def revise_org_framework(
+    org_id: UUID,
+    framework_id: UUID,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> FrameworkResponse:
+    """Return one checks-passed organization-owned Framework to draft."""
+    del org_id
+    return await service.revise_framework(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+    )
+
+
 @router.post("/{framework_id}/acknowledge-soft-fail", response_model=FrameworkResponse)
 async def acknowledge_soft_fail(
     framework_id: UUID,

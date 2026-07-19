@@ -1129,6 +1129,76 @@ async def test_org_framework_create_enforces_auth_membership_and_capability(
     assert inactive_capability.status_code == 403
 
 
+async def test_org_member_can_revise_passed_framework(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """A contributor-team member can return a passed org Framework to draft.
+
+    Regression for the org authoring gap where revise routed through the
+    personal-ownership endpoint and 404'd on an org-owned Framework.
+    """
+    owner_id = await create_user("org-revise-owner")
+    member_id = await create_user("org-revise-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-revise")
+    member_row_id = await add_member(str(org["id"]), member_id, "member")
+    await _activate_contributor_capability(str(org["id"]))
+    await _grant_contributor_to_member(str(org["id"]), member_row_id)
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(member_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/revise",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "draft"
+
+
+async def test_org_revise_denied_for_plain_member(
+    client: AsyncClient,
+    org_framework_test_context: dict[str, Any],
+) -> None:
+    """Members without a contributor grant cannot revise an org Framework."""
+    owner_id = await create_user("org-revise-denied-owner")
+    member_id = await create_user("org-revise-denied-member")
+    from app.core.security import create_access_token
+
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "org-revise-denied")
+    await _activate_contributor_capability(str(org["id"]))
+    await add_member(str(org["id"]), member_id, "member")
+    created = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks",
+        json=_valid_framework_payload(),
+        headers=auth(owner_token),
+    )
+    framework_id = created.json()["id"]
+    await _seed_publishable_framework(
+        framework_id, storage=org_framework_test_context["storage"]
+    )
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/revise",
+        headers=auth(member_token),
+    )
+
+    assert response.status_code == 403
+
+
 async def _seed_rarity_soft_fail(framework_id: str) -> str:
     """Fail the seeded Framework on an external-rarity soft check.
 

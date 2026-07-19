@@ -163,6 +163,24 @@ export function FrameworkEditor({
     toast.success("Publishing checks started.");
   }
 
+  async function handleRevise() {
+    // A checks-passed framework locks every edit. Revising resets it to draft
+    // so the author can correct metadata, pricing, or files, then re-run checks.
+    let updated: FrameworkResponse;
+    try {
+      updated = await api.revise(frameworkId);
+      setFramework(updated);
+    } catch (caught) {
+      toast.error(
+        caught instanceof Error
+          ? caught.message
+          : "The request could not be completed.",
+      );
+      return;
+    }
+    toast.success("Returned to draft. You can edit and re-run checks.");
+  }
+
   async function handleCreateVersion() {
     try {
       const updated = await api.startVersion(frameworkId, {
@@ -375,6 +393,18 @@ export function FrameworkEditor({
                 </p>
               </div>
             )}
+          {/* A passed framework freezes every edit. Offer a way back to draft so
+              the author can correct metadata, pricing, or files and re-run the
+              checks, rather than only being able to publish or touch artifacts. */}
+          {framework.status === "pipeline_passed" && (
+            <button
+              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+              onClick={handleRevise}
+              type="button"
+            >
+              Return to draft to edit
+            </button>
+          )}
           {isReprocessing && (
             <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
               <p className="text-sm font-semibold text-warning">

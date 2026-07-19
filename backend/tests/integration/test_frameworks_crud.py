@@ -2171,6 +2171,58 @@ async def test_publish_requires_pipeline_pass_and_snapshots_current_artifacts(
         )
 
 
+async def test_revise_returns_passed_framework_to_draft(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Revising a checks-passed Framework returns it to an editable draft.
+
+    A pipeline_passed Framework locks all edits; revising resets it to draft so
+    the Contributor can correct metadata, pricing, or files before re-running.
+    """
+    contributor_id = await create_user_with_roles(
+        "revise@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_passed"
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/revise",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "draft"
+
+
+async def test_revise_rejects_a_draft_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Only a checks-passed Framework can be returned to draft."""
+    contributor_id = await create_user_with_roles(
+        "revise-draft@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/revise",
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+
+
 async def test_external_rarity_soft_fail_requires_acknowledgement_before_publish(
     client: AsyncClient,
     migrated_database: None,

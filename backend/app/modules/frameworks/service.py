@@ -2958,6 +2958,58 @@ async def publish_framework(
     return framework_to_response(framework)
 
 
+async def revise_framework(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+) -> FrameworkResponse:
+    """Return a checks-passed Framework to draft so it can be edited again.
+
+    A ``pipeline_passed`` Framework is a frozen reviewed snapshot with all edits
+    (metadata, pricing, artifacts) locked. Revising resets it to ``draft``,
+    unlocking edits; the Contributor re-runs the pipeline before publishing.
+    Available to any Contributor author — this is a pre-publish authoring action,
+    not a live-state change — mirroring the draft reset an artifact change
+    already triggers on a passed Framework.
+
+    Args:
+        db: Async SQLAlchemy session.
+        owner: Resolved Framework ownership context (personal or organization).
+        framework_id: UUID of the Framework to return to draft.
+
+    Returns:
+        The Framework as a contributor-facing response, now in draft.
+
+    Raises:
+        HTTPException(404): If the Framework does not exist or is not owned.
+        HTTPException(409): If the Framework has not passed pipeline checks.
+    """
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+        if framework.status != "pipeline_passed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Only a framework that has passed checks can be returned "
+                    "to draft."
+                ),
+            )
+        framework.status = "draft"
+        framework.pipeline_failure_reasons = {}
+        await write_audit(
+            db=db,
+            actor_id=owner.actor_id,
+            action="framework_revised",
+            target_type="framework",
+            target_id=framework.id,
+            metadata={"version": framework.version},
+        )
+    await db.refresh(framework)
+    return framework_to_response(framework)
+
+
 async def create_new_version(
     db: AsyncSession,
     owner: FrameworkOwner,

@@ -68,6 +68,7 @@ export interface FrameworkApi {
     body: FrameworkVersionCreate,
   ): Promise<FrameworkResponse>;
   submit(id: string): Promise<FrameworkResponse>;
+  revise(id: string): Promise<FrameworkResponse>;
   publish(id: string): Promise<FrameworkResponse>;
   unpublish(id: string): Promise<FrameworkResponse>;
   relist(id: string): Promise<FrameworkResponse>;
@@ -188,6 +189,13 @@ function personalFrameworkApi(): FrameworkApi {
     submit: (id) =>
       unwrap(
         sdk.submitFrameworkV1FrameworksFrameworkIdSubmitPost({
+          headers: authorizedHeaders(),
+          path: { framework_id: id },
+        }),
+      ),
+    revise: (id) =>
+      unwrap(
+        sdk.reviseFrameworkV1FrameworksFrameworkIdRevisePost({
           headers: authorizedHeaders(),
           path: { framework_id: id },
         }),
@@ -342,6 +350,13 @@ function orgFrameworkApi(orgId: string): FrameworkApi {
     submit: (id) =>
       unwrap(
         sdk.submitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPost({
+          headers: authorizedHeaders(),
+          path: { ...orgPath, framework_id: id },
+        }),
+      ),
+    revise: (id) =>
+      unwrap(
+        sdk.reviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePost({
           headers: authorizedHeaders(),
           path: { ...orgPath, framework_id: id },
         }),
