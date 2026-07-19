@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FrameworkLicenseCta } from "@/components/modules/explore/framework-license-cta";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
-import { listOperatorLibrary } from "@/lib/generated/sdk.gen";
+import {
+  listMyOrganizationsV1OrgsMineGet,
+  listOperatorLibrary,
+} from "@/lib/generated/sdk.gen";
 import type { CurrentUserResponse } from "@/lib/generated/types.gen";
 
 vi.mock("@/lib/auth/form-client", async () => {
@@ -19,6 +22,7 @@ vi.mock("@/lib/auth/current-user-session", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   listOperatorLibrary: vi.fn(),
+  listMyOrganizationsV1OrgsMineGet: vi.fn(),
 }));
 
 const okResponse = new Response(null, { status: 200 });
@@ -41,6 +45,7 @@ function session(overrides: Partial<CurrentUserResponse> = {}): CurrentUserRespo
 beforeEach(() => {
   vi.mocked(loadCurrentUserSession).mockReset();
   vi.mocked(listOperatorLibrary).mockReset();
+  vi.mocked(listMyOrganizationsV1OrgsMineGet).mockReset();
 });
 
 const FRAMEWORK_ID = "fw-1";
@@ -116,6 +121,68 @@ describe("FrameworkLicenseCta", () => {
     expect(
       screen.queryByRole("link", { name: /license framework/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("hides the license link from a member of the owning organization", async () => {
+    vi.mocked(loadCurrentUserSession).mockResolvedValue(session({ id: "viewer-1" }));
+    vi.mocked(listMyOrganizationsV1OrgsMineGet).mockResolvedValue({
+      data: {
+        organizations: [
+          { org: { id: "org-7" }, role: "member", capabilities: {} },
+        ],
+      },
+      error: undefined,
+      response: okResponse,
+    } as never);
+
+    render(
+      <FrameworkLicenseCta
+        contributorId=""
+        contributorOrgId="org-7"
+        frameworkId={FRAMEWORK_ID}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/your organization's framework/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /license framework/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /manage it/i })).toHaveAttribute(
+      "href",
+      `/dashboard/organizations/org-7/frameworks/${FRAMEWORK_ID}`,
+    );
+    expect(listOperatorLibrary).not.toHaveBeenCalled();
+  });
+
+  it("still offers the license link to an operator outside the owning org", async () => {
+    vi.mocked(loadCurrentUserSession).mockResolvedValue(session({ id: "viewer-1" }));
+    vi.mocked(listMyOrganizationsV1OrgsMineGet).mockResolvedValue({
+      data: {
+        organizations: [
+          { org: { id: "org-other" }, role: "member", capabilities: {} },
+        ],
+      },
+      error: undefined,
+      response: okResponse,
+    } as never);
+    vi.mocked(listOperatorLibrary).mockResolvedValue({
+      data: { items: [], total: 0, page: 1, page_size: 20 },
+      error: undefined,
+      response: okResponse,
+    } as never);
+
+    render(
+      <FrameworkLicenseCta
+        contributorId=""
+        contributorOrgId="org-7"
+        frameworkId={FRAMEWORK_ID}
+      />,
+    );
+
+    const link = await screen.findByRole("link", { name: /license framework/i });
+    expect(link).toHaveAttribute("href", `/checkout/${FRAMEWORK_ID}`);
   });
 
   it("shows the license link to a signed-out visitor", async () => {

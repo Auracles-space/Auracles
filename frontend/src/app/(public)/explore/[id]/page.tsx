@@ -147,6 +147,7 @@ export default async function ExploreDetailPage({
             
             <FrameworkLicenseCta
               contributorId={framework.contributor_id ?? ""}
+              contributorOrgId={framework.contributor_org_id ?? undefined}
               frameworkId={framework.id}
             />
           </aside>
