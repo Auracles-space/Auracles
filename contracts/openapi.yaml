@@ -307,6 +307,66 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/connectors:
+    get:
+      tags:
+      - Admin
+      summary: List external connections for admin oversight
+      description: Return a paginated, read-only directory of user OAuth connections
+        to external file providers with status and provider filters. Encrypted tokens
+        are never included.
+      operationId: list_admin_connectors_v1_admin_connectors_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|active|revoked|reauth_required)$
+          default: all
+          title: Status
+      - name: provider
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 50
+          - type: 'null'
+          title: Provider
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminConnectorsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/gdpr/deletion-requests:
     get:
       tags:
@@ -13933,6 +13993,91 @@ components:
       - value
       title: AdminConfigUpdateItem
       description: Single admin platform configuration change request.
+    AdminConnectorItem:
+      properties:
+        connection_id:
+          type: string
+          format: uuid
+          title: Connection Id
+        user_id:
+          type: string
+          format: uuid
+          title: User Id
+        provider:
+          type: string
+          title: Provider
+        provider_account_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Account Email
+        scopes:
+          type: string
+          title: Scopes
+        status:
+          type: string
+          title: Status
+        token_expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Token Expires At
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - connection_id
+      - user_id
+      - provider
+      - provider_account_email
+      - scopes
+      - status
+      - token_expires_at
+      - created_at
+      - updated_at
+      title: AdminConnectorItem
+      description: 'One external OAuth connection for admin oversight.
+
+
+        Excludes the encrypted access/refresh tokens entirely — only the connection
+
+        metadata (provider, connected account email, scopes, status) is exposed so
+
+        admins can audit connection health and revocation state.'
+    AdminConnectorsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminConnectorItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminConnectorsResponse
+      description: Paginated external-connection directory for admin oversight.
     AdminCredentialRejectRequest:
       properties:
         reason:

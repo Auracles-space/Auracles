@@ -216,6 +216,35 @@ export type AdminConfigUpdateItem = {
 export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_weights_attestor' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
 
 /**
+ * One external OAuth connection for admin oversight.
+ *
+ * Excludes the encrypted access/refresh tokens entirely — only the connection
+ * metadata (provider, connected account email, scopes, status) is exposed so
+ * admins can audit connection health and revocation state.
+ */
+export type AdminConnectorItem = {
+    connection_id: string;
+    user_id: string;
+    provider: string;
+    provider_account_email: (string | null);
+    scopes: string;
+    status: string;
+    token_expires_at: (string | null);
+    created_at: string;
+    updated_at: string;
+};
+
+/**
+ * Paginated external-connection directory for admin oversight.
+ */
+export type AdminConnectorsResponse = {
+    items: Array<AdminConnectorItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * Admin request body for rejecting a pending Credential.
  */
 export type AdminCredentialRejectRequest = {
@@ -4751,6 +4780,19 @@ export type ListAdminPayoutsV1AdminPayoutsGetData = {
 export type ListAdminPayoutsV1AdminPayoutsGetResponse = (AdminPayoutDirectoryResponse);
 
 export type ListAdminPayoutsV1AdminPayoutsGetError = (HTTPValidationError);
+
+export type ListAdminConnectorsV1AdminConnectorsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        provider?: (string | null);
+        status?: string;
+    };
+};
+
+export type ListAdminConnectorsV1AdminConnectorsGetResponse = (AdminConnectorsResponse);
+
+export type ListAdminConnectorsV1AdminConnectorsGetError = (HTTPValidationError);
 
 export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetData = {
     query?: {

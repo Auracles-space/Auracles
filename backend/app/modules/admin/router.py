@@ -18,6 +18,7 @@ from app.modules.admin.schemas import (
     AdminConfigItem,
     AdminConfigPatchRequest,
     AdminConfigResponse,
+    AdminConnectorsResponse,
     AdminDeletionRequestsResponse,
     AdminDisputeResolveRequest,
     AdminEscrowOverrideRequest,
@@ -302,6 +303,39 @@ async def list_admin_payouts(
         page_size=page_size,
     )
     return AdminPayoutDirectoryResponse.model_validate(payouts)
+
+
+@router.get(
+    "/connectors",
+    response_model=AdminConnectorsResponse,
+    summary="List external connections for admin oversight",
+    description=(
+        "Return a paginated, read-only directory of user OAuth connections to "
+        "external file providers with status and provider filters. Encrypted "
+        "tokens are never included."
+    ),
+)
+async def list_admin_connectors(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        str,
+        Query(alias="status", pattern="^(all|active|revoked|reauth_required)$"),
+    ] = "all",
+    provider: Annotated[str | None, Query(min_length=1, max_length=50)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminConnectorsResponse:
+    """Return the admin external-connection oversight directory."""
+    del admin
+    connectors = await service.list_admin_connectors(
+        db=db,
+        status_filter=status_filter,
+        provider_filter=provider,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminConnectorsResponse.model_validate(connectors)
 
 
 @router.get(

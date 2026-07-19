@@ -53,6 +53,11 @@ const adminLinks = [
     summary: "Review account-deletion and data-export requests and blockers.",
   },
   {
+    href: "/admin/connectors",
+    label: "Connectors",
+    summary: "Audit external file-provider connections and revocation state.",
+  },
+  {
     href: "/admin/attestations",
     label: "Attestations",
     summary: "Assign, refund, and resolve attestation workflows.",

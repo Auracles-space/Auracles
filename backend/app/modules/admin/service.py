@@ -49,6 +49,7 @@ from app.modules.frameworks.pipeline_gate import (
 )
 from app.modules.frameworks.service import current_artifacts_block_publish
 from app.modules.gdpr.models import AccountDeletionRequest, DataExportRequest
+from app.modules.integrations.models import OAuthConnection
 from app.modules.notifications.service import create_notification
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
@@ -158,6 +159,7 @@ ADMIN_DELETION_STATUSES = (
     "completed",
 )
 ADMIN_EXPORT_STATUSES = ("all", "pending", "processing", "ready", "failed", "expired")
+ADMIN_CONNECTOR_STATUSES = ("all", "active", "revoked", "reauth_required")
 
 
 def _money(value: Decimal | str | int | None) -> Decimal:
@@ -1395,6 +1397,76 @@ async def list_admin_export_requests(
                 "expires_at": request.expires_at,
             }
             for request in result.scalars().all()
+        ],
+        "total": int(total or 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_connectors(
+    db: AsyncSession,
+    *,
+    status_filter: str,
+    provider_filter: str | None,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, read-only external-connection directory.
+
+    Encrypted access/refresh tokens are never selected into the response — only
+    connection metadata surfaces so admins can audit connector health and
+    revocation state.
+
+    Args:
+        db: Async database session.
+        status_filter: One of ``ADMIN_CONNECTOR_STATUSES``.
+        provider_filter: Optional provider key to narrow by (e.g. google_drive).
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If the status filter is unsupported.
+    """
+    if status_filter not in ADMIN_CONNECTOR_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported connector status filter.",
+        )
+
+    filters: list[ColumnElement[bool]] = []
+    if status_filter != "all":
+        filters.append(OAuthConnection.status == status_filter)
+    normalized_provider = (provider_filter or "").strip()
+    if normalized_provider:
+        filters.append(OAuthConnection.provider == normalized_provider)
+
+    total = await db.scalar(select(func.count(OAuthConnection.id)).where(*filters))
+    result = await db.execute(
+        select(OAuthConnection)
+        .where(*filters)
+        .order_by(desc(OAuthConnection.updated_at))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    return {
+        "items": [
+            {
+                "connection_id": connection.id,
+                "user_id": connection.user_id,
+                "provider": connection.provider,
+                "provider_account_email": connection.provider_account_email,
+                "scopes": connection.scopes,
+                "status": connection.status,
+                "token_expires_at": connection.token_expires_at,
+                "created_at": connection.created_at,
+                "updated_at": connection.updated_at,
+            }
+            for connection in result.scalars().all()
         ],
         "total": int(total or 0),
         "page": page,

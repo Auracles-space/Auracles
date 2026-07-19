@@ -461,3 +461,31 @@ class AdminExportRequestsResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class AdminConnectorItem(BaseModel):
+    """One external OAuth connection for admin oversight.
+
+    Excludes the encrypted access/refresh tokens entirely — only the connection
+    metadata (provider, connected account email, scopes, status) is exposed so
+    admins can audit connection health and revocation state.
+    """
+
+    connection_id: UUID
+    user_id: UUID
+    provider: str
+    provider_account_email: str | None
+    scopes: str
+    status: str
+    token_expires_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminConnectorsResponse(BaseModel):
+    """Paginated external-connection directory for admin oversight."""
+
+    items: list[AdminConnectorItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
