@@ -507,3 +507,35 @@ class AdminWaitlistResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class AdminInvoiceItem(BaseModel):
+    """One issued invoice for admin financial oversight.
+
+    Excludes the internal ``s3_key`` PDF pointer — reconciliation only needs the
+    invoice metadata, parties, and totals.
+    """
+
+    invoice_id: UUID
+    invoice_number: str
+    doc_type: str
+    issue_date: datetime
+    currency: str
+    subtotal: str
+    tax_amount: str
+    total: str
+    seller_name: str
+    buyer_name: str
+    buyer_email: str
+    source_ref_type: str
+    source_ref_id: UUID
+    created_at: datetime
+
+
+class AdminInvoicesResponse(BaseModel):
+    """Paginated issued-invoice directory for admins."""
+
+    items: list[AdminInvoiceItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)

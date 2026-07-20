@@ -450,6 +450,39 @@ export type AdminFrameworkSuspendRequest = {
 };
 
 /**
+ * One issued invoice for admin financial oversight.
+ *
+ * Excludes the internal ``s3_key`` PDF pointer — reconciliation only needs the
+ * invoice metadata, parties, and totals.
+ */
+export type AdminInvoiceItem = {
+    invoice_id: string;
+    invoice_number: string;
+    doc_type: string;
+    issue_date: string;
+    currency: string;
+    subtotal: string;
+    tax_amount: string;
+    total: string;
+    seller_name: string;
+    buyer_name: string;
+    buyer_email: string;
+    source_ref_type: string;
+    source_ref_id: string;
+    created_at: string;
+};
+
+/**
+ * Paginated issued-invoice directory for admins.
+ */
+export type AdminInvoicesResponse = {
+    items: Array<AdminInvoiceItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * Request body for admin KYC review decisions.
  */
 export type AdminKycReviewRequest = {
@@ -4800,6 +4833,18 @@ export type ListAdminPayoutsV1AdminPayoutsGetData = {
 export type ListAdminPayoutsV1AdminPayoutsGetResponse = (AdminPayoutDirectoryResponse);
 
 export type ListAdminPayoutsV1AdminPayoutsGetError = (HTTPValidationError);
+
+export type ListAdminInvoicesV1AdminInvoicesGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+    };
+};
+
+export type ListAdminInvoicesV1AdminInvoicesGetResponse = (AdminInvoicesResponse);
+
+export type ListAdminInvoicesV1AdminInvoicesGetError = (HTTPValidationError);
 
 export type ListAdminWaitlistV1AdminWaitlistGetData = {
     query?: {

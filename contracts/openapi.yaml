@@ -307,6 +307,58 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/invoices:
+    get:
+      tags:
+      - Admin
+      summary: List issued invoices for admin oversight
+      description: Return a paginated, read-only issued-invoice directory with an
+        optional search over invoice number or buyer. Internal PDF storage keys are
+        never included.
+      operationId: list_admin_invoices_v1_admin_invoices_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: query
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 255
+          - type: 'null'
+          title: Query
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminInvoicesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/waitlist:
     get:
       tags:
@@ -14763,6 +14815,104 @@ components:
       - reason
       title: AdminFrameworkSuspendRequest
       description: Request body for post-publish Framework suspension.
+    AdminInvoiceItem:
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+          title: Invoice Id
+        invoice_number:
+          type: string
+          title: Invoice Number
+        doc_type:
+          type: string
+          title: Doc Type
+        issue_date:
+          type: string
+          format: date-time
+          title: Issue Date
+        currency:
+          type: string
+          title: Currency
+        subtotal:
+          type: string
+          title: Subtotal
+        tax_amount:
+          type: string
+          title: Tax Amount
+        total:
+          type: string
+          title: Total
+        seller_name:
+          type: string
+          title: Seller Name
+        buyer_name:
+          type: string
+          title: Buyer Name
+        buyer_email:
+          type: string
+          title: Buyer Email
+        source_ref_type:
+          type: string
+          title: Source Ref Type
+        source_ref_id:
+          type: string
+          format: uuid
+          title: Source Ref Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - invoice_id
+      - invoice_number
+      - doc_type
+      - issue_date
+      - currency
+      - subtotal
+      - tax_amount
+      - total
+      - seller_name
+      - buyer_name
+      - buyer_email
+      - source_ref_type
+      - source_ref_id
+      - created_at
+      title: AdminInvoiceItem
+      description: 'One issued invoice for admin financial oversight.
+
+
+        Excludes the internal ``s3_key`` PDF pointer — reconciliation only needs the
+
+        invoice metadata, parties, and totals.'
+    AdminInvoicesResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminInvoiceItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminInvoicesResponse
+      description: Paginated issued-invoice directory for admins.
     AdminKycReviewRequest:
       properties:
         status:

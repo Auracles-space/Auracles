@@ -50,6 +50,7 @@ from app.modules.frameworks.pipeline_gate import (
 from app.modules.frameworks.service import current_artifacts_block_publish
 from app.modules.gdpr.models import AccountDeletionRequest, DataExportRequest
 from app.modules.integrations.models import OAuthConnection
+from app.modules.invoicing.models import Invoice
 from app.modules.notifications.service import create_notification
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
@@ -1468,6 +1469,74 @@ async def list_admin_connectors(
                 "updated_at": connection.updated_at,
             }
             for connection in result.scalars().all()
+        ],
+        "total": int(total or 0),
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_invoices(
+    db: AsyncSession,
+    *,
+    query: str | None,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, read-only issued-invoice directory.
+
+    The internal ``s3_key`` PDF pointer is never included — only invoice
+    metadata, parties, and totals surface for reconciliation.
+
+    Args:
+        db: Async database session.
+        query: Optional case-insensitive filter over invoice number or buyer.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+    """
+    filters: list[ColumnElement[bool]] = []
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        like_value = f"%{normalized_query}%"
+        filters.append(
+            or_(
+                Invoice.invoice_number.ilike(like_value),
+                Invoice.buyer_email.ilike(like_value),
+                Invoice.buyer_name.ilike(like_value),
+            )
+        )
+
+    total = await db.scalar(select(func.count(Invoice.id)).where(*filters))
+    result = await db.execute(
+        select(Invoice)
+        .where(*filters)
+        .order_by(desc(Invoice.issue_date))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+
+    return {
+        "items": [
+            {
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "doc_type": invoice.doc_type,
+                "issue_date": invoice.issue_date,
+                "currency": invoice.currency,
+                "subtotal": str(invoice.subtotal),
+                "tax_amount": str(invoice.tax_amount),
+                "total": str(invoice.total),
+                "seller_name": invoice.seller_name,
+                "buyer_name": invoice.buyer_name,
+                "buyer_email": invoice.buyer_email,
+                "source_ref_type": invoice.source_ref_type,
+                "source_ref_id": invoice.source_ref_id,
+                "created_at": invoice.created_at,
+            }
+            for invoice in result.scalars().all()
         ],
         "total": int(total or 0),
         "page": page,

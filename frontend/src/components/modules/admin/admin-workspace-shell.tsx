@@ -63,6 +63,11 @@ const adminLinks = [
     summary: "Review pre-launch signups and demand by source.",
   },
   {
+    href: "/admin/invoices",
+    label: "Invoices",
+    summary: "Review issued invoices for financial reconciliation.",
+  },
+  {
     href: "/admin/attestations",
     label: "Attestations",
     summary: "Assign, refund, and resolve attestation workflows.",

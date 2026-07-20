@@ -27,6 +27,7 @@ from app.modules.admin.schemas import (
     AdminFrameworkDirectoryResponse,
     AdminFrameworkStatusResponse,
     AdminFrameworkSuspendRequest,
+    AdminInvoicesResponse,
     AdminKycReviewRequest,
     AdminKycReviewResponse,
     AdminLicenseGrantRequest,
@@ -304,6 +305,34 @@ async def list_admin_payouts(
         page_size=page_size,
     )
     return AdminPayoutDirectoryResponse.model_validate(payouts)
+
+
+@router.get(
+    "/invoices",
+    response_model=AdminInvoicesResponse,
+    summary="List issued invoices for admin oversight",
+    description=(
+        "Return a paginated, read-only issued-invoice directory with an "
+        "optional search over invoice number or buyer. Internal PDF storage "
+        "keys are never included."
+    ),
+)
+async def list_admin_invoices(
+    admin: AdminUser,
+    db: DatabaseSession,
+    query: Annotated[str | None, Query(min_length=1, max_length=255)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminInvoicesResponse:
+    """Return the admin issued-invoice directory."""
+    del admin
+    invoices = await service.list_admin_invoices(
+        db=db,
+        query=query,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminInvoicesResponse.model_validate(invoices)
 
 
 @router.get(
