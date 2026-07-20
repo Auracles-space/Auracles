@@ -19,6 +19,8 @@ import {
   configureBrowserClient,
   describeGeneratedError,
 } from "@/lib/auth/form-client";
+import { clearBrowserSessionHintCookie } from "@/lib/auth/current-user-session";
+import { clearAuthToken } from "@/lib/auth/token-store";
 import { resetPassword } from "@/lib/generated/sdk.gen";
 
 import { FormField } from "./form-field";
@@ -71,6 +73,12 @@ export function ResetPasswordForm({
     }
 
     setSuccess(result.data?.message ?? "Password reset.");
+    // The backend revoked the refresh session, but middleware routes purely on
+    // the readable `session_hint` cookie. Drop the hint and in-memory token so a
+    // still-authenticated browser lands on /login instead of being bounced into
+    // the app by the auth-entry redirect.
+    clearAuthToken();
+    clearBrowserSessionHintCookie();
     // Hard navigation re-runs auth middleware (matches verify-email-form).
     if (onReset) {
       onReset("/login");
