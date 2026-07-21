@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ArtifactManifest } from "@/components/modules/frameworks/artifact-manifest";
+import { FrameworkApiError } from "@/lib/frameworks/framework-api";
 import type { ArtifactResponse } from "@/lib/generated/types.gen";
 
 /** Build an ArtifactResponse fixture with safe processed defaults. */
@@ -165,6 +166,140 @@ describe("ArtifactManifest preview controls", () => {
       screen.queryByRole("button", { name: /set .*as preview/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/^preview$/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("ArtifactManifest connector re-sync", () => {
+  /** A Drive-bound artifact fixture that is eligible to re-sync. */
+  function driveArtifact(
+    overrides: Partial<ArtifactResponse> = {},
+  ): ArtifactResponse {
+    return artifact({
+      id: "drive-1",
+      name: "brief.docx",
+      source_kind: "google_drive",
+      ...overrides,
+    });
+  }
+
+  it("re-syncs a Drive-bound artifact and refreshes on success", async () => {
+    const resyncArtifact = vi.fn().mockResolvedValue(driveArtifact());
+    const onResynced = vi.fn();
+
+    render(
+      <ArtifactManifest
+        artifacts={[driveArtifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        onResynced={onResynced}
+        previewArtifactId={null}
+        resyncArtifact={resyncArtifact}
+        setPreviewArtifact={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /re-sync/i }));
+
+    await waitFor(() => {
+      expect(resyncArtifact).toHaveBeenCalledWith("drive-1");
+    });
+    expect(onResynced).toHaveBeenCalledOnce();
+  });
+
+  it("shows an informational note (not an error) when the source is unchanged", async () => {
+    const resyncArtifact = vi
+      .fn()
+      .mockRejectedValue(
+        new FrameworkApiError("The source has not changed.", "already_up_to_date"),
+      );
+    const onResynced = vi.fn();
+
+    render(
+      <ArtifactManifest
+        artifacts={[driveArtifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        onResynced={onResynced}
+        previewArtifactId={null}
+        resyncArtifact={resyncArtifact}
+        setPreviewArtifact={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /re-sync/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/already up to date/i)).toBeInTheDocument();
+    });
+    // An unchanged source is not a failure, so nothing reloads.
+    expect(onResynced).not.toHaveBeenCalled();
+  });
+
+  it("does not offer re-sync for an uploaded (non-connector) artifact", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[artifact({ source_kind: "upload" })]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        onResynced={vi.fn()}
+        previewArtifactId={null}
+        resyncArtifact={vi.fn()}
+        setPreviewArtifact={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /re-sync/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides re-sync when no re-sync handler is wired (e.g. org frameworks)", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[driveArtifact()]}
+        canRemove
+        frameworkId="framework-1"
+        frameworkStatus="draft"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        previewArtifactId={null}
+        setPreviewArtifact={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /re-sync/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides re-sync once the framework is published (no longer editable)", () => {
+    render(
+      <ArtifactManifest
+        artifacts={[driveArtifact()]}
+        canRemove={false}
+        frameworkId="framework-1"
+        frameworkStatus="published"
+        onPreviewSet={vi.fn()}
+        onRemove={vi.fn()}
+        onResynced={vi.fn()}
+        previewArtifactId={null}
+        resyncArtifact={vi.fn()}
+        setPreviewArtifact={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /re-sync/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

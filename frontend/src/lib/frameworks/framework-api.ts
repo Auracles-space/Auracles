@@ -78,6 +78,12 @@ export interface FrameworkApi {
     id: string,
     artifactId: string,
   ): Promise<FrameworkResponse>;
+  /**
+   * Pull the latest bytes of a connector-bound artifact from its source.
+   * Personal frameworks only — connector import is contributor-scoped, so org
+   * sellers omit this method and the UI hides the re-sync control.
+   */
+  resyncArtifact?(id: string, artifactId: string): Promise<ArtifactResponse>;
   resolvePiiReview(id: string, artifactId: string): Promise<ArtifactResponse>;
   acceptRedaction(id: string, artifactId: string): Promise<ArtifactResponse>;
   acknowledgeSoftFail(id: string): Promise<FrameworkResponse>;
@@ -241,6 +247,13 @@ function personalFrameworkApi(): FrameworkApi {
           body: { artifact_id: artifactId },
           headers: authorizedHeaders(),
           path: { framework_id: id },
+        }),
+      ),
+    resyncArtifact: (id, artifactId) =>
+      unwrap(
+        sdk.resyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPost({
+          headers: authorizedHeaders(),
+          path: { framework_id: id, artifact_id: artifactId },
         }),
       ),
     resolvePiiReview: (id, artifactId) =>

@@ -12,11 +12,15 @@
 import { useState } from "react";
 
 import { SourcePreviewBadge } from "@/components/modules/frameworks/source-preview-badge";
+import { isFrameworkApiErrorCode } from "@/lib/frameworks/framework-api";
 import type {
   ArtifactResponse,
   FrameworkResponse,
 } from "@/lib/generated/types.gen";
 import { formatFileSize } from "@/lib/marketplace/format";
+
+/** Per-row outcome shown after a re-sync attempt. */
+type ResyncNote = { artifactId: string; message: string; isError: boolean };
 
 type ArtifactManifestProps = {
   artifacts: ArtifactResponse[];
@@ -28,6 +32,14 @@ type ArtifactManifestProps = {
   onRemove: (artifactId: string) => void;
   /** Persist the chosen preview via the seller-scoped Framework API adapter. */
   setPreviewArtifact: (artifactId: string) => Promise<FrameworkResponse>;
+  /**
+   * Pull the latest bytes of a connector-bound artifact from its source.
+   * Omitted for sellers without connector support (e.g. org frameworks), which
+   * hides the re-sync control entirely.
+   */
+  resyncArtifact?: (artifactId: string) => Promise<ArtifactResponse>;
+  /** Reload the workspace after a successful re-sync (the row id may change). */
+  onResynced?: () => void;
 };
 
 /** Processing state where the pipeline is actively running on the artifact. */
@@ -65,6 +77,8 @@ export function ArtifactManifest({
   onPreviewSet,
   onRemove,
   setPreviewArtifact,
+  resyncArtifact,
+  onResynced,
 }: ArtifactManifestProps) {
   // Preview selection is legal while the Framework is still pre-publish
   // (draft, a pipeline_failed run being fixed, or pipeline_passed awaiting
@@ -78,6 +92,47 @@ export function ArtifactManifest({
     frameworkStatus === "pipeline_passed";
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resyncPendingId, setResyncPendingId] = useState<string | null>(null);
+  const [resyncNote, setResyncNote] = useState<ResyncNote | null>(null);
+
+  async function handleResync(artifactId: string) {
+    if (!resyncArtifact) {
+      return;
+    }
+    setResyncPendingId(artifactId);
+    setResyncNote(null);
+    try {
+      await resyncArtifact(artifactId);
+      // The re-sync may have created a fresh artifact row, so let the parent
+      // reload the manifest rather than patching the list in place.
+      setResyncNote({
+        artifactId,
+        message: "Synced the latest version.",
+        isError: false,
+      });
+      onResynced?.();
+    } catch (caught) {
+      // An unchanged source is a no-op, not a failure — report it calmly.
+      if (isFrameworkApiErrorCode(caught, "already_up_to_date")) {
+        setResyncNote({
+          artifactId,
+          message: "Already up to date.",
+          isError: false,
+        });
+      } else {
+        setResyncNote({
+          artifactId,
+          message:
+            caught instanceof Error
+              ? caught.message
+              : "The request could not be completed.",
+          isError: true,
+        });
+      }
+    } finally {
+      setResyncPendingId(null);
+    }
+  }
 
   async function handleSetPreview(artifactId: string) {
     setPendingId(artifactId);
@@ -132,6 +187,15 @@ export function ArtifactManifest({
             const isPreview = artifact.id === previewArtifactId;
             const showSetPreview =
               canSetPreview && !isPreview && canBePreview(artifact);
+            // Re-sync pulls fresh source bytes, which edits the draft, so it is
+            // gated to the same editable window as preview selection and only
+            // offered for connector-bound files when a handler is wired.
+            const showResync =
+              canSetPreview &&
+              artifact.source_kind === "google_drive" &&
+              resyncArtifact !== undefined;
+            const rowResyncNote =
+              resyncNote?.artifactId === artifact.id ? resyncNote : null;
             return (
               <div
                 className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-start sm:justify-between"
@@ -151,8 +215,29 @@ export function ArtifactManifest({
                       frameworkId={frameworkId}
                     />
                   ) : null}
+                  {rowResyncNote ? (
+                    <p
+                      className={`mt-1 text-xs ${
+                        rowResyncNote.isError
+                          ? "text-error"
+                          : "text-foreground-muted"
+                      }`}
+                    >
+                      {rowResyncNote.message}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {showResync ? (
+                    <button
+                      className="min-h-11 rounded-lg border border-border-default px-3 py-1.5 text-xs font-semibold text-foreground-muted transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent disabled:opacity-60"
+                      disabled={resyncPendingId === artifact.id}
+                      onClick={() => handleResync(artifact.id)}
+                      type="button"
+                    >
+                      {resyncPendingId === artifact.id ? "Syncing…" : "Re-sync"}
+                    </button>
+                  ) : null}
                   {isPreview ? (
                     <span className="inline-flex min-h-8 items-center rounded-lg border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
                       Preview

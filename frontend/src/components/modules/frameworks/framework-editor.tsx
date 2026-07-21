@@ -461,7 +461,13 @@ export function FrameworkEditor({
           frameworkStatus={framework.status}
           onPreviewSet={setFramework}
           onRemove={handleRemoveArtifact}
+          onResynced={() => void loadWorkspace(true)}
           previewArtifactId={framework.preview_artifact_id}
+          resyncArtifact={
+            api.resyncArtifact
+              ? (artifactId) => api.resyncArtifact!(framework.id, artifactId)
+              : undefined
+          }
           setPreviewArtifact={(artifactId) =>
             api.setPreviewArtifact(framework.id, artifactId)
           }
