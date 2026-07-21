@@ -22,9 +22,12 @@ REFRESH_COOKIE_MAX_AGE_SECONDS = 2_592_000
 # screen and back, so it expires quickly to limit the replay window.
 OAUTH_STATE_MAX_AGE_SECONDS = 600
 CONNECTOR_STATE_MAX_AGE_SECONDS = 600
-# Scoped to the integrations API so the connector cookie never rides along
-# on unrelated requests.
-CONNECTOR_STATE_COOKIE_PATH = "/v1/integrations"
+# Root path so the cookie survives the frontend `/api` proxy: the browser
+# reaches the callback at `/api/v1/integrations/...`, which a cookie scoped to
+# `/v1/integrations` would not match, breaking state validation. Signed,
+# HttpOnly, and short-lived (600s), so the broad path carries no extra risk —
+# it matches every other auth cookie.
+CONNECTOR_STATE_COOKIE_PATH = "/"
 # Root path so the cookie is sent under the frontend `/api` proxy prefix
 # (`/api/v1/auth/refresh`) as well as direct `/v1/auth/refresh` in local dev.
 # A narrower path scoped the cookie out of the proxied request and broke

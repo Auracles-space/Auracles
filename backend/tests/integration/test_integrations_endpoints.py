@@ -205,6 +205,20 @@ async def test_connect_returns_consent_url_and_state_cookie(
     set_cookie = response.headers.get("set-cookie", "")
     assert CONNECTOR_STATE_COOKIE_NAME in set_cookie
     assert "HttpOnly" in set_cookie
+    # The browser reaches the callback through the frontend `/api` proxy, so the
+    # path it sees is `/api/v1/integrations/...`. A cookie scoped to
+    # `/v1/integrations` never rides along there (path prefix mismatch), so the
+    # callback fails with "Invalid connector state". The cookie must be root-path
+    # so it survives the proxy — matching every other auth cookie.
+    cookie_path = next(
+        (
+            attr.strip().split("=", 1)[1]
+            for attr in set_cookie.split(";")
+            if attr.strip().lower().startswith("path=")
+        ),
+        None,
+    )
+    assert cookie_path == "/"
 
 
 async def test_connect_unknown_provider_is_404(
