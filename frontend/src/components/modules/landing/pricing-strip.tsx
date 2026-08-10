@@ -7,13 +7,19 @@
  */
 import Link from "next/link";
 
+const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
+
 const tiers = [
   {
     name: "Single",
     summary: "One named operator.",
     body: "Best for individual practitioners. Lifetime access to the licensed version.",
     bullets: ["1 seat", "Lifetime access", "Audit-logged downloads"],
-    cta: { label: "Browse single-seat", href: "/explore?license_type=single_user" },
+    // Pre-launch the catalog is empty, so waitlist mode routes to the signup
+    // instead of dropping visitors onto a filtered page with no results.
+    cta: isWaitlistMode
+      ? { label: "Join the waitlist", href: "#waitlist-form" }
+      : { label: "Browse single-seat", href: "/explore?license_type=single_user" },
     featured: false,
   },
   {
@@ -21,7 +27,9 @@ const tiers = [
     summary: "Up to 10 named seats.",
     body: "For teams running the same playbook. Add or remove seats anytime.",
     bullets: ["Up to 10 seats", "Lifetime access", "Audit per seat"],
-    cta: { label: "Browse team", href: "/explore?license_type=team" },
+    cta: isWaitlistMode
+      ? { label: "Join the waitlist", href: "#waitlist-form" }
+      : { label: "Browse team", href: "/explore?license_type=team" },
     featured: true,
   },
   {
@@ -41,30 +49,28 @@ export function PricingStrip() {
   return (
     <section className="px-5 pb-16 md:px-10 md:pb-24" id="pricing">
       <div className="mx-auto w-full max-w-[1280px]">
-        <div className="max-w-2xl text-center md:mx-auto md:text-center">
-          <p className="text-xs font-medium uppercase tracking-[0.08em] text-accent">
-            License options
-          </p>
-          <h2 className="mt-3 font-heading text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-5xl">
-            Find the right plan for your team
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="font-heading text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-5xl">
+            Contributors set the price. You pick the license.
           </h2>
           <p className="mt-4 max-w-xl mx-auto text-base leading-7 text-foreground-muted">
-            Contributors set the price. You pick the license shape that fits your org.
+            Every Framework is priced by the person who built it. These are the
+            three license shapes you can buy it under.
           </p>
         </div>
 
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
+        <div className="mt-12 grid gap-6 md:mt-16 md:grid-cols-3 md:items-start">
           {tiers.map((tier) => (
             <article
-              className={`relative flex flex-col rounded-[32px] border bg-surface-1 p-8 ${
+              className={`relative flex h-full flex-col rounded-hero border bg-surface-1 p-8 ${
                 tier.featured
-                  ? "border-accent shadow-bento scale-105 z-10"
-                  : "border-border-default shadow-card mt-0 md:mt-4 md:mb-4"
+                  ? "z-10 border-accent shadow-bento md:-mt-4 md:pb-12"
+                  : "border-border-default shadow-card"
               }`}
               key={tier.name}
             >
               {tier.featured && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-1 text-[11px] font-bold uppercase tracking-widest text-white shadow-sm">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-1 text-xs font-bold uppercase tracking-widest text-white shadow-sm">
                   Popular
                 </div>
               )}
@@ -94,7 +100,7 @@ export function PricingStrip() {
               </ul>
 
               <Link
-                className={`mt-8 inline-flex h-12 items-center justify-center rounded-control px-5 text-sm font-bold transition ${
+                className={`mt-8 inline-flex h-12 items-center justify-center rounded-control px-5 text-sm font-bold transition focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1 ${
                   tier.featured
                     ? "bg-foreground text-background shadow-md hover:bg-foreground/90"
                     : "border-2 border-foreground bg-transparent text-foreground hover:bg-foreground hover:text-background"

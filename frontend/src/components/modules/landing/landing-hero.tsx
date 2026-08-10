@@ -36,13 +36,13 @@ export function LandingHero() {
           {isWaitlistMode ? (
             <>
               <Link
-                className="inline-flex h-12 min-w-[220px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+                className="inline-flex h-12 min-w-[220px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 href="#waitlist-form"
               >
                 Join the Contributor Waitlist
               </Link>
               <Link
-                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2"
+                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 href="#how-it-works"
               >
                 See How It Works
@@ -51,13 +51,13 @@ export function LandingHero() {
           ) : (
             <>
               <Link
-                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control bg-accent px-6 text-sm font-medium text-white shadow-sm transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 href="/explore"
               >
                 Browse the catalog
               </Link>
               <Link
-                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2"
+                className="inline-flex h-12 min-w-[180px] items-center justify-center rounded-control border border-border-strong bg-surface-1 px-6 text-sm font-medium text-foreground transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 href="/register"
               >
                 Become a Contributor
@@ -67,7 +67,7 @@ export function LandingHero() {
         </div>
 
         <p className="mt-10 text-center text-xs font-semibold uppercase tracking-[0.08em] text-foreground-subtle">
-          Built for and used by:
+          Built for:
         </p>
         <div className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center justify-center gap-x-3 gap-y-1.5 text-sm font-medium text-foreground-muted">
           {targetAudiences.map((audience, idx) => (
@@ -82,7 +82,12 @@ export function LandingHero() {
 
 
 
-        <div className="relative mx-auto mt-16 max-w-5xl md:mt-24">
+        {/*
+          Illustrative product preview. Every figure below is sample data, not a
+          platform metric, so the whole block is hidden from assistive tech —
+          otherwise a screen reader announces the mock dashboard as real content.
+        */}
+        <div aria-hidden="true" className="relative mx-auto mt-16 max-w-5xl md:mt-24">
           <div className="absolute inset-0 -z-10 mx-auto max-w-4xl opacity-80 blur-3xl brand-gradient" />
           <div className="rounded-hero border border-border-default bg-surface-1/60 p-2 shadow-hero backdrop-blur-md">
             <div className="rounded-[28px] border border-border-default bg-surface-1 p-4 shadow-bento md:p-6">
@@ -147,10 +152,10 @@ export function LandingHero() {
                       ].map((item) => (
                         <div
                           key={item.label}
-                          className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer font-medium ${
+                          className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg font-medium ${
                             item.active
                               ? "bg-accent/10 border border-accent/25 text-accent"
-                              : "text-foreground-muted hover:bg-surface-3 hover:text-foreground"
+                              : "text-foreground-muted"
                           }`}
                         >
                           {item.icon}
@@ -167,7 +172,7 @@ export function LandingHero() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-[10px] font-bold text-foreground truncate">Alex Rivers</p>
-                      <p className="text-[8px] text-foreground-subtle truncate">S-Tier Contributor</p>
+                      <p className="text-[10px] text-foreground-subtle truncate">S-Tier Contributor</p>
                     </div>
                   </div>
                 </div>
@@ -181,12 +186,12 @@ export function LandingHero() {
                     </div>
                     <div className="flex items-center gap-2">
                       {/* Time Range Selector */}
-                      <div className="h-7 px-2.5 rounded-lg border border-border-strong bg-surface-2 text-[10px] font-bold text-foreground-muted flex items-center gap-1 select-none cursor-pointer hover:bg-surface-3 transition">
+                      <div className="h-7 px-2.5 rounded-lg border border-border-strong bg-surface-2 text-[10px] font-bold text-foreground-muted flex items-center gap-1 select-none">
                         <span>Last 30 Days</span>
                         <svg className="h-2.5 w-2.5 opacity-60" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                       </div>
                       {/* Export Button */}
-                      <div className="h-7 px-2.5 rounded-lg border border-border-strong bg-surface-2 text-[10px] font-bold text-foreground-muted flex items-center gap-1 cursor-pointer hover:bg-surface-3 transition">
+                      <div className="h-7 px-2.5 rounded-lg border border-border-strong bg-surface-2 text-[10px] font-bold text-foreground-muted flex items-center gap-1 select-none">
                         <svg className="h-2.5 w-2.5 opacity-70" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                         <span>Export</span>
                       </div>
@@ -200,7 +205,7 @@ export function LandingHero() {
                       { label: "Total Revenue (MRR)", value: "$48,210", sub: "+12.4% vs last Q", trend: "up" },
                       { label: "Attested Frameworks", value: "18 Assets", sub: "99.4% Compliance", trend: "neutral" },
                     ].map((stat) => (
-                      <div key={stat.label} className="rounded-xl border border-border-strong bg-surface-2 p-3.5 flex flex-col justify-between shadow-sm relative group hover:border-accent/30 transition-all select-none">
+                      <div key={stat.label} className="rounded-xl border border-border-strong bg-surface-2 p-3.5 flex flex-col justify-between shadow-sm relative select-none">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-subtle flex items-center">
                             <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
@@ -209,9 +214,9 @@ export function LandingHero() {
                         </div>
                         <div className="mt-2.5 flex items-baseline justify-between">
                           <h4 className="font-heading text-xl font-bold text-foreground tracking-tight">{stat.value}</h4>
-                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full border ${
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
                             stat.trend === "up" 
-                              ? "bg-[#16A34A]/10 border-[#16A34A]/25 text-[#16A34A]" 
+                              ? "bg-success/10 border-success/25 text-success" 
                               : "bg-foreground-subtle/10 border-foreground-subtle/25 text-foreground-subtle"
                           }`}>
                             {stat.sub}
@@ -224,11 +229,11 @@ export function LandingHero() {
                   {/* Revenue Trend Chart */}
                   <div className="rounded-xl border border-border-strong bg-surface-2 p-4 flex flex-col justify-between gap-3 shadow-sm select-none">
                     <div className="flex items-center justify-between border-b border-border-default pb-2">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.05em] text-foreground flex items-center">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground flex items-center">
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5" />
                         Monthly Revenue Yield ($)
                       </span>
-                      <div className="flex items-center gap-3 text-[8px] font-mono font-bold text-foreground-subtle">
+                      <div className="flex items-center gap-3 text-[10px] font-mono font-bold text-foreground-subtle">
                         <div className="flex items-center gap-1">
                           <span className="h-1.5 w-1.5 rounded-full bg-accent/40" />
                           <span>Estimated</span>
@@ -269,12 +274,12 @@ export function LandingHero() {
                               className={`w-2.5 rounded-t-sm transition-all duration-300 ${
                                 item.active 
                                   ? "bg-accent shadow-[0_0_12px_rgba(199,70,52,0.35)]" 
-                                  : "bg-accent/80 hover:bg-accent"
+                                  : "bg-accent/80"
                               }`} 
                               style={{ height: item.act }}
                             />
                           </div>
-                          <span className="text-[7px] font-mono font-bold text-foreground-subtle tracking-wider mt-1">{item.month}</span>
+                          <span className="text-[9px] font-mono font-bold text-foreground-subtle tracking-wider mt-1">{item.month}</span>
                         </div>
                       ))}
                     </div>
@@ -283,11 +288,11 @@ export function LandingHero() {
                   {/* Active Frameworks List */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-bold uppercase tracking-[0.05em] text-foreground flex items-center">
+                      <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground flex items-center">
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5" />
                         Active Workspace Frameworks
                       </span>
-                      <span className="text-[8px] font-mono text-foreground-subtle">
+                      <span className="text-[10px] font-mono text-foreground-subtle">
                         2 Workspace Units Active
                       </span>
                     </div>
@@ -297,20 +302,20 @@ export function LandingHero() {
                         { title: "ISO-27001 Security Audit SOP", cat: "Security", lic: "42 Licenses", yield: "$1,680.00/mo", status: "Published" },
                         { title: "Private Equity Financial Model", cat: "Financials", lic: "28 Licenses", yield: "$2,240.00/mo", status: "In Review" },
                       ].map((fw) => (
-                        <div key={fw.title} className="rounded-xl border border-border-strong bg-surface-2 p-3 flex items-center justify-between text-[10px] hover:border-accent/20 transition">
+                        <div key={fw.title} className="rounded-xl border border-border-strong bg-surface-2 p-3 flex items-center justify-between text-[10px]">
                           <div className="min-w-0 pr-2">
                             <h5 className="font-bold text-foreground truncate">{fw.title}</h5>
-                            <div className="flex items-center gap-2 mt-1 text-[8px] text-foreground-subtle font-medium">
+                            <div className="flex items-center gap-2 mt-1 text-[10px] text-foreground-subtle font-medium">
                               <span className="bg-surface-3 px-1.5 py-0.5 rounded border border-border-strong">{fw.cat}</span>
                               <span>{fw.lic}</span>
                             </div>
                           </div>
                           <div className="text-right shrink-0">
                             <p className="font-heading font-bold text-foreground">{fw.yield}</p>
-                            <span className={`inline-block mt-1 text-[7px] font-bold uppercase tracking-wider rounded px-1 py-0.25 ${
+                            <span className={`inline-block mt-1 text-[9px] font-bold uppercase tracking-wider rounded px-1 py-0.25 ${
                               fw.status === "Published" 
-                                ? "bg-[#16A34A]/10 text-[#16A34A] border border-[#16A34A]/25" 
-                                : "bg-[#F59E0B]/10 text-[#F59E0B] border border-[#F59E0B]/25"
+                                ? "bg-success/10 text-success border border-success/25" 
+                                : "bg-warning/10 text-warning border border-warning/25"
                             }`}>
                               {fw.status}
                             </span>

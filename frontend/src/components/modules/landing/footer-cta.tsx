@@ -7,6 +7,7 @@
  * marketplace's primary call: register. Below, a slim site footer with
  * legal + contact links.
  */
+import { CheckIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -56,6 +57,8 @@ export function FooterCta() {
       links: [
         { href: "#roles", label: "For Contributors" },
         { href: "#how-it-works", label: "How it Works" },
+        { href: "#become", label: "Become an Auracle" },
+        { href: "#pricing", label: "Licensing" },
         { href: "#faq", label: "FAQ" },
       ],
     },
@@ -93,9 +96,12 @@ export function FooterCta() {
 
             {isWaitlistMode ? (
               submitted ? (
-                <div className="mt-10 flex flex-col items-center justify-center gap-3 rounded-2xl border border-success/30 bg-success/5 p-6 max-w-md mx-auto animate-fade-in">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success text-lg font-bold">
-                    ✓
+                <div
+                  className="mt-10 flex flex-col items-center justify-center gap-3 rounded-2xl border border-success/30 bg-success/5 p-6 max-w-md mx-auto animate-fade-in"
+                  role="status"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success">
+                    <CheckIcon aria-hidden="true" className="h-6 w-6" />
                   </span>
                   <p className="text-sm font-semibold text-foreground">
                     {alreadyJoined
@@ -124,32 +130,44 @@ export function FooterCta() {
                   className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row items-stretch"
                 >
                   <div className="flex-1">
+                    <label className="sr-only" htmlFor="waitlist-email">
+                      Email address
+                    </label>
                     <input
                       type="email"
+                      id="waitlist-email"
                       required
                       autoComplete="email"
                       spellCheck={false}
                       disabled={isSubmitting}
                       placeholder="Email address"
                       value={email}
+                      aria-invalid={error ? true : undefined}
+                      aria-describedby={error ? "waitlist-email-error" : undefined}
                       onChange={(e) => {
                         setEmail(e.target.value);
                         if (error) setError(null);
                       }}
                       className={`w-full h-12 rounded-control border bg-surface-1 px-4 text-sm text-foreground placeholder:text-foreground-subtle outline-none transition-colors disabled:opacity-60 ${
                         error
-                          ? "border-warning/60 focus:border-warning focus:ring-1 focus:ring-warning"
+                          ? "border-error focus:border-error focus:ring-1 focus:ring-error"
                           : "border-border-strong focus:border-accent focus:ring-1 focus:ring-accent"
                       }`}
                     />
                     {error ? (
-                      <p className="mt-2 text-left text-xs font-semibold text-warning">{error}</p>
+                      <p
+                        className="mt-2 text-left text-xs font-semibold text-error"
+                        id="waitlist-email-error"
+                        role="alert"
+                      >
+                        {error}
+                      </p>
                     ) : null}
                   </div>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="inline-flex h-12 items-center justify-center rounded-control bg-accent px-6 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-12 items-center justify-center rounded-control bg-accent px-6 text-sm font-semibold text-white shadow transition hover:opacity-90 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isSubmitting ? (
                       <>
@@ -199,26 +217,33 @@ export function FooterCta() {
               <p className="text-xs font-bold uppercase tracking-[0.08em] text-foreground-subtle">
                 {group.title}
               </p>
-              <ul className="mt-6 space-y-4 text-sm font-medium text-foreground-muted">
-                {group.links.map((link) => (
-                  <li key={link.label}>
-                    {link.href.startsWith("#") ? (
-                      <a
-                        className="transition hover:text-accent"
-                        href={link.href}
-                      >
-                        {link.label}
-                      </a>
-                    ) : (
-                      <Link
-                        className="transition hover:text-accent"
-                        href={link.href}
-                      >
-                        {link.label}
-                      </Link>
-                    )}
-                  </li>
-                ))}
+              <ul className="mt-4 space-y-1 text-sm font-medium text-foreground-muted">
+                {group.links.map((link) => {
+                  const isExternal = link.href.startsWith("http");
+                  const className =
+                    "inline-flex min-h-11 items-center rounded-control transition hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background";
+
+                  return (
+                    <li key={link.label}>
+                      {link.href.startsWith("#") || isExternal ? (
+                        <a
+                          className={className}
+                          href={link.href}
+                          {...(isExternal && {
+                            rel: "noopener noreferrer",
+                            target: "_blank",
+                          })}
+                        >
+                          {link.label}
+                        </a>
+                      ) : (
+                        <Link className={className} href={link.href}>
+                          {link.label}
+                        </Link>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
