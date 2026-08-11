@@ -28,6 +28,27 @@ async def ingest_stripe_webhook(
     )
 
 
+@router.post("/paystack", response_model=WebhookIngestResponse)
+async def ingest_paystack_webhook(
+    request: Request,
+    db: DatabaseSession,
+    paystack_signature: str | None = Header(
+        default=None, alias="x-paystack-signature"
+    ),
+) -> WebhookIngestResponse:
+    """Verify and dispatch a Paystack webhook event.
+
+    Paystack signs the raw body with HMAC SHA-512, so the body is read as
+    bytes and passed through unparsed.
+    """
+    raw_body = await request.body()
+    return await service.handle_paystack_webhook(
+        db=db,
+        payload=raw_body,
+        signature_header=paystack_signature,
+    )
+
+
 @router.post("/persona", response_model=WebhookIngestResponse)
 async def ingest_persona_webhook(
     request: Request,

@@ -23,8 +23,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.security import hash_payout_provider_account_id
-from app.integrations import persona, stripe
-from app.integrations.payment_failures import normalize_stripe_failure
+from app.integrations import paystack, persona, stripe
+from app.integrations.payment_failures import (
+    normalize_paystack_failure,
+    normalize_stripe_failure,
+)
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.persona import PersonaProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.admin.notifications import notify_admins_review_pending
@@ -81,11 +85,20 @@ async def _record_transaction_transition(
         transaction: The transaction whose status just changed.
         event_type: snake_case event name, e.g. `purchase_failed`.
         from_status: Status held before the mutation.
-        failure_object: Stripe `data.object` for failure events, whose error
-            fields are normalized into a provider-neutral reason. None for
-            successful transitions.
+        failure_object: The provider's charge object for failure events, whose
+            error fields are normalized into a provider-neutral reason. None
+            for successful transitions.
     """
-    failure = normalize_stripe_failure(failure_object) if failure_object else None
+    # The normalizer is chosen by the transaction's own provider, not the
+    # caller's: Stripe reports a coded error object while Paystack reports
+    # prose, and reading either shape with the wrong parser yields "unknown".
+    failure = None
+    if failure_object:
+        failure = (
+            normalize_paystack_failure(failure_object)
+            if transaction.provider == "paystack"
+            else normalize_stripe_failure(failure_object)
+        )
     metadata: dict[str, Any] = {}
     if failure is not None and failure.provider_code is not None:
         # Keep the provider's own code alongside the normalized one so a cause
@@ -183,7 +196,7 @@ def _escrow_release_conditions(event: dict[str, Any]) -> dict[str, Any]:
     return parsed
 
 
-async def _audit_invalid_signature(db: AsyncSession) -> None:
+async def _audit_invalid_signature(db: AsyncSession, *, provider: str) -> None:
     """Persist a minimal audit row for rejected provider signatures."""
     if db.in_transaction():
         await db.rollback()
@@ -193,18 +206,19 @@ async def _audit_invalid_signature(db: AsyncSession) -> None:
             actor_id=None,
             action="webhook_signature_invalid",
             target_type="webhook",
-            metadata={"provider": "stripe"},
+            metadata={"provider": provider},
         )
 
 
 async def _ensure_verified_event_row(
     db: AsyncSession,
     *,
+    provider: str,
     event_id: str,
     event_type: str,
     payload_hash: str,
 ) -> None:
-    """Persist a verified Stripe event row once, ignoring concurrent inserts.
+    """Persist a verified provider event row once, ignoring concurrent inserts.
 
     The row is the durable idempotency anchor. A row that already exists is
     left untouched here; whether it represents a replay or a retry of a failed
@@ -217,7 +231,7 @@ async def _ensure_verified_event_row(
         async with db.begin():
             db.add(
                 WebhookEvent(
-                    provider="stripe",
+                    provider=provider,
                     provider_event_id=event_id,
                     event_type=event_type,
                     status="received",
@@ -234,11 +248,12 @@ async def _mark_event_status(
     event_id: str,
     status_: str,
     error: str | None = None,
+    provider: str = "stripe",
 ) -> None:
     """Update durable webhook event processing status."""
     event_row = await db.scalar(
         select(WebhookEvent).where(
-            WebhookEvent.provider == "stripe",
+            WebhookEvent.provider == provider,
             WebhookEvent.provider_event_id == event_id,
         )
     )
@@ -253,10 +268,20 @@ async def _mark_event_status(
 async def _handle_purchase_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
+    *,
+    provider: str = "stripe",
 ) -> tuple[UUID | None, list[Callable[[], None]]]:
-    """Mark a purchase complete and grant its Framework License."""
+    """Mark a purchase complete and grant its Framework License.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: Provider event in the internal Stripe-shaped envelope.
+        provider: Rail that delivered the event. Checked against the
+            transaction so a Paystack event can never settle a charge booked
+            to Stripe (or the reverse) on the strength of forgeable metadata.
+    """
     transaction_id = _purchase_transaction_id(event)
-    payment_intent_id = _event_object_id(event)
+    charge_ref = _event_object_id(event)
     metadata = _event_metadata(event)
     license_type = metadata.get("license_type")
     if license_type is None:
@@ -269,10 +294,10 @@ async def _handle_purchase_succeeded(
     previous_status = transaction.status
     if transaction.transaction_type != "purchase":
         raise WebhookProcessingError("transaction is not a purchase")
-    if transaction.provider != "stripe":
+    if transaction.provider != provider:
         raise WebhookProcessingError("transaction provider mismatch")
-    if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
-        raise WebhookProcessingError("payment intent id mismatch")
+    if transaction.provider_ref and transaction.provider_ref != charge_ref:
+        raise WebhookProcessingError("provider charge reference mismatch")
     if transaction.ref_id is None:
         raise WebhookProcessingError("purchase transaction missing framework ref")
 
@@ -331,7 +356,7 @@ async def _handle_purchase_succeeded(
             target_type="transaction",
             target_id=transaction.id,
             metadata={
-                "provider": "stripe",
+                "provider": provider,
                 "framework_id": str(framework.id),
                 "license_id": str(existing_license.id),
                 "license_type": license_type,
@@ -380,7 +405,7 @@ async def _handle_purchase_succeeded(
             target_type="transaction",
             target_id=transaction.id,
             metadata={
-                "provider": "stripe",
+                "provider": provider,
                 "framework_id": str(framework.id),
                 "license_id": str(existing_license.id),
                 "license_type": license_type,
@@ -510,15 +535,28 @@ def _queue_purchase_invoice_generation(transaction_id: UUID) -> None:
 async def _handle_purchase_failed(
     db: AsyncSession,
     event: dict[str, Any],
+    *,
+    provider: str = "stripe",
+    reason: str = "payment_intent.payment_failed",
 ) -> None:
-    """Mark a purchase transaction failed after Stripe payment failure."""
+    """Mark a purchase transaction failed after a provider payment failure.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: Provider event in the internal Stripe-shaped envelope.
+        provider: Rail that delivered the event, checked against the
+            transaction before any state change.
+        reason: Provider event name recorded on the audit entry.
+    """
     transaction_id = _purchase_transaction_id(event)
-    payment_intent_id = _event_object_id(event)
+    charge_ref = _event_object_id(event)
     transaction = await db.get(Transaction, transaction_id)
     if transaction is None:
         raise WebhookProcessingError("purchase transaction not found")
-    if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
-        raise WebhookProcessingError("payment intent id mismatch")
+    if transaction.provider != provider:
+        raise WebhookProcessingError("transaction provider mismatch")
+    if transaction.provider_ref and transaction.provider_ref != charge_ref:
+        raise WebhookProcessingError("provider charge reference mismatch")
     previous_status = transaction.status
     transaction.status = "failed"
     await write_audit(
@@ -527,7 +565,7 @@ async def _handle_purchase_failed(
         action="purchase_failed",
         target_type="transaction",
         target_id=transaction.id,
-        metadata={"provider": "stripe", "reason": "payment_intent.payment_failed"},
+        metadata={"provider": provider, "reason": reason},
     )
     await _record_transaction_transition(
         db,
@@ -1273,7 +1311,7 @@ async def handle_stripe_webhook(
     try:
         event = stripe.verify_webhook(payload, signature_header)
     except StripeProviderError as exc:
-        await _audit_invalid_signature(db)
+        await _audit_invalid_signature(db, provider="stripe")
         logger.bind(module="webhooks", action="verify_stripe_webhook").warning(
             "signature_invalid",
             error=str(exc),
@@ -1288,6 +1326,7 @@ async def handle_stripe_webhook(
     payload_hash = hashlib.sha256(payload).hexdigest()
     await _ensure_verified_event_row(
         db=db,
+        provider="stripe",
         event_id=event_id,
         event_type=event_type,
         payload_hash=payload_hash,
@@ -1359,6 +1398,214 @@ async def handle_stripe_webhook(
     logger.bind(
         module="webhooks",
         action="dispatch_stripe_webhook",
+        provider_event_id=event_id,
+    ).info("webhook_processed")
+    return WebhookIngestResponse(received=True, status=event_status)
+
+
+def _paystack_envelope(event: dict[str, Any]) -> dict[str, Any]:
+    """Reshape a Paystack event into the internal Stripe-shaped envelope.
+
+    Paystack names the event under `event` and puts the object directly under
+    `data`, where Stripe uses `type` and `data.object`. Translating once here
+    lets the purchase handlers stay single-shaped instead of branching on
+    provider at every field read.
+
+    The object id is overwritten with the charge `reference`, because that —
+    not Paystack's numeric `id` — is what we store as `provider_ref` at
+    initialization and what refunds are keyed by.
+
+    Args:
+        event: Verified Paystack event payload.
+
+    Returns:
+        The same event in `{"type": ..., "data": {"object": ...}}` form.
+    """
+    raw_data = event.get("data")
+    event_object = dict(raw_data) if isinstance(raw_data, dict) else {}
+    reference = event_object.get("reference")
+    if isinstance(reference, str):
+        event_object["id"] = reference
+    return {"type": event.get("event"), "data": {"object": event_object}}
+
+
+def _paystack_event_id(event_type: str, envelope: dict[str, Any]) -> str:
+    """Derive a stable idempotency key for a Paystack event.
+
+    Paystack sends no event id, so `webhook_events.provider_event_id` is
+    synthesized from the event name plus the charge reference. Including the
+    name keeps `charge.success` and `charge.failed` for one reference distinct;
+    including the reference keeps redeliveries of the same charge collapsed.
+
+    Args:
+        event_type: The Paystack event name.
+        envelope: The normalized envelope from `_paystack_envelope`.
+
+    Returns:
+        The synthesized provider event id.
+
+    Raises:
+        HTTPException(400): The event carries no reference to key on.
+    """
+    object_id = _event_object_id(envelope)
+    if object_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Paystack event missing reference.",
+        )
+    return f"{event_type}:{object_id}"
+
+
+async def _dispatch_paystack_event(
+    db: AsyncSession,
+    *,
+    event_id: str,
+    event_type: str,
+    envelope: dict[str, Any],
+) -> tuple[str, UUID | None]:
+    """Dispatch a verified Paystack event and return status plus invoice work."""
+    metadata = _event_metadata(envelope)
+    if event_type == "charge.success" and metadata.get("kind") == "purchase":
+        invoice_transaction_id, _ = await _handle_purchase_succeeded(
+            db, envelope, provider="paystack"
+        )
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", invoice_transaction_id
+    if event_type in {"charge.failed", "charge.abandoned"}:
+        await _handle_purchase_failed(
+            db, envelope, provider="paystack", reason=event_type
+        )
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", None
+
+    # Paystack delivers every event enabled on the integration, most of which
+    # this platform never acts on. Storing without dispatching keeps the
+    # delivery acknowledged so Paystack stops retrying it.
+    logger.bind(
+        module="webhooks",
+        action="unknown_paystack_event",
+        provider_event_id=event_id,
+    ).warning("unknown_event_type")
+    return "received", None
+
+
+async def handle_paystack_webhook(
+    db: AsyncSession,
+    *,
+    payload: bytes,
+    signature_header: str | None,
+) -> WebhookIngestResponse:
+    """Verify, store, and dispatch a Paystack webhook event.
+
+    Mirrors the Stripe path: the signature is checked against the raw body
+    before any parsing, the verified event is stored as the durable
+    idempotency anchor, and dispatch runs under a row lock so concurrent
+    redeliveries serialize.
+
+    Args:
+        db: Async SQLAlchemy session.
+        payload: Raw request body, required for HMAC verification.
+        signature_header: Value of the `x-paystack-signature` header.
+
+    Returns:
+        Ingest acknowledgement carrying the resulting event status.
+
+    Raises:
+        HTTPException(400): Signature verification failed or the event carries
+            no reference to key idempotency on.
+        HTTPException(500): A verified event could not be applied.
+    """
+    try:
+        event = paystack.verify_webhook(payload, signature_header)
+    except PaystackProviderError as exc:
+        await _audit_invalid_signature(db, provider="paystack")
+        logger.bind(module="webhooks", action="verify_paystack_webhook").warning(
+            "signature_invalid",
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Paystack signature.",
+        ) from exc
+
+    event_type = event.get("event")
+    if not isinstance(event_type, str) or not event_type.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Paystack event missing event name.",
+        )
+    envelope = _paystack_envelope(event)
+    event_id = _paystack_event_id(event_type, envelope)
+    payload_hash = hashlib.sha256(payload).hexdigest()
+    await _ensure_verified_event_row(
+        db=db,
+        provider="paystack",
+        event_id=event_id,
+        event_type=event_type,
+        payload_hash=payload_hash,
+    )
+
+    try:
+        if db.in_transaction():
+            await db.rollback()
+        invoice_transaction_id: UUID | None = None
+        async with db.begin():
+            locked_event = await db.scalar(
+                select(WebhookEvent)
+                .where(
+                    WebhookEvent.provider == "paystack",
+                    WebhookEvent.provider_event_id == event_id,
+                )
+                .with_for_update()
+            )
+            if locked_event is None:
+                raise WebhookProcessingError(
+                    "webhook event row missing during dispatch"
+                )
+            if locked_event.status == "processed":
+                logger.bind(
+                    module="webhooks",
+                    action="paystack_webhook_replay",
+                    provider_event_id=event_id,
+                ).info("webhook_replay")
+                return WebhookIngestResponse(received=True, status="duplicate")
+            event_status, invoice_transaction_id = await _dispatch_paystack_event(
+                db,
+                event_id=event_id,
+                event_type=event_type,
+                envelope=envelope,
+            )
+    except Exception as exc:
+        if db.in_transaction():
+            await db.rollback()
+        async with db.begin():
+            await _mark_event_status(
+                db,
+                event_id=event_id,
+                status_="failed",
+                error=str(exc)[:500],
+                provider="paystack",
+            )
+        logger.bind(
+            module="webhooks",
+            action="dispatch_paystack_webhook",
+            provider_event_id=event_id,
+        ).error("webhook_dispatch_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook processing failed.",
+        ) from exc
+
+    if invoice_transaction_id is not None:
+        _queue_purchase_invoice_generation(invoice_transaction_id)
+
+    logger.bind(
+        module="webhooks",
+        action="dispatch_paystack_webhook",
         provider_event_id=event_id,
     ).info("webhook_processed")
     return WebhookIngestResponse(received=True, status=event_status)
