@@ -58,6 +58,11 @@ describe("landing sections render", () => {
 
   it("renders the marketing nav with navigation links", async () => {
     render(await MarketingNav());
-    expect(screen.getByRole("navigation")).toBeInTheDocument();
+    // Desktop and compact navs both render at every width, so each landmark is
+    // asserted by its own accessible name rather than by role alone.
+    expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Primary (compact)" }),
+    ).toBeInTheDocument();
   });
 });

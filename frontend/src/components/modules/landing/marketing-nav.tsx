@@ -42,7 +42,10 @@ export async function MarketingNav() {
     <header className="sticky top-0 z-30 border-b border-border-default bg-background/95 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-[1280px] items-center justify-between gap-3 px-5 md:px-10">
         <BrandLogo className="h-7 w-28 md:h-8 md:w-32 shrink-0" />
-        <nav className="hidden items-center gap-6 lg:flex">
+        {/* Both navs stay in the DOM at every width — only their visibility is
+            responsive — so each landmark needs its own name to be distinguishable
+            to a screen reader. */}
+        <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex">
           {activeLinks.map((link) => (
             <Link
               className="rounded-control text-sm font-medium text-foreground-muted transition hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-4 focus-visible:ring-offset-background"
@@ -93,7 +96,10 @@ export async function MarketingNav() {
               <Cross1Icon aria-hidden="true" className="hidden h-5 w-5 group-open:block" />
               <span className="sr-only">Menu</span>
             </summary>
-            <nav className="absolute right-0 top-[calc(100%+0.75rem)] w-60 rounded-card border border-border-strong bg-surface-1 p-2 shadow-card">
+            <nav
+              aria-label="Primary (compact)"
+              className="absolute right-0 top-[calc(100%+0.75rem)] w-60 rounded-card border border-border-strong bg-surface-1 p-2 shadow-card"
+            >
               {activeLinks.map((link) => (
                 <Link
                   className="flex min-h-11 items-center rounded-control px-3 text-sm font-medium text-foreground-muted transition hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
