@@ -805,6 +805,127 @@ async def _mark_project_milestone_funded(
     )
 
 
+async def _connected_payout_account(
+    db: AsyncSession,
+    event: dict[str, Any],
+    *,
+    action: str,
+) -> PayoutAccount | None:
+    """Resolve the PayoutAccount a connected-account payout event refers to.
+
+    Connected-account events name the account at the event's top level, not in
+    the payout object, and the account id is stored encrypted, so the lookup
+    goes through the deterministic hash column.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: The verified Stripe event.
+        action: Log action tag identifying the calling handler.
+
+    Returns:
+        The matching payout account, or None when the account is not ours.
+
+    Raises:
+        WebhookProcessingError: If the event carries no connected account id.
+    """
+    account_id = event.get("account")
+    if not isinstance(account_id, str) or not account_id:
+        raise WebhookProcessingError(
+            f"{event.get('type')} missing connected account id"
+        )
+
+    payout_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.provider == "stripe",
+            PayoutAccount.provider_account_lookup_hash
+            == hash_payout_provider_account_id(account_id),
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if payout_account is None:
+        # Stripe delivers connected-account events for every account on the
+        # platform. Erroring would make it retry an event we do not own.
+        logger.bind(module="webhooks", action=action).info(
+            "connected_payout_event_for_untracked_account"
+        )
+    return payout_account
+
+
+async def _handle_connected_payout_paid(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> None:
+    """Settle the payouts a connected account's bank payout carried.
+
+    This is the only Stripe event on the payout path meaning the contributor's
+    bank was funded. `transfer.created` only moves money into their Stripe
+    balance, so completing a payout there would tell a contributor they had
+    been paid while the money was still at the provider.
+
+    Stripe names the account, not our payout rows, and one bank payout can
+    settle several of our transfers at once. Every in-flight payout on the
+    account is therefore settled, bounded by the bank payout's own creation
+    time: a transfer created after the bank payout left cannot have been in it.
+    The bound is what keeps the attribution honest — without it a later
+    transfer would be marked paid on the strength of someone else's settlement.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: The verified Stripe event.
+    """
+    payout_account = await _connected_payout_account(
+        db, event, action="connected_payout_paid"
+    )
+    if payout_account is None:
+        return
+
+    event_object = _event_object(event)
+    created_raw = event_object.get("created")
+    settled_at = (
+        datetime.fromtimestamp(created_raw, UTC)
+        if isinstance(created_raw, int)
+        else datetime.now(UTC)
+    )
+    payouts = (
+        await db.scalars(
+            select(Payout).where(
+                Payout.payout_account_id == payout_account.id,
+                Payout.status == "processing",
+                Payout.initiated_at <= settled_at,
+            )
+        )
+    ).all()
+    bank_payout_ref = _event_object_id(event)
+    completed_at = datetime.now(UTC)
+    for payout in payouts:
+        payout.status = "completed"
+        payout.completed_at = completed_at
+        await write_audit(
+            db=db,
+            actor_id=payout.contributor_id,
+            action="payout_completed",
+            target_type="payout",
+            target_id=payout.id,
+            metadata={"provider": "stripe", "settled_by_bank_payout": True},
+        )
+        await record_financial_event(
+            db,
+            entity_type="payout",
+            entity_id=payout.id,
+            event_type="payout_completed",
+            from_status="processing",
+            to_status="completed",
+            amount=payout.amount,
+            currency=payout.currency,
+            provider="stripe",
+            provider_ref=bank_payout_ref,
+            actor_id=payout.contributor_id,
+            metadata={"transfer_ref": payout.provider_ref}
+            if payout.provider_ref
+            else {},
+        )
+
+
 async def _handle_connected_payout_failed(
     db: AsyncSession,
     event: dict[str, Any],
@@ -829,25 +950,10 @@ async def _handle_connected_payout_failed(
         Post-commit callables raising an admin alert, or an empty list when the
         account is not one we track.
     """
-    account_id = event.get("account")
-    if not isinstance(account_id, str) or not account_id:
-        raise WebhookProcessingError("payout.failed missing connected account id")
-
-    payout_account = await db.scalar(
-        select(PayoutAccount).where(
-            PayoutAccount.provider == "stripe",
-            PayoutAccount.provider_account_lookup_hash
-            == hash_payout_provider_account_id(account_id),
-            PayoutAccount.deleted_at.is_(None),
-        )
+    payout_account = await _connected_payout_account(
+        db, event, action="connected_payout_failed"
     )
     if payout_account is None:
-        # Stripe delivers connected-account events for every account on the
-        # platform. Erroring would make it retry an event we do not own.
-        logger.bind(
-            module="webhooks",
-            action="connected_payout_failed",
-        ).info("payout_failed_for_untracked_account")
         return []
 
     event_object = _event_object(event)
@@ -939,21 +1045,26 @@ async def _payout_from_metadata(
     return await db.get(Payout, payout_id)
 
 
-async def _handle_transfer_event(
+async def _payout_for_transfer(
     db: AsyncSession,
     event: dict[str, Any],
-    *,
-    payout_status: str,
-) -> list[Callable[[], None]]:
-    """Apply Stripe transfer status to an existing payout row when present.
+) -> tuple[Payout | None, str]:
+    """Resolve the payout a transfer event refers to, backfilling its reference.
 
-    Matches the payout first by stored ``provider_ref`` (the transfer id). When
-    that misses — a ``transfer.created`` event can arrive before the worker
-    commits ``provider_ref`` — falls back to the ``payout_id`` carried in the
-    transfer metadata and backfills the reference. Unknown transfers no-op.
+    Matches first by stored ``provider_ref`` (the transfer id). When that misses
+    — a ``transfer.created`` event can arrive before the worker commits
+    ``provider_ref`` — falls back to the ``payout_id`` carried in the transfer
+    metadata and backfills the reference.
 
-    Returns post-commit callables (an admin failure alert on a newly failed
-    payout) so the notification only fires once the status change is durable.
+    Args:
+        db: Session inside the webhook's transaction.
+        event: The verified Stripe event.
+
+    Returns:
+        Tuple of (payout or None for an unknown transfer, transfer id).
+
+    Raises:
+        WebhookProcessingError: If the event carries no transfer id.
     """
     transfer_id = _event_object_id(event)
     if transfer_id is None:
@@ -961,10 +1072,63 @@ async def _handle_transfer_event(
     payout = await db.scalar(select(Payout).where(Payout.provider_ref == transfer_id))
     if payout is None:
         payout = await _payout_from_metadata(db, event)
-        if payout is None:
-            return []
-        if payout.provider_ref is None:
+        if payout is not None and payout.provider_ref is None:
             payout.provider_ref = transfer_id
+    return payout, transfer_id
+
+
+async def _handle_transfer_created(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> None:
+    """Confirm a payout's transfer exists without claiming it has settled.
+
+    A Stripe transfer moves money from the platform balance into the connected
+    account's Stripe balance — it is not a bank settlement. Completion belongs
+    to `payout.paid` on the connected account; this handler only backfills the
+    transfer reference and records the step on the payout's timeline.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: The verified Stripe event.
+    """
+    payout, transfer_id = await _payout_for_transfer(db, event)
+    if payout is None:
+        return
+    previous_status = payout.status
+    # The worker sets `processing` when it creates the transfer, but the event
+    # can beat that commit, so treat the transfer's existence as authoritative.
+    payout.status = "processing"
+    await record_financial_event(
+        db,
+        entity_type="payout",
+        entity_id=payout.id,
+        event_type="payout_transfer_created",
+        from_status=previous_status,
+        to_status="processing",
+        amount=payout.amount,
+        currency=payout.currency,
+        provider="stripe",
+        provider_ref=transfer_id,
+        actor_id=payout.contributor_id,
+    )
+
+
+async def _handle_transfer_event(
+    db: AsyncSession,
+    event: dict[str, Any],
+    *,
+    payout_status: str,
+) -> list[Callable[[], None]]:
+    """Apply a terminal Stripe transfer status to an existing payout row.
+
+    Unknown transfers no-op. Returns post-commit callables (an admin failure
+    alert on a newly failed payout) so the notification only fires once the
+    status change is durable.
+    """
+    payout, transfer_id = await _payout_for_transfer(db, event)
+    if payout is None:
+        return []
     if payout.status == payout_status:
         return []
     previous_status = payout.status
@@ -1069,12 +1233,16 @@ async def _dispatch_verified_event(
         await _handle_account_updated(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
+    if event_type == "payout.paid":
+        await _handle_connected_payout_paid(db, event)
+        await _mark_event_status(db, event_id=event_id, status_="processed")
+        return "processed", None, []
     if event_type == "payout.failed":
         payout_notifications = await _handle_connected_payout_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, payout_notifications
     if event_type == "transfer.created":
-        await _handle_transfer_event(db, event, payout_status="completed")
+        await _handle_transfer_created(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
     if event_type == "transfer.reversed":

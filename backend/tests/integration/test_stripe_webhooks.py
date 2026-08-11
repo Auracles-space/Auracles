@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -1705,18 +1705,18 @@ def transfer_event(
     }
 
 
-async def test_stripe_transfer_created_completes_payout(
+async def test_stripe_transfer_created_leaves_payout_in_flight(
     client: AsyncClient,
     webhook_context: dict[str, Any],
 ) -> None:
-    """A verified transfer.created webhook marks the payout completed once.
+    """transfer.created confirms the transfer exists; it does not settle it.
 
-    Stripe Connect transfers emit transfer.created, never transfer.paid, so the
-    payout settlement path keys off the real event.
+    The transfer moves money into the contributor's Stripe balance, not their
+    bank. Marking the payout `completed` here tells a contributor they have
+    been paid before their bank has seen anything, and hides the later
+    `payout.failed` that strands the funds.
     """
-    payout_id, contributor_id = await create_processing_payout(
-        provider_ref="tr_webhook_payout_123"
-    )
+    payout_id, _ = await create_processing_payout(provider_ref="tr_webhook_payout_123")
     webhook_context["event"] = transfer_event(
         "evt_transfer_created",
         "transfer.created",
@@ -1731,18 +1731,20 @@ async def test_stripe_transfer_created_completes_payout(
 
     async with async_session_factory() as session:
         payout = await session.get(Payout, payout_id)
-        audit = await session.scalar(
-            select(AuditLog).where(AuditLog.action == "payout_completed")
+        ledger_event = await session.scalar(
+            select(FinancialEvent).where(FinancialEvent.entity_id == payout_id)
         )
 
     assert response.status_code == 200
     assert response.json() == {"received": True, "status": "processed"}
     assert payout is not None
-    assert payout.status == "completed"
-    assert payout.completed_at is not None
-    assert audit is not None
-    assert audit.target_id == payout_id
-    assert audit.actor_id == contributor_id
+    assert payout.status == "processing"
+    assert payout.completed_at is None
+    # The transfer still belongs on the timeline — it is the step that moved
+    # money off the platform balance.
+    assert ledger_event is not None
+    assert ledger_event.event_type == "payout_transfer_created"
+    assert ledger_event.to_status == "processing"
 
 
 async def test_stripe_transfer_reversed_fails_payout(
@@ -1839,7 +1841,7 @@ async def test_stripe_transfer_created_matches_by_metadata_when_ref_missing(
     assert response.status_code == 200
     assert response.json() == {"received": True, "status": "processed"}
     assert payout is not None
-    assert payout.status == "completed"
+    assert payout.status == "processing"
     assert payout.provider_ref == "tr_webhook_payout_789"
 
 
@@ -2071,6 +2073,196 @@ async def test_connected_payout_failed_for_unknown_account_is_not_an_error(
         "account": "acct_not_ours",
         "data": {"object": {"id": "po_456", "failure_code": "account_closed"}},
     }
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        ledger_event = await session.scalar(select(FinancialEvent))
+
+    assert response.status_code == 200
+    assert ledger_event is None
+
+
+async def create_connected_payout_with_in_flight_payout(
+    account_id: str,
+    *,
+    initiated_at: datetime,
+) -> tuple[UUID, UUID]:
+    """Seed a connected account holding one in-flight (processing) payout.
+
+    Args:
+        account_id: Stripe connected account id, e.g. `acct_123`.
+        initiated_at: When the payout's transfer was created. The settlement
+            handler uses this to decide whether a bank payout could have
+            included it.
+
+    Returns:
+        Tuple of (payout_id, contributor_id).
+    """
+    contributor_id = await create_user_with_roles(
+        "connected-payout-contributor@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            account = PayoutAccount(
+                user_id=contributor_id,
+                provider="stripe",
+                provider_account_id=account_id,
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    account_id
+                ),
+                account_type="express",
+            )
+            session.add(account)
+            await session.flush()
+            payout = Payout(
+                contributor_id=contributor_id,
+                payout_account_id=account.id,
+                amount=Decimal("100.00"),
+                currency="USD",
+                commission_deducted=Decimal("15.00"),
+                net_amount=Decimal("85.00"),
+                status="processing",
+                provider_ref="tr_settled_by_bank",
+                initiated_at=initiated_at,
+            )
+            session.add(payout)
+            await session.flush()
+            return payout.id, contributor_id
+
+
+def connected_payout_event(
+    event_id: str,
+    event_type: str,
+    *,
+    account_id: str,
+    payout_id: str,
+    created: datetime,
+    failure_code: str | None = None,
+) -> dict[str, Any]:
+    """Build a Stripe connected-account payout webhook event payload."""
+    payout_object: dict[str, Any] = {
+        "id": payout_id,
+        "created": int(created.timestamp()),
+    }
+    if failure_code is not None:
+        payout_object["failure_code"] = failure_code
+    return {
+        "id": event_id,
+        "type": event_type,
+        "account": account_id,
+        "data": {"object": payout_object},
+    }
+
+
+async def test_connected_payout_paid_completes_in_flight_payouts(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """`payout.paid` is the event that means the contributor's bank was funded.
+
+    It is the only signal on this path that money left the payment provider,
+    so it — not `transfer.created` — is what marks a payout completed.
+    """
+    initiated_at = datetime.now(UTC) - timedelta(hours=2)
+    payout_id, contributor_id = await create_connected_payout_with_in_flight_payout(
+        "acct_connected_paid",
+        initiated_at=initiated_at,
+    )
+    webhook_context["event"] = connected_payout_event(
+        "evt_connected_payout_paid",
+        "payout.paid",
+        account_id="acct_connected_paid",
+        payout_id="po_paid_1",
+        created=datetime.now(UTC),
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.get(Payout, payout_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "payout_completed")
+        )
+        ledger_event = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == payout_id,
+                FinancialEvent.event_type == "payout_completed",
+            )
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
+    assert payout is not None
+    assert payout.status == "completed"
+    assert payout.completed_at is not None
+    assert audit is not None
+    assert audit.target_id == payout_id
+    assert audit.actor_id == contributor_id
+    assert ledger_event is not None
+    assert ledger_event.from_status == "processing"
+    assert ledger_event.to_status == "completed"
+    assert ledger_event.provider_ref == "po_paid_1"
+
+
+async def test_connected_payout_paid_skips_payouts_initiated_after_it(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A bank payout cannot have carried a transfer created after it started.
+
+    Without this bound, a transfer made minutes after the bank payout left
+    would be marked paid on the strength of someone else's settlement.
+    """
+    bank_payout_created = datetime.now(UTC) - timedelta(hours=1)
+    payout_id, _ = await create_connected_payout_with_in_flight_payout(
+        "acct_connected_late",
+        initiated_at=datetime.now(UTC),
+    )
+    webhook_context["event"] = connected_payout_event(
+        "evt_connected_payout_paid_late",
+        "payout.paid",
+        account_id="acct_connected_late",
+        payout_id="po_paid_2",
+        created=bank_payout_created,
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.get(Payout, payout_id)
+
+    assert response.status_code == 200
+    assert payout is not None
+    assert payout.status == "processing"
+    assert payout.completed_at is None
+
+
+async def test_connected_payout_paid_for_unknown_account_is_not_an_error(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """Stripe delivers connected-account events for accounts we do not own."""
+    webhook_context["event"] = connected_payout_event(
+        "evt_unknown_account_payout_paid",
+        "payout.paid",
+        account_id="acct_not_ours",
+        payout_id="po_paid_3",
+        created=datetime.now(UTC),
+    )
 
     response = await client.post(
         "/v1/webhooks/stripe",
