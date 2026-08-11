@@ -18,7 +18,6 @@ from uuid import UUID
 from jinja2 import Environment
 from sqlalchemy import Row, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from weasyprint import HTML  # type: ignore[import-untyped]
 
 from app.core.database import async_session_factory
 from app.modules.attestation.models import Attestation
@@ -246,6 +245,10 @@ def render_annual_summary_pdf(
     totals: dict[str, str | int],
 ) -> bytes:
     """Render one annual-summary PDF."""
+    # Call-time import — see the note in `invoicing/render.py`. WeasyPrint's
+    # native dependencies must not gate importing this module.
+    from weasyprint import HTML  # type: ignore[import-untyped]
+
     html = _ANNUAL_TEMPLATE.render(
         attestor_name=attestor_name,
         year=year,

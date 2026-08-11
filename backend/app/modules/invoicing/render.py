@@ -11,7 +11,6 @@ from decimal import Decimal
 from typing import Final
 
 from jinja2 import Environment
-from weasyprint import HTML  # type: ignore[import-untyped]
 
 from app.modules.invoicing.models import Invoice
 from app.modules.invoicing.service import DOC_EARNINGS_STATEMENT, DOC_SALES_INVOICE
@@ -193,6 +192,13 @@ def _percent(value: Decimal | None) -> str:
 
 def render_invoice_pdf(invoice: Invoice, *, line_item_label: str) -> bytes:
     """Render one invoice or earnings statement PDF from a frozen row."""
+    # Imported at call time, not module scope: WeasyPrint dlopens pango/glib on
+    # import, and this module is reachable from the API's import graph even
+    # though only the Celery worker ever renders a PDF. A module-scope import
+    # would make the API refuse to boot wherever those native libraries are
+    # absent (any machine that is not the worker image).
+    from weasyprint import HTML  # type: ignore[import-untyped]
+
     base_context = {
         "invoice_number": invoice.invoice_number,
         "issue_date": invoice.issue_date.date().isoformat(),

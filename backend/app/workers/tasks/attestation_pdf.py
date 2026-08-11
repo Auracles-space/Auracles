@@ -10,7 +10,6 @@ from jinja2 import Environment
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.orm import aliased
-from weasyprint import HTML  # type: ignore[import-untyped]
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory
@@ -315,6 +314,10 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
 
 async def _render_attestation_report_pdf(attestation_id: str) -> tuple[str, bytes]:
     """Render an Attestation report PDF and return its S3 key plus bytes."""
+    # Call-time import — see the note in `invoicing/render.py`. WeasyPrint's
+    # native dependencies must not gate importing this module.
+    from weasyprint import HTML  # type: ignore[import-untyped]
+
     context = await _build_report_context(attestation_id)
     html = _build_report_html(context)
     pdf_bytes = HTML(string=html).write_pdf()
