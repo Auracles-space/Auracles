@@ -539,3 +539,158 @@ class AdminInvoicesResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class AdminTransactionItem(BaseModel):
+    """One transaction row for read-only admin financial oversight.
+
+    Carries `failure_reason_code` from the newest ledger event so a failed
+    payment is triageable from the list: `status` alone records only that it
+    failed, never why.
+    """
+
+    transaction_id: UUID
+    transaction_type: str
+    status: str
+    amount: str
+    currency: str
+    platform_commission: str
+    net_amount: str
+    provider: Literal["stripe", "paystack"] | None
+    provider_ref: str | None
+    payer_id: UUID | None
+    payer_org_id: UUID | None
+    payee_id: UUID | None
+    payee_org_id: UUID | None
+    ref_type: str | None
+    ref_id: UUID | None
+    failure_reason_code: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminTransactionDirectoryResponse(BaseModel):
+    """Paginated transaction directory for admin financial oversight."""
+
+    items: list[AdminTransactionItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
+class AdminFinancialEventItem(BaseModel):
+    """One immutable money state change from the financial ledger.
+
+    `reason_code` is the provider-neutral cause; the raw provider code stays in
+    `metadata`, which the ledger writer strips of sensitive keys before storing.
+    """
+
+    event_id: UUID
+    entity_type: str
+    entity_id: UUID
+    event_type: str
+    from_status: str | None
+    to_status: str | None
+    amount: str | None
+    currency: str | None
+    provider: Literal["stripe", "paystack"] | None
+    provider_ref: str | None
+    reason_code: str | None
+    reason_message: str | None
+    actor_id: UUID | None
+    occurred_at: datetime
+    metadata: dict[str, Any]
+
+
+class AdminFinancialEventsResponse(BaseModel):
+    """Paginated financial ledger feed for admin oversight."""
+
+    items: list[AdminFinancialEventItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
+class AdminEscrowItem(BaseModel):
+    """One escrow holding for admin financial oversight."""
+
+    escrow_id: UUID
+    transaction_id: UUID
+    ref_type: str
+    ref_id: UUID
+    amount: str
+    currency: str
+    status: Literal["held", "released", "refunded"]
+    held_at: datetime
+    released_at: datetime | None
+    released_by: UUID | None
+
+
+class AdminTransactionDetailResponse(BaseModel):
+    """One payment with its escrow holdings and full ledger timeline.
+
+    The timeline is ordered oldest-first because it is read as a history: the
+    status column keeps only the final value, so intermediate transitions exist
+    nowhere else.
+    """
+
+    transaction: AdminTransactionItem
+    escrows: list[AdminEscrowItem]
+    timeline: list[AdminFinancialEventItem]
+
+
+class AdminEscrowDirectoryResponse(BaseModel):
+    """Paginated escrow directory for admin financial oversight."""
+
+    items: list[AdminEscrowItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
+class AdminWebhookEventItem(BaseModel):
+    """One provider webhook delivery for admin oversight.
+
+    Exposes the stored `error`, which the ingest path writes on every failed
+    delivery. The raw provider payload is never stored, only its hash, so a
+    signed body cannot leak through this view.
+    """
+
+    event_id: UUID
+    provider: Literal["stripe", "paystack"]
+    provider_event_id: str
+    event_type: str
+    status: Literal["received", "processed", "failed"]
+    error: str | None
+    received_at: datetime
+    processed_at: datetime | None
+
+
+class AdminWebhookEventsResponse(BaseModel):
+    """Paginated webhook delivery log for admin oversight."""
+
+    items: list[AdminWebhookEventItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
+class AdminAuditLogItem(BaseModel):
+    """One audit log entry for the admin oversight view."""
+
+    log_id: UUID
+    actor_id: UUID | None
+    action: str
+    target_type: str
+    target_id: UUID | None
+    metadata: dict[str, Any]
+    created_at: datetime
+
+
+class AdminAuditLogsResponse(BaseModel):
+    """Paginated audit log view for admin oversight."""
+
+    items: list[AdminAuditLogItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)

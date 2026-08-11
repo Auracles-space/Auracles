@@ -15,15 +15,18 @@ from app.core.redis import get_redis
 from app.modules.admin import service
 from app.modules.admin.schemas import (
     AdminAnalyticsDashboardResponse,
+    AdminAuditLogsResponse,
     AdminConfigItem,
     AdminConfigPatchRequest,
     AdminConfigResponse,
     AdminConnectorsResponse,
     AdminDeletionRequestsResponse,
     AdminDisputeResolveRequest,
+    AdminEscrowDirectoryResponse,
     AdminEscrowOverrideRequest,
     AdminEscrowResponse,
     AdminExportRequestsResponse,
+    AdminFinancialEventsResponse,
     AdminFrameworkDirectoryResponse,
     AdminFrameworkStatusResponse,
     AdminFrameworkSuspendRequest,
@@ -40,11 +43,14 @@ from app.modules.admin.schemas import (
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
     AdminSuspendedFrameworksResponse,
+    AdminTransactionDetailResponse,
+    AdminTransactionDirectoryResponse,
     AdminUserDirectoryResponse,
     AdminUserSuspendRequest,
     AdminUserSuspensionResponse,
     AdminUserUnsuspendRequest,
     AdminWaitlistResponse,
+    AdminWebhookEventsResponse,
 )
 from app.modules.attestation import credential_service
 from app.modules.attestation.schemas import (
@@ -881,3 +887,210 @@ async def resolve_project_dispute(
         totp_code=payload.totp_code,
     )
     return DisputeResponse.model_validate(dispute)
+
+
+@router.get(
+    "/transactions",
+    response_model=AdminTransactionDirectoryResponse,
+    summary="List transactions for admin financial oversight",
+    description=(
+        "Return a paginated, read-only transaction directory with status, "
+        "provider, and exact provider-reference filters. Each row carries the "
+        "newest normalized failure cause from the financial ledger, so a "
+        "failed payment can be triaged without opening it."
+    ),
+)
+async def list_admin_transactions(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        str,
+        Query(alias="status", pattern="^(all|pending|completed|failed|refunded)$"),
+    ] = "all",
+    provider_filter: Annotated[
+        str,
+        Query(alias="provider", pattern="^(all|stripe|paystack)$"),
+    ] = "all",
+    provider_ref: Annotated[
+        str | None,
+        Query(
+            max_length=255,
+            description="Exact provider charge or transfer reference.",
+        ),
+    ] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminTransactionDirectoryResponse:
+    """Return the admin transaction oversight directory."""
+    del admin
+    transactions = await service.list_admin_transactions(
+        db=db,
+        status_filter=status_filter,
+        provider_filter=provider_filter,
+        provider_ref=provider_ref,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminTransactionDirectoryResponse.model_validate(transactions)
+
+
+@router.get(
+    "/transactions/{transaction_id}",
+    response_model=AdminTransactionDetailResponse,
+    summary="Trace one payment end to end",
+    description=(
+        "Return one transaction with its escrow holdings and its full ledger "
+        "timeline, oldest first. The timeline is the only place intermediate "
+        "states survive: the status column keeps just the final value."
+    ),
+)
+async def get_admin_transaction_detail(
+    transaction_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminTransactionDetailResponse:
+    """Return one payment's escrow holdings and ledger timeline."""
+    del admin
+    detail = await service.get_admin_transaction_detail(
+        db=db,
+        transaction_id=transaction_id,
+    )
+    return AdminTransactionDetailResponse.model_validate(detail)
+
+
+@router.get(
+    "/financial-events",
+    response_model=AdminFinancialEventsResponse,
+    summary="Read the financial ledger feed",
+    description=(
+        "Return the append-only financial ledger, newest first, filterable by "
+        "entity type, event type, normalized failure cause, and provider. The "
+        "failure vocabulary is provider-neutral, so one cause filter matches "
+        "both Stripe and Paystack."
+    ),
+)
+async def list_admin_financial_events(
+    admin: AdminUser,
+    db: DatabaseSession,
+    entity_type: Annotated[str | None, Query(max_length=50)] = None,
+    event_type: Annotated[str | None, Query(max_length=100)] = None,
+    reason_code: Annotated[str | None, Query(max_length=100)] = None,
+    provider_filter: Annotated[
+        str,
+        Query(alias="provider", pattern="^(all|stripe|paystack)$"),
+    ] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminFinancialEventsResponse:
+    """Return the admin financial ledger feed."""
+    del admin
+    events = await service.list_admin_financial_events(
+        db=db,
+        entity_type=entity_type,
+        event_type=event_type,
+        reason_code=reason_code,
+        provider_filter=provider_filter,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminFinancialEventsResponse.model_validate(events)
+
+
+@router.get(
+    "/escrows",
+    response_model=AdminEscrowDirectoryResponse,
+    summary="List escrow holdings for admin financial oversight",
+    description=(
+        "Return a paginated, read-only escrow directory. Releases and refunds "
+        "remain on their own explicit, audited endpoints."
+    ),
+)
+async def list_admin_escrows(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        str,
+        Query(alias="status", pattern="^(all|held|released|refunded)$"),
+    ] = "all",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminEscrowDirectoryResponse:
+    """Return the admin escrow oversight directory."""
+    del admin
+    escrows = await service.list_admin_escrows(
+        db=db,
+        status_filter=status_filter,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminEscrowDirectoryResponse.model_validate(escrows)
+
+
+@router.get(
+    "/webhook-events",
+    response_model=AdminWebhookEventsResponse,
+    summary="Read the provider webhook delivery log",
+    description=(
+        "Return stored provider webhook deliveries, newest first, including "
+        "the error recorded when an event failed to apply. Only the payload "
+        "hash is stored, so no signed provider body is exposed."
+    ),
+)
+async def list_admin_webhook_events(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_filter: Annotated[
+        str,
+        Query(alias="status", pattern="^(all|received|processed|failed)$"),
+    ] = "all",
+    provider_filter: Annotated[
+        str,
+        Query(alias="provider", pattern="^(all|stripe|paystack)$"),
+    ] = "all",
+    event_type: Annotated[str | None, Query(max_length=100)] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminWebhookEventsResponse:
+    """Return the admin webhook delivery log."""
+    del admin
+    events = await service.list_admin_webhook_events(
+        db=db,
+        status_filter=status_filter,
+        provider_filter=provider_filter,
+        event_type=event_type,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminWebhookEventsResponse.model_validate(events)
+
+
+@router.get(
+    "/audit-logs",
+    response_model=AdminAuditLogsResponse,
+    summary="Read the audit log",
+    description=(
+        "Return audit entries, newest first, filterable by action, target "
+        "type, and actor. Complements the financial ledger: the ledger answers "
+        "what happened to a payment, this answers who acted."
+    ),
+)
+async def list_admin_audit_logs(
+    admin: AdminUser,
+    db: DatabaseSession,
+    action: Annotated[str | None, Query(max_length=100)] = None,
+    target_type: Annotated[str | None, Query(max_length=100)] = None,
+    actor_id: Annotated[UUID | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> AdminAuditLogsResponse:
+    """Return the admin audit log view."""
+    del admin
+    logs = await service.list_admin_audit_logs(
+        db=db,
+        action=action,
+        target_type=target_type,
+        actor_id=actor_id,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminAuditLogsResponse.model_validate(logs)

@@ -32,6 +32,7 @@ from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials import escrow_service
 from app.modules.financials.models import (
     Escrow,
+    FinancialEvent,
     Payout,
     PayoutAccount,
     PlatformConfig,
@@ -55,6 +56,7 @@ from app.modules.notifications.service import create_notification
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
 from app.modules.waitlist.models import WaitlistEntry
+from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks.processing.minhash_index import (
     index_framework_artifacts,
@@ -2712,3 +2714,515 @@ async def recompute_reputation_subject(
             metadata={"reason": reason},
         )
     recompute_subject_task.delay(subject_type, str(subject_id))
+
+
+ADMIN_TRANSACTION_STATUSES = (
+    "all",
+    "pending",
+    "completed",
+    "failed",
+    "refunded",
+)
+ADMIN_PROVIDERS = ("all", "stripe", "paystack")
+ADMIN_ESCROW_STATUSES = ("all", "held", "released", "refunded")
+ADMIN_WEBHOOK_STATUSES = ("all", "received", "processed", "failed")
+
+
+def _reject_unsupported(value: str, allowed: tuple[str, ...], label: str) -> None:
+    """Reject a filter value outside its allowed set.
+
+    Args:
+        value: Requested filter value.
+        allowed: Permitted values, including the ``all`` sentinel.
+        label: Human-readable filter name used in the error detail.
+
+    Raises:
+        HTTPException(422): If the value is not permitted.
+    """
+    if value not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported {label} filter.",
+        )
+
+
+def _financial_event_item(event: FinancialEvent) -> dict[str, Any]:
+    """Map a ledger row to the admin financial event shape."""
+    return {
+        "event_id": event.id,
+        "entity_type": event.entity_type,
+        "entity_id": event.entity_id,
+        "event_type": event.event_type,
+        "from_status": event.from_status,
+        "to_status": event.to_status,
+        "amount": None if event.amount is None else str(event.amount),
+        "currency": event.currency,
+        "provider": event.provider,
+        "provider_ref": event.provider_ref,
+        "reason_code": event.reason_code,
+        "reason_message": event.reason_message,
+        "actor_id": event.actor_id,
+        "occurred_at": event.occurred_at,
+        "metadata": event.metadata_,
+    }
+
+
+def _transaction_item(
+    transaction: Transaction,
+    *,
+    failure_reason_code: str | None,
+) -> dict[str, Any]:
+    """Map a transaction row to the admin directory shape."""
+    return {
+        "transaction_id": transaction.id,
+        "transaction_type": transaction.transaction_type,
+        "status": transaction.status,
+        "amount": str(transaction.amount),
+        "currency": transaction.currency,
+        "platform_commission": str(transaction.platform_commission),
+        "net_amount": str(transaction.net_amount),
+        "provider": transaction.provider,
+        "provider_ref": transaction.provider_ref,
+        "payer_id": transaction.payer_id,
+        "payer_org_id": transaction.payer_org_id,
+        "payee_id": transaction.payee_id,
+        "payee_org_id": transaction.payee_org_id,
+        "ref_type": transaction.ref_type,
+        "ref_id": transaction.ref_id,
+        "failure_reason_code": failure_reason_code,
+        "created_at": transaction.created_at,
+        "updated_at": transaction.updated_at,
+    }
+
+
+def _escrow_item(escrow: Escrow) -> dict[str, Any]:
+    """Map an escrow row to the admin directory shape."""
+    return {
+        "escrow_id": escrow.id,
+        "transaction_id": escrow.transaction_id,
+        "ref_type": escrow.ref_type,
+        "ref_id": escrow.ref_id,
+        "amount": str(escrow.amount),
+        "currency": escrow.currency,
+        "status": escrow.status,
+        "held_at": escrow.held_at,
+        "released_at": escrow.released_at,
+        "released_by": escrow.released_by,
+    }
+
+
+async def _latest_failure_reasons(
+    db: AsyncSession,
+    transaction_ids: Sequence[UUID],
+) -> dict[UUID, str]:
+    """Return the newest ledger failure reason per transaction.
+
+    Resolved in one grouped query over the page's ids rather than per row, so
+    the directory stays a single round trip regardless of page size.
+
+    Args:
+        db: Async database session.
+        transaction_ids: Transaction ids on the current page.
+
+    Returns:
+        Mapping of transaction id to its most recent non-null `reason_code`.
+    """
+    if not transaction_ids:
+        return {}
+    newest = (
+        select(
+            FinancialEvent.entity_id.label("entity_id"),
+            func.max(FinancialEvent.occurred_at).label("occurred_at"),
+        )
+        .where(
+            FinancialEvent.entity_type == "transaction",
+            FinancialEvent.entity_id.in_(transaction_ids),
+            FinancialEvent.reason_code.is_not(None),
+        )
+        .group_by(FinancialEvent.entity_id)
+        .subquery()
+    )
+    rows = await db.execute(
+        select(FinancialEvent.entity_id, FinancialEvent.reason_code).join(
+            newest,
+            (FinancialEvent.entity_id == newest.c.entity_id)
+            & (FinancialEvent.occurred_at == newest.c.occurred_at),
+        )
+    )
+    return {
+        entity_id: reason_code
+        for entity_id, reason_code in rows.all()
+        if reason_code is not None
+    }
+
+
+async def list_admin_transactions(
+    db: AsyncSession,
+    *,
+    status_filter: str,
+    provider_filter: str,
+    provider_ref: str | None,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, read-only transaction directory for admin oversight.
+
+    Each row carries the newest normalized failure reason from the financial
+    ledger, so a failed payment can be triaged from the list instead of opening
+    it: `transactions.status` records that a payment failed but never why.
+
+    Args:
+        db: Async database session.
+        status_filter: One of ``ADMIN_TRANSACTION_STATUSES``.
+        provider_filter: One of ``ADMIN_PROVIDERS``.
+        provider_ref: Exact provider charge/transfer reference to match, for
+            reconciliation against a provider dashboard.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If a filter value is unsupported.
+    """
+    _reject_unsupported(status_filter, ADMIN_TRANSACTION_STATUSES, "transaction status")
+    _reject_unsupported(provider_filter, ADMIN_PROVIDERS, "provider")
+
+    filters: list[ColumnElement[bool]] = []
+    if status_filter != "all":
+        filters.append(Transaction.status == status_filter)
+    if provider_filter != "all":
+        filters.append(Transaction.provider == provider_filter)
+    if provider_ref:
+        filters.append(Transaction.provider_ref == provider_ref)
+
+    total = await db.scalar(
+        select(func.count()).select_from(Transaction).where(*filters)
+    )
+    transactions = (
+        await db.scalars(
+            select(Transaction)
+            .where(*filters)
+            .order_by(desc(Transaction.created_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+    reasons = await _latest_failure_reasons(db, [row.id for row in transactions])
+
+    return {
+        "items": [
+            _transaction_item(row, failure_reason_code=reasons.get(row.id))
+            for row in transactions
+        ],
+        "total": total or 0,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def get_admin_transaction_detail(
+    db: AsyncSession,
+    *,
+    transaction_id: UUID,
+) -> dict[str, object]:
+    """Return one payment with its escrow holdings and full ledger timeline.
+
+    The timeline is the trace the ledger exists for: an indexed lookup of every
+    recorded state change for this payment, oldest first.
+
+    Args:
+        db: Async database session.
+        transaction_id: Transaction to trace.
+
+    Returns:
+        A dict with ``transaction``, ``escrows``, and ``timeline``.
+
+    Raises:
+        HTTPException(404): If no such transaction exists.
+    """
+    transaction = await db.get(Transaction, transaction_id)
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found.",
+        )
+
+    escrows = (
+        await db.scalars(
+            select(Escrow)
+            .where(Escrow.transaction_id == transaction_id)
+            .order_by(Escrow.held_at)
+        )
+    ).all()
+    timeline = (
+        await db.scalars(
+            select(FinancialEvent)
+            .where(
+                FinancialEvent.entity_type == "transaction",
+                FinancialEvent.entity_id == transaction_id,
+            )
+            .order_by(FinancialEvent.occurred_at)
+        )
+    ).all()
+    reasons = await _latest_failure_reasons(db, [transaction_id])
+
+    return {
+        "transaction": _transaction_item(
+            transaction,
+            failure_reason_code=reasons.get(transaction_id),
+        ),
+        "escrows": [_escrow_item(escrow) for escrow in escrows],
+        "timeline": [_financial_event_item(event) for event in timeline],
+    }
+
+
+async def list_admin_financial_events(
+    db: AsyncSession,
+    *,
+    entity_type: str | None,
+    event_type: str | None,
+    reason_code: str | None,
+    provider_filter: str,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated financial ledger feed for admin oversight.
+
+    Filtering by `reason_code` is provider-neutral by construction: the ledger
+    stores one normalized failure vocabulary, so a Paystack decline and a
+    Stripe decline answer the same query.
+
+    Args:
+        db: Async database session.
+        entity_type: Restrict to one money object type, or None for all.
+        event_type: Restrict to one event name, or None for all.
+        reason_code: Restrict to one normalized failure cause, or None.
+        provider_filter: One of ``ADMIN_PROVIDERS``.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If a filter value is unsupported.
+    """
+    _reject_unsupported(provider_filter, ADMIN_PROVIDERS, "provider")
+
+    filters: list[ColumnElement[bool]] = []
+    if entity_type:
+        filters.append(FinancialEvent.entity_type == entity_type)
+    if event_type:
+        filters.append(FinancialEvent.event_type == event_type)
+    if reason_code:
+        filters.append(FinancialEvent.reason_code == reason_code)
+    if provider_filter != "all":
+        filters.append(FinancialEvent.provider == provider_filter)
+
+    total = await db.scalar(
+        select(func.count()).select_from(FinancialEvent).where(*filters)
+    )
+    events = (
+        await db.scalars(
+            select(FinancialEvent)
+            .where(*filters)
+            .order_by(desc(FinancialEvent.occurred_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+
+    return {
+        "items": [_financial_event_item(event) for event in events],
+        "total": total or 0,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_escrows(
+    db: AsyncSession,
+    *,
+    status_filter: str,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated escrow directory for admin oversight.
+
+    Read-only: escrow state is never changed here. Releases and refunds stay on
+    their own explicit, audited endpoints.
+
+    Args:
+        db: Async database session.
+        status_filter: One of ``ADMIN_ESCROW_STATUSES``.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If the status filter is unsupported.
+    """
+    _reject_unsupported(status_filter, ADMIN_ESCROW_STATUSES, "escrow status")
+
+    filters: list[ColumnElement[bool]] = []
+    if status_filter != "all":
+        filters.append(Escrow.status == status_filter)
+
+    total = await db.scalar(select(func.count()).select_from(Escrow).where(*filters))
+    escrows = (
+        await db.scalars(
+            select(Escrow)
+            .where(*filters)
+            .order_by(desc(Escrow.held_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+
+    return {
+        "items": [_escrow_item(escrow) for escrow in escrows],
+        "total": total or 0,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_webhook_events(
+    db: AsyncSession,
+    *,
+    status_filter: str,
+    provider_filter: str,
+    event_type: str | None,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated provider webhook delivery log for admin oversight.
+
+    Surfaces the stored `error`, written on every failed delivery and until now
+    read by nothing: a provider event that never applied left no trace an admin
+    could find. Only the payload hash is stored, so no signed body is exposed.
+
+    Args:
+        db: Async database session.
+        status_filter: One of ``ADMIN_WEBHOOK_STATUSES``.
+        provider_filter: One of ``ADMIN_PROVIDERS``.
+        event_type: Restrict to one provider event name, or None for all.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+
+    Raises:
+        HTTPException(422): If a filter value is unsupported.
+    """
+    _reject_unsupported(status_filter, ADMIN_WEBHOOK_STATUSES, "webhook status")
+    _reject_unsupported(provider_filter, ADMIN_PROVIDERS, "provider")
+
+    filters: list[ColumnElement[bool]] = []
+    if status_filter != "all":
+        filters.append(WebhookEvent.status == status_filter)
+    if provider_filter != "all":
+        filters.append(WebhookEvent.provider == provider_filter)
+    if event_type:
+        filters.append(WebhookEvent.event_type == event_type)
+
+    total = await db.scalar(
+        select(func.count()).select_from(WebhookEvent).where(*filters)
+    )
+    events = (
+        await db.scalars(
+            select(WebhookEvent)
+            .where(*filters)
+            .order_by(desc(WebhookEvent.received_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+
+    return {
+        "items": [
+            {
+                "event_id": event.id,
+                "provider": event.provider,
+                "provider_event_id": event.provider_event_id,
+                "event_type": event.event_type,
+                "status": event.status,
+                "error": event.error,
+                "received_at": event.received_at,
+                "processed_at": event.processed_at,
+            }
+            for event in events
+        ],
+        "total": total or 0,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+async def list_admin_audit_logs(
+    db: AsyncSession,
+    *,
+    action: str | None,
+    target_type: str | None,
+    actor_id: UUID | None,
+    page: int,
+    page_size: int,
+) -> dict[str, object]:
+    """Return a paginated, filtered audit log view for admin oversight.
+
+    Complements the financial ledger rather than duplicating it: the ledger
+    answers "what happened to this payment", the audit log answers "who did
+    this, from where".
+
+    Args:
+        db: Async database session.
+        action: Restrict to one audited action, or None for all.
+        target_type: Restrict to one target type, or None for all.
+        actor_id: Restrict to one acting user, or None for all.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        A dict with ``items``, ``total``, ``page``, and ``page_size``.
+    """
+    filters: list[ColumnElement[bool]] = []
+    if action:
+        filters.append(AuditLog.action == action)
+    if target_type:
+        filters.append(AuditLog.target_type == target_type)
+    if actor_id:
+        filters.append(AuditLog.actor_id == actor_id)
+
+    total = await db.scalar(select(func.count()).select_from(AuditLog).where(*filters))
+    logs = (
+        await db.scalars(
+            select(AuditLog)
+            .where(*filters)
+            .order_by(desc(AuditLog.created_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+
+    return {
+        "items": [
+            {
+                "log_id": log.id,
+                "actor_id": log.actor_id,
+                "action": log.action,
+                "target_type": log.target_type,
+                "target_id": log.target_id,
+                "metadata": log.metadata_,
+                "created_at": log.created_at,
+            }
+            for log in logs
+        ],
+        "total": total or 0,
+        "page": page,
+        "page_size": page_size,
+    }

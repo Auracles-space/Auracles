@@ -179,6 +179,31 @@ export type AdminAttestationRefundRequest = {
 };
 
 /**
+ * One audit log entry for the admin oversight view.
+ */
+export type AdminAuditLogItem = {
+    log_id: string;
+    actor_id: (string | null);
+    action: string;
+    target_type: string;
+    target_id: (string | null);
+    metadata: {
+        [key: string]: unknown;
+    };
+    created_at: string;
+};
+
+/**
+ * Paginated audit log view for admin oversight.
+ */
+export type AdminAuditLogsResponse = {
+    items: Array<AdminAuditLogItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
  * Single platform configuration value visible to administrators.
  */
 export type AdminConfigItem = {
@@ -364,6 +389,34 @@ export type AdminDisputesResponse = {
 };
 
 /**
+ * Paginated escrow directory for admin financial oversight.
+ */
+export type AdminEscrowDirectoryResponse = {
+    items: Array<AdminEscrowItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * One escrow holding for admin financial oversight.
+ */
+export type AdminEscrowItem = {
+    escrow_id: string;
+    transaction_id: string;
+    ref_type: string;
+    ref_id: string;
+    amount: string;
+    currency: string;
+    status: 'held' | 'released' | 'refunded';
+    held_at: string;
+    released_at: (string | null);
+    released_by: (string | null);
+};
+
+export type status2 = 'held' | 'released' | 'refunded';
+
+/**
  * Request body for admin escrow release or refund overrides.
  */
 export type AdminEscrowOverrideRequest = {
@@ -402,13 +455,49 @@ export type AdminExportRequestItem = {
     expires_at: (string | null);
 };
 
-export type status2 = 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
+export type status3 = 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
 
 /**
  * Paginated data-export request queue for admins.
  */
 export type AdminExportRequestsResponse = {
     items: Array<AdminExportRequestItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * One immutable money state change from the financial ledger.
+ *
+ * `reason_code` is the provider-neutral cause; the raw provider code stays in
+ * `metadata`, which the ledger writer strips of sensitive keys before storing.
+ */
+export type AdminFinancialEventItem = {
+    event_id: string;
+    entity_type: string;
+    entity_id: string;
+    event_type: string;
+    from_status: (string | null);
+    to_status: (string | null);
+    amount: (string | null);
+    currency: (string | null);
+    provider: ('stripe' | 'paystack' | null);
+    provider_ref: (string | null);
+    reason_code: (string | null);
+    reason_message: (string | null);
+    actor_id: (string | null);
+    occurred_at: string;
+    metadata: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * Paginated financial ledger feed for admin oversight.
+ */
+export type AdminFinancialEventsResponse = {
+    items: Array<AdminFinancialEventItem>;
     total: number;
     page: number;
     page_size: number;
@@ -490,7 +579,7 @@ export type AdminKycReviewRequest = {
     notes?: (string | null);
 };
 
-export type status3 = 'verified' | 'rejected';
+export type status4 = 'verified' | 'rejected';
 
 /**
  * Response body for an admin identity-verification override.
@@ -634,7 +723,7 @@ export type beneficiary_type = 'contributor' | 'org';
 
 export type provider = 'stripe' | 'paystack';
 
-export type status4 = 'pending' | 'processing' | 'completed' | 'failed';
+export type status5 = 'pending' | 'processing' | 'completed' | 'failed';
 
 /**
  * Request body for overriding a near-duplicate rarity hard block.
@@ -706,6 +795,57 @@ export type AdminSuspendedFrameworkItem = {
  */
 export type AdminSuspendedFrameworksResponse = {
     items: Array<AdminSuspendedFrameworkItem>;
+};
+
+/**
+ * One payment with its escrow holdings and full ledger timeline.
+ *
+ * The timeline is ordered oldest-first because it is read as a history: the
+ * status column keeps only the final value, so intermediate transitions exist
+ * nowhere else.
+ */
+export type AdminTransactionDetailResponse = {
+    transaction: AdminTransactionItem;
+    escrows: Array<AdminEscrowItem>;
+    timeline: Array<AdminFinancialEventItem>;
+};
+
+/**
+ * Paginated transaction directory for admin financial oversight.
+ */
+export type AdminTransactionDirectoryResponse = {
+    items: Array<AdminTransactionItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * One transaction row for read-only admin financial oversight.
+ *
+ * Carries `failure_reason_code` from the newest ledger event so a failed
+ * payment is triageable from the list: `status` alone records only that it
+ * failed, never why.
+ */
+export type AdminTransactionItem = {
+    transaction_id: string;
+    transaction_type: string;
+    status: string;
+    amount: string;
+    currency: string;
+    platform_commission: string;
+    net_amount: string;
+    provider: ('stripe' | 'paystack' | null);
+    provider_ref: (string | null);
+    payer_id: (string | null);
+    payer_org_id: (string | null);
+    payee_id: (string | null);
+    payee_org_id: (string | null);
+    ref_type: (string | null);
+    ref_id: (string | null);
+    failure_reason_code: (string | null);
+    created_at: string;
+    updated_at: string;
 };
 
 /**
@@ -798,6 +938,36 @@ export type AdminWaitlistItem = {
  */
 export type AdminWaitlistResponse = {
     items: Array<AdminWaitlistItem>;
+    total: number;
+    page: number;
+    page_size: number;
+};
+
+/**
+ * One provider webhook delivery for admin oversight.
+ *
+ * Exposes the stored `error`, which the ingest path writes on every failed
+ * delivery. The raw provider payload is never stored, only its hash, so a
+ * signed body cannot leak through this view.
+ */
+export type AdminWebhookEventItem = {
+    event_id: string;
+    provider: 'stripe' | 'paystack';
+    provider_event_id: string;
+    event_type: string;
+    status: 'received' | 'processed' | 'failed';
+    error: (string | null);
+    received_at: string;
+    processed_at: (string | null);
+};
+
+export type status6 = 'received' | 'processed' | 'failed';
+
+/**
+ * Paginated webhook delivery log for admin oversight.
+ */
+export type AdminWebhookEventsResponse = {
+    items: Array<AdminWebhookEventItem>;
     total: number;
     page: number;
     page_size: number;
@@ -1518,7 +1688,7 @@ export type CollectionResponse = {
     updated_at: string;
 };
 
-export type status5 = 'draft' | 'published' | 'unpublished';
+export type status7 = 'draft' | 'published' | 'unpublished';
 
 /**
  * Contributor request body for editing an unpublished Collection.
@@ -2044,7 +2214,7 @@ export type ExploreAttestationBadge = {
     attestation_count?: number;
 };
 
-export type status6 = 'attested' | 'conditionally_attested';
+export type status8 = 'attested' | 'conditionally_attested';
 
 /**
  * Paginated mixed catalog response for Framework and Collection cards.
@@ -2386,7 +2556,7 @@ export type FrameworkListItem = {
     updated_at: string;
 };
 
-export type status7 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+export type status9 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
 
 /**
  * Request body for editing Framework metadata without pricing changes.
@@ -4700,7 +4870,7 @@ export type WebhookIngestResponse = {
     status: 'processed' | 'received' | 'duplicate';
 };
 
-export type status8 = 'processed' | 'received' | 'duplicate';
+export type status10 = 'processed' | 'received' | 'duplicate';
 
 /**
  * Request body for posting a user workspace message.
@@ -5079,6 +5249,88 @@ export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostData
 export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostResponse = (DisputeResponse);
 
 export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostError = (HTTPValidationError);
+
+export type ListAdminTransactionsV1AdminTransactionsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        /**
+         * Exact provider charge or transfer reference.
+         */
+        provider_ref?: (string | null);
+        status?: string;
+    };
+};
+
+export type ListAdminTransactionsV1AdminTransactionsGetResponse = (AdminTransactionDirectoryResponse);
+
+export type ListAdminTransactionsV1AdminTransactionsGetError = (HTTPValidationError);
+
+export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetData = {
+    path: {
+        transaction_id: string;
+    };
+};
+
+export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetResponse = (AdminTransactionDetailResponse);
+
+export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetError = (HTTPValidationError);
+
+export type ListAdminFinancialEventsV1AdminFinancialEventsGetData = {
+    query?: {
+        entity_type?: (string | null);
+        event_type?: (string | null);
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        reason_code?: (string | null);
+    };
+};
+
+export type ListAdminFinancialEventsV1AdminFinancialEventsGetResponse = (AdminFinancialEventsResponse);
+
+export type ListAdminFinancialEventsV1AdminFinancialEventsGetError = (HTTPValidationError);
+
+export type ListAdminEscrowsV1AdminEscrowsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: string;
+    };
+};
+
+export type ListAdminEscrowsV1AdminEscrowsGetResponse = (AdminEscrowDirectoryResponse);
+
+export type ListAdminEscrowsV1AdminEscrowsGetError = (HTTPValidationError);
+
+export type ListAdminWebhookEventsV1AdminWebhookEventsGetData = {
+    query?: {
+        event_type?: (string | null);
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        status?: string;
+    };
+};
+
+export type ListAdminWebhookEventsV1AdminWebhookEventsGetResponse = (AdminWebhookEventsResponse);
+
+export type ListAdminWebhookEventsV1AdminWebhookEventsGetError = (HTTPValidationError);
+
+export type ListAdminAuditLogsV1AdminAuditLogsGetData = {
+    query?: {
+        action?: (string | null);
+        actor_id?: (string | null);
+        page?: number;
+        page_size?: number;
+        target_type?: (string | null);
+    };
+};
+
+export type ListAdminAuditLogsV1AdminAuditLogsGetResponse = (AdminAuditLogsResponse);
+
+export type ListAdminAuditLogsV1AdminAuditLogsGetError = (HTTPValidationError);
 
 export type RequestAttestationV1AttestationsPostData = {
     body: AttestationRequestCreateRequest;

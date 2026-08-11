@@ -1174,6 +1174,371 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/transactions:
+    get:
+      tags:
+      - Admin
+      summary: List transactions for admin financial oversight
+      description: Return a paginated, read-only transaction directory with status,
+        provider, and exact provider-reference filters. Each row carries the newest
+        normalized failure cause from the financial ledger, so a failed payment can
+        be triaged without opening it.
+      operationId: list_admin_transactions_v1_admin_transactions_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|pending|completed|failed|refunded)$
+          default: all
+          title: Status
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|stripe|paystack)$
+          default: all
+          title: Provider
+      - name: provider_ref
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          description: Exact provider charge or transfer reference.
+          title: Provider Ref
+        description: Exact provider charge or transfer reference.
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransactionDirectoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/transactions/{transaction_id}:
+    get:
+      tags:
+      - Admin
+      summary: Trace one payment end to end
+      description: 'Return one transaction with its escrow holdings and its full ledger
+        timeline, oldest first. The timeline is the only place intermediate states
+        survive: the status column keeps just the final value.'
+      operationId: get_admin_transaction_detail_v1_admin_transactions__transaction_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: transaction_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Transaction Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransactionDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/financial-events:
+    get:
+      tags:
+      - Admin
+      summary: Read the financial ledger feed
+      description: Return the append-only financial ledger, newest first, filterable
+        by entity type, event type, normalized failure cause, and provider. The failure
+        vocabulary is provider-neutral, so one cause filter matches both Stripe and
+        Paystack.
+      operationId: list_admin_financial_events_v1_admin_financial_events_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: entity_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 50
+          - type: 'null'
+          title: Entity Type
+      - name: event_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Event Type
+      - name: reason_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Reason Code
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|stripe|paystack)$
+          default: all
+          title: Provider
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminFinancialEventsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/escrows:
+    get:
+      tags:
+      - Admin
+      summary: List escrow holdings for admin financial oversight
+      description: Return a paginated, read-only escrow directory. Releases and refunds
+        remain on their own explicit, audited endpoints.
+      operationId: list_admin_escrows_v1_admin_escrows_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|held|released|refunded)$
+          default: all
+          title: Status
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminEscrowDirectoryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/webhook-events:
+    get:
+      tags:
+      - Admin
+      summary: Read the provider webhook delivery log
+      description: Return stored provider webhook deliveries, newest first, including
+        the error recorded when an event failed to apply. Only the payload hash is
+        stored, so no signed provider body is exposed.
+      operationId: list_admin_webhook_events_v1_admin_webhook_events_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|received|processed|failed)$
+          default: all
+          title: Status
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(all|stripe|paystack)$
+          default: all
+          title: Provider
+      - name: event_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Event Type
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminWebhookEventsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/admin/audit-logs:
+    get:
+      tags:
+      - Admin
+      summary: Read the audit log
+      description: 'Return audit entries, newest first, filterable by action, target
+        type, and actor. Complements the financial ledger: the ledger answers what
+        happened to a payment, this answers who acted.'
+      operationId: list_admin_audit_logs_v1_admin_audit_logs_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: action
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Action
+      - name: target_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 100
+          - type: 'null'
+          title: Target Type
+      - name: actor_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Actor Id
+      - name: page
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          title: Page
+      - name: page_size
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAuditLogsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations:
     post:
       tags:
@@ -13982,6 +14347,76 @@ components:
       - totp_code
       title: AdminAttestationRefundRequest
       description: Admin request body for refunding a needs-admin Attestation.
+    AdminAuditLogItem:
+      properties:
+        log_id:
+          type: string
+          format: uuid
+          title: Log Id
+        actor_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Actor Id
+        action:
+          type: string
+          title: Action
+        target_type:
+          type: string
+          title: Target Type
+        target_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Target Id
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - log_id
+      - actor_id
+      - action
+      - target_type
+      - target_id
+      - metadata
+      - created_at
+      title: AdminAuditLogItem
+      description: One audit log entry for the admin oversight view.
+    AdminAuditLogsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminAuditLogItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminAuditLogsResponse
+      description: Paginated audit log view for admin oversight.
     AdminConfigItem:
       properties:
         key:
@@ -14587,6 +15022,93 @@ components:
       - disputes
       title: AdminDisputesResponse
       description: Admin list response for Project Disputes with resolution context.
+    AdminEscrowDirectoryResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminEscrowItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminEscrowDirectoryResponse
+      description: Paginated escrow directory for admin financial oversight.
+    AdminEscrowItem:
+      properties:
+        escrow_id:
+          type: string
+          format: uuid
+          title: Escrow Id
+        transaction_id:
+          type: string
+          format: uuid
+          title: Transaction Id
+        ref_type:
+          type: string
+          title: Ref Type
+        ref_id:
+          type: string
+          format: uuid
+          title: Ref Id
+        amount:
+          type: string
+          title: Amount
+        currency:
+          type: string
+          title: Currency
+        status:
+          type: string
+          enum:
+          - held
+          - released
+          - refunded
+          title: Status
+        held_at:
+          type: string
+          format: date-time
+          title: Held At
+        released_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Released At
+        released_by:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Released By
+      type: object
+      required:
+      - escrow_id
+      - transaction_id
+      - ref_type
+      - ref_id
+      - amount
+      - currency
+      - status
+      - held_at
+      - released_at
+      - released_by
+      title: AdminEscrowItem
+      description: One escrow holding for admin financial oversight.
     AdminEscrowOverrideRequest:
       properties:
         reason:
@@ -14738,6 +15260,130 @@ components:
       - page_size
       title: AdminExportRequestsResponse
       description: Paginated data-export request queue for admins.
+    AdminFinancialEventItem:
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          title: Event Id
+        entity_type:
+          type: string
+          title: Entity Type
+        entity_id:
+          type: string
+          format: uuid
+          title: Entity Id
+        event_type:
+          type: string
+          title: Event Type
+        from_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: From Status
+        to_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: To Status
+        amount:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Amount
+        currency:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Currency
+        provider:
+          anyOf:
+          - type: string
+            enum:
+            - stripe
+            - paystack
+          - type: 'null'
+          title: Provider
+        provider_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Ref
+        reason_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason Code
+        reason_message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason Message
+        actor_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Actor Id
+        occurred_at:
+          type: string
+          format: date-time
+          title: Occurred At
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+      type: object
+      required:
+      - event_id
+      - entity_type
+      - entity_id
+      - event_type
+      - from_status
+      - to_status
+      - amount
+      - currency
+      - provider
+      - provider_ref
+      - reason_code
+      - reason_message
+      - actor_id
+      - occurred_at
+      - metadata
+      title: AdminFinancialEventItem
+      description: 'One immutable money state change from the financial ledger.
+
+
+        `reason_code` is the provider-neutral cause; the raw provider code stays in
+
+        `metadata`, which the ledger writer strips of sensitive keys before storing.'
+    AdminFinancialEventsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminFinancialEventItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminFinancialEventsResponse
+      description: Paginated financial ledger feed for admin oversight.
     AdminFrameworkDirectoryItem:
       properties:
         framework_id:
@@ -15485,6 +16131,175 @@ components:
       - items
       title: AdminSuspendedFrameworksResponse
       description: Listing of Frameworks currently suspended from the marketplace.
+    AdminTransactionDetailResponse:
+      properties:
+        transaction:
+          $ref: '#/components/schemas/AdminTransactionItem'
+        escrows:
+          items:
+            $ref: '#/components/schemas/AdminEscrowItem'
+          type: array
+          title: Escrows
+        timeline:
+          items:
+            $ref: '#/components/schemas/AdminFinancialEventItem'
+          type: array
+          title: Timeline
+      type: object
+      required:
+      - transaction
+      - escrows
+      - timeline
+      title: AdminTransactionDetailResponse
+      description: 'One payment with its escrow holdings and full ledger timeline.
+
+
+        The timeline is ordered oldest-first because it is read as a history: the
+
+        status column keeps only the final value, so intermediate transitions exist
+
+        nowhere else.'
+    AdminTransactionDirectoryResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminTransactionItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminTransactionDirectoryResponse
+      description: Paginated transaction directory for admin financial oversight.
+    AdminTransactionItem:
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+          title: Transaction Id
+        transaction_type:
+          type: string
+          title: Transaction Type
+        status:
+          type: string
+          title: Status
+        amount:
+          type: string
+          title: Amount
+        currency:
+          type: string
+          title: Currency
+        platform_commission:
+          type: string
+          title: Platform Commission
+        net_amount:
+          type: string
+          title: Net Amount
+        provider:
+          anyOf:
+          - type: string
+            enum:
+            - stripe
+            - paystack
+          - type: 'null'
+          title: Provider
+        provider_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Ref
+        payer_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Payer Id
+        payer_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Payer Org Id
+        payee_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Payee Id
+        payee_org_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Payee Org Id
+        ref_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ref Type
+        ref_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Ref Id
+        failure_reason_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason Code
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - transaction_id
+      - transaction_type
+      - status
+      - amount
+      - currency
+      - platform_commission
+      - net_amount
+      - provider
+      - provider_ref
+      - payer_id
+      - payer_org_id
+      - payee_id
+      - payee_org_id
+      - ref_type
+      - ref_id
+      - failure_reason_code
+      - created_at
+      - updated_at
+      title: AdminTransactionItem
+      description: 'One transaction row for read-only admin financial oversight.
+
+
+        Carries `failure_reason_code` from the newest ledger event so a failed
+
+        payment is triageable from the list: `status` alone records only that it
+
+        failed, never why.'
     AdminTrialGradeResponse:
       properties:
         trial_id:
@@ -15753,6 +16568,92 @@ components:
       - page_size
       title: AdminWaitlistResponse
       description: Paginated waitlist directory for admins.
+    AdminWebhookEventItem:
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          title: Event Id
+        provider:
+          type: string
+          enum:
+          - stripe
+          - paystack
+          title: Provider
+        provider_event_id:
+          type: string
+          title: Provider Event Id
+        event_type:
+          type: string
+          title: Event Type
+        status:
+          type: string
+          enum:
+          - received
+          - processed
+          - failed
+          title: Status
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        received_at:
+          type: string
+          format: date-time
+          title: Received At
+        processed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Processed At
+      type: object
+      required:
+      - event_id
+      - provider
+      - provider_event_id
+      - event_type
+      - status
+      - error
+      - received_at
+      - processed_at
+      title: AdminWebhookEventItem
+      description: 'One provider webhook delivery for admin oversight.
+
+
+        Exposes the stored `error`, which the ingest path writes on every failed
+
+        delivery. The raw provider payload is never stored, only its hash, so a
+
+        signed body cannot leak through this view.'
+    AdminWebhookEventsResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminWebhookEventItem'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        page:
+          type: integer
+          minimum: 1.0
+          title: Page
+        page_size:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+      type: object
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminWebhookEventsResponse
+      description: Paginated webhook delivery log for admin oversight.
     AmendmentCreateRequest:
       properties:
         change_type:
