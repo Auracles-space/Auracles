@@ -59,6 +59,13 @@ envVarGroups:
         sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
+      # --- Payments (Paystack — Nigerian corridor) ---
+      # No PAYSTACK_WEBHOOK_SECRET: Paystack signs webhook bodies with the
+      # secret key itself, so the app falls back to this value. Transfers must
+      # be enabled on the Paystack account separately; they draw from the
+      # Paystack balance, not a bank account.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
       # --- Identity verification (Persona KYC) ---
       - key: PERSONA_API_KEY
         sync: false
