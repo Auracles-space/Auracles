@@ -13,6 +13,7 @@ from httpx import AsyncClient
 from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
+from app.core.security import hash_payout_provider_account_id
 from app.integrations.stripe import StripeProviderError
 from app.modules.attestation.models import (
     Attestation,
@@ -1966,3 +1967,119 @@ async def test_successful_purchase_records_ledger_transition(
     assert ledger_event.to_status == "completed"
     assert ledger_event.reason_code is None
     assert ledger_event.amount is not None
+
+
+async def create_connected_payout_account(account_id: str) -> UUID:
+    """Create a stripe payout account resolvable by its real lookup hash.
+
+    `create_processing_payout` stores a literal placeholder hash, but the
+    connected-account handlers resolve accounts through
+    `hash_payout_provider_account_id`, so this seeds the real value.
+
+    Args:
+        account_id: Stripe connected account id, e.g. `acct_123`.
+
+    Returns:
+        The contributor's user id.
+    """
+    contributor_id = await create_user_with_roles(
+        "connected-payout-contributor@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                PayoutAccount(
+                    user_id=contributor_id,
+                    provider="stripe",
+                    provider_account_id=account_id,
+                    provider_account_lookup_hash=hash_payout_provider_account_id(
+                        account_id
+                    ),
+                    account_type="express",
+                )
+            )
+    return contributor_id
+
+
+async def test_connected_payout_failed_records_cause_against_account(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """`payout.failed` records the bank's reason against the payout account.
+
+    This is the only Stripe event on the payout path that carries a failure
+    code: `transfer.reversed` has none. It identifies a connected account
+    rather than one of our payout rows, because one bank payout can settle
+    several of our transfers.
+    """
+    contributor_id = await create_connected_payout_account("acct_connected_fail")
+    webhook_context["event"] = {
+        "id": "evt_connected_payout_failed",
+        "type": "payout.failed",
+        "account": "acct_connected_fail",
+        "data": {
+            "object": {
+                "id": "po_123",
+                "failure_code": "account_closed",
+                "failure_message": "The bank account has been closed.",
+            }
+        },
+    }
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        ledger_event = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "connected_payout_failed"
+            )
+        )
+        event_row = await session.scalar(
+            select(WebhookEvent).where(
+                WebhookEvent.provider_event_id == "evt_connected_payout_failed"
+            )
+        )
+
+    assert response.status_code == 200
+    assert event_row is not None
+    assert event_row.status == "processed"
+    assert ledger_event is not None
+    assert ledger_event.entity_type == "payout_account"
+    assert ledger_event.reason_code == "account_invalid"
+    assert ledger_event.reason_message == "The bank account has been closed."
+    assert ledger_event.provider_ref == "po_123"
+    assert ledger_event.actor_id == contributor_id
+
+
+async def test_connected_payout_failed_for_unknown_account_is_not_an_error(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A payout.failed for an account we do not track must not fail the webhook.
+
+    Stripe delivers connected-account events for every account on the
+    platform; returning an error would make Stripe retry forever.
+    """
+    webhook_context["event"] = {
+        "id": "evt_unknown_account_payout_failed",
+        "type": "payout.failed",
+        "account": "acct_not_ours",
+        "data": {"object": {"id": "po_456", "failure_code": "account_closed"}},
+    }
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        ledger_event = await session.scalar(select(FinancialEvent))
+
+    assert response.status_code == 200
+    assert ledger_event is None

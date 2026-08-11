@@ -33,6 +33,10 @@ ENTITY_TYPES = frozenset(
         "payout",
         "partner_commission",
         "partner_payout",
+        # A connected account's own bank payout can settle several of our
+        # transfers at once, so its failure belongs to the account, not to any
+        # single payout row.
+        "payout_account",
     }
 )
 

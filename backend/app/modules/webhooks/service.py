@@ -805,6 +805,82 @@ async def _mark_project_milestone_funded(
     )
 
 
+async def _handle_connected_payout_failed(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> list[Callable[[], None]]:
+    """Record why a connected account's bank payout failed.
+
+    Stripe emits this for the connected account's own payout to its bank, and
+    it is the only event on the payout path carrying a failure code —
+    `transfer.reversed`, which undoes our transfer, carries none.
+
+    The event names a connected account, not one of our `payouts` rows, and one
+    bank payout can settle several of our transfers, so the failure is recorded
+    against the payout account rather than guessing at a single payout. The
+    contributor's funds are stranded in their Stripe balance, so admins are
+    alerted once the record is durable.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: The verified Stripe event.
+
+    Returns:
+        Post-commit callables raising an admin alert, or an empty list when the
+        account is not one we track.
+    """
+    account_id = event.get("account")
+    if not isinstance(account_id, str) or not account_id:
+        raise WebhookProcessingError("payout.failed missing connected account id")
+
+    payout_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.provider == "stripe",
+            PayoutAccount.provider_account_lookup_hash
+            == hash_payout_provider_account_id(account_id),
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if payout_account is None:
+        # Stripe delivers connected-account events for every account on the
+        # platform. Erroring would make it retry an event we do not own.
+        logger.bind(
+            module="webhooks",
+            action="connected_payout_failed",
+        ).info("payout_failed_for_untracked_account")
+        return []
+
+    event_object = _event_object(event)
+    failure = normalize_stripe_failure(event_object)
+    await record_financial_event(
+        db,
+        entity_type="payout_account",
+        entity_id=payout_account.id,
+        event_type="connected_payout_failed",
+        provider="stripe",
+        provider_ref=_event_object_id(event),
+        reason_code=failure.code,
+        reason_message=failure.message,
+        actor_id=payout_account.user_id,
+        metadata=(
+            {"provider_code": failure.provider_code} if failure.provider_code else {}
+        ),
+    )
+
+    payout_account_id = payout_account.id
+    return [
+        lambda: notify_admins_review_pending(
+            domain="payout",
+            target_id=payout_account_id,
+            body=(
+                "A contributor's bank payout failed; their funds are held at "
+                "the payment provider and need admin investigation."
+            ),
+            link="/admin/payouts",
+        )
+    ]
+
+
 async def _handle_account_updated(db: AsyncSession, event: dict[str, Any]) -> None:
     """Mark a payout account verified when Stripe Connect enables it."""
     event_object = _event_object(event)
@@ -993,6 +1069,10 @@ async def _dispatch_verified_event(
         await _handle_account_updated(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
+    if event_type == "payout.failed":
+        payout_notifications = await _handle_connected_payout_failed(db, event)
+        await _mark_event_status(db, event_id=event_id, status_="processed")
+        return "processed", None, payout_notifications
     if event_type == "transfer.created":
         await _handle_transfer_event(db, event, payout_status="completed")
         await _mark_event_status(db, event_id=event_id, status_="processed")

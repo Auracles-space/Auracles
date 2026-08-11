@@ -381,7 +381,7 @@ class FinancialEvent(Base):
         ),
         CheckConstraint(
             "entity_type IN ('transaction', 'escrow', 'payout', "
-            "'partner_commission', 'partner_payout')",
+            "'partner_commission', 'partner_payout', 'payout_account')",
             name="ck_financial_events_entity_type",
         ),
         Index("idx_financial_events_entity", "entity_type", "entity_id", "occurred_at"),
