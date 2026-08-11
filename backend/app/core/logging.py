@@ -12,11 +12,52 @@ import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+
+if TYPE_CHECKING:
+    from loguru import Record
+
+# Rendered as the `module.action` prefix rather than repeated in the field list.
+_DEV_CONTEXT_KEYS = frozenset({"module", "action"})
+
+
+def _dev_formatter(record: "Record") -> str:
+    """Build the development format string for one log record.
+
+    Loguru captures log kwargs into `record["extra"]`, but a static format
+    string can only name the keys it was written with. The production JSON sink
+    serializes `extra` wholesale; this renders whatever a call site bound so
+    local output carries the same detail — an omission that previously hid
+    exception text behind a bare event name during debugging.
+
+    Args:
+        record: The Loguru record being formatted.
+
+    Returns:
+        A Loguru format string. Values are substituted by the handler and are
+        never re-parsed, so braces or markup inside a field value render
+        literally instead of resolving against the record.
+    """
+    extra = record["extra"]
+    fields = " ".join(
+        f"{key}={value}"
+        for key, value in extra.items()
+        if key not in _DEV_CONTEXT_KEYS and not key.startswith("_")
+    )
+    # Underscore-prefixed so a record formatted by a second sink does not
+    # re-render these as ordinary bound fields.
+    extra["_context"] = f"{extra.get('module', '-')}.{extra.get('action', '-')}"
+    extra["_fields"] = f" | {fields}" if fields else ""
+    return (
+        "<dim>{time:YYYY-MM-DD HH:mm:ss}</dim> | <level>{level}</level> | "
+        "<cyan>{extra[_context]}</cyan> | <level>{message}</level>"
+        "<dim>{extra[_fields]}</dim>\n"
+    )
 
 
 def configure_logging(log_format: str) -> None:
@@ -26,14 +67,7 @@ def configure_logging(log_format: str) -> None:
         logger.add(sys.stdout, serialize=True)
         return
 
-    logger.add(
-        sys.stdout,
-        colorize=True,
-        format=(
-            "<dim>{time:YYYY-MM-DD HH:mm:ss}</dim> | <level>{level}</level> | "
-            "{extra[module]}.{extra[action]} | {message}"
-        ),
-    )
+    logger.add(sys.stdout, colorize=True, format=_dev_formatter)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
