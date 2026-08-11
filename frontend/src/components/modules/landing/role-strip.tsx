@@ -29,7 +29,7 @@ type RolePanelProps = {
  */
 function ContributorProfileVisual() {
   const Dot = () => (
-    <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
+    <span className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm bg-accent" />
   );
   const ChevronDown = () => (
     <svg className="h-3 w-3 text-foreground-subtle shrink-0" viewBox="0 0 20 20" fill="currentColor">
@@ -146,7 +146,7 @@ function ContributorProfileVisual() {
  */
 function LicensingRecurringRevenueVisual() {
   const Dot = () => (
-    <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
+    <span className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm bg-accent" />
   );
 
   return (
@@ -246,7 +246,7 @@ function LicensingRecurringRevenueVisual() {
  */
 function ProfessionalLegacyVisual() {
   const Dot = () => (
-    <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
+    <span className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm bg-accent" />
   );
 
   return (
@@ -270,7 +270,7 @@ function ProfessionalLegacyVisual() {
         
         {/* Step 1: Draft Published */}
         <div className="relative rounded-xl border border-border-strong bg-surface-1 p-3 flex items-center justify-between">
-          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-full bg-success ring-4 ring-surface-2" />
+          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-sm bg-success ring-4 ring-surface-2" />
           <div>
             <h5 className="text-[11px] font-bold text-foreground">1. Refine Raw Expertise</h5>
             <p className="text-[10px] text-foreground-muted mt-0.5">Package methodologies into SOP playbooks</p>
@@ -282,7 +282,7 @@ function ProfessionalLegacyVisual() {
 
         {/* Step 2: Attestation Verified */}
         <div className="relative rounded-xl border border-border-strong bg-surface-1 p-3 flex items-center justify-between">
-          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-full bg-warning ring-4 ring-surface-2" />
+          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-sm bg-warning ring-4 ring-surface-2" />
           <div>
             <h5 className="text-[11px] font-bold text-foreground">2. Peer Attestation</h5>
             <p className="text-[10px] text-foreground-muted mt-0.5">Attestors verify compliance & quality</p>
@@ -294,7 +294,7 @@ function ProfessionalLegacyVisual() {
 
         {/* Step 3: Global Deployment */}
         <div className="relative rounded-xl border border-border-strong bg-surface-1 p-3 flex items-center justify-between opacity-60">
-          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-full bg-foreground-subtle ring-4 ring-surface-2" />
+          <div className="absolute -left-[18px] top-4.5 h-2 w-2 rounded-sm bg-foreground-subtle ring-4 ring-surface-2" />
           <div>
             <h5 className="text-[11px] font-bold text-foreground">3. Global Implementation</h5>
             <p className="text-[10px] text-foreground-muted mt-0.5">Operators license & launch workspace</p>
@@ -311,7 +311,7 @@ function ProfessionalLegacyVisual() {
 
 function RolePanel({ body, cta, reverse, title, visual }: RolePanelProps) {
   return (
-    <article className="grid items-center gap-6 rounded-hero border border-border-default bg-surface-1 p-5 md:grid-cols-2 md:gap-10 md:p-8">
+    <article className="grid items-center gap-6 rounded-card border border-border-default bg-surface-1 p-5 md:grid-cols-2 md:gap-10 md:p-8">
       {/*
         Copy leads in DOM order so small screens read headline-first. The
         alternating composition is re-ordered only from `md` up.

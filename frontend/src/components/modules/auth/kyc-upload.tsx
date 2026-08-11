@@ -151,7 +151,9 @@ export function KycUpload() {
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
         </svg>
-        <span className="text-sm font-medium text-foreground-muted">Loading verification status...</span>
+        <span className="text-sm font-medium text-foreground-muted">
+          Loading verification status…
+        </span>
       </div>
     );
   }
@@ -163,7 +165,7 @@ export function KycUpload() {
     <div className="space-y-6">
       {kycStatus === "verified" && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-success/30 bg-success/5 p-6 text-center space-y-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-success text-white shadow-sm">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-success text-white">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
             </svg>
@@ -178,8 +180,8 @@ export function KycUpload() {
       )}
 
       {kycStatus === "pending" && (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-warning/30 bg-warning/5 p-6 text-center space-y-3 animate-pulse">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-warning text-white shadow-sm">
+        <div className="flex flex-col items-center justify-center space-y-3 rounded-xl border border-warning/30 bg-warning/5 p-6 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-warning text-white">
             <svg className="h-6 w-6 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -214,7 +216,7 @@ export function KycUpload() {
 
       {isRejected && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-error/30 bg-error/5 p-6 text-center space-y-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-error text-white shadow-sm">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-error text-white">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
@@ -231,7 +233,7 @@ export function KycUpload() {
       {canStart && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-border-default bg-surface-2 p-6 text-center space-y-4">
           {error ? <FormMessage kind="error" message={error} /> : null}
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/10 text-accent">
             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>

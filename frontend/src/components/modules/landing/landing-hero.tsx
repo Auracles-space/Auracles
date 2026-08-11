@@ -1,8 +1,8 @@
 /**
- * Landing hero — signature gradient blob behind centered headline + CTAs.
+ * Landing hero with centered headline, CTAs, and an illustrative product panel.
  *
- * Mobile-first: stacks vertically with the gradient block scaled down. Above
- * `md` the gradient panel grows and a preview product card overlays it.
+ * Mobile-first: copy and CTAs lead, followed by a compact product preview.
+ * Larger screens gain more breathing room without changing reading order.
  */
 import Link from "next/link";
 
@@ -87,16 +87,15 @@ export function LandingHero() {
           platform metric, so the whole block is hidden from assistive tech —
           otherwise a screen reader announces the mock dashboard as real content.
         */}
-        <div aria-hidden="true" className="relative mx-auto mt-16 max-w-5xl md:mt-24">
-          <div className="absolute inset-0 -z-10 mx-auto max-w-4xl opacity-80 blur-3xl brand-gradient" />
-          <div className="rounded-hero border border-border-default bg-surface-1/60 p-2 shadow-hero backdrop-blur-md">
-            <div className="rounded-[28px] border border-border-default bg-surface-1 p-4 shadow-bento md:p-6">
+        <div aria-hidden="true" className="relative mx-auto mt-14 max-w-5xl md:mt-20">
+          <div className="rounded-card border border-border-default bg-surface-1 p-2 shadow-bento">
+            <div className="rounded-2xl border border-border-default bg-surface-1 p-4 md:p-6">
               {/* Browser Chrome */}
               <div className="flex items-center justify-between border-b border-border-default pb-4">
                 <div className="flex items-center gap-2">
-                  <span className="h-3 w-3 rounded-full bg-[#FF5F56]" />
-                  <span className="h-3 w-3 rounded-full bg-[#FFBD2E]" />
-                  <span className="h-3 w-3 rounded-full bg-[#27C93F]" />
+                  <span className="h-3 w-3 rounded-sm bg-accent" />
+                  <span className="h-3 w-3 rounded-sm bg-border-strong" />
+                  <span className="h-3 w-3 rounded-sm bg-surface-3" />
                 </div>
                 <div className="flex h-8 w-64 items-center justify-center rounded-badge bg-surface-2 px-3 text-[11px] font-medium text-foreground-muted">
                   <svg
@@ -114,7 +113,7 @@ export function LandingHero() {
                   </svg>
                   auracles.space / explore
                 </div>
-                <span className="h-3 w-3 rounded-full bg-transparent" />
+                <span className="h-3 w-3 rounded-sm bg-transparent" />
               </div>
 
               <div className="mt-4 flex flex-col gap-4 md:flex-row">
@@ -208,13 +207,13 @@ export function LandingHero() {
                       <div key={stat.label} className="rounded-xl border border-border-strong bg-surface-2 p-3.5 flex flex-col justify-between shadow-sm relative select-none">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground-subtle flex items-center">
-                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5 shrink-0" />
+                            <span className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-sm bg-accent" />
                             {stat.label}
                           </p>
                         </div>
                         <div className="mt-2.5 flex items-baseline justify-between">
                           <h4 className="font-heading text-xl font-bold text-foreground tracking-tight">{stat.value}</h4>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${
+                          <span className={`rounded-badge border px-1.5 py-0.5 text-[10px] font-bold ${
                             stat.trend === "up" 
                               ? "bg-success/10 border-success/25 text-success" 
                               : "bg-foreground-subtle/10 border-foreground-subtle/25 text-foreground-subtle"
@@ -230,16 +229,16 @@ export function LandingHero() {
                   <div className="rounded-xl border border-border-strong bg-surface-2 p-4 flex flex-col justify-between gap-3 shadow-sm select-none">
                     <div className="flex items-center justify-between border-b border-border-default pb-2">
                       <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground flex items-center">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5" />
+                        <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-sm bg-accent" />
                         Monthly Revenue Yield ($)
                       </span>
                       <div className="flex items-center gap-3 text-[10px] font-mono font-bold text-foreground-subtle">
                         <div className="flex items-center gap-1">
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent/40" />
+                          <span className="h-1.5 w-1.5 rounded-sm bg-accent/40" />
                           <span>Estimated</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                          <span className="h-1.5 w-1.5 rounded-sm bg-accent" />
                           <span>Actual Payouts</span>
                         </div>
                       </div>
@@ -289,7 +288,7 @@ export function LandingHero() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold uppercase tracking-[0.05em] text-foreground flex items-center">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent mr-1.5" />
+                        <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-sm bg-accent" />
                         Active Workspace Frameworks
                       </span>
                       <span className="text-[10px] font-mono text-foreground-subtle">

@@ -62,7 +62,7 @@ export function PricingStrip() {
         <div className="mt-12 grid gap-6 md:mt-16 md:grid-cols-3 md:items-start">
           {tiers.map((tier) => (
             <article
-              className={`relative flex h-full flex-col rounded-hero border bg-surface-1 p-8 ${
+              className={`relative flex h-full flex-col rounded-card border bg-surface-1 p-6 md:p-8 ${
                 tier.featured
                   ? "z-10 border-accent shadow-bento md:-mt-4 md:pb-12"
                   : "border-border-default shadow-card"
@@ -70,7 +70,7 @@ export function PricingStrip() {
               key={tier.name}
             >
               {tier.featured && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-accent px-3 py-1 text-xs font-bold uppercase tracking-widest text-white shadow-sm">
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-badge bg-accent px-3 py-1 text-xs font-bold uppercase tracking-widest text-white shadow-sm">
                   Popular
                 </div>
               )}
@@ -89,7 +89,7 @@ export function PricingStrip() {
               <ul className="flex-1 space-y-4 text-sm text-foreground">
                 {tier.bullets.map((bullet) => (
                   <li className="flex items-center gap-3" key={bullet}>
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-white shadow-sm">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-lg bg-accent text-white">
                       <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                       </svg>
@@ -102,7 +102,7 @@ export function PricingStrip() {
               <Link
                 className={`mt-8 inline-flex h-12 items-center justify-center rounded-control px-5 text-sm font-bold transition focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-1 ${
                   tier.featured
-                    ? "bg-foreground text-background shadow-md hover:bg-foreground/90"
+                    ? "bg-foreground text-background hover:bg-foreground/90"
                     : "border-2 border-foreground bg-transparent text-foreground hover:bg-foreground hover:text-background"
                 }`}
                 href={tier.cta.href}

@@ -9,8 +9,6 @@ type StepItem = {
   title: string;
   body: string;
   colSpan: string;
-  gradient: string;
-  blob: string;
 };
 
 const waitlistSteps: StepItem[] = [
@@ -18,22 +16,16 @@ const waitlistSteps: StepItem[] = [
     title: "Package your playbook",
     body: "Upload the frameworks, templates, and operating systems you've developed. Auracles reviews submissions for originality, rarity, and compliance before publication.",
     colSpan: "md:col-span-2",
-    gradient: "bg-brand-peach/10",
-    blob: "bg-brand-coral/20",
   },
   {
     title: "Build a reputation",
     body: "As your work is discovered and licensed, your reputation grows.",
     colSpan: "md:col-span-1",
-    gradient: "bg-brand-coral/10",
-    blob: "bg-brand-magenta/20",
   },
   {
     title: "Earn every time it's licensed",
     body: "Publish once, improve over time, and earn whenever organizations license your Frameworks.",
     colSpan: "md:col-span-3",
-    gradient: "bg-brand-violet/10",
-    blob: "bg-brand-indigo/20",
   },
 ];
 
@@ -55,16 +47,13 @@ export function HowItWorks() {
         <div className="grid gap-6 md:grid-cols-3">
           {steps.map((step) => (
             <article
-              className={`group relative overflow-hidden rounded-[32px] border border-border-default ${step.gradient} p-8 shadow-bento transition hover:shadow-hero ${step.colSpan}`}
+              className={`relative overflow-hidden rounded-card border border-border-default bg-surface-1 p-6 shadow-bento transition hover:border-accent/30 md:p-8 ${step.colSpan}`}
               key={step.title}
             >
-              <div
-                className={`absolute -right-16 -top-16 h-64 w-64 rounded-full blur-3xl transition duration-700 group-hover:scale-125 ${step.blob}`}
-              />
               <div className="relative z-10 flex h-full flex-col justify-between">
                 <div>
                   {step.eyebrow && (
-                    <p className="inline-block rounded-full bg-surface-1/60 px-3 py-1 text-xs font-medium tracking-[0.08em] text-foreground-subtle backdrop-blur-md">
+                    <p className="inline-block rounded-badge bg-surface-2 px-3 py-1 text-xs font-medium tracking-[0.08em] text-foreground-subtle">
                       {step.eyebrow}
                     </p>
                   )}

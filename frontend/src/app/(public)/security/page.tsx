@@ -1,5 +1,10 @@
-import { MarketingNav } from "@/components/modules/landing/marketing-nav";
-import { FooterCta } from "@/components/modules/landing/footer-cta";
+/**
+ * Public data security policy route.
+ *
+ * Renders security obligations and platform controls in the shared public
+ * document shell without changing the policy text.
+ */
+import { PublicDocumentShell } from "@/components/modules/legal/public-document-shell";
 
 export const metadata = {
   title: "Data Security Policy - Auracles",
@@ -8,19 +13,13 @@ export const metadata = {
 
 export default function SecurityPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <MarketingNav />
-      <main className="flex-1 mx-auto w-full max-w-[800px] px-6 py-12 md:py-20">
-        <article className="space-y-8 font-sans">
-          <div className="border-b border-border-default pb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-accent">Security</p>
-            <h1 className="mt-2 font-heading text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
-              Data Security Policy
-            </h1>
-            <p className="mt-2 text-sm text-foreground-muted">Version 1.0 • Last updated June 2026</p>
-          </div>
-
-          <div className="space-y-6 text-base leading-7 text-foreground-muted">
+    <PublicDocumentShell
+      acknowledgement="By creating an account, accessing, or using Auracles, Contributors and Operators acknowledge that they have read, understood, and agreed to comply with this Data Security Policy and the security obligations described herein."
+      description="Security principles, access controls, encryption standards, and governance policies enforced by Auracles."
+      title="Data Security Policy"
+      updated="June 2026"
+      version="1.0"
+    >
             <section className="space-y-3">
               <h2 className="font-heading text-xl font-bold text-foreground">1. Purpose</h2>
               <p>
@@ -339,17 +338,6 @@ export default function SecurityPage() {
                 </a>
               </p>
             </section>
-          </div>
-
-          <div className="border-t border-border-default pt-6 text-center text-xs text-foreground-subtle">
-            <p className="font-medium">Acknowledgement</p>
-            <p className="mt-1">
-              By creating an account, accessing, or using Auracles, Contributors and Operators acknowledge that they have read, understood, and agreed to comply with this Data Security Policy and the security obligations described herein.
-            </p>
-          </div>
-        </article>
-      </main>
-      <FooterCta />
-    </div>
+    </PublicDocumentShell>
   );
 }

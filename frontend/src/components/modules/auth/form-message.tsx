@@ -19,7 +19,7 @@ export function FormMessage({ kind, message }: FormMessageProps) {
   return (
     <p
       className={[
-        "rounded-control border px-3 py-2 text-sm leading-6",
+        "rounded-xl border px-4 py-3 text-sm leading-6",
         isError
           ? "border-error/30 bg-error/10 text-error"
           : "border-success/30 bg-success/10 text-success",

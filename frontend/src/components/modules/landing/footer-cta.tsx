@@ -3,9 +3,8 @@
 /**
  * Footer CTA strip + site footer.
  *
- * Bottom gradient panel mirrors the hero blob and closes the page on the
- * marketplace's primary call: register. Below, a slim site footer with
- * legal + contact links.
+ * The closing panel repeats the marketplace's primary call: register or join
+ * the waitlist. Below, a slim site footer keeps legal + contact links visible.
  */
 import { CheckIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
@@ -24,7 +23,7 @@ const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
 
 
 /**
- * Render the closing gradient CTA and the site footer.
+ * Render the closing CTA and the site footer.
  */
 export function FooterCta() {
   const [email, setEmail] = useState("");
@@ -100,7 +99,7 @@ export function FooterCta() {
                   className="mt-10 flex flex-col items-center justify-center gap-3 rounded-2xl border border-success/30 bg-success/5 p-6 max-w-md mx-auto animate-fade-in"
                   role="status"
                 >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-success/10 text-success">
                     <CheckIcon aria-hidden="true" className="h-6 w-6" />
                   </span>
                   <p className="text-sm font-semibold text-foreground">
@@ -257,5 +256,4 @@ export function FooterCta() {
     </>
   );
 }
-
 

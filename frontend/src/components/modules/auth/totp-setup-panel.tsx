@@ -209,7 +209,7 @@ export function TotpSetupPanel() {
         {heading}
         {error ? <FormMessage kind="error" message={error} /> : null}
         <div className="space-y-4">
-          <div className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm">
+          <div className="rounded-xl border border-border-default bg-surface-2 p-4">
             <Image
               alt="Authenticator QR code"
               className="mx-auto h-48 w-48"
@@ -254,7 +254,7 @@ export function TotpSetupPanel() {
         {error ? <FormMessage kind="error" message={error} /> : null}
         {success ? <FormMessage kind="success" message={success} /> : null}
 
-        <div className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm">
+        <div className="rounded-xl border border-border-default bg-surface-2 p-4">
           <p className="text-sm font-medium text-foreground">
             Two-factor authentication is enabled.
           </p>
@@ -265,14 +265,14 @@ export function TotpSetupPanel() {
         </div>
 
         {pending ? (
-          <div className="space-y-3 rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm">
+          <div className="space-y-3 rounded-xl border border-border-default bg-surface-2 p-4">
             <label className="block" htmlFor="confirm-code">
               <span className="text-sm font-medium text-foreground">
                 Authenticator or backup code
               </span>
               <input
                 autoComplete="one-time-code"
-                className="mt-2 min-h-12 w-full rounded-control border border-border-strong bg-surface-2 px-4 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus:border-accent focus:ring-1 focus:ring-accent"
+                className="mt-2 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent"
                 id="confirm-code"
                 onChange={(event) => setConfirmCode(event.target.value.trim())}
                 placeholder="Enter a current code"

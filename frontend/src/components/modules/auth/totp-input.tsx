@@ -27,7 +27,7 @@ export function TotpInput({
       <span className="text-sm font-medium text-foreground">{label}</span>
       <input
         autoComplete="one-time-code"
-        className="mt-2 min-h-12 w-full rounded-control border border-border-strong bg-surface-2 px-4 py-2 text-center font-heading text-lg font-semibold tracking-[0.05em] text-foreground outline-none focus:outline-none focus-visible:outline-none transition-colors placeholder:text-foreground-subtle focus:border-accent focus:ring-1 focus:ring-accent focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent"
+        className="mt-2 min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 py-2 text-center font-heading text-lg font-semibold tracking-[0.05em] text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent"
         id="totp-code"
         inputMode="numeric"
         maxLength={6}

@@ -1,12 +1,9 @@
 /**
  * Shared shell for auth workflow pages.
  *
- * Mobile-first: stacks vertically with a compact branded panel above and the
- * form card below. From `md` up, the branded panel sits on the left as a soft
- * gradient pane carrying the page eyebrow + headline + summary.
- *
- * Uses the refreshed Auracles palette: warm cream surfaces, charcoal text,
- * signature peach-to-indigo soft gradient accent.
+ * Mobile-first: places page context before the form so recovery and onboarding
+ * tasks start with clear intent. From `lg` up, the context panel and form card
+ * sit side-by-side in the Auracles bento surface system.
  */
 import type { ReactNode } from "react";
 import { BrandLogo } from "@/components/ui/brand-logo";
@@ -19,7 +16,7 @@ type AuthPageShellProps = {
 };
 
 /**
- * Render an auth page with a soft-gradient context panel and a single form card.
+ * Render an auth page with a context panel and a single task card.
  *
  * @param props - Page copy and child form content.
  */
@@ -29,66 +26,53 @@ export function AuthPageShell({
   summary,
   title,
 }: AuthPageShellProps) {
+  const trustItems = [
+    "Session state is verified before workspace access.",
+    "Sensitive account changes use email and 2FA checks.",
+    "Marketplace actions are audit logged.",
+  ];
+
   return (
-    <main className="flex min-h-screen flex-col justify-center bg-background px-5 py-8 text-foreground md:px-10 md:py-14">
-      {/* Mobile-only brand logo above the card */}
-      <div className="mx-auto mb-6 flex w-full max-w-[1180px] justify-start md:hidden">
-        <BrandLogo className="h-8 w-32" />
-      </div>
-
-      <section className="mx-auto grid w-full max-w-[1180px] gap-4 md:grid-cols-[minmax(0,1fr)_minmax(380px,0.85fr)] md:items-stretch md:gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.85fr)] lg:gap-8">
-        {/* Desktop-only branded sidebar panel */}
-        <aside className="brand-gradient-soft relative hidden flex-col justify-between overflow-hidden rounded-hero border border-border-default p-6 lg:p-8 xl:p-10 md:flex">
-          <div className="flex items-center gap-2">
+    <main className="flex min-h-screen items-center bg-background px-5 py-6 text-foreground md:px-10 md:py-10">
+      <section className="mx-auto grid w-full max-w-[1180px] gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(380px,0.8fr)] lg:items-stretch lg:gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(420px,0.78fr)]">
+        <aside
+          aria-label={`${eyebrow} context`}
+          className="flex flex-col justify-between rounded-card border border-border-default bg-surface-1 p-5 shadow-bento md:p-8 lg:p-10"
+        >
+          <div>
             <BrandLogo className="h-8 w-32" />
-          </div>
 
-          <div className="mt-10 lg:mt-16 xl:mt-20">
-            <p className="text-xs font-bold uppercase tracking-[0.08em] text-accent">
-              {eyebrow}
-            </p>
-            <h1 className="mt-3 max-w-md font-heading text-3xl lg:text-4xl xl:text-5xl font-bold leading-tight tracking-tight text-foreground">
+            <h1 className="mt-8 max-w-xl text-balance font-heading text-3xl font-bold leading-tight tracking-tight text-foreground md:text-4xl xl:text-5xl">
               {title}
             </h1>
-            <p className="mt-4 max-w-md text-sm lg:text-base leading-relaxed text-foreground-muted">
+            <p className="mt-4 max-w-xl text-sm leading-7 text-foreground-muted md:text-base">
               {summary}
             </p>
           </div>
 
-          <div className="mt-8 lg:mt-10">
-            <p className="text-xs font-bold uppercase tracking-[0.08em] text-accent">
-              Trust by design
+          <div className="mt-8 border-t border-border-default pt-5 md:mt-10 md:pt-6">
+            <p className="font-heading text-sm font-semibold text-foreground">
+              Trust controls stay visible.
             </p>
-            <ul className="mt-4 space-y-3 text-sm font-medium text-foreground">
-              <li className="flex items-center gap-3">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-white shadow-sm">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                Pipeline checks before publish
-              </li>
-              <li className="flex items-center gap-3">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-white shadow-sm">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                KYC on both sides
-              </li>
-              <li className="flex items-center gap-3">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-white shadow-sm">
-                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                Audit log from day one
-              </li>
+            <ul className="mt-4 grid gap-3 text-sm font-medium leading-6 text-foreground-muted sm:grid-cols-3 lg:grid-cols-1">
+              {trustItems.map((item) => (
+                <li className="flex gap-3 rounded-xl bg-surface-2 p-3" key={item}>
+                  <span
+                    aria-hidden="true"
+                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-accent text-white"
+                  >
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
           </div>
         </aside>
 
-        <div className="rounded-[32px] border border-border-default bg-surface-1 p-5 shadow-bento md:p-8 lg:p-10">
+        <div className="rounded-card border border-border-default bg-surface-1 p-5 shadow-bento md:p-8 lg:p-10">
           {children}
         </div>
       </section>

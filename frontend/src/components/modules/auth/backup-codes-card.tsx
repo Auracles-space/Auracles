@@ -26,13 +26,13 @@ export function BackupCodesCard({ codes }: BackupCodesCardProps) {
   }
 
   return (
-    <div className="rounded-[20px] border border-border-strong bg-surface-2 p-4 shadow-sm">
+    <div className="rounded-xl border border-border-default bg-surface-2 p-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-heading text-sm font-semibold text-foreground">
           Backup codes
         </h3>
         <button
-          className="inline-flex min-h-9 items-center justify-center rounded-lg border border-border-default bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-surface-1"
+          className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border-default bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-surface-1 focus-visible:ring-2 focus-visible:ring-accent"
           onClick={() => void copyCodes()}
           type="button"
         >
@@ -45,7 +45,10 @@ export function BackupCodesCard({ codes }: BackupCodesCardProps) {
       </p>
       <ul className="mt-3 grid gap-2 text-sm text-foreground-muted sm:grid-cols-2">
         {codes.map((code) => (
-          <li className="font-mono" key={code}>
+          <li
+            className="rounded-lg border border-border-default bg-background px-3 py-2 font-mono"
+            key={code}
+          >
             {code}
           </li>
         ))}

@@ -21,6 +21,8 @@ import {
 } from "@/lib/auth/form-client";
 import { addRoleV1AuthRolesPost, getCurrentUser } from "@/lib/generated/sdk.gen";
 
+import { FormMessage } from "./form-message";
+
 type SelfRole = "contributor" | "operator";
 
 const roleOptions: Array<{ description: string; label: string; value: SelfRole }> = [
@@ -132,18 +134,14 @@ export function OnboardingRoleStep({ children }: OnboardingRoleStepProps) {
         </p>
       </div>
 
-      {error ? (
-        <p className="rounded-control border border-error/40 bg-error/5 px-3 py-2 text-sm text-error">
-          {error}
-        </p>
-      ) : null}
+      {error ? <FormMessage kind="error" message={error} /> : null}
 
       <div className="space-y-3">
         {roleOptions.map((role) => {
           const isSelected = roles.includes(role.value);
           return (
             <label
-              className={`flex min-h-12 cursor-pointer gap-3 rounded-card border p-4 shadow-sm transition ${
+              className={`flex min-h-12 cursor-pointer gap-3 rounded-xl border p-4 transition ${
                 isSelected
                   ? "border-accent bg-surface-1"
                   : "border-border-strong bg-surface-2 hover:border-accent/40"

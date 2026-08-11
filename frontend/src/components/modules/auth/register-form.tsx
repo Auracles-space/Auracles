@@ -251,7 +251,7 @@ export function RegisterForm() {
           const isSelected = roles.includes(role.value);
           return (
             <label
-              className={`flex min-h-12 cursor-pointer gap-3 rounded-card border p-4 transition shadow-sm ${
+              className={`flex min-h-12 cursor-pointer gap-3 rounded-xl border p-4 transition ${
                 isSelected
                   ? "border-accent bg-surface-1"
                   : "border-border-strong bg-surface-2 hover:border-accent/40"
@@ -282,10 +282,10 @@ export function RegisterForm() {
         })}
       </fieldset>
 
-      <div className="flex items-start gap-3 py-2">
+      <div className="flex min-h-12 items-start gap-3 rounded-xl bg-surface-2 p-3">
         <input
           checked={agreedToTerms}
-          className="mt-0.5 h-4 w-4 accent-accent"
+          className="mt-1 h-4 w-4 accent-accent"
           id="terms-agreement"
           onChange={(e) => {
             setAgreedToTerms(e.target.checked);
@@ -293,7 +293,7 @@ export function RegisterForm() {
           }}
           type="checkbox"
         />
-        <label className="flex items-center gap-1.5 text-sm leading-5 text-foreground-muted" htmlFor="terms-agreement">
+        <label className="flex items-start gap-1.5 text-sm leading-5 text-foreground-muted" htmlFor="terms-agreement">
           <span>
             I agree to the{" "}
             <a className="font-medium text-accent hover:underline" href="/terms" target="_blank" rel="noreferrer">
@@ -324,4 +324,3 @@ export function RegisterForm() {
     </form>
   );
 }
-

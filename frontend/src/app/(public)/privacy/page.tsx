@@ -1,5 +1,10 @@
-import { MarketingNav } from "@/components/modules/landing/marketing-nav";
-import { FooterCta } from "@/components/modules/landing/footer-cta";
+/**
+ * Public privacy policy route.
+ *
+ * Renders the privacy policy in the shared public document shell so metadata,
+ * related documents, and long-form copy keep a stable reading rhythm.
+ */
+import { PublicDocumentShell } from "@/components/modules/legal/public-document-shell";
 
 export const metadata = {
   title: "Privacy Policy - Auracles",
@@ -8,19 +13,12 @@ export const metadata = {
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <MarketingNav />
-      <main className="flex-1 mx-auto w-full max-w-[800px] px-6 py-12 md:py-20">
-        <article className="space-y-8 font-sans">
-          <div className="border-b border-border-default pb-6">
-            <p className="text-xs font-semibold uppercase tracking-wider text-accent">Privacy</p>
-            <h1 className="mt-2 font-heading text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
-              Privacy Policy
-            </h1>
-            <p className="mt-2 text-sm text-foreground-muted">Version 1.0 • Last updated June 2026</p>
-          </div>
-
-          <div className="space-y-6 text-base leading-7 text-foreground-muted">
+    <PublicDocumentShell
+      description="How Auracles collects, processes, stores, and protects personal data across the marketplace."
+      title="Privacy Policy"
+      updated="June 2026"
+      version="1.0"
+    >
             <section className="space-y-3">
               <h2 className="font-heading text-xl font-bold text-foreground">1. Introduction</h2>
               <p>
@@ -70,10 +68,6 @@ export default function PrivacyPage() {
                 </p>
               </div>
             </section>
-          </div>
-        </article>
-      </main>
-      <FooterCta />
-    </div>
+    </PublicDocumentShell>
   );
 }

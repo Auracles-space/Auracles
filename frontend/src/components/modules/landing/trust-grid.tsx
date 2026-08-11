@@ -63,7 +63,7 @@ export function TrustGrid() {
               <li className="relative flex gap-5 md:gap-8" key={step.label}>
                 {/* Numeral rail — the connecting hairline stops at the last step. */}
                 <div className="flex shrink-0 flex-col items-center">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-full border border-border-strong bg-surface-1 font-heading text-base font-bold text-accent">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-border-strong bg-surface-1 font-heading text-base font-bold text-accent">
                     {index + 1}
                   </span>
                   {!isLast && (

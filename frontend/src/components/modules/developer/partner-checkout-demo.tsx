@@ -68,11 +68,11 @@ function PartnerPaymentForm({ transactionId }: { transactionId: string }) {
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4">
       <PaymentElement />
       {error ? <p className="text-sm text-error">{error}</p> : null}
       <button
-        className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+        className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
         disabled={submitting}
         onClick={() => void handleConfirm()}
         type="button"
@@ -169,25 +169,49 @@ export function PartnerCheckoutDemo() {
   }
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-10">
-      {/* Mock partner storefront chrome */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-foreground text-xs font-bold text-background">
-            AI
-          </span>
-          <span className="font-heading text-lg font-bold text-foreground">
-            Acme Integrations
-          </span>
-        </div>
-        <span className="text-xs text-foreground-muted">Powered by Auracles</span>
-      </div>
+    <main className="flex-1 px-5 py-10 md:px-10 md:py-16">
+      <div className="mx-auto grid w-full max-w-[1180px] gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,0.8fr)] lg:items-start">
+        <section className="rounded-card border border-border-default bg-surface-1 p-5 shadow-bento md:p-8 lg:sticky lg:top-24">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-foreground text-sm font-bold text-background">
+              AI
+            </span>
+            <div>
+              <p className="font-heading text-lg font-bold text-foreground">
+                Partner storefront
+              </p>
+              <p className="text-sm text-foreground-muted">
+                Powered by Auracles
+              </p>
+            </div>
+          </div>
+
+          <h1 className="mt-8 max-w-xl text-balance font-heading text-3xl font-bold tracking-tight text-foreground md:text-4xl">
+            Test a partner-hosted framework checkout.
+          </h1>
+          <p className="mt-4 max-w-xl text-sm leading-7 text-foreground-muted md:text-base">
+            Use a Partner API key and a published framework id to preview the
+            buyer flow without requiring an Auracles login.
+          </p>
+
+          <div className="mt-8 grid gap-3 border-t border-border-default pt-5 text-sm text-foreground-muted">
+            <div className="rounded-xl bg-surface-2 p-3">
+              Catalog lookup confirms the framework and price.
+            </div>
+            <div className="rounded-xl bg-surface-2 p-3">
+              Checkout creates a transaction through the Partner API.
+            </div>
+            <div className="rounded-xl bg-surface-2 p-3">
+              Stripe Elements handles card collection and confirmation.
+            </div>
+          </div>
+        </section>
 
       {paid ? (
-        <div className="rounded-2xl border border-success/30 bg-success/10 p-6 text-center">
-          <h1 className="font-heading text-xl font-bold text-success">
+        <div className="rounded-card border border-success/30 bg-success/10 p-6 text-center shadow-bento md:p-8">
+          <h2 className="font-heading text-2xl font-bold text-success">
             Payment complete
-          </h1>
+          </h2>
           <p className="mt-2 text-sm text-foreground-muted">
             Transaction <span className="font-mono">{paid}</span>. The buyer now
             has their license; your commission is recorded once the payment
@@ -195,13 +219,10 @@ export function PartnerCheckoutDemo() {
           </p>
         </div>
       ) : (
-        <section className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-            Checkout
-          </p>
-          <h1 className="mt-1 font-heading text-2xl font-bold text-foreground">
+        <section className="rounded-card border border-border-default bg-surface-1 p-5 shadow-bento md:p-8">
+          <h2 className="font-heading text-2xl font-bold text-foreground">
             Buy a framework
-          </h1>
+          </h2>
           <p className="mt-2 text-sm text-foreground-muted">
             Demo of the buyer flow on a Partner&apos;s own site. Enter your
             Partner API key and a framework id, then pay by card.
@@ -229,7 +250,7 @@ export function PartnerCheckoutDemo() {
               </label>
 
               {preview ? (
-                <div className="flex items-center justify-between rounded-xl border border-border-default bg-surface-2 p-4">
+                <div className="grid gap-2 rounded-xl border border-border-default bg-surface-2 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                   <span className="font-semibold text-foreground">
                     {preview.title}
                   </span>
@@ -239,7 +260,7 @@ export function PartnerCheckoutDemo() {
                 </div>
               ) : (
                 <button
-                  className="min-h-11 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+                  className="min-h-12 rounded-xl border border-border-default px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
                   disabled={busy || !apiKey.trim() || !frameworkId.trim()}
                   onClick={() => void loadFramework()}
                   type="button"
@@ -274,7 +295,7 @@ export function PartnerCheckoutDemo() {
                     </select>
                   </label>
                   <button
-                    className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+                    className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
                     disabled={busy || !buyerEmail.trim()}
                     onClick={() => void startCheckout()}
                     type="button"
@@ -298,6 +319,7 @@ export function PartnerCheckoutDemo() {
           )}
         </section>
       )}
+      </div>
     </main>
   );
 }

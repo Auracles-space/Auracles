@@ -30,6 +30,7 @@ export function FormField({
   ...props
 }: FormFieldProps) {
   const inputId = id ?? props.name ?? label.toLowerCase().replace(/\s+/g, "-");
+  const descriptionId = `${inputId}-description`;
   const [showPassword, setShowPassword] = useState(false);
 
   const inputType = type === "password" ? (showPassword ? "text" : "password") : type;
@@ -46,11 +47,12 @@ export function FormField({
       </span>
       <div className="relative mt-2">
         <input
-          className={`min-h-12 w-full rounded-xl border bg-surface-2 py-2 text-sm text-foreground outline-none focus:outline-none focus-visible:outline-none transition-colors placeholder:text-foreground-subtle focus:border-accent focus:ring-1 focus:ring-accent focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent ${
+          className={`min-h-12 w-full rounded-xl border bg-surface-2 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent ${
             error
-              ? "border-error focus:border-error focus:ring-1 focus:ring-error focus-visible:border-error focus-visible:ring-1 focus-visible:ring-error"
+              ? "border-error focus-visible:border-error focus-visible:ring-error"
               : "border-border-default"
-          } ${type === "password" ? "pl-4 pr-12" : "px-4"}`}
+          } ${type === "password" ? "pl-4 pr-14" : "px-4"}`}
+          aria-describedby={error || helper ? descriptionId : undefined}
           aria-invalid={error ? true : undefined}
           id={inputId}
           type={inputType}
@@ -60,7 +62,7 @@ export function FormField({
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-lg text-foreground-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl text-foreground-muted transition-colors hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={showPassword ? "Hide password" : "Show password"}
           >
             {showPassword ? (
@@ -77,11 +79,18 @@ export function FormField({
         )}
       </div>
       {error ? (
-        <span className="mt-2 block text-xs leading-5 text-error" role="alert">
+        <span
+          className="mt-2 block text-xs leading-5 text-error"
+          id={descriptionId}
+          role="alert"
+        >
           {error}
         </span>
       ) : helper ? (
-        <span className="mt-2 block text-xs leading-5 text-foreground-muted">
+        <span
+          className="mt-2 block text-xs leading-5 text-foreground-muted"
+          id={descriptionId}
+        >
           {helper}
         </span>
       ) : null}
