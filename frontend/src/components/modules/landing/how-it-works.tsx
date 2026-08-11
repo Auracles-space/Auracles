@@ -25,7 +25,7 @@ const waitlistSteps: StepItem[] = [
     title: "Build a reputation",
     body: "As your work is discovered and licensed, your reputation grows.",
     colSpan: "md:col-span-1",
-    gradient: "bg-brand-pink/10",
+    gradient: "bg-brand-coral/10",
     blob: "bg-brand-magenta/20",
   },
   {

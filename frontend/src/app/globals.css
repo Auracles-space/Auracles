@@ -7,49 +7,95 @@
  *
  * Warm cream surfaces + signature peach-to-indigo gradient + charcoal type.
  * Light mode default; .dark on <html> swaps to dark mode tokens.
- * Components reference these tokens via Tailwind utilities.
+ *
+ * Each token is declared twice on purpose:
+ *
+ *   --x-rgb   space-separated RGB channels. Tailwind maps its color scale to
+ *             `rgb(var(--x-rgb) / <alpha-value>)` so alpha modifiers such as
+ *             `bg-accent/10` compile. A bare `var(--x)` cannot be parsed into
+ *             an alpha color by Tailwind 3, which silently drops the utility
+ *             and emits no rule at all — the class then does nothing.
+ *   --x       the same value in color form, for raw CSS and SVG attributes
+ *             (gradients, scrollbars, `stroke="var(--border-default)"`).
+ *
+ * When adding a token, add both halves and map Tailwind at the `-rgb` one.
  */
 
 :root {
   color-scheme: light;
 
-  --background: #faf7f2;
-  --surface-1: #ffffff;
-  --surface-2: #fdf5ee;
-  --surface-3: #fbe7d8;
+  --background-rgb: 250 247 242;
+  --surface-1-rgb: 255 255 255;
+  --surface-2-rgb: 253 245 238;
+  --surface-3-rgb: 251 231 216;
 
-  --foreground: #0a0a0a;
-  --foreground-muted: #5b5b5b;
-  --foreground-subtle: #8a8a8a;
+  --foreground-rgb: 10 10 10;
+  --foreground-muted-rgb: 91 91 91;
+  --foreground-subtle-rgb: 138 138 138;
 
-  --border-default: #efe7dc;
-  --border-strong: #e3d8c8;
+  --border-default-rgb: 239 231 220;
+  --border-strong-rgb: 227 216 200;
 
   /* Signature brand gradient stops */
-  --brand-peach: #C74634;
-  --brand-coral: #ff9a76;
-  --brand-magenta: #ffc2b4;
-  --brand-violet: #ffe9e2;
-  --brand-indigo: #fff7f4;
+  --brand-peach-rgb: 199 70 52;
+  --brand-coral-rgb: 255 154 118;
+  --brand-magenta-rgb: 255 194 180;
+  --brand-violet-rgb: 255 233 226;
+  --brand-indigo-rgb: 255 247 244;
 
   /* Solid accent shorthand for chips, focus rings */
-  --accent: #C74634;
+  --accent-rgb: 199 70 52;
+
+  /* Semantic status colors, tuned per theme so status text clears 4.5:1
+     against its own background rather than only against the light one. */
+  --success-rgb: 21 128 61;
+  --warning-rgb: 180 83 9;
+  --error-rgb: 220 38 38;
+  --info-rgb: 29 78 216;
 }
 
 .dark {
   color-scheme: dark;
 
-  --background: #000000;
-  --surface-1: #0a0a0a;
-  --surface-2: #111111;
-  --surface-3: #1a1a1a;
+  --background-rgb: 0 0 0;
+  --surface-1-rgb: 10 10 10;
+  --surface-2-rgb: 17 17 17;
+  --surface-3-rgb: 26 26 26;
 
-  --foreground: #ffffff;
-  --foreground-muted: #a3a3a3;
-  --foreground-subtle: #737373;
+  --foreground-rgb: 255 255 255;
+  --foreground-muted-rgb: 163 163 163;
+  --foreground-subtle-rgb: 115 115 115;
 
-  --border-default: #1a1a1a;
-  --border-strong: #262626;
+  --border-default-rgb: 26 26 26;
+  --border-strong-rgb: 38 38 38;
+
+  --success-rgb: 74 222 128;
+  --warning-rgb: 251 191 36;
+  --error-rgb: 248 113 113;
+  --info-rgb: 96 165 250;
+}
+
+/* Color-form aliases. Derived, so a theme only ever overrides the channels. */
+:root {
+  --background: rgb(var(--background-rgb));
+  --surface-1: rgb(var(--surface-1-rgb));
+  --surface-2: rgb(var(--surface-2-rgb));
+  --surface-3: rgb(var(--surface-3-rgb));
+
+  --foreground: rgb(var(--foreground-rgb));
+  --foreground-muted: rgb(var(--foreground-muted-rgb));
+  --foreground-subtle: rgb(var(--foreground-subtle-rgb));
+
+  --border-default: rgb(var(--border-default-rgb));
+  --border-strong: rgb(var(--border-strong-rgb));
+
+  --brand-peach: rgb(var(--brand-peach-rgb));
+  --brand-coral: rgb(var(--brand-coral-rgb));
+  --brand-magenta: rgb(var(--brand-magenta-rgb));
+  --brand-violet: rgb(var(--brand-violet-rgb));
+  --brand-indigo: rgb(var(--brand-indigo-rgb));
+
+  --accent: rgb(var(--accent-rgb));
 }
 
 * {

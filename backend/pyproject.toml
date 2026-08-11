@@ -35,7 +35,12 @@ dependencies = [
   "resend>=2.30.1",
   "scikit-learn>=1.9.0",
   "spacy>=3.8.14",
-  "sqlalchemy>=2.0.36",
+  # The [asyncio] extra pulls greenlet unconditionally. SQLAlchemy's own
+  # greenlet dependency is gated on a platform_machine marker that lists
+  # 'aarch64' but not 'arm64', so Apple Silicon macOS resolves without it and
+  # every async ORM call fails at runtime. Linux images report x86_64/aarch64
+  # and are unaffected, which is why this only ever breaks local dev on a Mac.
+  "sqlalchemy[asyncio]>=2.0.36",
   "uvicorn[standard]>=0.34.0",
   "weasyprint>=69.0",
 ]
