@@ -43,6 +43,11 @@ const adminLinks = [
     summary: "Resolve Project milestone disputes with escrow outcomes.",
   },
   {
+    href: "/admin/money",
+    label: "Money",
+    summary: "Trace payments, escrow, webhooks, and audit history end to end.",
+  },
+  {
     href: "/admin/payouts",
     label: "Payouts",
     summary: "Monitor Contributor and Organization payouts and failed transfers.",
