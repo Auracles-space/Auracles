@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.integrations import stripe
-from app.integrations.payment_router import select_provider
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
 from app.modules.financials.schemas import (
@@ -46,13 +45,12 @@ async def create_org_payment_method_setup(
     from app.modules.financials.service import _verify_sensitive_payment_method_change
 
     organization = await _get_org_for_billing(db, org_id=org_id)
-    provider = select_provider(user_country=organization.country, currency="USD")
-    if provider != "stripe":
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        )
 
+    # Deliberately not routed through `select_provider`. Stored payment methods
+    # are a Stripe primitive, and org checkout charges the saved card on the
+    # Stripe rail regardless of org country. Paystack's redirect flow collects
+    # the card per purchase and has nothing to store, so routing here would
+    # only strand NG orgs with no way to save a card and no rail that wants one.
     await _verify_sensitive_payment_method_change(
         db=db,
         redis=redis,
