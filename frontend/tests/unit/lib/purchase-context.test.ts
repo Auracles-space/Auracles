@@ -35,7 +35,8 @@ describe("buyerOptions", () => {
 });
 
 describe("startPurchase", () => {
-  const okEnvelope = { data: { client_secret: "cs", transaction_id: "tx" }, error: undefined, response: { ok: true } };
+  const okEnvelope = { data: { provider: "stripe", client_secret: "cs", transaction_id: "tx" }, error: undefined, response: { ok: true } };
+  const paystackEnvelope = { data: { provider: "paystack", authorization_url: "https://checkout.paystack.com/ref_1", transaction_id: "tx" }, error: undefined, response: { ok: true } };
 
   it("routes a self purchase through createFrameworkPurchase", async () => {
     vi.mocked(sdk.createFrameworkPurchase).mockResolvedValue(okEnvelope as never);
@@ -43,7 +44,7 @@ describe("startPurchase", () => {
     expect(sdk.createFrameworkPurchase).toHaveBeenCalledWith(
       expect.objectContaining({ body: { license_type: "team" }, path: { framework_id: "fw" } }),
     );
-    expect(res).toEqual({ clientSecret: "cs", transactionId: "tx" });
+    expect(res).toEqual({ kind: "stripe", clientSecret: "cs", transactionId: "tx" });
   });
 
   it("routes an org purchase through createOrgFrameworkPurchase with org_id", async () => {
@@ -52,6 +53,23 @@ describe("startPurchase", () => {
     expect(sdk.createOrgFrameworkPurchase).toHaveBeenCalledWith(
       expect.objectContaining({ body: { license_type: "organizational" }, path: { org_id: "org-9", framework_id: "fw" } }),
     );
+  });
+
+  it("returns a paystack session carrying the hosted checkout URL", async () => {
+    vi.mocked(sdk.createFrameworkPurchase).mockResolvedValue(paystackEnvelope as never);
+    const res = await startPurchase({ buyer: { kind: "self", label: "Myself" }, frameworkId: "fw", licenseType: "team", headers: {}, country: "NG" });
+    expect(sdk.createFrameworkPurchase).toHaveBeenCalledWith(
+      expect.objectContaining({ body: { license_type: "team", country: "NG" } }),
+    );
+    expect(res).toEqual({ kind: "paystack", authorizationUrl: "https://checkout.paystack.com/ref_1", transactionId: "tx" });
+  });
+
+  it("reports an error when paystack returns no redirect URL", async () => {
+    // There is no in-page fallback on this rail, so a missing URL is fatal
+    // rather than something to degrade around.
+    vi.mocked(sdk.createFrameworkPurchase).mockResolvedValue({ data: { provider: "paystack", authorization_url: null, transaction_id: "tx" }, error: undefined, response: { ok: true } } as never);
+    const res = await startPurchase({ buyer: { kind: "self", label: "Myself" }, frameworkId: "fw", licenseType: "team", headers: {}, country: "NG" });
+    expect(res).toEqual({ error: { detail: "Checkout could not be started." } });
   });
 
   it("returns the error envelope on failure", async () => {

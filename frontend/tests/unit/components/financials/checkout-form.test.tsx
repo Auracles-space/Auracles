@@ -168,7 +168,9 @@ describe("CheckoutForm", () => {
     await waitFor(() => {
       expect(createFrameworkPurchase).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: { license_type: "single_user" },
+          // Country is always sent: it selects the payment rail, and omitting
+          // it would silently settle a Nigerian buyer on Stripe.
+          body: { license_type: "single_user", country: expect.any(String) },
           path: { framework_id: framework.id },
         }),
       );

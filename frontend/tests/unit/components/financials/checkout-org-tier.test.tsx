@@ -81,6 +81,7 @@ describe("CheckoutForm org tier coupling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(startPurchase).mockResolvedValue({
+      kind: "stripe",
       clientSecret: "pi_secret_checkout",
       transactionId: "00000000-0000-4000-8000-000000000099",
     });

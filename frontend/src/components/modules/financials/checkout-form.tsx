@@ -3,9 +3,14 @@
 /**
  * Operator checkout form for self-serve Framework purchases.
  *
- * The form starts a backend purchase transaction, then hands the returned
- * PaymentIntent client secret to Stripe Elements. Card data remains inside
- * Stripe-hosted fields and is never handled by Auracles components.
+ * The form starts a backend purchase transaction, then continues however the
+ * chosen rail requires: Stripe hands back a PaymentIntent client secret for
+ * in-page Elements, Paystack hands back a hosted URL the browser is sent to.
+ * Card data stays inside the provider's own fields in both cases and is never
+ * handled by Auracles components.
+ *
+ * The billing country drives that choice, so it is always sent — an omitted
+ * country silently settles on Stripe, which fails for Nigerian cards.
  */
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { useEffect, useMemo, useState } from "react";
@@ -26,8 +31,14 @@ import type {
   ExploreFrameworkDetail,
   PurchaseRequest,
 } from "@/lib/generated/types.gen";
+import { CHECKOUT_COUNTRIES } from "@/lib/marketplace/countries";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
-import { type BuyerOption, buyerOptions, startPurchase } from "@/lib/marketplace/purchase-context";
+import {
+  type BuyerOption,
+  type PurchaseSession,
+  buyerOptions,
+  startPurchase,
+} from "@/lib/marketplace/purchase-context";
 import { BuyerContextSelector } from "./buyer-context-selector";
 
 type CheckoutFormProps = {
@@ -38,10 +49,13 @@ type CollectionCheckoutFormProps = {
   collection: ExploreCollectionDetail;
 };
 
-type CheckoutSession = {
-  clientSecret: string;
-  transactionId: string;
-};
+/**
+ * A checkout in progress that this component still renders.
+ *
+ * Only the Stripe rail is ever held in state: a Paystack purchase navigates
+ * away instead of mounting anything, so there is no Paystack session to keep.
+ */
+type StripeCheckoutSession = Extract<PurchaseSession, { kind: "stripe" }>;
 
 const licenseDescriptions: Record<PurchaseRequest["license_type"], string> = {
   organizational: "For company-wide implementation and shared operating use.",
@@ -50,14 +64,30 @@ const licenseDescriptions: Record<PurchaseRequest["license_type"], string> = {
 };
 
 /**
+ * Best initial guess at the buyer's billing country, from the browser locale.
+ *
+ * Only a default — the buyer can always change it, and the value is what picks
+ * the payment rail, so it must be visible and editable rather than inferred
+ * silently.
+ */
+const defaultCheckoutCountry = (() => {
+  if (typeof navigator === "undefined") {
+    return "US";
+  }
+  const region = new Intl.Locale(navigator.language).maximize().region;
+  return CHECKOUT_COUNTRIES.some((c) => c.code === region) ? (region ?? "US") : "US";
+})();
+
+/**
  * Render an Operator checkout flow for one published Framework.
  *
  * @param props - Framework detail from the marketplace API.
  */
 export function CheckoutForm({ framework }: CheckoutFormProps) {
-  const [session, setSession] = useState<CheckoutSession | null>(null);
+  const [session, setSession] = useState<StripeCheckoutSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [country, setCountry] = useState(defaultCheckoutCountry);
   const stripePromise = useMemo(() => getStripeClient(), []);
   const offersOrgTier = framework.license_types.includes("organizational");
   const [buyers, setBuyers] = useState<BuyerOption[]>([{ kind: "self", label: "Myself" }]);
@@ -95,18 +125,24 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
       frameworkId: framework.id,
       licenseType,
       headers: getAccessTokenHeaders(),
+      country,
     });
-    setSubmitting(false);
 
     if ("error" in result) {
+      setSubmitting(false);
       setError(describeGeneratedError(result.error));
       return;
     }
 
-    setSession({
-      clientSecret: result.clientSecret,
-      transactionId: result.transactionId,
-    });
+    if (result.kind === "paystack") {
+      // Paystack owns the next screen. Stay in the submitting state through
+      // navigation so the button cannot be pressed twice into two charges.
+      window.location.assign(result.authorizationUrl);
+      return;
+    }
+
+    setSubmitting(false);
+    setSession(result);
   }
 
   return (
@@ -119,7 +155,8 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
           License this Framework
         </h2>
         <p className="mt-2 text-sm leading-6 text-foreground-muted">
-          Choose who is purchasing, then complete payment through Stripe-hosted fields.
+          Choose who is purchasing, then complete payment through your provider&rsquo;s
+          secure hosted fields.
         </p>
       </div>
 
@@ -149,6 +186,27 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
           </div>
         </div>
       </div>
+
+      {!session ? (
+        <label className="mt-6 grid gap-2 text-sm font-semibold text-foreground">
+          Billing country
+          <select
+            className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+            disabled={submitting}
+            onChange={(event) => setCountry(event.target.value)}
+            value={country}
+          >
+            {CHECKOUT_COUNTRIES.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs font-normal leading-5 text-foreground-muted">
+            Determines how your payment is processed.
+          </span>
+        </label>
+      ) : null}
 
       {error ? <p className="mt-4 text-sm text-error">{error}</p> : null}
 
@@ -199,7 +257,7 @@ export function CollectionCheckoutForm({
   const [licenseType, setLicenseType] = useState<PurchaseRequest["license_type"]>(
     "single_user",
   );
-  const [session, setSession] = useState<CheckoutSession | null>(null);
+  const [session, setSession] = useState<StripeCheckoutSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const stripePromise = useMemo(() => getStripeClient(), []);
@@ -238,7 +296,12 @@ export function CollectionCheckoutForm({
       return;
     }
 
+    if (!result.data.client_secret) {
+      setError("Checkout could not be started.");
+      return;
+    }
     setSession({
+      kind: "stripe",
       clientSecret: result.data.client_secret,
       transactionId: result.data.transaction_id,
     });

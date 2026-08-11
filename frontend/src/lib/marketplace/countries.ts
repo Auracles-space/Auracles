@@ -1,17 +1,13 @@
 /**
- * Stripe Connect supported countries.
+ * Country lists for payout onboarding and checkout.
  *
- * ISO 3166-1 alpha-2 codes for the countries where Stripe can create a
- * connected account and pay out. Auracles routes payouts through Stripe only
- * (Paystack is shelved), so this is the authoritative set for both
- * organization registration (`country`) and contributor payout onboarding.
+ * Two different questions need two different lists. `STRIPE_CONNECT_COUNTRIES`
+ * answers "where can we pay someone out", which is bounded by Stripe Connect.
+ * `CHECKOUT_COUNTRIES` answers "where is this buyer paying from", which routes
+ * the charge and includes the Paystack corridor Connect cannot serve.
  *
  * Codes are the value; names are display-only. Kept sorted by name so the
  * rendered dropdown reads alphabetically.
- *
- * Source: https://stripe.com/global — cross-border payouts availability.
- * Note: Nigeria (NG) is intentionally absent — Stripe Connect does not support
- * Nigerian payout accounts. Revisit if Paystack is reinstated.
  */
 export type CountryOption = {
   /** ISO 3166-1 alpha-2 code, uppercase. Stored and sent to the API. */
@@ -20,6 +16,15 @@ export type CountryOption = {
   name: string;
 };
 
+/**
+ * Countries where Stripe Connect can create a payout account.
+ *
+ * Authoritative for organization registration (`country`) and contributor
+ * payout onboarding. Nigeria (NG) is intentionally absent — Connect does not
+ * support Nigerian payout accounts, and the Paystack payout rail is not built.
+ *
+ * Source: https://stripe.com/global — cross-border payouts availability.
+ */
 export const STRIPE_CONNECT_COUNTRIES = [
   { code: "AU", name: "Australia" },
   { code: "AT", name: "Austria" },
@@ -66,3 +71,16 @@ export const STRIPE_CONNECT_COUNTRIES = [
   { code: "GB", name: "United Kingdom" },
   { code: "US", name: "United States" },
 ] as const satisfies readonly CountryOption[];
+
+/**
+ * Countries a buyer can declare at checkout, used to pick the payment rail.
+ *
+ * Broader than the payout list: it adds Nigeria, whose charges settle on
+ * Paystack. The field is optional on the API, so a buyer whose country is not
+ * listed simply sends nothing and settles on the default (Stripe) rail —
+ * which is where they would have landed anyway.
+ */
+export const CHECKOUT_COUNTRIES: readonly CountryOption[] = [
+  ...STRIPE_CONNECT_COUNTRIES,
+  { code: "NG", name: "Nigeria" },
+].sort((a, b) => a.name.localeCompare(b.name));
