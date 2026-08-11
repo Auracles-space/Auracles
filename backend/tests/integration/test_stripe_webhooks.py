@@ -38,7 +38,13 @@ from app.modules.developer.models import (
     PartnerCommission,
     PartnerPurchaseAttribution,
 )
-from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
+from app.modules.financials.models import (
+    Escrow,
+    FinancialEvent,
+    Payout,
+    PayoutAccount,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework, License
 from app.modules.projects.models import Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
@@ -64,6 +70,7 @@ async def reset_webhook_state() -> None:
     """Remove webhook test data in foreign-key-safe order."""
     async with async_session_factory() as session:
         await session.execute(delete(WebhookEvent))
+        await session.execute(delete(FinancialEvent))
         await session.execute(delete(AuditLog))
         await session.execute(delete(PartnerCommission))
         await session.execute(delete(PartnerPurchaseAttribution))
@@ -1833,3 +1840,129 @@ async def test_stripe_transfer_created_matches_by_metadata_when_ref_missing(
     assert payout is not None
     assert payout.status == "completed"
     assert payout.provider_ref == "tr_webhook_payout_789"
+
+
+async def test_purchase_failure_records_ledger_event_with_cause(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A failed purchase records the transition and the bank's actual reason.
+
+    Before the ledger, a failure stored only `status='failed'` plus an audit
+    row whose reason was the constant event name, so every declined payment
+    was indistinguishable from every other one.
+    """
+    transaction_id, framework_id, _, _ = await create_pending_purchase()
+    event = payment_intent_event(
+        "evt_purchase_failed_ledger",
+        "payment_intent.payment_failed",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+    event["data"]["object"]["last_payment_error"] = {
+        "code": "card_declined",
+        "decline_code": "insufficient_funds",
+        "message": "Your card has insufficient funds.",
+    }
+    webhook_context["event"] = event
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        ledger_event = await session.scalar(
+            select(FinancialEvent).where(FinancialEvent.entity_id == transaction_id)
+        )
+
+    assert response.status_code == 200
+    assert ledger_event is not None
+    assert ledger_event.entity_type == "transaction"
+    assert ledger_event.event_type == "purchase_failed"
+    assert ledger_event.from_status == "pending"
+    assert ledger_event.to_status == "failed"
+    assert ledger_event.reason_code == "insufficient_funds"
+    assert ledger_event.reason_message == "Your card has insufficient funds."
+    assert ledger_event.provider == "stripe"
+
+
+async def test_payout_reversal_records_ledger_transition(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A reversed payout transfer is traceable, with its full transfer reference.
+
+    `transfer.reversed` is the failure path Stripe actually emits for Connect
+    transfers, and it carries no failure code. The reason is therefore
+    `unknown` — honest rather than invented — while the ledger still records
+    the transition and the whole transfer reference. The existing audit row
+    keeps only the reference's last four characters, which is not enough to
+    reconcile against the Stripe dashboard.
+    """
+    payout_id, _ = await create_processing_payout(provider_ref="tr_failed_payout_1")
+    webhook_context["event"] = transfer_event(
+        "evt_transfer_reversed_ledger",
+        "transfer.reversed",
+        transfer_id="tr_failed_payout_1",
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        ledger_event = await session.scalar(
+            select(FinancialEvent).where(FinancialEvent.entity_id == payout_id)
+        )
+
+    assert response.status_code == 200
+    assert ledger_event is not None
+    assert ledger_event.entity_type == "payout"
+    assert ledger_event.event_type == "payout_failed"
+    assert ledger_event.from_status == "processing"
+    assert ledger_event.to_status == "failed"
+    assert ledger_event.reason_code == "unknown"
+    assert ledger_event.provider_ref == "tr_failed_payout_1"
+
+
+async def test_successful_purchase_records_ledger_transition(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """Successful money movement is traceable too, not only failures.
+
+    A ledger that holds only failures cannot answer how long a payment took or
+    prove that a completed purchase ever settled.
+    """
+    transaction_id, framework_id, _, _ = await create_pending_purchase()
+    webhook_context["event"] = payment_intent_event(
+        "evt_purchase_succeeded_ledger",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        ledger_event = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == transaction_id,
+                FinancialEvent.event_type == "purchase_completed",
+            )
+        )
+
+    assert response.status_code == 200
+    assert ledger_event is not None
+    assert ledger_event.from_status == "pending"
+    assert ledger_event.to_status == "completed"
+    assert ledger_event.reason_code is None
+    assert ledger_event.amount is not None
