@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.security import hash_payout_provider_account_id
 from app.integrations import persona, stripe
+from app.integrations.payment_failures import normalize_stripe_failure
 from app.integrations.persona import PersonaProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.admin.notifications import notify_admins_review_pending
@@ -39,6 +40,7 @@ from app.modules.developer.models import (
     PartnerPurchaseAttribution,
 )
 from app.modules.financials import escrow_service
+from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.modules.notifications.service import create_notification
@@ -57,6 +59,54 @@ class WebhookProcessingError(RuntimeError):
 def _normalise_money(amount: Decimal) -> Decimal:
     """Return a two-decimal money value for webhook-created ledger rows."""
     return amount.quantize(Decimal("0.01"))
+
+
+async def _record_transaction_transition(
+    db: AsyncSession,
+    *,
+    transaction: Transaction,
+    event_type: str,
+    from_status: str,
+    failure_object: dict[str, Any] | None = None,
+) -> None:
+    """Append a transaction state change to the financial ledger.
+
+    Called after the status has already been mutated, so `transaction.status`
+    is the destination and `from_status` must be captured by the caller before
+    the change.
+
+    Args:
+        db: Session inside the webhook's transaction, so the ledger row commits
+            atomically with the state change it describes.
+        transaction: The transaction whose status just changed.
+        event_type: snake_case event name, e.g. `purchase_failed`.
+        from_status: Status held before the mutation.
+        failure_object: Stripe `data.object` for failure events, whose error
+            fields are normalized into a provider-neutral reason. None for
+            successful transitions.
+    """
+    failure = normalize_stripe_failure(failure_object) if failure_object else None
+    metadata: dict[str, Any] = {}
+    if failure is not None and failure.provider_code is not None:
+        # Keep the provider's own code alongside the normalized one so a cause
+        # we have not mapped yet is still diagnosable from the ledger.
+        metadata["provider_code"] = failure.provider_code
+    await record_financial_event(
+        db,
+        entity_type="transaction",
+        entity_id=transaction.id,
+        event_type=event_type,
+        from_status=from_status,
+        to_status=transaction.status,
+        amount=transaction.amount,
+        currency=transaction.currency,
+        provider=transaction.provider,
+        provider_ref=transaction.provider_ref,
+        reason_code=failure.code if failure else None,
+        reason_message=failure.message if failure else None,
+        actor_id=transaction.payer_id,
+        metadata=metadata,
+    )
 
 
 def _event_object(event: dict[str, Any]) -> dict[str, Any]:
@@ -215,6 +265,8 @@ async def _handle_purchase_succeeded(
     transaction = await db.get(Transaction, transaction_id)
     if transaction is None:
         raise WebhookProcessingError("purchase transaction not found")
+    # Captured before mutation so the ledger can record the transition.
+    previous_status = transaction.status
     if transaction.transaction_type != "purchase":
         raise WebhookProcessingError("transaction is not a purchase")
     if transaction.provider != "stripe":
@@ -334,6 +386,15 @@ async def _handle_purchase_succeeded(
                 "license_type": license_type,
             },
         )
+
+    # Recorded once for both the org and individual branches above, which
+    # converge on the same completed status.
+    await _record_transaction_transition(
+        db,
+        transaction=transaction,
+        event_type="purchase_completed",
+        from_status=previous_status,
+    )
 
     after_commit_work = await _create_partner_commission_if_attributed(
         db=db,
@@ -458,6 +519,7 @@ async def _handle_purchase_failed(
         raise WebhookProcessingError("purchase transaction not found")
     if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
         raise WebhookProcessingError("payment intent id mismatch")
+    previous_status = transaction.status
     transaction.status = "failed"
     await write_audit(
         db=db,
@@ -466,6 +528,13 @@ async def _handle_purchase_failed(
         target_type="transaction",
         target_id=transaction.id,
         metadata={"provider": "stripe", "reason": "payment_intent.payment_failed"},
+    )
+    await _record_transaction_transition(
+        db,
+        transaction=transaction,
+        event_type="purchase_failed",
+        from_status=previous_status,
+        failure_object=_event_object(event),
     )
 
 
@@ -490,9 +559,11 @@ async def _handle_escrow_failed(
             db=db,
             transaction=transaction,
             reason=event_type,
+            failure_object=_event_object(event),
         )
         return
 
+    previous_status = transaction.status
     transaction.status = "failed"
     await write_audit(
         db=db,
@@ -502,6 +573,13 @@ async def _handle_escrow_failed(
         target_id=transaction.id,
         metadata={"provider": "stripe", "reason": event_type},
     )
+    await _record_transaction_transition(
+        db,
+        transaction=transaction,
+        event_type="escrow_funding_failed",
+        from_status=previous_status,
+        failure_object=_event_object(event),
+    )
 
 
 async def _mark_attestation_fee_failed(
@@ -509,8 +587,17 @@ async def _mark_attestation_fee_failed(
     db: AsyncSession,
     transaction: Transaction,
     reason: str,
+    failure_object: dict[str, Any] | None = None,
 ) -> None:
-    """Cancel an Attestation when fee escrow funding fails before hold."""
+    """Cancel an Attestation when fee escrow funding fails before hold.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        transaction: The attestation-fee transaction being failed.
+        reason: Stripe event type that triggered the failure.
+        failure_object: Stripe `data.object`, whose error fields are normalized
+            into the ledger's provider-neutral reason.
+    """
     if transaction.transaction_type != "attestation_fee" or transaction.ref_id is None:
         raise WebhookProcessingError("attestation fee transaction mismatch")
     attestation = await db.scalar(
@@ -525,6 +612,7 @@ async def _mark_attestation_fee_failed(
     if attestation.status != "pending_fee":
         raise WebhookProcessingError("attestation is not pending fee funding")
 
+    previous_status = transaction.status
     transaction.status = "failed"
     attestation.status = "cancelled"
     await write_audit(
@@ -538,6 +626,13 @@ async def _mark_attestation_fee_failed(
             "reason": reason,
             "transaction_id": str(transaction.id),
         },
+    )
+    await _record_transaction_transition(
+        db,
+        transaction=transaction,
+        event_type="attestation_fee_failed",
+        from_status=previous_status,
+        failure_object=failure_object,
     )
 
 
@@ -710,6 +805,82 @@ async def _mark_project_milestone_funded(
     )
 
 
+async def _handle_connected_payout_failed(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> list[Callable[[], None]]:
+    """Record why a connected account's bank payout failed.
+
+    Stripe emits this for the connected account's own payout to its bank, and
+    it is the only event on the payout path carrying a failure code —
+    `transfer.reversed`, which undoes our transfer, carries none.
+
+    The event names a connected account, not one of our `payouts` rows, and one
+    bank payout can settle several of our transfers, so the failure is recorded
+    against the payout account rather than guessing at a single payout. The
+    contributor's funds are stranded in their Stripe balance, so admins are
+    alerted once the record is durable.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: The verified Stripe event.
+
+    Returns:
+        Post-commit callables raising an admin alert, or an empty list when the
+        account is not one we track.
+    """
+    account_id = event.get("account")
+    if not isinstance(account_id, str) or not account_id:
+        raise WebhookProcessingError("payout.failed missing connected account id")
+
+    payout_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.provider == "stripe",
+            PayoutAccount.provider_account_lookup_hash
+            == hash_payout_provider_account_id(account_id),
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if payout_account is None:
+        # Stripe delivers connected-account events for every account on the
+        # platform. Erroring would make it retry an event we do not own.
+        logger.bind(
+            module="webhooks",
+            action="connected_payout_failed",
+        ).info("payout_failed_for_untracked_account")
+        return []
+
+    event_object = _event_object(event)
+    failure = normalize_stripe_failure(event_object)
+    await record_financial_event(
+        db,
+        entity_type="payout_account",
+        entity_id=payout_account.id,
+        event_type="connected_payout_failed",
+        provider="stripe",
+        provider_ref=_event_object_id(event),
+        reason_code=failure.code,
+        reason_message=failure.message,
+        actor_id=payout_account.user_id,
+        metadata=(
+            {"provider_code": failure.provider_code} if failure.provider_code else {}
+        ),
+    )
+
+    payout_account_id = payout_account.id
+    return [
+        lambda: notify_admins_review_pending(
+            domain="payout",
+            target_id=payout_account_id,
+            body=(
+                "A contributor's bank payout failed; their funds are held at "
+                "the payment provider and need admin investigation."
+            ),
+            link="/admin/payouts",
+        )
+    ]
+
+
 async def _handle_account_updated(db: AsyncSession, event: dict[str, Any]) -> None:
     """Mark a payout account verified when Stripe Connect enables it."""
     event_object = _event_object(event)
@@ -796,6 +967,7 @@ async def _handle_transfer_event(
             payout.provider_ref = transfer_id
     if payout.status == payout_status:
         return []
+    previous_status = payout.status
     payout.status = payout_status
     if payout_status == "completed":
         payout.completed_at = datetime.now(UTC)
@@ -806,6 +978,33 @@ async def _handle_transfer_event(
         target_type="payout",
         target_id=payout.id,
         metadata={"provider": "stripe", "transfer_ref": transfer_id[-4:]},
+    )
+    # The audit row above deliberately keeps only the last four characters of
+    # the transfer reference; the ledger carries the cause a failed payout needs.
+    failure = (
+        normalize_stripe_failure(_event_object(event))
+        if payout_status == "failed"
+        else None
+    )
+    await record_financial_event(
+        db,
+        entity_type="payout",
+        entity_id=payout.id,
+        event_type=f"payout_{payout_status}",
+        from_status=previous_status,
+        to_status=payout_status,
+        amount=payout.amount,
+        currency=payout.currency,
+        provider="stripe",
+        provider_ref=transfer_id,
+        reason_code=failure.code if failure else None,
+        reason_message=failure.message if failure else None,
+        actor_id=payout.contributor_id,
+        metadata=(
+            {"provider_code": failure.provider_code}
+            if failure and failure.provider_code
+            else {}
+        ),
     )
     if payout_status != "failed":
         return []
@@ -870,6 +1069,10 @@ async def _dispatch_verified_event(
         await _handle_account_updated(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
+    if event_type == "payout.failed":
+        payout_notifications = await _handle_connected_payout_failed(db, event)
+        await _mark_event_status(db, event_id=event_id, status_="processed")
+        return "processed", None, payout_notifications
     if event_type == "transfer.created":
         await _handle_transfer_event(db, event, payout_status="completed")
         await _mark_event_status(db, event_id=event_id, status_="processed")

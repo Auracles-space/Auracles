@@ -356,6 +356,79 @@ class Payout(Base):
     payout_account: Mapped[PayoutAccount] = relationship(back_populates="payouts")
 
 
+class FinancialEvent(Base):
+    """One immutable record of a money state change, across any provider.
+
+    Rows are append-only: nothing in the application updates or deletes them,
+    because the ledger's value is that it still shows what happened after a
+    status column has been overwritten. `reason_code` is normalized by the
+    provider adapters so a Stripe decline and a Paystack decline are queryable
+    through one vocabulary, while the raw provider code stays in `metadata_`.
+
+    Written only through `app.modules.financials.ledger.record_financial_event`,
+    which validates the money fields and strips sensitive keys from metadata.
+    """
+
+    __tablename__ = "financial_events"
+    __table_args__ = (
+        CheckConstraint(
+            "amount IS NULL OR amount > 0",
+            name="ck_financial_events_amount_positive",
+        ),
+        CheckConstraint(
+            "(amount IS NULL) = (currency IS NULL)",
+            name="ck_financial_events_currency_with_amount",
+        ),
+        CheckConstraint(
+            "entity_type IN ('transaction', 'escrow', 'payout', "
+            "'partner_commission', 'partner_payout', 'payout_account')",
+            name="ck_financial_events_entity_type",
+        ),
+        Index("idx_financial_events_entity", "entity_type", "entity_id", "occurred_at"),
+        Index("idx_financial_events_occurred_at", "occurred_at"),
+        Index("idx_financial_events_event_type", "event_type", "occurred_at"),
+        Index("idx_financial_events_provider_ref", "provider", "provider_ref"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Null on creation events, where there is no prior state to record.
+    from_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    to_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Null for state changes that do not move money.
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    provider: Mapped[str | None] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=True)
+    provider_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reason_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reason_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Null when a provider webhook or scheduled task drove the change.
+    actor_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    # clock_timestamp() advances per statement; now() is transaction-start time
+    # and would collapse events written in the same commit onto one timestamp.
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("clock_timestamp()"),
+    )
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+
+
 class PlatformConfig(Base):
     """Mutable platform-wide financial configuration row."""
 
