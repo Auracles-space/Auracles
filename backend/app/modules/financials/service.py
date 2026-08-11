@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.currency import platform_currency
 from app.core.security import (
     decrypt_payout_provider_account_id,
     encrypt_payout_provider_account_id,
@@ -198,10 +199,23 @@ async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
     )
 
 
+# Fallback payout floors, used only until an admin sets `min_payout_<ccy>` in
+# platform_config. A floor of zero would let a payout be worth less than the
+# provider's own transfer fee, so every settleable currency needs a real number.
+# TODO(william, 2026-08-11, FR-FIN-012): confirm the NGN floor before pilot
+# launch — 50,000 is a placeholder chosen to sit well clear of Paystack's
+# per-transfer fee, not a product decision.
+_MINIMUM_PAYOUT_DEFAULTS = {
+    "USD": Decimal("50.00"),
+    "NGN": Decimal("50000.00"),
+}
+
+
 async def _minimum_payout(db: AsyncSession, currency: str) -> Decimal:
     """Return the configured minimum payout for a currency."""
-    config_key = f"min_payout_{currency.lower()}"
-    default = Decimal("50.00") if currency.upper() == "USD" else Decimal("0.00")
+    normalized = currency.upper()
+    config_key = f"min_payout_{normalized.lower()}"
+    default = _MINIMUM_PAYOUT_DEFAULTS.get(normalized, Decimal("0.00"))
     return _normalise_money(
         await _platform_decimal_config(db, key=config_key, default=default)
     )
@@ -1244,10 +1258,10 @@ async def create_framework_purchase(
 
     amount = _normalise_money(resolve_license_price(framework, payload.license_type))
     currency = framework.currency.upper()
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Only USD purchases are supported.",
+            detail=f"Only {platform_currency()} purchases are supported.",
         )
 
     provider = select_provider(user_country=payload.country, currency=currency)
@@ -1463,10 +1477,10 @@ async def create_org_framework_purchase(
 
     amount = _normalise_money(resolve_license_price(framework, payload.license_type))
     currency = framework.currency.upper()
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Only USD purchases are supported.",
+            detail=f"Only {platform_currency()} purchases are supported.",
         )
 
     organization = await db.get(Organization, org_id)
@@ -1927,7 +1941,7 @@ async def get_contributor_earnings(
     contributor: User,
 ) -> EarningsResponse:
     """Return refund-safe Contributor earnings balances."""
-    currency = "USD"
+    currency = platform_currency()
     (
         gross_revenue,
         pending_clearance,
@@ -2104,7 +2118,7 @@ async def get_org_earnings(
     org_id: UUID,
 ) -> EarningsResponse:
     """Return an organization's released earnings balances."""
-    currency = "USD"
+    currency = platform_currency()
     (
         gross_revenue,
         pending_clearance,
@@ -2221,7 +2235,10 @@ async def onboard_org_payout_account(
     org_country = org.country
     actor_id = actor.id
     actor_email = actor.email
-    provider = select_provider(user_country=org_country, currency="USD")
+    provider = select_provider(
+        user_country=org_country,
+        currency=platform_currency(),
+    )
     if provider != "stripe":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -2418,10 +2435,10 @@ async def request_org_payout(
     """
     actor_id = actor.id
     currency = payload.currency.upper()
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Only USD payouts are supported.",
+            detail=f"Only {platform_currency()} payouts are supported.",
         )
 
     requested_net = _normalise_money(payload.amount)
@@ -2546,10 +2563,10 @@ async def request_payout(
     """Create a pending payout request and queue provider transfer processing."""
     contributor_id = contributor.id
     currency = payload.currency.upper()
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Only USD payouts are supported.",
+            detail=f"Only {platform_currency()} payouts are supported.",
         )
 
     requested_net = _normalise_money(payload.amount)

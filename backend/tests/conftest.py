@@ -21,6 +21,18 @@ os.environ["PAYOUT_ACCOUNT_ENCRYPTION_KEY"] = (
 os.environ["PARTNER_WEBHOOK_ENCRYPTION_KEY"] = (
     "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC="
 )
+# The suite runs on USD while the pilot deployment runs on NGN. That is
+# deliberate: pinning it here keeps the existing money tests exercising the
+# machinery unchanged, and any test that hardcodes a currency is then asserting
+# against a known value rather than against whatever the deployment default
+# happens to be. The NGN pilot configuration has its own dedicated coverage in
+# tests/integration/test_ngn_pilot_settlement.py.
+os.environ["PLATFORM_CURRENCY"] = "USD"
+# Pinned for the same reason as the datastores above: tests that build Settings
+# directly (tests/unit/test_cookies.py) otherwise inherit whatever a developer
+# has in `.env`, so the suite passes or fails depending on the machine. `lax` is
+# the field default those tests assert against.
+os.environ["COOKIE_SAMESITE"] = "lax"
 os.environ["S3_ARTIFACTS_BUCKET"] = "auracles-artifacts-dev"
 os.environ["S3_AVATARS_BUCKET"] = "auracles-avatars-dev"
 os.environ["S3_REPORTS_BUCKET"] = "auracles-reports-dev"

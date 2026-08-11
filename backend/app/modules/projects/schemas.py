@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.currency import normalize_platform_currency, platform_currency
 from app.modules.reputation.schemas import ReputationSummary
 
 
@@ -28,16 +29,18 @@ class ProjectCreateRequest(BaseModel):
     required_deliverables: list[DeliverableSpec] = Field(min_length=1)
     budget_min: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     budget_max: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency: str = Field(
+        default_factory=platform_currency,
+        min_length=3,
+        max_length=3,
+    )
     deadline: date | None = None
 
     @field_validator("currency")
     @classmethod
-    def currency_must_be_usd(cls, value: str) -> str:
-        """Reject non-USD Project creation during the MVP currency lock."""
-        if value.upper() != "USD":
-            raise ValueError("Project currency must be USD.")
-        return value.upper()
+    def currency_is_the_platform_currency(cls, value: str) -> str:
+        """Pin Project amounts to the platform's settlement currency."""
+        return normalize_platform_currency(value)
 
     @field_validator("budget_max")
     @classmethod
@@ -95,17 +98,19 @@ class ProposalCreateRequest(BaseModel):
 
     scope: str = Field(min_length=10, max_length=10000)
     budget: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency: str = Field(
+        default_factory=platform_currency,
+        min_length=3,
+        max_length=3,
+    )
     timeline_days: int = Field(gt=0, le=3650)
     deliverables: list[DeliverableSpec] = Field(min_length=1)
 
     @field_validator("currency")
     @classmethod
-    def currency_must_be_usd(cls, value: str) -> str:
-        """Reject non-USD Proposal submission during the MVP currency lock."""
-        if value.upper() != "USD":
-            raise ValueError("Proposal currency must be USD.")
-        return value.upper()
+    def currency_is_the_platform_currency(cls, value: str) -> str:
+        """Pin Proposal amounts to the platform's settlement currency."""
+        return normalize_platform_currency(value)
 
 
 class OrgProposalCreateRequest(ProposalCreateRequest):
@@ -154,16 +159,18 @@ class MilestoneCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     description: str = Field(min_length=1, max_length=4000)
     budget: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency: str = Field(
+        default_factory=platform_currency,
+        min_length=3,
+        max_length=3,
+    )
     due_date: date | None = None
 
     @field_validator("currency")
     @classmethod
-    def currency_must_be_usd(cls, value: str) -> str:
-        """Reject non-USD Milestone drafting during the MVP currency lock."""
-        if value.upper() != "USD":
-            raise ValueError("Milestone currency must be USD.")
-        return value.upper()
+    def currency_is_the_platform_currency(cls, value: str) -> str:
+        """Pin Milestone amounts to the platform's settlement currency."""
+        return normalize_platform_currency(value)
 
 
 class MilestoneUpdateRequest(BaseModel):

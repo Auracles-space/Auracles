@@ -16,6 +16,7 @@ from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.currency import platform_currency
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
@@ -564,10 +565,10 @@ async def create_collection_purchase(
     contributor_id = collection.contributor_id
     members = await _load_collection_members(db, collection.id)
     _validate_publishable(collection=collection, members=members)
-    if collection_currency != "USD":
+    if collection_currency != platform_currency():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Only USD collection purchases are supported.",
+            detail=f"Only {platform_currency()} collection purchases are supported.",
         )
 
     member_ids = [member.id for member in members]

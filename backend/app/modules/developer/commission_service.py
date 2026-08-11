@@ -20,6 +20,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.currency import platform_currency
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.developer import webhooks_service
@@ -405,23 +406,35 @@ async def get_tier_progress(
     )
 
 
+# Fallback Partner payout floors, mirroring the Contributor floors in
+# app/modules/financials/service.py. Overridden by `partner_min_payout_<ccy>`.
+_PARTNER_MINIMUM_PAYOUT_DEFAULTS = {
+    "USD": Decimal("50.00"),
+    "NGN": Decimal("50000.00"),
+}
+
+
 async def _partner_minimum_payout(db: AsyncSession, currency: str) -> Decimal:
-    """Return the configured Partner minimum payout for a currency."""
-    if currency.upper() != "USD":
+    """Return the configured Partner minimum payout for a currency.
+
+    A currency the platform does not settle has no floor to enforce, because no
+    balance can accrue in it in the first place.
+    """
+    normalized = currency.upper()
+    if normalized != platform_currency():
         return Decimal("0.00")
+    config_key = f"partner_min_payout_{normalized.lower()}"
     configured = await db.scalar(
-        select(PlatformConfig.value).where(
-            PlatformConfig.key == "partner_min_payout_usd"
-        )
+        select(PlatformConfig.value).where(PlatformConfig.key == config_key)
     )
     if configured is None:
-        return Decimal("50.00")
+        return _PARTNER_MINIMUM_PAYOUT_DEFAULTS.get(normalized, Decimal("0.00"))
     try:
         return _normalise_money(Decimal(configured))
     except InvalidOperation as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="partner_min_payout_usd configuration is invalid.",
+            detail=f"{config_key} configuration is invalid.",
         ) from exc
 
 
@@ -493,10 +506,10 @@ async def request_partner_payout(
     developer_account_id = developer_account.id
     user_id = user.id
     currency = payload.currency.upper()
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Only USD Partner payouts are supported.",
+            detail=f"Only {platform_currency()} Partner payouts are supported.",
         )
 
     requested_amount = _normalise_money(payload.amount)

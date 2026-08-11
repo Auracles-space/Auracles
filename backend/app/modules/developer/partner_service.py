@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.currency import platform_currency
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.attestation.models import Attestation
@@ -540,10 +541,10 @@ async def initiate_purchase(
 
     amount = _normalise_money(framework_price)
     currency = framework_currency
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Only USD purchases are supported.",
+            detail=f"Only {platform_currency()} purchases are supported.",
         )
 
     tier_rate = _normalise_rate(Decimal(context.developer_account.tier_rate))

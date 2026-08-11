@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
+from app.core.currency import platform_currency
 from app.integrations import stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.admin.models import AnalyticsDailySnapshot
@@ -211,9 +212,13 @@ async def _list_gmv_transactions(
     since: datetime,
     until: datetime | None = None,
 ) -> list[Transaction]:
-    """Return completed USD marketplace transactions within a time range."""
+    """Return completed marketplace transactions within a time range.
+
+    Scoped to the platform settlement currency: GMV in a currency the platform
+    no longer trades in would silently inflate the total.
+    """
     filters = [
-        Transaction.currency == "USD",
+        Transaction.currency == platform_currency(),
         Transaction.status == "completed",
         Transaction.transaction_type.in_(("purchase", "milestone", "attestation_fee")),
         Transaction.created_at >= since,

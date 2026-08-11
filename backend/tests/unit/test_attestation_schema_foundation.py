@@ -155,7 +155,9 @@ def test_attestation_migration_preserves_key_constraints(
     }
 
     assert {
-        "ck_attestations_currency_usd",
+        # Renamed by 2026_08_11_0094: the USD-only check became an allowlist of
+        # the currencies the payment adapters can settle.
+        "ck_attestations_currency_settleable",
         "ck_attestations_fee_amount_positive",
     }.issubset(attestation_checks)
     assert "ck_attestation_upload_sessions_single_parent" in upload_checks

@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.currency import normalize_platform_currency, platform_currency
+
 CollectionStatus = Literal["draft", "published", "unpublished"]
 
 
@@ -22,15 +24,17 @@ class CollectionCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     description: str = Field(min_length=1)
     bundle_price: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency: str = Field(
+        default_factory=platform_currency,
+        min_length=3,
+        max_length=3,
+    )
 
     @field_validator("currency")
     @classmethod
-    def currency_must_be_usd(cls, value: str) -> str:
-        """Reject non-USD Collections during the MVP currency lock."""
-        if value.upper() != "USD":
-            raise ValueError("Collection currency must be USD.")
-        return value.upper()
+    def currency_is_the_platform_currency(cls, value: str) -> str:
+        """Pin Collection pricing to the platform's settlement currency."""
+        return normalize_platform_currency(value)
 
 
 class CollectionUpdateRequest(BaseModel):
@@ -48,13 +52,11 @@ class CollectionUpdateRequest(BaseModel):
 
     @field_validator("currency")
     @classmethod
-    def currency_must_be_usd(cls, value: str | None) -> str | None:
-        """Reject non-USD Collection edits during the MVP currency lock."""
+    def currency_is_the_platform_currency(cls, value: str | None) -> str | None:
+        """Pin edited Collection pricing to the platform's currency."""
         if value is None:
             return None
-        if value.upper() != "USD":
-            raise ValueError("Collection currency must be USD.")
-        return value.upper()
+        return normalize_platform_currency(value)
 
 
 class CollectionMemberRequest(BaseModel):

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.currency import platform_currency
 from app.integrations import s3, stripe
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
@@ -1134,10 +1135,10 @@ async def fund_milestone(
         amount = _normalise_money(milestone.budget)
         currency = milestone.currency.upper()
 
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=422,
-            detail="Only USD Milestone funding is supported.",
+            detail=f"Only {platform_currency()} Milestone funding is supported.",
         )
 
     try:
@@ -1292,10 +1293,10 @@ async def fund_org_milestone(
             organization.stripe_customer_id if organization is not None else None
         )
 
-    if currency != "USD":
+    if currency != platform_currency():
         raise HTTPException(
             status_code=422,
-            detail="Only USD Milestone funding is supported.",
+            detail=f"Only {platform_currency()} Milestone funding is supported.",
         )
     if customer_id is None:
         # No lazy org-customer create on the org path (mirrors org purchase).

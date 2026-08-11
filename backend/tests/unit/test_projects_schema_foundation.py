@@ -142,7 +142,9 @@ def test_projects_migration_preserves_key_constraints(
 
     assert {
         "ck_projects_budget_range",
-        "ck_projects_currency_usd",
+        # Renamed by 2026_08_11_0094: the USD-only check became an allowlist of
+        # the currencies the payment adapters can settle.
+        "ck_projects_currency_settleable",
     }.issubset(project_checks)
     assert "uq_milestones_project_sequence" in milestone_uniques
     assert "uq_workspace_upload_sessions_s3_key" in upload_uniques

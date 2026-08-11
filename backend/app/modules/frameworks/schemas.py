@@ -14,6 +14,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.currency import normalize_platform_currency, platform_currency
 from app.modules.frameworks.taxonomy import (
     FrameworkCategory,
     FrameworkFunction,
@@ -41,7 +42,11 @@ class PricingConfig(BaseModel):
     """Framework pricing and licensing options configured by a Contributor."""
 
     price: Decimal = Field(gt=0, decimal_places=2, max_digits=12)
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    currency: str = Field(
+        default_factory=platform_currency,
+        min_length=3,
+        max_length=3,
+    )
     license_types: list[LicenseType] = Field(min_length=1)
     org_price: Decimal | None = Field(
         default=None,
@@ -54,12 +59,9 @@ class PricingConfig(BaseModel):
 
     @field_validator("currency")
     @classmethod
-    def currency_is_uppercase_iso_code(cls, value: str) -> str:
-        """Normalize ISO-like currency codes to uppercase three-letter text."""
-        currency = value.upper()
-        if currency != "USD":
-            raise ValueError("Only USD Framework pricing is supported.")
-        return currency
+    def currency_is_the_platform_currency(cls, value: str) -> str:
+        """Pin Framework pricing to the platform's single settlement currency."""
+        return normalize_platform_currency(value)
 
     @model_validator(mode="after")
     def validate_org_pricing(self) -> PricingConfig:

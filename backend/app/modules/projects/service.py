@@ -19,6 +19,7 @@ from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.currency import platform_currency
 from app.modules.auth.models import User
 from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import (
@@ -885,7 +886,7 @@ async def submit_org_proposal(
             delivering_member_id=delivering_member_id,
             scope=scope,
             budget=budget,
-            currency="USD",
+            currency=platform_currency(),
             timeline_days=timeline_days,
             deliverables=deliverables,
         )

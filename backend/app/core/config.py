@@ -219,8 +219,31 @@ class Settings(BaseSettings):
     platform_commission_rate: float = Field(
         default=0.15, alias="PLATFORM_COMMISSION_RATE"
     )
+    # The single currency the platform prices, charges, earns, and pays out in.
+    # Defaults to NGN for the closed Nigerian pilot, where both sides of every
+    # trade are Nigerian and no conversion step exists. See app/core/currency.py.
+    platform_currency: str = Field(default="NGN", alias="PLATFORM_CURRENCY")
     clamav_host: str | None = Field(default=None, alias="CLAMAV_HOST")
     clamav_port: int = Field(default=3310, alias="CLAMAV_PORT")
+
+    @field_validator("platform_currency")
+    @classmethod
+    def platform_currency_is_settleable(cls, value: str) -> str:
+        """Reject a settlement currency no payment adapter can charge.
+
+        Validated at boot rather than at charge time: a currency that passes
+        config but fails inside `to_minor_units` would turn every purchase into
+        a runtime 502 instead of a startup failure.
+        """
+        # Imported here because app.integrations.amounts must not be pulled in
+        # at module import time — config is the lowest layer in the app.
+        from app.integrations.amounts import SUPPORTED_MINOR_UNIT_CURRENCIES
+
+        currency = value.strip().upper()
+        if currency not in SUPPORTED_MINOR_UNIT_CURRENCIES:
+            supported = ", ".join(sorted(SUPPORTED_MINOR_UNIT_CURRENCIES))
+            raise ValueError(f"PLATFORM_CURRENCY must be one of: {supported}.")
+        return currency
 
     @field_validator("cors_allowed_origins")
     @classmethod
