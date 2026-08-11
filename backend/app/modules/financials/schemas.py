@@ -70,14 +70,27 @@ class PurchaseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     license_type: SelfServeLicenseType
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    """ISO 3166-1 alpha-2 country of the payer, used to pick the payment rail.
+
+    Optional: an omitted value routes to the default (Stripe) rail. Supplied
+    per-request rather than read from the account because users carry no
+    stored country — the same shape the individual payout onboarding uses.
+    """
 
 
 class PurchaseResponse(BaseModel):
-    """PaymentIntent data needed by the browser to complete checkout."""
+    """Provider handoff data the browser needs to complete checkout.
+
+    The two rails hand off differently and exactly one field is populated:
+    Stripe returns a `client_secret` for in-page Elements, while Paystack
+    returns an `authorization_url` the browser is redirected to.
+    """
 
     transaction_id: UUID
-    provider: Literal["stripe"]
-    client_secret: str
+    provider: Literal["stripe", "paystack"]
+    client_secret: str | None = None
+    authorization_url: str | None = None
 
 
 class RefundResponse(BaseModel):
@@ -98,7 +111,7 @@ class PurchaseHistoryItem(BaseModel):
     amount: Decimal
     currency: str
     status: str
-    provider: Literal["stripe"]
+    provider: Literal["stripe", "paystack"]
     license_id: UUID | None
     license_type: str | None
     purchased_at: datetime

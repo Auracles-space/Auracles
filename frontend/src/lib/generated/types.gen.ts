@@ -5,8 +5,8 @@
  */
 export type AccountDeletionBlockedReason = {
     code: string;
-    message: string;
     count?: (number | null);
+    message: string;
 };
 
 /**
@@ -25,12 +25,12 @@ export type AccountDeletionRequestBody = {
  * Latest GDPR account-deletion request state for the current user.
  */
 export type AccountDeletionStatusResponse = {
-    id: (string | null);
-    status: (string | null);
     blocked_reasons: Array<AccountDeletionBlockedReason>;
-    scheduled_for: (string | null);
-    requested_at: (string | null);
     completed_at: (string | null);
+    id: (string | null);
+    requested_at: (string | null);
+    scheduled_for: (string | null);
+    status: (string | null);
 };
 
 /**
@@ -46,12 +46,12 @@ export type role = 'contributor' | 'operator' | 'attestor';
  * Current-state admin analytics plus frozen historical trend rows.
  */
 export type AdminAnalyticsDashboardResponse = {
-    gmv: AdminAnalyticsGmvResponse;
     active_users: AdminAnalyticsWindowCounts;
-    new_registrations: AdminAnalyticsWindowCounts;
-    frameworks_published: AdminAnalyticsPublishedFrameworks;
     attestations_issued: AdminAnalyticsWindowCounts;
     disputes_open: AdminAnalyticsDisputesOpen;
+    frameworks_published: AdminAnalyticsPublishedFrameworks;
+    gmv: AdminAnalyticsGmvResponse;
+    new_registrations: AdminAnalyticsWindowCounts;
     trend: Array<AdminAnalyticsTrendPoint>;
 };
 
@@ -59,54 +59,54 @@ export type AdminAnalyticsDashboardResponse = {
  * Current open dispute counts split by dispute source.
  */
 export type AdminAnalyticsDisputesOpen = {
-    total: number;
-    projects: number;
     attestations: number;
+    projects: number;
+    total: number;
 };
 
 /**
  * Money totals for each marketplace revenue source within one window.
  */
 export type AdminAnalyticsGmvBreakdown = {
-    framework_purchase: string;
-    collection_purchase: string;
-    project_milestone: string;
     attestation_fee: string;
+    collection_purchase: string;
+    framework_purchase: string;
+    project_milestone: string;
 };
 
 /**
  * GMV totals and by-source breakdowns for the admin dashboard.
  */
 export type AdminAnalyticsGmvResponse = {
-    today_total: string;
-    last_7_days_total: string;
-    last_30_days_total: string;
-    today_by_source: AdminAnalyticsGmvBreakdown;
-    last_7_days_by_source: AdminAnalyticsGmvBreakdown;
     last_30_days_by_source: AdminAnalyticsGmvBreakdown;
+    last_30_days_total: string;
+    last_7_days_by_source: AdminAnalyticsGmvBreakdown;
+    last_7_days_total: string;
+    today_by_source: AdminAnalyticsGmvBreakdown;
+    today_total: string;
 };
 
 /**
  * Published Framework totals and recent publication counts.
  */
 export type AdminAnalyticsPublishedFrameworks = {
-    total: number;
     last_24_hours: number;
-    last_7_days: number;
     last_30_days: number;
+    last_7_days: number;
+    total: number;
 };
 
 /**
  * One frozen UTC daily analytics row for dashboard trend charts.
  */
 export type AdminAnalyticsTrendPoint = {
-    snapshot_date: string;
-    gmv_total: string;
     active_users: number;
-    new_registrations: number;
-    frameworks_published: number;
     attestations_issued: number;
     disputes_open: number;
+    frameworks_published: number;
+    gmv_total: string;
+    new_registrations: number;
+    snapshot_date: string;
 };
 
 /**
@@ -114,8 +114,8 @@ export type AdminAnalyticsTrendPoint = {
  */
 export type AdminAnalyticsWindowCounts = {
     last_24_hours: number;
-    last_7_days: number;
     last_30_days: number;
+    last_7_days: number;
 };
 
 /**
@@ -146,10 +146,10 @@ export type AdminAttestationDetailResponse = {
  * uphold with a refund, or uphold requiring the attestor to revise.
  */
 export type AdminAttestationDisputeResolveRequest = {
+    is_complex?: boolean;
     outcome: 'rejected' | 'upheld_refund' | 'upheld_revise';
     resolution_notes: string;
     totp_code: string;
-    is_complex?: boolean;
 };
 
 export type outcome = 'rejected' | 'upheld_refund' | 'upheld_revise';
@@ -161,13 +161,13 @@ export type outcome = 'rejected' | 'upheld_refund' | 'upheld_revise';
  * accepted by) and the offer lifecycle timestamps.
  */
 export type AdminAttestationOfferItem = {
+    cohort_index: number;
+    expires_at: string;
+    offered_at: string;
     org_id: (string | null);
     org_name: (string | null);
-    status: string;
-    cohort_index: number;
-    offered_at: string;
-    expires_at: string;
     responded_at: (string | null);
+    status: string;
 };
 
 /**
@@ -182,15 +182,15 @@ export type AdminAttestationRefundRequest = {
  * One audit log entry for the admin oversight view.
  */
 export type AdminAuditLogItem = {
-    log_id: string;
-    actor_id: (string | null);
     action: string;
-    target_type: string;
-    target_id: (string | null);
+    actor_id: (string | null);
+    created_at: string;
+    log_id: string;
     metadata: {
         [key: string]: unknown;
     };
-    created_at: string;
+    target_id: (string | null);
+    target_type: string;
 };
 
 /**
@@ -198,20 +198,20 @@ export type AdminAuditLogItem = {
  */
 export type AdminAuditLogsResponse = {
     items: Array<AdminAuditLogItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * Single platform configuration value visible to administrators.
  */
 export type AdminConfigItem = {
-    key: string;
-    value: string;
     editable: boolean;
+    key: string;
     updated_at: string;
     updated_by: (string | null);
+    value: string;
 };
 
 /**
@@ -249,14 +249,14 @@ export type key = 'commission_rate' | 'min_payout_usd' | 'refund_window_hours' |
  */
 export type AdminConnectorItem = {
     connection_id: string;
-    user_id: string;
+    created_at: string;
     provider: string;
     provider_account_email: (string | null);
     scopes: string;
     status: string;
     token_expires_at: (string | null);
-    created_at: string;
     updated_at: string;
+    user_id: string;
 };
 
 /**
@@ -264,9 +264,9 @@ export type AdminConnectorItem = {
  */
 export type AdminConnectorsResponse = {
     items: Array<AdminConnectorItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -280,24 +280,24 @@ export type AdminCredentialRejectRequest = {
  * Credential detail for the admin review queue (includes review evidence).
  */
 export type AdminCredentialResponse = {
-    id: string;
-    user_id: string;
-    title: string;
-    issuer: string;
-    issued_date: string;
-    expires_date: (string | null);
-    credential_type: (string | null);
-    verification_url: (string | null);
-    reference_number: (string | null);
-    issuer_type: (string | null);
-    evidence_file_keys: Array<(string)>;
-    verification_status: string;
-    submitted_at: (string | null);
-    verified_at: (string | null);
-    reviewed_by: (string | null);
-    rejection_reason: (string | null);
     created_at: string;
+    credential_type: (string | null);
+    evidence_file_keys: Array<(string)>;
+    expires_date: (string | null);
+    id: string;
+    issued_date: string;
+    issuer: string;
+    issuer_type: (string | null);
+    reference_number: (string | null);
+    rejection_reason: (string | null);
+    reviewed_by: (string | null);
+    submitted_at: (string | null);
+    title: string;
     updated_at: string;
+    user_id: string;
+    verification_status: string;
+    verification_url: (string | null);
+    verified_at: (string | null);
 };
 
 /**
@@ -311,15 +311,15 @@ export type AdminCredentialsResponse = {
  * One account-deletion request for the admin GDPR oversight queue.
  */
 export type AdminDeletionRequestItem = {
-    request_id: string;
-    user_id: string;
-    status: 'pending' | 'scheduled' | 'blocked' | 'cancelled' | 'completed';
     blocked_reasons: Array<{
         [key: string]: unknown;
     }>;
-    scheduled_for: (string | null);
-    requested_at: string;
     completed_at: (string | null);
+    request_id: string;
+    requested_at: string;
+    scheduled_for: (string | null);
+    status: 'pending' | 'scheduled' | 'blocked' | 'cancelled' | 'completed';
+    user_id: string;
 };
 
 export type status = 'pending' | 'scheduled' | 'blocked' | 'cancelled' | 'completed';
@@ -329,19 +329,19 @@ export type status = 'pending' | 'scheduled' | 'blocked' | 'cancelled' | 'comple
  */
 export type AdminDeletionRequestsResponse = {
     items: Array<AdminDeletionRequestItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * Request body for resolving a Project dispute.
  */
 export type AdminDisputeResolveRequest = {
-    resolution_type: 'release' | 'refund' | 'split';
-    release_amount?: (number | string | null);
     refund_amount?: (number | string | null);
+    release_amount?: (number | string | null);
     resolution_notes: string;
+    resolution_type: 'release' | 'refund' | 'split';
     totp_code: string;
 };
 
@@ -355,30 +355,30 @@ export type resolution_type = 'release' | 'refund' | 'split';
  * release/refund/split amount without leaving the queue.
  */
 export type AdminDisputeResponse = {
-    id: string;
-    project_id: string;
-    milestone_id: string;
-    raised_by_side: (string | null);
-    reason: string;
-    status: string;
-    resolution_type: (string | null);
-    release_amount: (string | null);
-    refund_amount: (string | null);
     admin_id: (string | null);
-    resolution_notes: (string | null);
-    escalated_at: (string | null);
-    resolved_at: (string | null);
+    contributor_name: string;
     created_at: string;
-    project_title: string;
-    milestone_name: string;
-    milestone_budget: string;
     currency: string;
+    escalated_at: (string | null);
     escrow_amount: (string | null);
     escrow_status: (string | null);
+    id: string;
+    milestone_budget: string;
+    milestone_id: string;
+    milestone_name: string;
+    operator_name: string;
+    project_id: string;
+    project_title: string;
     raised_by_name: (string | null);
     raised_by_role: string;
-    operator_name: string;
-    contributor_name: string;
+    raised_by_side: (string | null);
+    reason: string;
+    refund_amount: (string | null);
+    release_amount: (string | null);
+    resolution_notes: (string | null);
+    resolution_type: (string | null);
+    resolved_at: (string | null);
+    status: string;
 };
 
 /**
@@ -393,25 +393,25 @@ export type AdminDisputesResponse = {
  */
 export type AdminEscrowDirectoryResponse = {
     items: Array<AdminEscrowItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * One escrow holding for admin financial oversight.
  */
 export type AdminEscrowItem = {
-    escrow_id: string;
-    transaction_id: string;
-    ref_type: string;
-    ref_id: string;
     amount: string;
     currency: string;
-    status: 'held' | 'released' | 'refunded';
+    escrow_id: string;
     held_at: string;
+    ref_id: string;
+    ref_type: string;
     released_at: (string | null);
     released_by: (string | null);
+    status: 'held' | 'released' | 'refunded';
+    transaction_id: string;
 };
 
 export type status2 = 'held' | 'released' | 'refunded';
@@ -428,15 +428,15 @@ export type AdminEscrowOverrideRequest = {
  * Response body for admin escrow state changes.
  */
 export type AdminEscrowResponse = {
-    escrow_id: string;
-    transaction_id: string;
-    ref_id: string;
-    ref_type: string;
     amount: string;
     currency: string;
-    status: string;
+    escrow_id: string;
+    ref_id: string;
+    ref_type: string;
     released_at: (string | null);
     released_by: (string | null);
+    status: string;
+    transaction_id: string;
 };
 
 /**
@@ -446,13 +446,13 @@ export type AdminEscrowResponse = {
  * personal export and must never surface in an admin list.
  */
 export type AdminExportRequestItem = {
-    request_id: string;
-    user_id: string;
-    status: 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
-    failure_reason: (string | null);
-    requested_at: string;
     completed_at: (string | null);
     expires_at: (string | null);
+    failure_reason: (string | null);
+    request_id: string;
+    requested_at: string;
+    status: 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
+    user_id: string;
 };
 
 export type status3 = 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
@@ -462,9 +462,9 @@ export type status3 = 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
  */
 export type AdminExportRequestsResponse = {
     items: Array<AdminExportRequestItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -474,23 +474,23 @@ export type AdminExportRequestsResponse = {
  * `metadata`, which the ledger writer strips of sensitive keys before storing.
  */
 export type AdminFinancialEventItem = {
-    event_id: string;
-    entity_type: string;
-    entity_id: string;
-    event_type: string;
-    from_status: (string | null);
-    to_status: (string | null);
+    actor_id: (string | null);
     amount: (string | null);
     currency: (string | null);
+    entity_id: string;
+    entity_type: string;
+    event_id: string;
+    event_type: string;
+    from_status: (string | null);
+    metadata: {
+        [key: string]: unknown;
+    };
+    occurred_at: string;
     provider: ('stripe' | 'paystack' | null);
     provider_ref: (string | null);
     reason_code: (string | null);
     reason_message: (string | null);
-    actor_id: (string | null);
-    occurred_at: string;
-    metadata: {
-        [key: string]: unknown;
-    };
+    to_status: (string | null);
 };
 
 /**
@@ -498,21 +498,21 @@ export type AdminFinancialEventItem = {
  */
 export type AdminFinancialEventsResponse = {
     items: Array<AdminFinancialEventItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * One Framework in the admin directory used to pick a delist target.
  */
 export type AdminFrameworkDirectoryItem = {
-    framework_id: string;
-    title: string;
     contributor_id: string;
     contributor_name: string;
-    status: string;
+    framework_id: string;
     published_at?: (string | null);
+    status: string;
+    title: string;
 };
 
 /**
@@ -527,8 +527,8 @@ export type AdminFrameworkDirectoryResponse = {
  */
 export type AdminFrameworkStatusResponse = {
     framework_id: string;
-    status: string;
     reason?: (string | null);
+    status: string;
 };
 
 /**
@@ -545,20 +545,20 @@ export type AdminFrameworkSuspendRequest = {
  * invoice metadata, parties, and totals.
  */
 export type AdminInvoiceItem = {
+    buyer_email: string;
+    buyer_name: string;
+    created_at: string;
+    currency: string;
+    doc_type: string;
     invoice_id: string;
     invoice_number: string;
-    doc_type: string;
     issue_date: string;
-    currency: string;
+    seller_name: string;
+    source_ref_id: string;
+    source_ref_type: string;
     subtotal: string;
     tax_amount: string;
     total: string;
-    seller_name: string;
-    buyer_name: string;
-    buyer_email: string;
-    source_ref_type: string;
-    source_ref_id: string;
-    created_at: string;
 };
 
 /**
@@ -566,17 +566,17 @@ export type AdminInvoiceItem = {
  */
 export type AdminInvoicesResponse = {
     items: Array<AdminInvoiceItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * Request body for admin KYC review decisions.
  */
 export type AdminKycReviewRequest = {
-    status: 'verified' | 'rejected';
     notes?: (string | null);
+    status: 'verified' | 'rejected';
 };
 
 export type status4 = 'verified' | 'rejected';
@@ -585,19 +585,19 @@ export type status4 = 'verified' | 'rejected';
  * Response body for an admin identity-verification override.
  */
 export type AdminKycReviewResponse = {
-    user_id: string;
     kyc_status: string;
+    user_id: string;
 };
 
 /**
  * Request body for admin-mediated license grants.
  */
 export type AdminLicenseGrantRequest = {
+    expires_at?: (string | null);
     framework_id: string;
     operator_id: string;
-    type: 'single_user' | 'team' | 'organizational' | 'enterprise';
-    expires_at?: (string | null);
     seats_total?: (number | null);
+    type: 'single_user' | 'team' | 'organizational' | 'enterprise';
 };
 
 export type type = 'single_user' | 'team' | 'organizational' | 'enterprise';
@@ -606,25 +606,25 @@ export type type = 'single_user' | 'team' | 'organizational' | 'enterprise';
  * Response body for an admin-created license.
  */
 export type AdminLicenseGrantResponse = {
-    license_id: string;
-    framework_id: string;
-    operator_id: string;
-    type: string;
-    status: string;
-    version_at_grant: string;
-    seats_used: number;
-    seats_total: (number | null);
     expires_at: (string | null);
+    framework_id: string;
+    license_id: string;
+    operator_id: string;
+    seats_total: (number | null);
+    seats_used: number;
+    status: string;
+    type: string;
+    version_at_grant: string;
 };
 
 /**
  * Existing API action relevant to one moderation queue row.
  */
 export type AdminModerationActionLink = {
-    rel: string;
+    actor_role: 'admin' | 'contributor';
     method: "POST";
     path: string;
-    actor_role: 'admin' | 'contributor';
+    rel: string;
 };
 
 export type actor_role = 'admin' | 'contributor';
@@ -633,19 +633,19 @@ export type actor_role = 'admin' | 'contributor';
  * One moderation queue row aggregated from existing platform signals.
  */
 export type AdminModerationQueueItem = {
-    signal_id: string;
-    queue_type: 'rarity_review' | 'near_duplicate_block' | 'pii_review';
-    framework_id: string;
-    framework_title: string;
-    contributor_id: string;
-    contributor_name: string;
+    action_links: Array<AdminModerationActionLink>;
     artifact_id?: (string | null);
     artifact_name?: (string | null);
-    signal_at: string;
+    contributor_id: string;
+    contributor_name: string;
     details: {
         [key: string]: unknown;
     };
-    action_links: Array<AdminModerationActionLink>;
+    framework_id: string;
+    framework_title: string;
+    queue_type: 'rarity_review' | 'near_duplicate_block' | 'pii_review';
+    signal_at: string;
+    signal_id: string;
 };
 
 export type queue_type = 'rarity_review' | 'near_duplicate_block' | 'pii_review';
@@ -655,26 +655,26 @@ export type queue_type = 'rarity_review' | 'near_duplicate_block' | 'pii_review'
  */
 export type AdminModerationQueueResponse = {
     items: Array<AdminModerationQueueItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * Platform-admin view of an organization.
  */
 export type AdminOrgResponse = {
-    id: string;
-    slug: string;
-    name: string;
-    country: string;
-    member_count: number;
     capabilities: {
         [key: string]: (string);
     };
-    suspended_at?: (string | null);
-    deactivated_at?: (string | null);
+    country: string;
     created_at: string;
+    deactivated_at?: (string | null);
+    id: string;
+    member_count: number;
+    name: string;
+    slug: string;
+    suspended_at?: (string | null);
 };
 
 /**
@@ -682,9 +682,9 @@ export type AdminOrgResponse = {
  */
 export type AdminOrgsResponse = {
     orgs: Array<AdminOrgResponse>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -692,9 +692,9 @@ export type AdminOrgsResponse = {
  */
 export type AdminPayoutDirectoryResponse = {
     items: Array<AdminPayoutItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -705,18 +705,18 @@ export type AdminPayoutDirectoryResponse = {
  * provider label and transfer reference are enough to investigate a payout.
  */
 export type AdminPayoutItem = {
-    payout_id: string;
-    beneficiary_type: 'contributor' | 'org';
-    beneficiary_id: string;
-    provider: 'stripe' | 'paystack';
     amount: string;
+    beneficiary_id: string;
+    beneficiary_type: 'contributor' | 'org';
     commission_deducted: string;
-    net_amount: string;
-    currency: string;
-    status: 'pending' | 'processing' | 'completed' | 'failed';
-    provider_ref: (string | null);
-    initiated_at: string;
     completed_at: (string | null);
+    currency: string;
+    initiated_at: string;
+    net_amount: string;
+    payout_id: string;
+    provider: 'stripe' | 'paystack';
+    provider_ref: (string | null);
+    status: 'pending' | 'processing' | 'completed' | 'failed';
 };
 
 export type beneficiary_type = 'contributor' | 'org';
@@ -736,9 +736,9 @@ export type AdminRarityBlockOverrideRequest = {
  * Request body for an audited single-subject reputation recompute.
  */
 export type AdminReputationRecomputeRequest = {
-    subject_type: 'framework' | 'contributor' | 'operator' | 'attestor_org';
-    subject_id: string;
     reason: string;
+    subject_id: string;
+    subject_type: 'framework' | 'contributor' | 'operator' | 'attestor_org';
     totp_code: string;
 };
 
@@ -749,8 +749,8 @@ export type subject_type = 'framework' | 'contributor' | 'operator' | 'attestor_
  */
 export type AdminReputationRecomputeResponse = {
     status: string;
-    subject_type: string;
     subject_id: string;
+    subject_type: string;
 };
 
 /**
@@ -766,9 +766,9 @@ export type role2 = 'contributor' | 'operator' | 'attestor' | 'admin';
  * Response body for admin role assignment.
  */
 export type AdminRoleAssignmentResponse = {
-    user_id: string;
-    role: string;
     approved: boolean;
+    role: string;
+    user_id: string;
 };
 
 /**
@@ -782,12 +782,12 @@ export type AdminStartTrialRequest = {
  * One suspended Framework awaiting possible reinstatement.
  */
 export type AdminSuspendedFrameworkItem = {
-    framework_id: string;
-    title: string;
     contributor_id: string;
     contributor_name: string;
+    framework_id: string;
     reason?: (string | null);
     suspended_at?: (string | null);
+    title: string;
 };
 
 /**
@@ -805,9 +805,9 @@ export type AdminSuspendedFrameworksResponse = {
  * nowhere else.
  */
 export type AdminTransactionDetailResponse = {
-    transaction: AdminTransactionItem;
     escrows: Array<AdminEscrowItem>;
     timeline: Array<AdminFinancialEventItem>;
+    transaction: AdminTransactionItem;
 };
 
 /**
@@ -815,9 +815,9 @@ export type AdminTransactionDetailResponse = {
  */
 export type AdminTransactionDirectoryResponse = {
     items: Array<AdminTransactionItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -828,23 +828,23 @@ export type AdminTransactionDirectoryResponse = {
  * failed, never why.
  */
 export type AdminTransactionItem = {
-    transaction_id: string;
-    transaction_type: string;
-    status: string;
     amount: string;
+    created_at: string;
     currency: string;
-    platform_commission: string;
+    failure_reason_code: (string | null);
     net_amount: string;
-    provider: ('stripe' | 'paystack' | null);
-    provider_ref: (string | null);
-    payer_id: (string | null);
-    payer_org_id: (string | null);
     payee_id: (string | null);
     payee_org_id: (string | null);
-    ref_type: (string | null);
+    payer_id: (string | null);
+    payer_org_id: (string | null);
+    platform_commission: string;
+    provider: ('stripe' | 'paystack' | null);
+    provider_ref: (string | null);
     ref_id: (string | null);
-    failure_reason_code: (string | null);
-    created_at: string;
+    ref_type: (string | null);
+    status: string;
+    transaction_id: string;
+    transaction_type: string;
     updated_at: string;
 };
 
@@ -852,11 +852,11 @@ export type AdminTransactionItem = {
  * Admin trial-grade view with the auto-score suggestion.
  */
 export type AdminTrialGradeResponse = {
-    trial_id: string;
-    status: string;
-    score_pct: (string | null);
     auto_result: (string | null);
     rows: Array<AdminTrialGradeRow>;
+    score_pct: (string | null);
+    status: string;
+    trial_id: string;
 };
 
 /**
@@ -864,27 +864,27 @@ export type AdminTrialGradeResponse = {
  */
 export type AdminTrialGradeRow = {
     dimension_id: string;
-    label: string;
-    weight: string;
-    nominee_score: (number | null);
-    nominee_comment: (string | null);
     expected_score: number;
+    label: string;
+    nominee_comment: (string | null);
+    nominee_score: (number | null);
     tolerance: number;
+    weight: string;
 };
 
 /**
  * One user row visible in the admin account directory.
  */
 export type AdminUserDirectoryItem = {
-    user_id: string;
+    created_at: string;
     display_name: string;
     email: string;
-    roles: Array<(string)>;
-    created_at: string;
-    suspended: boolean;
-    suspended_at: (string | null);
     is_superadmin?: boolean;
     kyc_status: string;
+    roles: Array<(string)>;
+    suspended: boolean;
+    suspended_at: (string | null);
+    user_id: string;
 };
 
 /**
@@ -892,9 +892,9 @@ export type AdminUserDirectoryItem = {
  */
 export type AdminUserDirectoryResponse = {
     items: Array<AdminUserDirectoryItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -909,11 +909,11 @@ export type AdminUserSuspendRequest = {
  * Response body for admin user suspension lifecycle changes.
  */
 export type AdminUserSuspensionResponse = {
-    user_id: string;
     suspended: boolean;
     suspended_at: (string | null);
     suspended_by: (string | null);
     suspension_reason: (string | null);
+    user_id: string;
 };
 
 /**
@@ -927,10 +927,10 @@ export type AdminUserUnsuspendRequest = {
  * One pre-launch waitlist signup for admin review.
  */
 export type AdminWaitlistItem = {
-    entry_id: string;
-    email: string;
-    source: (string | null);
     created_at: string;
+    email: string;
+    entry_id: string;
+    source: (string | null);
 };
 
 /**
@@ -938,9 +938,9 @@ export type AdminWaitlistItem = {
  */
 export type AdminWaitlistResponse = {
     items: Array<AdminWaitlistItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -951,14 +951,14 @@ export type AdminWaitlistResponse = {
  * signed body cannot leak through this view.
  */
 export type AdminWebhookEventItem = {
+    error: (string | null);
     event_id: string;
+    event_type: string;
+    processed_at: (string | null);
     provider: 'stripe' | 'paystack';
     provider_event_id: string;
-    event_type: string;
-    status: 'received' | 'processed' | 'failed';
-    error: (string | null);
     received_at: string;
-    processed_at: (string | null);
+    status: 'received' | 'processed' | 'failed';
 };
 
 export type status6 = 'received' | 'processed' | 'failed';
@@ -968,19 +968,19 @@ export type status6 = 'received' | 'processed' | 'failed';
  */
 export type AdminWebhookEventsResponse = {
     items: Array<AdminWebhookEventItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * Project member request body for proposing a Proposal amendment.
  */
 export type AmendmentCreateRequest = {
-    change_type: 'scope' | 'budget' | 'timeline' | 'combo';
     after: {
         [key: string]: unknown;
     };
+    change_type: 'scope' | 'budget' | 'timeline' | 'combo';
     reason: string;
 };
 
@@ -990,33 +990,33 @@ export type change_type = 'scope' | 'budget' | 'timeline' | 'combo';
  * Proposal amendment response returned to Project members.
  */
 export type AmendmentResponse = {
-    id: string;
-    proposal_id: string;
-    proposed_by: string;
-    change_type: string;
-    before: {
-        [key: string]: unknown;
-    };
     after: {
         [key: string]: unknown;
     };
+    before: {
+        [key: string]: unknown;
+    };
+    change_type: string;
+    created_at: string;
+    expires_at: string;
+    id: string;
+    proposal_id: string;
+    proposed_by: string;
     reason: string;
-    status: string;
     responded_at: (string | null);
     responded_by: (string | null);
-    expires_at: string;
-    created_at: string;
+    status: string;
 };
 
 /**
  * Request body for creating one free-anchor workspace annotation.
  */
 export type AnnotationCreateRequest = {
+    annotation_type: 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
     artifact_id?: (string | null);
+    comment: string;
     location_label: string;
     quoted_excerpt?: (string | null);
-    annotation_type: 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
-    comment: string;
 };
 
 export type annotation_type = 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
@@ -1025,63 +1025,63 @@ export type annotation_type = 'endorsement' | 'concern' | 'jurisdictional_caveat
  * One persisted attestation annotation row.
  */
 export type AnnotationResponse = {
-    id: string;
+    annotation_type: string;
     artifact_id: (string | null);
+    comment: string;
+    id: string;
     location_label: string;
     quoted_excerpt: (string | null);
-    annotation_type: string;
-    comment: string;
 };
 
 /**
  * Request body for replacing a workspace annotation's editable fields.
  */
 export type AnnotationUpdateRequest = {
+    annotation_type: 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
     artifact_id?: (string | null);
+    comment: string;
     location_label: string;
     quoted_excerpt?: (string | null);
-    annotation_type: 'endorsement' | 'concern' | 'jurisdictional_caveat' | 'revision_recommended';
-    comment: string;
 };
 
 /**
  * Request body for creating a partner API key.
  */
 export type ApiKeyCreateRequest = {
+    expires_at?: (string | null);
     name: string;
     scopes: Array<(string)>;
-    expires_at?: (string | null);
 };
 
 /**
  * API key creation response that includes the raw key exactly once.
  */
 export type ApiKeyCreateResponse = {
+    created_at: string;
+    expires_at: (string | null);
     id: string;
-    name: string;
     key_prefix: string;
+    last_used_at: (string | null);
+    name: string;
+    raw_key: string;
+    revoked_at: (string | null);
     scopes: Array<(string)>;
     status: string;
-    expires_at: (string | null);
-    revoked_at: (string | null);
-    last_used_at: (string | null);
-    created_at: string;
-    raw_key: string;
 };
 
 /**
  * API key metadata returned after creation, listing, update, or revoke.
  */
 export type ApiKeyResponse = {
+    created_at: string;
+    expires_at: (string | null);
     id: string;
-    name: string;
     key_prefix: string;
+    last_used_at: (string | null);
+    name: string;
+    revoked_at: (string | null);
     scopes: Array<(string)>;
     status: string;
-    expires_at: (string | null);
-    revoked_at: (string | null);
-    last_used_at: (string | null);
-    created_at: string;
 };
 
 /**
@@ -1110,10 +1110,10 @@ export type ArtifactConfirmRequest = {
  */
 export type ArtifactDownloadResponse = {
     artifact_id: string;
-    framework_id: string;
-    license_id: string;
     download_url: string;
     expires_in: number;
+    framework_id: string;
+    license_id: string;
 };
 
 /**
@@ -1128,34 +1128,34 @@ export type ArtifactFromConnectorRequest = {
  * Contributor-facing Artifact processing status.
  */
 export type ArtifactResponse = {
-    id: string;
-    framework_id: string;
-    name: string;
+    created_at: string;
     file_key: string;
     file_size: number;
+    framework_id: string;
+    id: string;
     mime_type: string;
-    source_kind: string;
-    scan_status: string;
-    processing_status: string;
+    name: string;
+    near_duplicate_blocked?: boolean;
     pii_detected: boolean;
     pii_review_needed: boolean;
     pii_types_found?: Array<(string)>;
+    processing_status: string;
+    rarity_score: (string | null);
+    redaction_accepted: boolean;
     redaction_available: boolean;
     redaction_status: (string | null);
-    redaction_accepted: boolean;
-    rarity_score: (string | null);
-    near_duplicate_blocked?: boolean;
+    scan_status: string;
     similarity_notice?: (SimilarityNotice | null);
-    created_at: string;
+    source_kind: string;
 };
 
 /**
  * Request body for creating a constrained Artifact upload target.
  */
 export type ArtifactUploadUrlRequest = {
+    file_size: number;
     filename: string;
     mime_type: string;
-    file_size: number;
 };
 
 /**
@@ -1163,21 +1163,21 @@ export type ArtifactUploadUrlRequest = {
  */
 export type ArtifactUploadUrlResponse = {
     artifact_id: string;
-    upload_url: string;
+    expires_in: number;
     fields: {
         [key: string]: (string);
     };
     file_key: string;
     max_size: number;
-    expires_in: number;
+    upload_url: string;
 };
 
 /**
  * Attestor acceptance with the binding content-use acknowledgment.
  */
 export type AttestationAcceptRequest = {
-    content_ack: boolean;
     ack_version: string;
+    content_ack: boolean;
 };
 
 /**
@@ -1186,9 +1186,9 @@ export type AttestationAcceptRequest = {
 export type AttestationArtifactAccessResponse = {
     artifact_id: string;
     attestation_id: string;
-    scope: string;
     download_url: string;
     expires_in: number;
+    scope: string;
 };
 
 /**
@@ -1200,18 +1200,18 @@ export type AttestationArtifactAccessResponse = {
  * exposes the reviewing member who performed an org attestation.
  */
 export type AttestationBadgeDetail = {
-    id: string;
-    review_type: string;
-    outcome: 'approved' | 'conditional' | 'rejected';
+    attestor_display_name: string;
     attestor_id?: (string | null);
     attestor_org_id?: (string | null);
     attestor_org_slug?: (string | null);
-    attestor_display_name: string;
-    verification_level?: (number | null);
     credentials?: Array<PublicCredentialResponse>;
-    issued_at: string;
     framework_version: (string | null);
+    id: string;
+    issued_at: string;
     newer_version_exists: boolean;
+    outcome: 'approved' | 'conditional' | 'rejected';
+    review_type: string;
+    verification_level?: (number | null);
 };
 
 export type outcome2 = 'approved' | 'conditional' | 'rejected';
@@ -1220,11 +1220,11 @@ export type outcome2 = 'approved' | 'conditional' | 'rejected';
  * Structured review brief shown to the cohort during the offer phase.
  */
 export type AttestationBrief = {
-    what_it_does: string;
-    use_case: string;
-    jurisdiction: string;
-    focus_areas: string;
     desired_outcome: string;
+    focus_areas: string;
+    jurisdiction: string;
+    use_case: string;
+    what_it_does: string;
 };
 
 /**
@@ -1258,28 +1258,28 @@ export type category = 'scope_error' | 'process_violation' | 'material_inaccurac
  * Attestation dispute details visible to requestors and admins.
  */
 export type AttestationDisputeResponse = {
-    id: string;
-    attestation_id: string;
-    raised_by: string;
-    category: string;
-    reason: string;
-    status: string;
-    outcome: (string | null);
-    is_complex: boolean;
-    resolution_due_at: (string | null);
     admin_id: (string | null);
-    resolution_notes: (string | null);
-    escalated_at: (string | null);
-    resolved_at: (string | null);
+    attestation_id: string;
+    category: string;
     created_at: string;
+    escalated_at: (string | null);
+    id: string;
+    is_complex: boolean;
+    outcome: (string | null);
+    raised_by: string;
+    reason: string;
+    resolution_due_at: (string | null);
+    resolution_notes: (string | null);
+    resolved_at: (string | null);
+    status: string;
 };
 
 /**
  * Request body for creating an Attestation report evidence upload session.
  */
 export type AttestationEvidenceUploadCreateRequest = {
-    file_name: string;
     content_type: string;
+    file_name: string;
     size_bytes: number;
 };
 
@@ -1287,49 +1287,49 @@ export type AttestationEvidenceUploadCreateRequest = {
  * Presigned POST response for private Attestation report evidence.
  */
 export type AttestationEvidenceUploadSessionResponse = {
-    id: string;
-    s3_key: string;
-    url: string;
+    expires_at: string;
     fields: {
         [key: string]: (string);
     };
-    expires_at: string;
-    size_limit: number;
+    id: string;
+    s3_key: string;
     scan_status: string;
+    size_limit: number;
+    url: string;
 };
 
 /**
  * PaymentIntent data needed to fund an Attestation fee escrow.
  */
 export type AttestationFundingResponse = {
-    id: string;
-    transaction_id: string;
-    provider: "stripe";
     client_secret: string;
+    id: string;
+    provider: "stripe";
+    transaction_id: string;
 };
 
 /**
  * One artifact entry in an Attestation access package.
  */
 export type AttestationPackageArtifact = {
-    id: string;
     filename?: (string | null);
+    id: string;
 };
 
 /**
  * The read-only Attestation access package scoped to the caller's entitlement.
  */
 export type AttestationPackageResponse = {
+    artifacts: Array<AttestationPackageArtifact>;
     attestation_id: string;
-    framework_title: string;
-    framework_category: string;
-    framework_industry: (string | null);
-    framework_version?: (string | null);
     brief: ({
     [key: string]: unknown;
 } | null);
     entitlement: string;
-    artifacts: Array<AttestationPackageArtifact>;
+    framework_category: string;
+    framework_industry: (string | null);
+    framework_title: string;
+    framework_version?: (string | null);
 };
 
 /**
@@ -1337,50 +1337,50 @@ export type AttestationPackageResponse = {
  */
 export type AttestationRatingCreate = {
     /**
-     * 1-5 star rating.
-     */
-    stars: number;
-    /**
      * Optional text feedback.
      */
     comment?: (string | null);
+    /**
+     * 1-5 star rating.
+     */
+    stars: number;
 };
 
 /**
  * Response showing a saved rating.
  */
 export type AttestationRatingResponse = {
-    id: string;
     attestation_id: string;
-    rated_by: string;
-    stars: number;
     comment: (string | null);
     created_at: string;
+    id: string;
+    rated_by: string;
+    stars: number;
 };
 
 /**
  * Structured report fields submitted by the assigned Attestor.
  */
 export type AttestationReportSubmitRequest = {
-    outcome: 'approved' | 'conditional' | 'rejected';
-    summary: string;
-    scope: string;
     conditions?: (string | null);
     evidence_references?: {
         [key: string]: unknown;
     };
+    outcome: 'approved' | 'conditional' | 'rejected';
+    scope: string;
+    summary: string;
 };
 
 /**
  * Request body for creating an escrow-funded Attestation request.
  */
 export type AttestationRequestCreateRequest = {
-    target_type: 'framework' | 'contributor' | 'operator' | 'credential';
-    target_id: string;
-    review_type?: ('quality' | 'compliance' | 'expert' | 'provenance' | null);
     brief?: (AttestationBrief | null);
-    requested_specializations?: Array<(string)>;
     requested_jurisdictions?: Array<(string)>;
+    requested_specializations?: Array<(string)>;
+    review_type?: ('quality' | 'compliance' | 'expert' | 'provenance' | null);
+    target_id: string;
+    target_type: 'framework' | 'contributor' | 'operator' | 'credential';
 };
 
 export type target_type = 'framework' | 'contributor' | 'operator' | 'credential';
@@ -1389,36 +1389,36 @@ export type target_type = 'framework' | 'contributor' | 'operator' | 'credential
  * Attestation request details visible to requestor and assigned Attestor.
  */
 export type AttestationRequestResponse = {
-    id: string;
-    target_type: string;
-    target_id: string;
-    requestor_id: string;
+    accepted_at?: (string | null);
     attestor_org_id: (string | null);
-    status: string;
-    outcome: (string | null);
-    review_type?: (string | null);
     brief?: ({
     [key: string]: unknown;
 } | null);
-    requested_specializations: Array<(string)>;
-    requested_jurisdictions: Array<(string)>;
-    summary?: (string | null);
-    scope?: (string | null);
+    closed_at?: (string | null);
+    completion_due_at?: (string | null);
+    created_at: string;
+    currency: string;
+    dispute_window_ends_at?: (string | null);
+    escrow_id: (string | null);
     evidence_references?: ({
     [key: string]: unknown;
 } | null);
-    report_key?: (string | null);
     fee_amount: string;
-    currency: string;
-    escrow_id: (string | null);
-    accepted_at?: (string | null);
-    completion_due_at?: (string | null);
+    id: string;
     issued_at?: (string | null);
-    dispute_window_ends_at?: (string | null);
-    closed_at?: (string | null);
-    created_at: string;
-    updated_at: string;
     open_clarification?: boolean;
+    outcome: (string | null);
+    report_key?: (string | null);
+    requested_jurisdictions: Array<(string)>;
+    requested_specializations: Array<(string)>;
+    requestor_id: string;
+    review_type?: (string | null);
+    scope?: (string | null);
+    status: string;
+    summary?: (string | null);
+    target_id: string;
+    target_type: string;
+    updated_at: string;
 };
 
 /**
@@ -1434,10 +1434,10 @@ export type AttestationsResponse = {
 export type AttestorCompletedAttestation = {
     framework_id: string;
     framework_title: string;
-    review_type: string;
-    outcome: 'approved' | 'conditional';
-    issued_at: string;
     framework_version: (string | null);
+    issued_at: string;
+    outcome: 'approved' | 'conditional';
+    review_type: string;
 };
 
 export type outcome3 = 'approved' | 'conditional';
@@ -1450,17 +1450,17 @@ export type outcome3 = 'approved' | 'conditional';
  * identities — attestation is credited to the organization, not its reviewers.
  */
 export type AttestorDirectoryEntry = {
-    org_id: string;
-    name: string;
-    slug: string;
-    sectors: Array<(string)>;
+    certified?: boolean;
+    completed_attestations: number;
     functions: Array<(string)>;
     jurisdictions: Array<(string)>;
-    verification_level: number;
-    completed_attestations: number;
     member_count: number;
+    name: string;
+    org_id: string;
     reputation: (number | null);
-    certified?: boolean;
+    sectors: Array<(string)>;
+    slug: string;
+    verification_level: number;
 };
 
 /**
@@ -1489,9 +1489,9 @@ export type AvatarConfirmRequest = {
  * file_size: Declared size in bytes (validated against the size cap).
  */
 export type AvatarUploadUrlRequest = {
+    file_size: number;
     filename: string;
     mime_type: string;
-    file_size: number;
 };
 
 /**
@@ -1509,14 +1509,14 @@ export type AvatarUploadUrlRequest = {
  * expires_in: Seconds until the presigned target expires.
  */
 export type AvatarUploadUrlResponse = {
-    upload_url: string;
+    avatar_url: string;
+    expires_in: number;
     fields: {
         [key: string]: (string);
     };
     file_key: string;
-    avatar_url: string;
     max_size: number;
-    expires_in: number;
+    upload_url: string;
 };
 
 /**
@@ -1538,9 +1538,9 @@ export type BannerConfirmRequest = {
  * file_size: Declared size in bytes (validated against the size cap).
  */
 export type BannerUploadUrlRequest = {
+    file_size: number;
     filename: string;
     mime_type: string;
-    file_size: number;
 };
 
 /**
@@ -1555,14 +1555,14 @@ export type BannerUploadUrlRequest = {
  * expires_in: Seconds until the presigned target expires.
  */
 export type BannerUploadUrlResponse = {
-    upload_url: string;
+    banner_url: string;
+    expires_in: number;
     fields: {
         [key: string]: (string);
     };
     file_key: string;
-    banner_url: string;
     max_size: number;
-    expires_in: number;
+    upload_url: string;
 };
 
 /**
@@ -1578,8 +1578,8 @@ export type BindSourceRequest = {
  */
 export type CalibrationFixtureItem = {
     id: string;
-    title: string;
     review_type: string;
+    title: string;
 };
 
 /**
@@ -1607,13 +1607,13 @@ export type ClarificationRespondRequest = {
  * One persisted attestation clarification row.
  */
 export type ClarificationResponse = {
-    id: string;
     attestation_id: string;
+    id: string;
     question: string;
-    response: (string | null);
-    sent_at: string;
-    response_due_at: string;
     responded_at: (string | null);
+    response: (string | null);
+    response_due_at: string;
+    sent_at: string;
     status: string;
 };
 
@@ -1628,9 +1628,9 @@ export type CoiEntry = {
     entity: string;
     entity_type: 'firm' | 'fund' | 'individual';
     relationship: 'financial' | 'advisory' | 'employment';
-    within_24mo: boolean;
     subject_id?: (string | null);
     subject_kind?: ('user' | 'framework' | null);
+    within_24mo: boolean;
 };
 
 export type entity_type = 'firm' | 'fund' | 'individual';
@@ -1641,10 +1641,10 @@ export type relationship = 'financial' | 'advisory' | 'employment';
  * Contributor request body for creating a draft Collection.
  */
 export type CollectionCreateRequest = {
-    title: string;
-    description: string;
     bundle_price: (number | string);
     currency?: string;
+    description: string;
+    title: string;
 };
 
 /**
@@ -1665,26 +1665,26 @@ export type CollectionMemberRequest = {
  * Framework summary embedded in contributor Collection responses.
  */
 export type CollectionMemberResponse = {
-    framework_id: string;
-    title: string;
-    status: string;
-    price: string;
     currency: string;
+    framework_id: string;
+    price: string;
+    status: string;
+    title: string;
 };
 
 /**
  * Contributor-facing Collection response.
  */
 export type CollectionResponse = {
-    id: string;
-    contributor_id: string;
-    title: string;
-    description: string;
     bundle_price: string;
-    currency: string;
-    status: 'draft' | 'published' | 'unpublished';
-    members: Array<CollectionMemberResponse>;
+    contributor_id: string;
     created_at: string;
+    currency: string;
+    description: string;
+    id: string;
+    members: Array<CollectionMemberResponse>;
+    status: 'draft' | 'published' | 'unpublished';
+    title: string;
     updated_at: string;
 };
 
@@ -1694,18 +1694,18 @@ export type status7 = 'draft' | 'published' | 'unpublished';
  * Contributor request body for editing an unpublished Collection.
  */
 export type CollectionUpdateRequest = {
-    title?: (string | null);
-    description?: (string | null);
     bundle_price?: (number | string | null);
     currency?: (string | null);
+    description?: (string | null);
+    title?: (string | null);
 };
 
 /**
  * Readiness status for a single platform component.
  */
 export type ComponentHealth = {
-    status: string;
     detail?: (string | null);
+    status: string;
 };
 
 /**
@@ -1722,14 +1722,14 @@ export type ConnectorConnectResponse = {
  * and are never importable themselves.
  */
 export type ConnectorFileItem = {
-    id: string;
-    name: string;
-    mime_type: string;
-    size?: (number | null);
-    modified_time?: (string | null);
     icon_link?: (string | null);
+    id: string;
     importable: boolean;
     is_folder?: boolean;
+    mime_type: string;
+    modified_time?: (string | null);
+    name: string;
+    size?: (number | null);
 };
 
 /**
@@ -1751,19 +1751,19 @@ export type ConnectorsResponse = {
  * Connection status for one supported provider.
  */
 export type ConnectorStatusItem = {
-    provider: string;
+    account_email?: (string | null);
     connected: boolean;
     connection_id?: (string | null);
+    provider: string;
     status?: (string | null);
-    account_email?: (string | null);
 };
 
 /**
  * Request body for accepting the current legal document versions.
  */
 export type ConsentAcceptRequest = {
-    accept_terms: true;
     accept_privacy_policy: true;
+    accept_terms: true;
 };
 
 /**
@@ -1773,39 +1773,39 @@ export type ConsentHistoryResponse = {
     current_versions: {
         [key: string]: (string);
     };
-    missing_documents: Array<(string)>;
     items: Array<ConsentLogItem>;
+    missing_documents: Array<(string)>;
 };
 
 /**
  * Single consent log entry returned to the owning user.
  */
 export type ConsentLogItem = {
-    id: string;
-    document_type: string;
-    version: string;
     accepted_at: string;
+    document_type: string;
+    id: string;
+    version: string;
 };
 
 /**
  * Public contributor-organization directory row safe for anonymous reads.
  */
 export type ContributorOrgDirectoryEntry = {
-    org_id: string;
-    name: string;
-    slug: string;
-    logo_key: (string | null);
     country: string;
-    website: (string | null);
     description: (string | null);
-    verification_level: number;
-    published_framework_count: number;
-    member_count: number;
-    reputation?: (string | null);
+    logo_key: (string | null);
     /**
      * Public URL the org logo is served at, or ``None`` when unset.
      */
     readonly logo_url: (string | null);
+    member_count: number;
+    name: string;
+    org_id: string;
+    published_framework_count: number;
+    reputation?: (string | null);
+    slug: string;
+    verification_level: number;
+    website: (string | null);
 };
 
 /**
@@ -1819,23 +1819,23 @@ export type ContributorOrgDirectoryResponse = {
  * Admin body to create a new calibration fixture shell.
  */
 export type CreateCalibrationFixtureRequest = {
-    title: string;
     description: string;
     review_type: string;
+    title: string;
 };
 
 /**
  * Request body for creating a user-owned Credential.
  */
 export type CredentialCreateRequest = {
-    title: string;
-    issuer: string;
-    issued_date: string;
-    expires_date?: (string | null);
     credential_type?: (string | null);
-    verification_url?: (string | null);
-    reference_number?: (string | null);
+    expires_date?: (string | null);
+    issued_date: string;
+    issuer: string;
     issuer_type?: ('institution' | 'organisation' | 'government' | 'association' | null);
+    reference_number?: (string | null);
+    title: string;
+    verification_url?: (string | null);
 };
 
 /**
@@ -1849,8 +1849,8 @@ export type CredentialEvidenceDownloadResponse = {
  * Request body for creating a Credential evidence upload session.
  */
 export type CredentialEvidenceUploadCreateRequest = {
-    file_name: string;
     content_type: string;
+    file_name: string;
     size_bytes: number;
 };
 
@@ -1858,40 +1858,40 @@ export type CredentialEvidenceUploadCreateRequest = {
  * Presigned POST response for a Credential evidence upload.
  */
 export type CredentialEvidenceUploadSessionResponse = {
-    id: string;
-    s3_key: string;
-    url: string;
+    expires_at: string;
     fields: {
         [key: string]: (string);
     };
-    expires_at: string;
-    size_limit: number;
+    id: string;
+    s3_key: string;
     scan_status: string;
+    size_limit: number;
+    url: string;
 };
 
 /**
  * Credential details returned to the owner.
  */
 export type CredentialResponse = {
-    id: string;
-    user_id: string;
-    title: string;
-    issuer: string;
-    issued_date: string;
-    expires_date: (string | null);
-    evidence_file_keys: Array<(string)>;
-    credential_type: (string | null);
-    verification_url: (string | null);
-    reference_number: (string | null);
-    issuer_type: (string | null);
-    verification_status: string;
-    submitted_at: (string | null);
-    verified_at: (string | null);
-    reviewed_by: (string | null);
-    rejection_reason: (string | null);
-    expired: boolean;
     created_at: string;
+    credential_type: (string | null);
+    evidence_file_keys: Array<(string)>;
+    expired: boolean;
+    expires_date: (string | null);
+    id: string;
+    issued_date: string;
+    issuer: string;
+    issuer_type: (string | null);
+    reference_number: (string | null);
+    rejection_reason: (string | null);
+    reviewed_by: (string | null);
+    submitted_at: (string | null);
+    title: string;
     updated_at: string;
+    user_id: string;
+    verification_status: string;
+    verification_url: (string | null);
+    verified_at: (string | null);
 };
 
 /**
@@ -1905,44 +1905,44 @@ export type CredentialsResponse = {
  * Request body for updating a user-owned Credential.
  */
 export type CredentialUpdateRequest = {
-    title?: (string | null);
-    issuer?: (string | null);
-    issued_date?: (string | null);
-    expires_date?: (string | null);
     credential_type?: (string | null);
-    verification_url?: (string | null);
-    reference_number?: (string | null);
-    issuer_type?: ('institution' | 'organisation' | 'government' | 'association' | null);
     evidence_file_keys?: (Array<(string)> | null);
+    expires_date?: (string | null);
+    issued_date?: (string | null);
+    issuer?: (string | null);
+    issuer_type?: ('institution' | 'organisation' | 'government' | 'association' | null);
+    reference_number?: (string | null);
+    title?: (string | null);
+    verification_url?: (string | null);
 };
 
 /**
  * Authenticated user response for `/v1/auth/me`.
  */
 export type CurrentUserResponse = {
-    id: string;
-    email: string;
-    display_name: string;
     avatar_url: (string | null);
-    roles: Array<(string)>;
-    pending_roles: Array<(string)>;
-    email_verified: boolean;
-    kyc_status: string;
     deactivated_at: (string | null);
-    is_superadmin?: boolean;
+    display_name: string;
+    email: string;
+    email_verified: boolean;
     has_password?: boolean;
+    id: string;
+    is_superadmin?: boolean;
+    kyc_status: string;
+    pending_roles: Array<(string)>;
+    roles: Array<(string)>;
 };
 
 /**
  * Status response for a GDPR data export request.
  */
 export type DataExportRequestResponse = {
-    id: string;
-    status: string;
-    requested_at: string;
     completed_at: (string | null);
     expires_at: (string | null);
     failure_reason: (string | null);
+    id: string;
+    requested_at: string;
+    status: string;
 };
 
 /**
@@ -1965,20 +1965,20 @@ export type DeliverableFileDownload = {
  * Deliverable response returned to Project members.
  */
 export type DeliverableResponse = {
-    id: string;
-    milestone_id: string;
-    contributor_id: (string | null);
-    contributor_org_id?: (string | null);
-    name: string;
-    description: string;
-    file_keys: Array<(string)>;
-    revision_notes: (string | null);
-    status: string;
-    scan_status: string;
-    submitted_at: string;
     approved_at: (string | null);
     auto_approved: boolean;
+    contributor_id: (string | null);
+    contributor_org_id?: (string | null);
     created_at: string;
+    description: string;
+    file_keys: Array<(string)>;
+    id: string;
+    milestone_id: string;
+    name: string;
+    revision_notes: (string | null);
+    scan_status: string;
+    status: string;
+    submitted_at: string;
 };
 
 /**
@@ -1992,8 +1992,8 @@ export type DeliverableRevisionRequest = {
  * Small deliverable description embedded in Project and Proposal payloads.
  */
 export type DeliverableSpec = {
-    name: string;
     description: string;
+    name: string;
 };
 
 /**
@@ -2007,9 +2007,9 @@ export type DeliverablesResponse = {
  * Accepted Contributor request body for submitting Milestone work.
  */
 export type DeliverableSubmitRequest = {
-    name: string;
     description: string;
     file_keys: Array<(string)>;
+    name: string;
 };
 
 /**
@@ -2017,24 +2017,24 @@ export type DeliverableSubmitRequest = {
  */
 export type DeveloperApplicationCreateRequest = {
     company_name: string;
-    website?: (string | null);
     use_case: string;
+    website?: (string | null);
 };
 
 /**
  * Developer application details visible to its owner and admins.
  */
 export type DeveloperApplicationResponse = {
-    id: string;
-    user_id: string;
-    company_name: string;
-    website: (string | null);
-    use_case: string;
-    status: string;
     admin_feedback: (string | null);
-    reviewed_by: (string | null);
-    reviewed_at: (string | null);
+    company_name: string;
     created_at: string;
+    id: string;
+    reviewed_at: (string | null);
+    reviewed_by: (string | null);
+    status: string;
+    use_case: string;
+    user_id: string;
+    website: (string | null);
 };
 
 /**
@@ -2059,40 +2059,40 @@ export type DeveloperApplicationsResponse = {
  * Developer-facing Partner sales and commission analytics response.
  */
 export type DeveloperSalesAnalyticsResponse = {
-    window_days: number;
-    total_sales: number;
-    gross_sale_amount: string;
-    total_commission_amount: string;
-    pending_commission_amount: string;
+    by_framework: Array<DeveloperSalesFrameworkBreakdown>;
     cleared_commission_amount: string;
+    gross_sale_amount: string;
     paid_commission_amount: string;
-    voided_commission_amount: string;
+    pending_commission_amount: string;
     status_counts: {
         [key: string]: (number);
     };
-    by_framework: Array<DeveloperSalesFrameworkBreakdown>;
+    total_commission_amount: string;
+    total_sales: number;
+    voided_commission_amount: string;
+    window_days: number;
 };
 
 /**
  * Aggregated Partner sales for one attributed Framework.
  */
 export type DeveloperSalesFrameworkBreakdown = {
+    commission_amount: string;
     framework_id: string;
     framework_title: string;
-    sale_count: number;
     gross_sale_amount: string;
-    commission_amount: string;
+    sale_count: number;
 };
 
 /**
  * Developer-facing current commission tier and next-tier progress.
  */
 export type DeveloperTierProgressResponse = {
-    current_tier: number;
     current_rate: string;
-    prior_30d_sales_count: number;
+    current_tier: number;
     next_tier: (number | null);
     next_tier_sales_required: (number | null);
+    prior_30d_sales_count: number;
     tier_recalculated_at: (string | null);
     tiers: Array<PartnerTierResponse>;
 };
@@ -2101,26 +2101,26 @@ export type DeveloperTierProgressResponse = {
  * Developer-facing Partner API usage analytics response.
  */
 export type DeveloperUsageAnalyticsResponse = {
-    window_days: number;
-    total_requests: number;
-    success_count: number;
-    client_error_count: number;
-    server_error_count: number;
     average_response_ms: number;
     by_endpoint: Array<DeveloperUsageEndpointBreakdown>;
+    client_error_count: number;
+    server_error_count: number;
+    success_count: number;
+    total_requests: number;
+    window_days: number;
 };
 
 /**
  * Aggregated Partner API usage for one endpoint/method pair.
  */
 export type DeveloperUsageEndpointBreakdown = {
+    average_response_ms: number;
+    client_error_count: number;
     endpoint: string;
     method: string;
     request_count: number;
-    success_count: number;
-    client_error_count: number;
     server_error_count: number;
-    average_response_ms: number;
+    success_count: number;
 };
 
 /**
@@ -2135,20 +2135,20 @@ export type DisputeCreateRequest = {
  * Dispute response returned to Project members and Admins.
  */
 export type DisputeResponse = {
+    admin_id: (string | null);
+    created_at: string;
+    escalated_at: (string | null);
     id: string;
-    project_id: string;
     milestone_id: string;
+    project_id: string;
     raised_by_side: (string | null);
     reason: string;
-    status: string;
-    resolution_type: (string | null);
-    release_amount: (string | null);
     refund_amount: (string | null);
-    admin_id: (string | null);
+    release_amount: (string | null);
     resolution_notes: (string | null);
-    escalated_at: (string | null);
+    resolution_type: (string | null);
     resolved_at: (string | null);
-    created_at: string;
+    status: string;
 };
 
 /**
@@ -2162,12 +2162,12 @@ export type DisputesResponse = {
  * Contributor earnings summary in a single settlement currency.
  */
 export type EarningsResponse = {
-    currency: string;
-    gross_revenue: string;
-    pending_clearance: string;
     available_balance: string;
     commission_rate: string;
+    currency: string;
+    gross_revenue: string;
     minimum_payout: string;
+    pending_clearance: string;
 };
 
 /**
@@ -2195,23 +2195,23 @@ export type EmailChangeRequest = {
  * Public Artifact metadata shown on Framework detail pages.
  */
 export type ExploreArtifactSummary = {
-    id: string;
-    name: string;
-    file_size: number;
-    mime_type: string;
     created_at: string;
+    file_size: number;
+    id: string;
+    mime_type: string;
+    name: string;
 };
 
 /**
  * Public trust badge for a Framework or Contributor-target Attestation.
  */
 export type ExploreAttestationBadge = {
+    attestation_count?: number;
     id: string;
-    status: 'attested' | 'conditionally_attested';
+    issued_at: (string | null);
     outcome: 'approved' | 'conditional' | 'rejected';
     report_key: string;
-    issued_at: (string | null);
-    attestation_count?: number;
+    status: 'attested' | 'conditionally_attested';
 };
 
 export type status8 = 'attested' | 'conditionally_attested';
@@ -2221,11 +2221,11 @@ export type status8 = 'attested' | 'conditionally_attested';
  */
 export type ExploreCatalogResponse = {
     items: Array<(ExploreFrameworkCatalogItem | ExploreCollectionCard)>;
-    total: number;
     page: number;
     page_size: number;
     sort: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
     sort_shim?: boolean;
+    total: number;
 };
 
 export type sort = 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
@@ -2234,20 +2234,20 @@ export type sort = 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'pr
  * Public catalog card for one published Collection.
  */
 export type ExploreCollectionCard = {
-    item_type?: "collection";
-    id: string;
+    bundle_price: string;
     contributor_id: string;
     contributor_name: string;
-    title: string;
-    description: string;
-    bundle_price: string;
+    created_at: string;
     currency: string;
+    description: string;
+    id: string;
+    item_type?: "collection";
+    member_count: number;
     member_price_sum: string;
+    members: Array<ExploreCollectionMemberSummary>;
     savings_amount: string;
     savings_percent: string;
-    member_count: number;
-    members: Array<ExploreCollectionMemberSummary>;
-    created_at: string;
+    title: string;
     updated_at: string;
 };
 
@@ -2255,22 +2255,22 @@ export type ExploreCollectionCard = {
  * Public Collection detail payload.
  */
 export type ExploreCollectionDetail = {
-    item_type?: "collection";
-    id: string;
+    already_owned_member_ids?: Array<(string)>;
+    bundle_price: string;
     contributor_id: string;
     contributor_name: string;
-    title: string;
-    description: string;
-    bundle_price: string;
+    created_at: string;
     currency: string;
+    description: string;
+    id: string;
+    item_type?: "collection";
+    member_count: number;
     member_price_sum: string;
+    members: Array<ExploreCollectionMemberSummary>;
     savings_amount: string;
     savings_percent: string;
-    member_count: number;
-    members: Array<ExploreCollectionMemberSummary>;
-    created_at: string;
+    title: string;
     updated_at: string;
-    already_owned_member_ids?: Array<(string)>;
 };
 
 /**
@@ -2278,157 +2278,157 @@ export type ExploreCollectionDetail = {
  */
 export type ExploreCollectionListResponse = {
     items: Array<ExploreCollectionCard>;
-    total: number;
     page: number;
     page_size: number;
     sort: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
     sort_shim?: boolean;
+    total: number;
 };
 
 /**
  * Public member Framework summary embedded in Collection cards.
  */
 export type ExploreCollectionMemberSummary = {
+    category: string;
+    currency: string;
     framework_id: string;
+    price: string;
+    thumbnail_key: (string | null);
     title: string;
     version: string;
-    category: string;
-    price: string;
-    currency: string;
-    thumbnail_key: (string | null);
 };
 
 /**
  * Public Contributor profile for Explore discovery.
  */
 export type ExploreContributorProfile = {
-    id: string;
-    display_name: string;
-    avatar_url: (string | null);
-    bio: (string | null);
-    location: (string | null);
-    website: (string | null);
     attestation_badge?: (ExploreAttestationBadge | null);
     attestation_count?: number;
-    reputation?: (ReputationSummary | null);
+    avatar_url: (string | null);
+    bio: (string | null);
+    display_name: string;
+    id: string;
     is_deactivated?: boolean;
+    location: (string | null);
     published_framework_count: number;
     published_frameworks: Array<ExploreFrameworkCard>;
+    reputation?: (ReputationSummary | null);
     verified_credentials?: Array<PublicCredentialResponse>;
+    website: (string | null);
 };
 
 /**
  * Public catalog card for one published Framework.
  */
 export type ExploreFrameworkCard = {
-    id: string;
+    attestation_badge?: (ExploreAttestationBadge | null);
+    average_review_score?: (string | null);
+    category: string;
+    complexity: (number | null);
     contributor_id: (string | null);
-    contributor_org_id?: (string | null);
     contributor_name: string;
+    contributor_org_id?: (string | null);
+    contributor_reputation_score?: (string | null);
     contributor_slug?: (string | null);
     contributor_verification_level?: (number | null);
-    contributor_reputation_score?: (string | null);
-    title: string;
-    description: string;
-    version: string;
-    category: string;
-    sector: (string | null);
-    industry: (string | null);
-    function: (string | null);
-    tags: Array<(string)>;
-    jurisdiction: (string | null);
-    complexity: (number | null);
-    org_size: (string | null);
-    lifecycle_stage: (string | null);
-    price: string;
     currency: string;
+    description: string;
+    function: (string | null);
+    id: string;
+    industry: (string | null);
+    jurisdiction: (string | null);
     license_types: Array<(string)>;
-    thumbnail_key: (string | null);
-    rarity_score: (string | null);
-    average_review_score?: (string | null);
-    review_count?: number;
-    attestation_badge?: (ExploreAttestationBadge | null);
-    reputation?: (ReputationSummary | null);
+    lifecycle_stage: (string | null);
+    org_size: (string | null);
     owned?: boolean;
+    price: string;
     published_at: (string | null);
+    rarity_score: (string | null);
+    reputation?: (ReputationSummary | null);
+    review_count?: number;
+    sector: (string | null);
+    tags: Array<(string)>;
+    thumbnail_key: (string | null);
+    title: string;
+    version: string;
 };
 
 /**
  * Framework card shape used inside the mixed Explore catalog.
  */
 export type ExploreFrameworkCatalogItem = {
-    id: string;
+    attestation_badge?: (ExploreAttestationBadge | null);
+    average_review_score?: (string | null);
+    category: string;
+    complexity: (number | null);
     contributor_id: (string | null);
-    contributor_org_id?: (string | null);
     contributor_name: string;
+    contributor_org_id?: (string | null);
+    contributor_reputation_score?: (string | null);
     contributor_slug?: (string | null);
     contributor_verification_level?: (number | null);
-    contributor_reputation_score?: (string | null);
-    title: string;
-    description: string;
-    version: string;
-    category: string;
-    sector: (string | null);
-    industry: (string | null);
-    function: (string | null);
-    tags: Array<(string)>;
-    jurisdiction: (string | null);
-    complexity: (number | null);
-    org_size: (string | null);
-    lifecycle_stage: (string | null);
-    price: string;
     currency: string;
-    license_types: Array<(string)>;
-    thumbnail_key: (string | null);
-    rarity_score: (string | null);
-    average_review_score?: (string | null);
-    review_count?: number;
-    attestation_badge?: (ExploreAttestationBadge | null);
-    reputation?: (ReputationSummary | null);
-    owned?: boolean;
-    published_at: (string | null);
+    description: string;
+    function: (string | null);
+    id: string;
+    industry: (string | null);
     item_type?: "framework";
+    jurisdiction: (string | null);
+    license_types: Array<(string)>;
+    lifecycle_stage: (string | null);
+    org_size: (string | null);
+    owned?: boolean;
+    price: string;
+    published_at: (string | null);
+    rarity_score: (string | null);
+    reputation?: (ReputationSummary | null);
+    review_count?: number;
+    sector: (string | null);
+    tags: Array<(string)>;
+    thumbnail_key: (string | null);
+    title: string;
+    version: string;
 };
 
 /**
  * Public Framework detail payload.
  */
 export type ExploreFrameworkDetail = {
-    id: string;
+    artifacts: Array<ExploreArtifactSummary>;
+    attestation_badge?: (ExploreAttestationBadge | null);
+    attestation_badges?: Array<AttestationBadgeDetail>;
+    average_review_score?: (string | null);
+    category: string;
+    complexity: (number | null);
     contributor_id: (string | null);
-    contributor_org_id?: (string | null);
     contributor_name: string;
+    contributor_org_id?: (string | null);
+    contributor_reputation_score?: (string | null);
     contributor_slug?: (string | null);
     contributor_verification_level?: (number | null);
-    contributor_reputation_score?: (string | null);
-    title: string;
-    description: string;
-    version: string;
-    category: string;
-    sector: (string | null);
-    industry: (string | null);
-    function: (string | null);
-    tags: Array<(string)>;
-    jurisdiction: (string | null);
-    complexity: (number | null);
-    org_size: (string | null);
-    lifecycle_stage: (string | null);
-    price: string;
     currency: string;
+    description: string;
+    function: (string | null);
+    id: string;
+    industry: (string | null);
+    jurisdiction: (string | null);
     license_types: Array<(string)>;
-    thumbnail_key: (string | null);
-    rarity_score: (string | null);
-    average_review_score?: (string | null);
-    review_count?: number;
-    attestation_badge?: (ExploreAttestationBadge | null);
-    reputation?: (ReputationSummary | null);
-    owned?: boolean;
-    published_at: (string | null);
+    lifecycle_stage: (string | null);
     org_price?: (string | null);
+    org_size: (string | null);
+    owned?: boolean;
     preview_artifact_id: (string | null);
     preview_url: (string | null);
-    artifacts: Array<ExploreArtifactSummary>;
-    attestation_badges?: Array<AttestationBadgeDetail>;
+    price: string;
+    published_at: (string | null);
+    rarity_score: (string | null);
+    reputation?: (ReputationSummary | null);
+    review_count?: number;
+    sector: (string | null);
+    tags: Array<(string)>;
+    thumbnail_key: (string | null);
+    title: string;
+    version: string;
 };
 
 /**
@@ -2436,11 +2436,11 @@ export type ExploreFrameworkDetail = {
  */
 export type ExploreFrameworkListResponse = {
     items: Array<ExploreFrameworkCard>;
-    total: number;
     page: number;
     page_size: number;
     sort: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
     sort_shim?: boolean;
+    total: number;
 };
 
 /**
@@ -2450,19 +2450,19 @@ export type ExploreFrameworkListResponse = {
  * not one temporary result page.
  */
 export type ExploreSearchFilters = {
-    q?: (string | null);
-    category?: (string | null);
-    sector?: (string | null);
-    industry?: (string | null);
-    function?: (string | null);
-    jurisdiction?: (string | null);
-    complexity?: (number | null);
-    org_size?: (string | null);
-    lifecycle_stage?: (string | null);
-    license_type?: (string | null);
-    price_min?: (number | string | null);
-    price_max?: (number | string | null);
     attestation_status?: ('pending_acceptance' | 'attested' | 'conditionally_attested' | 'none' | null);
+    category?: (string | null);
+    complexity?: (number | null);
+    function?: (string | null);
+    industry?: (string | null);
+    jurisdiction?: (string | null);
+    license_type?: (string | null);
+    lifecycle_stage?: (string | null);
+    org_size?: (string | null);
+    price_max?: (number | string | null);
+    price_min?: (number | string | null);
+    q?: (string | null);
+    sector?: (string | null);
     sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
 };
 
@@ -2478,8 +2478,8 @@ export type FixtureArtifactConfirmRequest = {
  */
 export type FixtureArtifactItem = {
     id: string;
-    name: string;
     mime_type: string;
+    name: string;
     scan_status: string;
 };
 
@@ -2494,9 +2494,9 @@ export type FixtureArtifactsResponse = {
  * Admin body to create a constrained fixture-artifact upload target.
  */
 export type FixtureArtifactUploadUrlRequest = {
+    file_size: number;
     filename: string;
     mime_type: string;
-    file_size: number;
 };
 
 /**
@@ -2504,13 +2504,13 @@ export type FixtureArtifactUploadUrlRequest = {
  */
 export type FixtureArtifactUploadUrlResponse = {
     artifact_id: string;
-    upload_url: string;
+    expires_in: number;
     fields: {
         [key: string]: (string);
     };
     file_key: string;
     max_size: number;
-    expires_in: number;
+    upload_url: string;
 };
 
 /**
@@ -2524,19 +2524,19 @@ export type ForgotPasswordRequest = {
  * Request body for creating a draft Framework.
  */
 export type FrameworkCreate = {
-    title: string;
-    description: string;
-    source_project_id?: (string | null);
     category: 'framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program';
-    sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
-    industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
-    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
-    tags?: Array<(string)>;
-    jurisdiction?: (string | null);
     complexity?: (number | null);
-    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise' | null);
+    description: string;
+    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
+    industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
+    jurisdiction?: (string | null);
     lifecycle_stage?: (string | null);
+    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise' | null);
     pricing: PricingConfig_Input;
+    sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
+    source_project_id?: (string | null);
+    tags?: Array<(string)>;
+    title: string;
 };
 
 export type category2 = 'framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program';
@@ -2545,15 +2545,15 @@ export type category2 = 'framework' | 'playbook' | 'sop' | 'policy' | 'template'
  * Compact Framework row for the Contributor's dashboard list.
  */
 export type FrameworkListItem = {
-    id: string;
-    title: string;
-    version: string;
-    status: 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
     category: string;
-    price: string;
-    currency: string;
     created_at: string;
+    currency: string;
+    id: string;
+    price: string;
+    status: 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+    title: string;
     updated_at: string;
+    version: string;
 };
 
 export type status9 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
@@ -2562,29 +2562,29 @@ export type status9 = 'draft' | 'submitted' | 'processing' | 'pipeline_passed' |
  * Request body for editing Framework metadata without pricing changes.
  */
 export type FrameworkMetadataUpdate = {
-    title?: (string | null);
-    description?: (string | null);
     category?: ('framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program' | null);
-    sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
-    industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
-    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
-    tags?: (Array<(string)> | null);
-    jurisdiction?: (string | null);
     complexity?: (number | null);
-    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise' | null);
+    description?: (string | null);
+    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
+    industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
+    jurisdiction?: (string | null);
     lifecycle_stage?: (string | null);
+    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise' | null);
+    sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
+    tags?: (Array<(string)> | null);
+    title?: (string | null);
 };
 
 /**
  * Framework draft prefill data derived from an approved Deliverable.
  */
 export type FrameworkPrefillResponse = {
-    title: string;
     description: string;
     file_keys: Array<(string)>;
-    tags?: Array<(string)>;
-    source_project_id: string;
     source_deliverable_id: string;
+    source_project_id: string;
+    tags?: Array<(string)>;
+    title: string;
 };
 
 /**
@@ -2598,58 +2598,58 @@ export type FrameworkPricingUpdate = {
  * Contributor-facing Framework representation.
  */
 export type FrameworkResponse = {
-    id: string;
+    category: string;
+    complexity: (number | null);
     contributor_id: (string | null);
     contributor_org_id?: (string | null);
-    source_project_id: (string | null);
-    title: string;
-    description: string;
-    version: string;
-    status: 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
-    category: string;
-    sector: (string | null);
-    industry: (string | null);
-    function: (string | null);
-    tags: Array<(string)>;
-    jurisdiction: (string | null);
-    complexity: (number | null);
-    org_size: (string | null);
-    lifecycle_stage: (string | null);
-    pricing: PricingConfig_Output;
-    preview_artifact_id: (string | null);
     created_at: string;
-    updated_at: string;
+    description: string;
+    function: (string | null);
+    id: string;
+    industry: (string | null);
+    jurisdiction: (string | null);
+    lifecycle_stage: (string | null);
+    org_size: (string | null);
+    preview_artifact_id: (string | null);
+    pricing: PricingConfig_Output;
     published_at: (string | null);
+    sector: (string | null);
+    source_project_id: (string | null);
+    status: 'draft' | 'submitted' | 'processing' | 'pipeline_passed' | 'pipeline_failed' | 'published' | 'unpublished' | 'suspended';
+    tags: Array<(string)>;
+    title: string;
+    updated_at: string;
+    version: string;
 };
 
 /**
  * Request body for creating an Operator review of a licensed Framework.
  */
 export type FrameworkReviewCreate = {
-    score: number;
     body?: (string | null);
+    score: number;
 };
 
 /**
  * Review list and aggregate score for one Framework.
  */
 export type FrameworkReviewListResponse = {
-    reviews: Array<FrameworkReviewResponse>;
     average_score?: (string | null);
     review_count: number;
+    reviews: Array<FrameworkReviewResponse>;
 };
 
 /**
  * Public review record written by a licensed Operator.
  */
 export type FrameworkReviewResponse = {
-    id: string;
+    body: (string | null);
+    created_at: string;
     framework_id: string;
+    id: string;
     operator_id: (string | null);
     reviewer_org_id: (string | null);
     score: number;
-    body: (string | null);
-    created_at: string;
     updated_at: string;
 };
 
@@ -2657,37 +2657,37 @@ export type FrameworkReviewResponse = {
  * Request body for editing the current Operator's Framework review.
  */
 export type FrameworkReviewUpdate = {
-    score?: (number | null);
     body?: (string | null);
+    score?: (number | null);
 };
 
 /**
  * Request body for editing an owned draft Framework.
  */
 export type FrameworkUpdate = {
-    title?: (string | null);
-    description?: (string | null);
     category?: ('framework' | 'playbook' | 'sop' | 'policy' | 'template' | 'toolkit' | 'assessment' | 'control_matrix' | 'workflow' | 'training_program' | null);
-    sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
-    industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
-    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
-    tags?: (Array<(string)> | null);
-    jurisdiction?: (string | null);
     complexity?: (number | null);
-    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise' | null);
+    description?: (string | null);
+    function?: ('governance' | 'compliance' | 'risk_management' | 'operations' | 'finance' | 'legal' | 'engineering' | 'human_resources' | 'sales' | 'marketing' | 'product' | 'data_ai' | 'information_security' | 'investment_management' | null);
+    industry?: ('fund_management' | 'portfolio_operations' | 'energy_infrastructure' | 'transportation_infrastructure' | 'residential_real_estate' | 'commercial_real_estate' | 'property_management' | 'healthcare_providers' | 'health_technology' | 'medical_devices' | 'software_engineering' | 'data_centers' | 'renewable_energy' | 'public_sector_agencies' | null);
+    jurisdiction?: (string | null);
     lifecycle_stage?: (string | null);
+    org_size?: ('startup' | 'small_business' | 'sme' | 'mid_market' | 'enterprise' | null);
     pricing?: (PricingConfig_Input | null);
+    sector?: ('private_equity' | 'venture_capital' | 'infrastructure' | 'real_estate' | 'healthcare' | 'manufacturing' | 'government' | 'education' | 'financial_services' | 'energy' | 'telecommunications' | 'technology' | null);
+    tags?: (Array<(string)> | null);
+    title?: (string | null);
 };
 
 /**
  * Request body for starting a new draft version of a Framework.
  */
 export type FrameworkVersionCreate = {
-    change_type: 'fix' | 'improvement' | 'major';
-    change_log: string;
     artifact_inheritance?: {
         [key: string]: (boolean);
     };
+    change_log: string;
+    change_type: 'fix' | 'improvement' | 'major';
 };
 
 export type change_type2 = 'fix' | 'improvement' | 'major';
@@ -2696,10 +2696,10 @@ export type change_type2 = 'fix' | 'improvement' | 'major';
  * Platform readiness response for external health checks.
  */
 export type HealthResponse = {
-    status: string;
     components: {
         [key: string]: ComponentHealth;
     };
+    status: string;
 };
 
 export type HTTPValidationError = {
@@ -2710,23 +2710,23 @@ export type HTTPValidationError = {
  * Public KYC document metadata returned to the document owner.
  */
 export type KycDocumentResponse = {
-    id: string;
-    doc_type: string;
-    s3_key: string;
-    mime_type: string;
-    file_size: number;
-    status: string;
-    reviewed_at: (string | null);
-    notes: (string | null);
     created_at: string;
+    doc_type: string;
+    file_size: number;
+    id: string;
+    mime_type: string;
+    notes: (string | null);
+    reviewed_at: (string | null);
+    s3_key: string;
+    status: string;
 };
 
 /**
  * Authenticated user's KYC status and document metadata.
  */
 export type KycStatusResponse = {
-    kyc_status: string;
     documents: Array<KycDocumentResponse>;
+    kyc_status: string;
 };
 
 /**
@@ -2755,22 +2755,22 @@ export type KycVerificationSessionResponse = {
  * One Framework license shown in an Operator's library.
  */
 export type LibraryItem = {
-    license_id: string;
+    collection_id: (string | null);
+    currency: string;
+    current_version: string;
+    expires_at: (string | null);
     framework_id: string;
+    granted_at: string;
+    license_id: string;
+    license_type: string;
+    price: string;
+    seats_total: (number | null);
+    seats_used: number;
+    source: string;
+    status: string;
+    thumbnail_key: (string | null);
     title: string;
     version_at_grant: string;
-    current_version: string;
-    license_type: string;
-    source: string;
-    collection_id: (string | null);
-    status: string;
-    seats_used: number;
-    seats_total: (number | null);
-    price: string;
-    currency: string;
-    thumbnail_key: (string | null);
-    granted_at: string;
-    expires_at: (string | null);
 };
 
 /**
@@ -2778,9 +2778,9 @@ export type LibraryItem = {
  */
 export type LibraryResponse = {
     items: Array<LibraryItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -2797,10 +2797,10 @@ export type LoginRequest = {
  */
 export type LoginResponse = {
     access_token?: (string | null);
-    token_type?: "bearer";
+    challenge_token?: (string | null);
     expires_in?: number;
     requires_2fa?: (boolean | null);
-    challenge_token?: (string | null);
+    token_type?: "bearer";
 };
 
 /**
@@ -2814,21 +2814,21 @@ export type LogoConfirmRequest = {
  * Declared metadata for an organization logo upload target.
  */
 export type LogoUploadUrlRequest = {
-    mime_type: string;
     file_size: number;
+    mime_type: string;
 };
 
 /**
  * Presigned POST target for an organization logo upload.
  */
 export type LogoUploadUrlResponse = {
-    upload_url: string;
+    expires_in: number;
     fields: {
         [key: string]: (string);
     };
     file_key: string;
     max_size: number;
-    expires_in: number;
+    upload_url: string;
 };
 
 /**
@@ -2849,51 +2849,51 @@ export type MemberSearchResponse = {
  * One masked invite-typeahead suggestion for an organization admin.
  */
 export type MemberSearchResult = {
-    user_id: string;
-    display_name: string;
     avatar_url: (string | null);
+    display_name: string;
     masked_email: string;
+    user_id: string;
 };
 
 /**
  * Accepted Contributor request body for drafting a Project Milestone.
  */
 export type MilestoneCreateRequest = {
-    sequence: number;
-    name: string;
-    description: string;
     budget: (number | string);
     currency?: string;
+    description: string;
     due_date?: (string | null);
+    name: string;
+    sequence: number;
 };
 
 /**
  * Stripe PaymentIntent data needed to fund a Project Milestone.
  */
 export type MilestoneFundingResponse = {
-    transaction_id: string;
-    provider: "stripe";
     client_secret: string;
+    provider: "stripe";
+    transaction_id: string;
 };
 
 /**
  * Milestone response returned to Project members.
  */
 export type MilestoneResponse = {
-    id: string;
-    project_id: string;
-    escrow_id: (string | null);
-    sequence: number;
-    name: string;
-    description: string;
-    budget: string;
-    currency: string;
-    due_date: (string | null);
-    status: string;
-    funded_at: (string | null);
-    submitted_at: (string | null);
     approved_at: (string | null);
+    budget: string;
     created_at: string;
+    currency: string;
+    description: string;
+    due_date: (string | null);
+    escrow_id: (string | null);
+    funded_at: (string | null);
+    id: string;
+    name: string;
+    project_id: string;
+    sequence: number;
+    status: string;
+    submitted_at: (string | null);
 };
 
 /**
@@ -2907,11 +2907,11 @@ export type MilestonesResponse = {
  * Accepted Contributor request body for editing a draft Milestone.
  */
 export type MilestoneUpdateRequest = {
-    sequence?: (number | null);
-    name?: (string | null);
-    description?: (string | null);
     budget?: (number | string | null);
+    description?: (string | null);
     due_date?: (string | null);
+    name?: (string | null);
+    sequence?: (number | null);
 };
 
 /**
@@ -2921,11 +2921,11 @@ export type MilestoneUpdateRequest = {
  * endpoints, never by the raw token.
  */
 export type MyInvitationResponse = {
+    created_at: string;
     id: string;
+    invited_by_name: (string | null);
     org: OrganizationResponse;
     role: string;
-    invited_by_name: (string | null);
-    created_at: string;
 };
 
 /**
@@ -2939,16 +2939,16 @@ export type MyInvitationsResponse = {
  * An organization membership visible to the current user.
  */
 export type MyOrganizationResponse = {
-    org: OrganizationResponse;
-    role: string;
     capabilities: {
         [key: string]: (string);
     };
+    counts?: OrgActionCounts;
     grants?: {
         [key: string]: (boolean);
     };
     nda_required?: boolean;
-    counts?: OrgActionCounts;
+    org: OrganizationResponse;
+    role: string;
 };
 
 /**
@@ -2962,30 +2962,30 @@ export type MyOrganizationsResponse = {
  * The nominated member's live trial workspace view.
  */
 export type NomineeTrialResponse = {
-    trial_id: string;
-    status: string;
-    framework_name: string;
-    framework_summary: (string | null);
     artifacts: Array<TrialArtifactSchema>;
     dimensions: Array<TrialRubricDimensionSchema>;
-    saved_scores: Array<TrialScoreInput>;
     feedback: (string | null);
+    framework_name: string;
+    framework_summary: (string | null);
+    saved_scores: Array<TrialScoreInput>;
+    status: string;
+    trial_id: string;
 };
 
 /**
  * Serializable notification row returned to the owning user.
  */
 export type NotificationItem = {
-    id: string;
-    type: string;
-    title: string;
     body: string;
+    created_at: string;
+    id: string;
     link: (string | null);
     payload: ({
     [key: string]: unknown;
 } | null);
     read_at: (string | null);
-    created_at: string;
+    title: string;
+    type: string;
 };
 
 /**
@@ -3010,10 +3010,10 @@ export type NotificationPreferenceChannelItem = {
  * One notification event type grouped under a settings category.
  */
 export type NotificationPreferenceItem = {
-    notification_type: string;
-    label: string;
-    description: string;
     channels: Array<NotificationPreferenceChannelItem>;
+    description: string;
+    label: string;
+    notification_type: string;
 };
 
 /**
@@ -3034,9 +3034,9 @@ export type NotificationPreferencesUpdateRequest = {
  * One per-event per-channel preference change requested by the owner.
  */
 export type NotificationPreferenceUpdateItem = {
-    notification_type: string;
     channel: string;
     enabled: boolean;
+    notification_type: string;
 };
 
 /**
@@ -3044,10 +3044,10 @@ export type NotificationPreferenceUpdateItem = {
  */
 export type NotificationsResponse = {
     notifications: Array<NotificationItem>;
-    unread_count: number;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
+    unread_count: number;
 };
 
 /**
@@ -3064,39 +3064,39 @@ export type OrgAcceptOfferRequest = {
  * for plain members (the tabs these counts feed are admin-only).
  */
 export type OrgActionCounts = {
+    invitations?: number;
     offers?: number;
     queue?: number;
-    invitations?: number;
 };
 
 /**
  * Request body to create an organization.
  */
 export type OrganizationCreateRequest = {
-    slug: string;
-    name: string;
     country: string;
-    website?: (string | null);
     description?: (string | null);
+    name: string;
+    slug: string;
+    website?: (string | null);
 };
 
 /**
  * Public-safe organization fields.
  */
 export type OrganizationResponse = {
-    id: string;
-    slug: string;
-    name: string;
-    logo_key: (string | null);
     country: string;
-    website: (string | null);
-    description: (string | null);
     created_at: string;
-    suspended_at?: (string | null);
+    description: (string | null);
+    id: string;
+    logo_key: (string | null);
     /**
      * Public URL the org logo is served at, or ``None`` when unset.
      */
     readonly logo_url: (string | null);
+    name: string;
+    slug: string;
+    suspended_at?: (string | null);
+    website: (string | null);
 };
 
 /**
@@ -3108,9 +3108,9 @@ export type OrganizationResponse = {
  * into its own namespace, never an arbitrary caller-supplied key.
  */
 export type OrganizationUpdateRequest = {
+    description?: (string | null);
     name?: (string | null);
     website?: (string | null);
-    description?: (string | null);
 };
 
 /**
@@ -3120,36 +3120,36 @@ export type OrganizationUpdateRequest = {
  * requestor-facing field; this schema is only ever returned to org members.
  */
 export type OrgAttestationItem = {
+    accepted_at: (string | null);
+    assigned_to_me?: boolean;
+    completion_due_at: (string | null);
     id: string;
-    target_type: string;
-    target_id: string;
-    target_title?: (string | null);
-    review_type?: (string | null);
-    status: string;
     outcome: (string | null);
+    review_type?: (string | null);
     reviewing_member_id: (string | null);
     reviewing_member_name?: (string | null);
-    assigned_to_me?: boolean;
-    accepted_at: (string | null);
-    completion_due_at: (string | null);
-    updated_at?: (string | null);
+    status: string;
+    target_id: string;
+    target_title?: (string | null);
+    target_type: string;
     unread_answer?: boolean;
+    updated_at?: (string | null);
 };
 
 /**
  * One cohort offer made to an attestor org (owner/admin view).
  */
 export type OrgAttestationOfferItem = {
-    offer_id: string;
     attestation_id: string;
-    target_type: string;
+    cohort_index: number;
+    expires_at: string;
+    match_score: (number | null);
+    offer_id: string;
+    offered_at: string;
+    status: string;
     target_id: string;
     target_title?: (string | null);
-    status: string;
-    cohort_index: number;
-    match_score: (number | null);
-    offered_at: string;
-    expires_at: string;
+    target_type: string;
 };
 
 /**
@@ -3173,16 +3173,16 @@ export type OrgAttestationsResponse = {
  * render; admins open the full application for detail.
  */
 export type OrgAttestorAdminListItem = {
-    id: string;
-    org_id: string;
-    status: string;
-    legal_name: (string | null);
-    kyb_verified_at: (string | null);
-    reviewed_at: (string | null);
-    created_at: string;
     admin_feedback: (string | null);
-    trial_status?: (string | null);
     capability_status?: (string | null);
+    created_at: string;
+    id: string;
+    kyb_verified_at: (string | null);
+    legal_name: (string | null);
+    org_id: string;
+    reviewed_at: (string | null);
+    status: string;
+    trial_status?: (string | null);
 };
 
 /**
@@ -3190,9 +3190,9 @@ export type OrgAttestorAdminListItem = {
  */
 export type OrgAttestorAdminListResponse = {
     applications: Array<OrgAttestorAdminListItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
@@ -3204,16 +3204,16 @@ export type OrgAttestorAdminListResponse = {
  * its NOT NULL columns.
  */
 export type OrgAttestorApplicationCreateRequest = {
-    legal_name?: (string | null);
-    registration_number?: (string | null);
-    sectors: Array<(string)>;
+    credentials_summary: string;
     functions: Array<(string)>;
     jurisdictions: Array<(string)>;
-    credentials_summary: string;
+    legal_name?: (string | null);
+    professional_references: string;
+    registration_number?: (string | null);
     sample_work?: {
         [key: string]: unknown;
     };
-    professional_references: string;
+    sectors: Array<(string)>;
 };
 
 /**
@@ -3223,34 +3223,34 @@ export type OrgAttestorApplicationCreateRequest = {
  * application); the tax document key is an S3 key, not a secret.
  */
 export type OrgAttestorApplicationResponse = {
-    id: string;
-    org_id: string;
-    status: string;
-    legal_name: (string | null);
-    registration_number: (string | null);
-    incorporation_doc_keys: Array<(string)>;
-    sectors: Array<(string)>;
-    functions: Array<(string)>;
-    jurisdictions: Array<(string)>;
+    admin_feedback: (string | null);
+    coi_declarations: Array<CoiEntry>;
+    coi_expires_at: (string | null);
+    coi_signed_at: (string | null);
+    confidentiality_signed_at: (string | null);
+    created_at: string;
     credentials_summary: string;
+    functions: Array<(string)>;
+    gate_checklist: OrgAttestorGateChecklist;
+    id: string;
+    incorporation_doc_keys: Array<(string)>;
+    jurisdictions: Array<(string)>;
+    kyb_verified_at: (string | null);
+    legal_name: (string | null);
+    org_id: string;
+    payout_account_id: (string | null);
+    professional_references: string;
+    registration_number: (string | null);
+    reviewed_at: (string | null);
     sample_work: {
         [key: string]: unknown;
     };
-    professional_references: string;
-    coi_declarations: Array<CoiEntry>;
-    coi_signed_at: (string | null);
-    coi_expires_at: (string | null);
-    confidentiality_signed_at: (string | null);
-    payout_account_id: (string | null);
-    tax_document_type: (string | null);
+    sectors: Array<(string)>;
+    status: string;
     tax_document_key: (string | null);
-    trial_member_id: (string | null);
+    tax_document_type: (string | null);
     trial_attestation_id: (string | null);
-    kyb_verified_at: (string | null);
-    admin_feedback: (string | null);
-    reviewed_at: (string | null);
-    created_at: string;
-    gate_checklist: OrgAttestorGateChecklist;
+    trial_member_id: (string | null);
 };
 
 /**
@@ -3260,17 +3260,17 @@ export type OrgAttestorApplicationResponse = {
  * ``payout_account_id`` links an org-owned payout account to the gate.
  */
 export type OrgAttestorApplicationUpdateRequest = {
-    legal_name?: (string | null);
-    registration_number?: (string | null);
-    sectors?: (Array<(string)> | null);
+    credentials_summary?: (string | null);
     functions?: (Array<(string)> | null);
     jurisdictions?: (Array<(string)> | null);
-    credentials_summary?: (string | null);
+    legal_name?: (string | null);
+    payout_account_id?: (string | null);
+    professional_references?: (string | null);
+    registration_number?: (string | null);
     sample_work?: ({
     [key: string]: unknown;
 } | null);
-    professional_references?: (string | null);
-    payout_account_id?: (string | null);
+    sectors?: (Array<(string)> | null);
 };
 
 /**
@@ -3281,10 +3281,10 @@ export type OrgAttestorApplicationUpdateRequest = {
  * UI shows the document as incomplete rather than a broken link.
  */
 export type OrgAttestorDocumentLink = {
-    label: string;
-    filename: string;
-    url: string;
     available?: boolean;
+    filename: string;
+    label: string;
+    url: string;
 };
 
 /**
@@ -3311,12 +3311,12 @@ export type OrgAttestorFeedbackRequest = {
  * before its application can be approved.
  */
 export type OrgAttestorGateChecklist = {
-    kyb_verified: boolean;
     credentials_reviewed: boolean;
-    undertakings_signed: boolean;
+    kyb_verified: boolean;
     payout_account_linked: boolean;
     tax_document_uploaded: boolean;
     trial_passed: boolean;
+    undertakings_signed: boolean;
 };
 
 /**
@@ -3334,8 +3334,8 @@ export type OrgAttestorIncorporationDocumentDeleteRequest = {
  * to the application's ``incorporation_doc_keys`` list server-side.
  */
 export type OrgAttestorIncorporationDocumentRequest = {
-    file_name: string;
     content_type: string;
+    file_name: string;
     size_bytes: number;
 };
 
@@ -3343,10 +3343,10 @@ export type OrgAttestorIncorporationDocumentRequest = {
  * Request body to create a presigned tax-document upload session.
  */
 export type OrgAttestorTaxDocumentRequest = {
-    tax_document_type: 'w9' | 'w8ben' | 'other';
-    file_name: string;
     content_type: string;
+    file_name: string;
     size_bytes: number;
+    tax_document_type: 'w9' | 'w8ben' | 'other';
 };
 
 export type tax_document_type = 'w9' | 'w8ben' | 'other';
@@ -3355,12 +3355,12 @@ export type tax_document_type = 'w9' | 'w8ben' | 'other';
  * One organization capability row.
  */
 export type OrgCapabilityResponse = {
+    activated_at: (string | null);
+    capability: string;
+    created_at: string;
     id: string;
     org_id: string;
-    capability: string;
     status: string;
-    activated_at: (string | null);
-    created_at: string;
     updated_at: string;
 };
 
@@ -3375,14 +3375,14 @@ export type OrgDeliveriesResponse = {
  * Organization-internal view of one accepted Project delivery workspace.
  */
 export type OrgDeliveryResponse = {
-    proposal_id: string;
-    project_id: string;
-    project_title: string;
-    project_status: string;
-    milestone_plan_status: string;
-    delivering_member_id: (string | null);
     accepted_at: (string | null);
     created_at: string;
+    delivering_member_id: (string | null);
+    milestone_plan_status: string;
+    project_id: string;
+    project_status: string;
+    project_title: string;
+    proposal_id: string;
 };
 
 /**
@@ -3390,8 +3390,8 @@ export type OrgDeliveryResponse = {
  */
 export type OrgInvitationCreateRequest = {
     email?: (string | null);
-    user_id?: (string | null);
     role: 'admin' | 'member';
+    user_id?: (string | null);
 };
 
 export type role3 = 'admin' | 'member';
@@ -3400,22 +3400,22 @@ export type role3 = 'admin' | 'member';
  * Invitation preview: what the invitee sees before accepting.
  */
 export type OrgInvitationPreviewResponse = {
+    expires_at: string;
     org_name: string;
     org_slug: string;
     role: string;
-    expires_at: string;
 };
 
 /**
  * One organization invitation row.
  */
 export type OrgInvitationResponse = {
-    id: string;
+    created_at: string;
     email: string;
+    expires_at: string;
+    id: string;
     role: string;
     status: string;
-    expires_at: string;
-    created_at: string;
 };
 
 /**
@@ -3429,15 +3429,15 @@ export type OrgInvitationsResponse = {
  * One org-attested invoice's non-sensitive metadata for list views.
  */
 export type OrgInvoiceListItem = {
+    currency: string;
+    direction: string;
+    doc_type: string;
     id: string;
     invoice_number: string;
-    doc_type: string;
     issue_date: string;
-    currency: string;
-    total: string;
-    source_ref_type: string;
     source_ref_id: string;
-    direction: string;
+    source_ref_type: string;
+    total: string;
 };
 
 /**
@@ -3451,15 +3451,15 @@ export type OrgInvoicesResponse = {
  * Owner-visible shared legal identity for one organization.
  */
 export type OrgLegalProfileResponse = {
-    org_id: string;
-    legal_name: string;
-    registration_number: (string | null);
     address: ({
     [key: string]: unknown;
 } | null);
+    created_at: string;
+    legal_name: string;
+    org_id: string;
+    registration_number: (string | null);
     tax_document_type: (string | null);
     tax_document_uploaded: boolean;
-    created_at: string;
     updated_at: string;
 };
 
@@ -3467,11 +3467,11 @@ export type OrgLegalProfileResponse = {
  * Owner-scoped request body for the shared organization legal profile.
  */
 export type OrgLegalProfileUpdateRequest = {
-    legal_name: string;
-    registration_number?: (string | null);
     address?: ({
     [key: string]: unknown;
 } | null);
+    legal_name: string;
+    registration_number?: (string | null);
     totp_code: string;
 };
 
@@ -3479,23 +3479,23 @@ export type OrgLegalProfileUpdateRequest = {
  * One org-library item plus its aggregate grant count.
  */
 export type OrgLibraryItem = {
-    license_id: string;
+    collection_id: (string | null);
+    currency: string;
+    current_version: string;
+    expires_at: (string | null);
     framework_id: string;
+    grant_count: number;
+    granted_at: string;
+    license_id: string;
+    license_type: string;
+    price: string;
+    seats_total: (number | null);
+    seats_used: number;
+    source: string;
+    status: string;
+    thumbnail_key: (string | null);
     title: string;
     version_at_grant: string;
-    current_version: string;
-    license_type: string;
-    source: string;
-    collection_id: (string | null);
-    status: string;
-    seats_used: number;
-    seats_total: (number | null);
-    price: string;
-    currency: string;
-    thumbnail_key: (string | null);
-    granted_at: string;
-    expires_at: (string | null);
-    grant_count: number;
 };
 
 /**
@@ -3509,19 +3509,19 @@ export type OrgLibraryResponse = {
  * Admin-scoped request to allocate one org License to one target.
  */
 export type OrgLicenseGrantRequest = {
-    team_id?: (string | null);
     member_id?: (string | null);
+    team_id?: (string | null);
 };
 
 /**
  * One org License grant row exposed to org admins.
  */
 export type OrgLicenseGrantResponse = {
+    created_at: string;
     id: string;
     license_id: string;
-    team_id: (string | null);
     member_id: (string | null);
-    created_at: string;
+    team_id: (string | null);
 };
 
 /**
@@ -3535,13 +3535,13 @@ export type OrgLicenseGrantsResponse = {
  * One organization member, with email hidden from plain members.
  */
 export type OrgMemberResponse = {
-    id: string;
-    user_id: string;
     display_name: string;
     email: (string | null);
-    role: string;
+    id: string;
     joined_at: string;
     nda_signed?: boolean;
+    role: string;
+    user_id: string;
 };
 
 /**
@@ -3562,10 +3562,10 @@ export type OrgMembersResponse = {
  * A member's NDA status for one organization.
  */
 export type OrgNdaStatusResponse = {
-    required: boolean;
     current_version: string;
-    signed_version?: (string | null);
+    required: boolean;
     signed_at?: (string | null);
+    signed_version?: (string | null);
 };
 
 /**
@@ -3594,8 +3594,8 @@ export type OrgPaymentMethodDeleteRequest = {
  * Response body for a removed organization payment method.
  */
 export type OrgPaymentMethodDeleteResponse = {
-    provider: "stripe";
     payment_method_id: string;
+    provider: "stripe";
     removed: boolean;
 };
 
@@ -3603,13 +3603,13 @@ export type OrgPaymentMethodDeleteResponse = {
  * Safe provider-held payment method metadata returned to org admins.
  */
 export type OrgPaymentMethodResponse = {
-    id: string;
-    provider: "stripe";
-    type: string;
     brand: (string | null);
-    last4: (string | null);
     exp_month: (number | null);
     exp_year: (number | null);
+    id: string;
+    last4: (string | null);
+    provider: "stripe";
+    type: string;
 };
 
 /**
@@ -3623,9 +3623,9 @@ export type OrgPaymentMethodSetupRequest = {
  * Stripe SetupIntent data needed to attach an org payment method.
  */
 export type OrgPaymentMethodSetupResponse = {
+    client_secret: string;
     provider: "stripe";
     setup_intent_id: string;
-    client_secret: string;
 };
 
 /**
@@ -3651,12 +3651,12 @@ export type OrgPayoutAccountOnboardRequest = {
  * Organization-admin request body for submitting an org Proposal.
  */
 export type OrgProposalCreateRequest = {
-    scope: string;
     budget: (number | string);
     currency?: string;
-    timeline_days: number;
     deliverables: Array<DeliverableSpec>;
     delivering_member_id: string;
+    scope: string;
+    timeline_days: number;
 };
 
 /**
@@ -3698,11 +3698,11 @@ export type OrgTeamRenameRequest = {
  * One organization team row with member count and enabled capabilities.
  */
 export type OrgTeamResponse = {
-    id: string;
-    name: string;
-    member_count: number;
     capabilities?: Array<('contributor' | 'operator' | 'attestor')>;
     created_at: string;
+    id: string;
+    member_count: number;
+    name: string;
 };
 
 /**
@@ -3719,9 +3719,9 @@ export type OrgTeamsResponse = {
  * sets the CoI expiry one validity period out.
  */
 export type OrgUndertakingsSignRequest = {
-    declarations: Array<CoiEntry>;
-    accept_policy: boolean;
     accept_confidentiality: boolean;
+    accept_policy: boolean;
+    declarations: Array<CoiEntry>;
     totp_code: string;
 };
 
@@ -3730,10 +3730,10 @@ export type OrgUndertakingsSignRequest = {
  */
 export type PartnerAttestationReportResponse = {
     id: string;
-    status: string;
+    issued_at: (string | null);
     outcome: string;
     report_key: string;
-    issued_at: (string | null);
+    status: string;
 };
 
 /**
@@ -3747,33 +3747,33 @@ export type PartnerAttestationsResponse = {
  * Partner-safe public Framework detail without full artifact inventory.
  */
 export type PartnerFrameworkDetailResponse = {
-    id: string;
-    contributor_id: string;
-    contributor_name: string;
-    title: string;
-    description: string;
-    version: string;
-    category: string;
-    sector: (string | null);
-    industry: (string | null);
-    function: (string | null);
-    tags: Array<(string)>;
-    jurisdiction: (string | null);
-    complexity: (number | null);
-    org_size: (string | null);
-    lifecycle_stage: (string | null);
-    price: string;
-    currency: string;
-    license_types: Array<(string)>;
-    thumbnail_key: (string | null);
-    rarity_score: (string | null);
-    average_review_score?: (string | null);
-    review_count?: number;
     attestation_badge?: ({
     [key: string]: unknown;
 } | null);
-    published_at: (string | null);
+    average_review_score?: (string | null);
+    category: string;
+    complexity: (number | null);
+    contributor_id: string;
+    contributor_name: string;
+    currency: string;
+    description: string;
+    function: (string | null);
+    id: string;
+    industry: (string | null);
+    jurisdiction: (string | null);
+    license_types: Array<(string)>;
+    lifecycle_stage: (string | null);
+    org_size: (string | null);
     preview_artifact_id: (string | null);
+    price: string;
+    published_at: (string | null);
+    rarity_score: (string | null);
+    review_count?: number;
+    sector: (string | null);
+    tags: Array<(string)>;
+    thumbnail_key: (string | null);
+    title: string;
+    version: string;
 };
 
 /**
@@ -3790,14 +3790,14 @@ export type PartnerPayoutRequest = {
  * Developer-facing Partner payout request and processing status.
  */
 export type PartnerPayoutResponse = {
-    id: string;
-    payout_account_id: string;
     amount: string;
-    currency: string;
-    status: string;
-    provider_ref: (string | null);
-    initiated_at: string;
     completed_at: (string | null);
+    currency: string;
+    id: string;
+    initiated_at: string;
+    payout_account_id: string;
+    provider_ref: (string | null);
+    status: string;
 };
 
 /**
@@ -3811,12 +3811,12 @@ export type PartnerPayoutsResponse = {
  * Partner-safe preview Artifact payload with a temporary preview URL.
  */
 export type PartnerPreviewArtifactResponse = {
-    id: string;
-    name: string;
-    file_size: number;
-    mime_type: string;
-    preview_url: string;
     created_at: string;
+    file_size: number;
+    id: string;
+    mime_type: string;
+    name: string;
+    preview_url: string;
 };
 
 /**
@@ -3833,69 +3833,69 @@ export type license_type = 'single_user' | 'team' | 'organizational';
  * Stripe checkout data returned to a Partner API purchase request.
  */
 export type PartnerPurchaseResponse = {
-    transaction_id: string;
-    provider: "stripe";
     client_secret: string;
+    provider: "stripe";
+    transaction_id: string;
 };
 
 /**
  * Partner-visible purchase status without licensed artifact access.
  */
 export type PartnerPurchaseStatusResponse = {
-    transaction_id: string;
-    status: string;
-    provider: "stripe";
-    framework_id: string;
-    buyer_email: string;
-    license_type: string;
     amount: string;
+    buyer_email: string;
     currency: string;
+    framework_id: string;
+    license_type: string;
+    provider: "stripe";
+    status: string;
+    transaction_id: string;
 };
 
 /**
  * Configured Partner tier range and commission rate.
  */
 export type PartnerTierResponse = {
-    tier: number;
-    min_sales: number;
     max_sales: (number | null);
+    min_sales: number;
     rate: string;
+    tier: number;
 };
 
 /**
  * Request body for registering a Partner outbound webhook endpoint.
  */
 export type PartnerWebhookCreateRequest = {
-    url: string;
     events: Array<(string)>;
+    url: string;
 };
 
 /**
  * Webhook creation response that includes the raw secret exactly once.
  */
 export type PartnerWebhookCreateResponse = {
-    id: string;
-    url: string;
-    events: Array<(string)>;
     active: boolean;
     created_at: string;
-    secret_hint: string;
+    events: Array<(string)>;
+    id: string;
     secret: string;
+    secret_hint: string;
+    url: string;
 };
 
 /**
  * Developer-facing outbound webhook delivery state.
  */
 export type PartnerWebhookDeliveryResponse = {
-    id: string;
-    partner_webhook_id: string;
-    event_type: string;
-    status: string;
     attempts: number;
-    response_code: (number | null);
+    created_at: string;
+    event_type: string;
+    id: string;
     last_attempt_at: (string | null);
     next_attempt_at: (string | null);
-    created_at: string;
+    partner_webhook_id: string;
+    response_code: (number | null);
+    status: string;
 };
 
 /**
@@ -3906,12 +3906,12 @@ export type PartnerWebhookDeliveryResponse = {
  * so the partner can recognize which secret is configured.
  */
 export type PartnerWebhookResponse = {
-    id: string;
-    url: string;
-    events: Array<(string)>;
     active: boolean;
     created_at: string;
+    events: Array<(string)>;
+    id: string;
     secret_hint: string;
+    url: string;
 };
 
 /**
@@ -3932,8 +3932,8 @@ export type PaymentMethodDeleteRequest = {
  * Response body for a removed provider-held payment method.
  */
 export type PaymentMethodDeleteResponse = {
-    provider: "stripe";
     payment_method_id: string;
+    provider: "stripe";
     removed: boolean;
 };
 
@@ -3941,13 +3941,13 @@ export type PaymentMethodDeleteResponse = {
  * Safe provider-held payment method metadata returned to Operators.
  */
 export type PaymentMethodResponse = {
-    id: string;
-    provider: "stripe";
-    type: string;
     brand: (string | null);
-    last4: (string | null);
     exp_month: (number | null);
     exp_year: (number | null);
+    id: string;
+    last4: (string | null);
+    provider: "stripe";
+    type: string;
 };
 
 /**
@@ -3961,9 +3961,9 @@ export type PaymentMethodSetupRequest = {
  * Stripe SetupIntent data needed by the browser to attach a method.
  */
 export type PaymentMethodSetupResponse = {
+    client_secret: string;
     provider: "stripe";
     setup_intent_id: string;
-    client_secret: string;
 };
 
 /**
@@ -3984,16 +3984,16 @@ export type PayoutAccountDeleteRequest = {
  * Response body for a soft-deleted payout account.
  */
 export type PayoutAccountDeleteResponse = {
-    payout_account_id: string;
     deleted: boolean;
+    payout_account_id: string;
 };
 
 /**
  * Request body for creating a provider-held payout destination.
  */
 export type PayoutAccountOnboardRequest = {
-    provider: "stripe";
     country: string;
+    provider: "stripe";
     refresh_url: string;
     return_url: string;
 };
@@ -4002,22 +4002,22 @@ export type PayoutAccountOnboardRequest = {
  * Response body for a provider payout-account onboarding request.
  */
 export type PayoutAccountOnboardResponse = {
-    provider: "stripe";
     onboarding_url: (string | null);
     payout_account: PayoutAccountResponse;
+    provider: "stripe";
 };
 
 /**
  * Safe Contributor payout-account metadata.
  */
 export type PayoutAccountResponse = {
-    id: string;
-    provider: "stripe";
     account_type: string;
-    provider_account_ref: string;
-    is_default: boolean;
-    verified_at: (string | null);
     created_at: string;
+    id: string;
+    is_default: boolean;
+    provider: "stripe";
+    provider_account_ref: string;
+    verified_at: (string | null);
 };
 
 /**
@@ -4041,16 +4041,16 @@ export type PayoutRequest = {
  * Contributor-facing payout request and processing status.
  */
 export type PayoutResponse = {
-    id: string;
-    payout_account_id: string;
     amount: string;
-    currency: string;
     commission_deducted: string;
-    net_amount: string;
-    status: string;
-    provider_ref: (string | null);
-    initiated_at: string;
     completed_at: (string | null);
+    currency: string;
+    id: string;
+    initiated_at: string;
+    net_amount: string;
+    payout_account_id: string;
+    provider_ref: (string | null);
+    status: string;
 };
 
 /**
@@ -4071,11 +4071,11 @@ export type PreviewArtifactRequest = {
  * Framework pricing and licensing options configured by a Contributor.
  */
 export type PricingConfig_Input = {
-    price: (number | string);
+    commercial_rights?: (string | null);
     currency?: string;
     license_types: Array<('single_user' | 'team' | 'organizational' | 'enterprise')>;
     org_price?: (number | string | null);
-    commercial_rights?: (string | null);
+    price: (number | string);
     usage_restrictions?: (string | null);
 };
 
@@ -4083,11 +4083,11 @@ export type PricingConfig_Input = {
  * Framework pricing and licensing options configured by a Contributor.
  */
 export type PricingConfig_Output = {
-    price: string;
+    commercial_rights?: (string | null);
     currency?: string;
     license_types: Array<('single_user' | 'team' | 'organizational' | 'enterprise')>;
     org_price?: (string | null);
-    commercial_rights?: (string | null);
+    price: string;
     usage_restrictions?: (string | null);
 };
 
@@ -4102,11 +4102,11 @@ export type PricingConfig_Output = {
  * end_year: End/graduation year, or None.
  */
 export type ProfileEducation = {
-    school: string;
     degree?: (string | null);
-    field?: (string | null);
-    start_year?: (number | null);
     end_year?: (number | null);
+    field?: (string | null);
+    school: string;
+    start_year?: (number | null);
 };
 
 /**
@@ -4124,12 +4124,12 @@ export type ProfileEducation = {
  * description: Responsibilities/summary, or None (<=2000 chars).
  */
 export type ProfileExperience = {
-    title: string;
     company: string;
-    start?: (string | null);
-    end?: (string | null);
     current?: boolean;
     description?: (string | null);
+    end?: (string | null);
+    start?: (string | null);
+    title: string;
 };
 
 /**
@@ -4146,11 +4146,11 @@ export type ProfileExperience = {
  * framework: Resolved public Framework card, or None.
  */
 export type ProfileFeatured = {
-    title?: (string | null);
     description?: (string | null);
-    url?: (string | null);
-    framework_id?: (string | null);
     framework?: (ExploreFrameworkCard | null);
+    framework_id?: (string | null);
+    title?: (string | null);
+    url?: (string | null);
 };
 
 /**
@@ -4167,10 +4167,10 @@ export type ProfileFeatured = {
  * framework_id: Optional id of a published Framework to pin.
  */
 export type ProfileFeaturedInput = {
-    title?: (string | null);
     description?: (string | null);
-    url?: (string | null);
     framework_id?: (string | null);
+    title?: (string | null);
+    url?: (string | null);
 };
 
 /**
@@ -4199,9 +4199,9 @@ export type ProfileLink = {
  * average_rating: Mean review score (1 decimal), or None if no reviews.
  */
 export type ProfileStats = {
+    average_rating?: (number | null);
     frameworks_published?: number;
     reviews_received?: number;
-    average_rating?: (number | null);
 };
 
 /**
@@ -4219,30 +4219,30 @@ export type ProfileStats = {
  * website: Personal/site URL; must use http or https.
  */
 export type ProfileUpdateRequest = {
-    headline?: (string | null);
     bio?: (string | null);
-    location?: (string | null);
-    website?: (string | null);
-    specializations?: (Array<(string)> | null);
-    links?: (Array<ProfileLink> | null);
-    social_links?: (Array<SocialLink> | null);
-    featured?: (Array<ProfileFeaturedInput> | null);
-    experience?: (Array<ProfileExperience> | null);
     education?: (Array<ProfileEducation> | null);
+    experience?: (Array<ProfileExperience> | null);
+    featured?: (Array<ProfileFeaturedInput> | null);
+    headline?: (string | null);
+    links?: (Array<ProfileLink> | null);
+    location?: (string | null);
+    social_links?: (Array<SocialLink> | null);
+    specializations?: (Array<(string)> | null);
+    website?: (string | null);
 };
 
 /**
  * Operator request body for creating a Project.
  */
 export type ProjectCreateRequest = {
-    title: string;
-    description: string;
-    category: string;
-    required_deliverables: Array<DeliverableSpec>;
-    budget_min: (number | string);
     budget_max: (number | string);
+    budget_min: (number | string);
+    category: string;
     currency?: string;
     deadline?: (string | null);
+    description: string;
+    required_deliverables: Array<DeliverableSpec>;
+    title: string;
 };
 
 /**
@@ -4255,85 +4255,85 @@ export type ProjectCreateRequest = {
  * ``posting_member_id`` provenance field is never exposed here.
  */
 export type ProjectResponse = {
-    id: string;
-    operator_id?: (string | null);
-    operator_org_id?: (string | null);
-    operator_name?: (string | null);
-    title: string;
-    description: string;
+    accepted_proposal_id: (string | null);
+    budget_max: string;
+    budget_min: string;
     category: string;
+    closed_at: (string | null);
+    created_at: string;
+    currency: string;
+    deadline: (string | null);
+    delivered_at: (string | null);
+    description: string;
+    expires_at: string;
+    id: string;
+    milestone_plan_status: string;
+    operator_id?: (string | null);
+    operator_name?: (string | null);
+    operator_org_id?: (string | null);
+    operator_reputation?: (ReputationSummary | null);
     required_deliverables: Array<{
         [key: string]: unknown;
     }>;
-    budget_min: string;
-    budget_max: string;
-    currency: string;
-    deadline: (string | null);
     status: string;
-    milestone_plan_status: string;
-    expires_at: string;
-    accepted_proposal_id: (string | null);
-    delivered_at: (string | null);
-    closed_at: (string | null);
-    created_at: string;
+    title: string;
     updated_at: string;
-    operator_reputation?: (ReputationSummary | null);
 };
 
 /**
  * Paginated Project list response.
  */
 export type ProjectsResponse = {
-    projects: Array<ProjectResponse>;
-    total: number;
     page: number;
     page_size: number;
+    projects: Array<ProjectResponse>;
+    total: number;
 };
 
 /**
  * Operator request body for editing an open Project.
  */
 export type ProjectUpdateRequest = {
-    title?: (string | null);
-    description?: (string | null);
-    category?: (string | null);
-    required_deliverables?: (Array<DeliverableSpec> | null);
-    budget_min?: (number | string | null);
     budget_max?: (number | string | null);
+    budget_min?: (number | string | null);
+    category?: (string | null);
     deadline?: (string | null);
+    description?: (string | null);
+    required_deliverables?: (Array<DeliverableSpec> | null);
+    title?: (string | null);
 };
 
 /**
  * Contributor request body for submitting a Proposal.
  */
 export type ProposalCreateRequest = {
-    scope: string;
     budget: (number | string);
     currency?: string;
-    timeline_days: number;
     deliverables: Array<DeliverableSpec>;
+    scope: string;
+    timeline_days: number;
 };
 
 /**
  * Proposal response returned to authors and Project owners.
  */
 export type ProposalResponse = {
-    id: string;
-    project_id: string;
-    contributor_id: (string | null);
-    contributor_org_id?: (string | null);
-    contributor_name?: (string | null);
-    scope: string;
+    accepted_at: (string | null);
     budget: string;
+    contributor_id: (string | null);
+    contributor_name?: (string | null);
+    contributor_org_id?: (string | null);
+    created_at: string;
     currency: string;
-    timeline_days: number;
     deliverables: Array<{
         [key: string]: unknown;
     }>;
+    id: string;
+    project_id: string;
+    scope: string;
     status: string;
+    timeline_days: number;
     withdrawn_at: (string | null);
-    accepted_at: (string | null);
-    created_at: string;
 };
 
 /**
@@ -4350,31 +4350,31 @@ export type ProposalsResponse = {
  * metadata — anti-gaming and PII protection.
  */
 export type PublicCredentialResponse = {
-    title: string;
-    issuer: string;
     credential_type: (string | null);
-    issued_date: string;
-    expires_date: (string | null);
     expired: boolean;
+    expires_date: (string | null);
+    issued_date: string;
+    issuer: string;
+    title: string;
 };
 
 /**
  * Public org profile: no member identities, no PII.
  */
 export type PublicOrganizationResponse = {
-    slug: string;
-    name: string;
-    logo_key: (string | null);
-    country: string;
-    website: (string | null);
-    description: (string | null);
     active_capabilities: Array<(string)>;
-    member_count: number;
+    country: string;
     created_at: string;
+    description: (string | null);
+    logo_key: (string | null);
     /**
      * Public URL the org logo is served at, or ``None`` when unset.
      */
     readonly logo_url: (string | null);
+    member_count: number;
+    name: string;
+    slug: string;
+    website: (string | null);
 };
 
 /**
@@ -4400,42 +4400,42 @@ export type PublicOrganizationResponse = {
  * nulled.
  */
 export type PublicProfileResponse = {
-    id: string;
-    display_name: string;
     avatar_url?: (string | null);
     banner_url?: (string | null);
-    headline?: (string | null);
     bio?: (string | null);
-    location?: (string | null);
-    website?: (string | null);
-    specializations?: Array<(string)>;
-    links?: Array<ProfileLink>;
-    social_links?: Array<SocialLink>;
-    featured?: Array<ProfileFeatured>;
-    experience?: Array<ProfileExperience>;
+    display_name: string;
     education?: Array<ProfileEducation>;
-    verified_credentials?: Array<PublicCredentialResponse>;
-    stats?: ProfileStats;
-    roles?: Array<(string)>;
-    kyc_verified?: boolean;
+    experience?: Array<ProfileExperience>;
+    featured?: Array<ProfileFeatured>;
+    headline?: (string | null);
+    id: string;
     is_deactivated?: boolean;
     is_limited?: boolean;
+    kyc_verified?: boolean;
+    links?: Array<ProfileLink>;
+    location?: (string | null);
+    roles?: Array<(string)>;
+    social_links?: Array<SocialLink>;
+    specializations?: Array<(string)>;
+    stats?: ProfileStats;
+    verified_credentials?: Array<PublicCredentialResponse>;
+    website?: (string | null);
 };
 
 /**
  * Operator-facing purchase history row.
  */
 export type PurchaseHistoryItem = {
-    transaction_id: string;
-    framework_id: string;
-    framework_title: string;
     amount: string;
     currency: string;
-    status: string;
-    provider: "stripe";
+    framework_id: string;
+    framework_title: string;
     license_id: (string | null);
     license_type: (string | null);
+    provider: 'stripe' | 'paystack';
     purchased_at: string;
+    status: string;
+    transaction_id: string;
 };
 
 /**
@@ -4443,44 +4443,50 @@ export type PurchaseHistoryItem = {
  */
 export type PurchaseHistoryResponse = {
     items: Array<PurchaseHistoryItem>;
-    total: number;
     page: number;
     page_size: number;
+    total: number;
 };
 
 /**
  * Request body for starting self-serve Framework checkout.
  */
 export type PurchaseRequest = {
+    country?: (string | null);
     license_type: 'single_user' | 'team' | 'organizational';
 };
 
 /**
- * PaymentIntent data needed by the browser to complete checkout.
+ * Provider handoff data the browser needs to complete checkout.
+ *
+ * The two rails hand off differently and exactly one field is populated:
+ * Stripe returns a `client_secret` for in-page Elements, while Paystack
+ * returns an `authorization_url` the browser is redirected to.
  */
 export type PurchaseResponse = {
+    authorization_url?: (string | null);
+    client_secret?: (string | null);
+    provider: 'stripe' | 'paystack';
     transaction_id: string;
-    provider: "stripe";
-    client_secret: string;
 };
 
 /**
  * Response body for a successful self-serve purchase refund.
  */
 export type RefundResponse = {
-    transaction_id: string;
     provider: "stripe";
     refund_id: string;
     status: "refunded";
+    transaction_id: string;
 };
 
 /**
  * Request body for email/password registration.
  */
 export type RegisterRequest = {
+    display_name: string;
     email: string;
     password: string;
-    display_name: string;
     roles: Array<('contributor' | 'operator' | 'attestor')>;
 };
 
@@ -4503,12 +4509,12 @@ export type ReputationFactorLabel = {
  * Public reputation payload for one subject.
  */
 export type ReputationResponse = {
-    subject_type: string;
-    subject_id: string;
-    score: (string | null);
-    is_provisional: boolean;
     factors: Array<ReputationFactorLabel>;
+    is_provisional: boolean;
     last_calculated_at: (string | null);
+    score: (string | null);
+    subject_id: string;
+    subject_type: string;
 };
 
 /**
@@ -4518,9 +4524,9 @@ export type ReputationResponse = {
  * subjects render as "New" rather than a misleading number.
  */
 export type ReputationSummary = {
-    score?: (string | null);
-    is_provisional?: boolean;
     factors?: Array<ReputationFactorLabel>;
+    is_provisional?: boolean;
+    score?: (string | null);
 };
 
 /**
@@ -4538,10 +4544,10 @@ export type RequestorReportRubricResponse = {
  * whether to accept or dispute.
  */
 export type RequestorRubricItem = {
+    comment?: (string | null);
     dimension_key: string;
     label: string;
     score?: (number | null);
-    comment?: (string | null);
 };
 
 /**
@@ -4555,17 +4561,17 @@ export type ResendVerificationRequest = {
  * Request body for consuming a password reset token.
  */
 export type ResetPasswordRequest = {
-    token: string;
     new_password: string;
+    token: string;
 };
 
 /**
  * Response body for role assignment endpoints.
  */
 export type RoleAssignmentResponse = {
-    user_id: string;
-    role: string;
     approved: boolean;
+    role: string;
+    user_id: string;
 };
 
 /**
@@ -4575,18 +4581,18 @@ export type RoleAssignmentResponse = {
  * frontend's static dimension keys rather than internal dimension ids.
  */
 export type RubricScoreItem = {
+    comment: (string | null);
     dimension_key: string;
     score: (number | null);
-    comment: (string | null);
 };
 
 /**
  * One persisted attestation rubric-score row.
  */
 export type RubricScoreResponse = {
+    comment: (string | null);
     dimension_id: string;
     score: (number | null);
-    comment: (string | null);
 };
 
 /**
@@ -4600,17 +4606,17 @@ export type RubricScoresResponse = {
  * Draft score and comment for one rubric dimension.
  */
 export type RubricScoreUpsertRequest = {
-    score?: (number | null);
     comment?: (string | null);
+    score?: (number | null);
 };
 
 /**
  * Operator request body for creating a saved Explore search.
  */
 export type SavedSearchCreateRequest = {
-    name: string;
-    filters?: ExploreSearchFilters;
     alert_enabled?: boolean;
+    filters?: ExploreSearchFilters;
+    name: string;
 };
 
 /**
@@ -4624,39 +4630,39 @@ export type SavedSearchListResponse = {
  * Operator-facing saved-search response.
  */
 export type SavedSearchResponse = {
-    id: string;
-    user_id: string;
-    name: string;
+    alert_enabled: boolean;
+    created_at: string;
+    filter_version: number;
     filters: {
         [key: string]: unknown;
     };
-    filter_version: number;
-    alert_enabled: boolean;
+    id: string;
     last_alerted_at: (string | null);
     last_alerted_framework_id: (string | null);
-    created_at: string;
+    name: string;
     updated_at: string;
+    user_id: string;
 };
 
 /**
  * Operator request body for editing an owned saved search.
  */
 export type SavedSearchUpdateRequest = {
-    name?: (string | null);
-    filters?: (ExploreSearchFilters | null);
     alert_enabled?: (boolean | null);
+    filters?: (ExploreSearchFilters | null);
+    name?: (string | null);
 };
 
 /**
  * Public metadata for one active refresh-token session.
  */
 export type SessionResponse = {
-    id: string;
-    ip: (string | null);
-    user_agent: (string | null);
-    last_seen: string;
     created_at: string;
     current: boolean;
+    id: string;
+    ip: (string | null);
+    last_seen: string;
+    user_agent: (string | null);
 };
 
 /**
@@ -4670,11 +4676,11 @@ export type SessionsResponse = {
  * Non-blocking internal similarity notice for a processed Artifact.
  */
 export type SimilarityNotice = {
+    average_review_score?: (string | null);
     jaccard: string;
     nearest_match_artifact_id?: (string | null);
     nearest_match_framework_id?: (string | null);
     nearest_match_title?: (string | null);
-    average_review_score?: (string | null);
     review_count?: number;
 };
 
@@ -4704,8 +4710,8 @@ export type platform = 'x' | 'linkedin' | 'github' | 'youtube' | 'instagram' | '
  */
 export type SourcePreviewResponse = {
     preview_url: (string | null);
-    source_updated: boolean;
     source_last_synced_at: (string | null);
+    source_updated: boolean;
 };
 
 /**
@@ -4734,9 +4740,9 @@ export type TotpLoginVerifyRequest = {
  * One-time TOTP enrollment response with recovery material.
  */
 export type TotpSetupResponse = {
+    backup_codes: Array<(string)>;
     provisioning_uri: string;
     qr_png_base64: string;
-    backup_codes: Array<(string)>;
 };
 
 /**
@@ -4747,8 +4753,8 @@ export type TotpSetupResponse = {
  * relevant to their result.
  */
 export type TotpStatusResponse = {
-    totp_enabled: boolean;
     backup_codes_remaining?: number;
+    totp_enabled: boolean;
 };
 
 /**
@@ -4756,8 +4762,8 @@ export type TotpStatusResponse = {
  */
 export type TrialAnswerKeyItem = {
     dimension_id: string;
-    label: string;
     expected_score: (number | null);
+    label: string;
     tolerance: (number | null);
 };
 
@@ -4773,8 +4779,8 @@ export type TrialAnswerKeysResponse = {
  * A calibration-fixture artifact with a short-lived presigned URL.
  */
 export type TrialArtifactSchema = {
-    name: string;
     mime_type: string;
+    name: string;
     url: string;
 };
 
@@ -4782,8 +4788,8 @@ export type TrialArtifactSchema = {
  * Admin confirmation or override of a trial outcome.
  */
 export type TrialDecideRequest = {
-    result: 'pass' | 'fail';
     feedback?: (string | null);
+    result: 'pass' | 'fail';
 };
 
 export type result = 'pass' | 'fail';
@@ -4793,18 +4799,18 @@ export type result = 'pass' | 'fail';
  */
 export type TrialRubricDimensionSchema = {
     dimension_id: string;
+    display_order: number;
     key: string;
     label: string;
-    display_order: number;
 };
 
 /**
  * One nominee score submission for a trial dimension.
  */
 export type TrialScoreInput = {
+    comment?: (string | null);
     dimension_id: string;
     score: number;
-    comment?: (string | null);
 };
 
 /**
@@ -4824,13 +4830,13 @@ export type UpsertTrialAnswerKeyRequest = {
 };
 
 export type ValidationError = {
-    loc: Array<(string | number)>;
-    msg: string;
-    type: string;
-    input?: unknown;
     ctx?: {
         [key: string]: unknown;
     };
+    input?: unknown;
+    loc: Array<(string | number)>;
+    msg: string;
+    type: string;
 };
 
 /**
@@ -4884,18 +4890,18 @@ export type WorkspaceMessageCreateRequest = {
  * Workspace message response returned to Project members.
  */
 export type WorkspaceMessageResponse = {
+    body: (string | null);
+    created_at: string;
+    file_keys: (Array<(string)> | null);
     id: string;
     project_id: string;
+    scan_status: string;
     sender_id: (string | null);
     sender_name?: (string | null);
-    body: (string | null);
-    file_keys: (Array<(string)> | null);
-    scan_status: string;
     system_event: (string | null);
     system_payload: ({
     [key: string]: unknown;
 } | null);
-    created_at: string;
 };
 
 /**
@@ -4909,8 +4915,8 @@ export type WorkspaceMessagesResponse = {
  * Request body for creating a workspace presigned upload session.
  */
 export type WorkspaceUploadCreateRequest = {
-    file_name: string;
     content_type: string;
+    file_name: string;
     size_bytes: number;
 };
 
@@ -4918,27 +4924,15 @@ export type WorkspaceUploadCreateRequest = {
  * Presigned POST response for a single workspace file upload.
  */
 export type WorkspaceUploadSessionResponse = {
-    id: string;
-    s3_key: string;
-    url: string;
+    expires_at: string;
     fields: {
         [key: string]: (string);
     };
-    expires_at: string;
+    id: string;
+    s3_key: string;
     size_limit: number;
+    url: string;
 };
-
-export type ListPlatformConfigV1AdminConfigGetResponse = (AdminConfigResponse);
-
-export type ListPlatformConfigV1AdminConfigGetError = unknown;
-
-export type UpdatePlatformConfigV1AdminConfigPatchData = {
-    body: AdminConfigPatchRequest;
-};
-
-export type UpdatePlatformConfigV1AdminConfigPatchResponse = (AdminConfigResponse);
-
-export type UpdatePlatformConfigV1AdminConfigPatchError = (HTTPValidationError);
 
 export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetResponse = (AdminAnalyticsDashboardResponse);
 
@@ -4954,660 +4948,6 @@ export type ExportAdminAnalyticsV1AdminAnalyticsExportGetData = {
 export type ExportAdminAnalyticsV1AdminAnalyticsExportGetResponse = (unknown);
 
 export type ExportAdminAnalyticsV1AdminAnalyticsExportGetError = (HTTPValidationError);
-
-export type ListModerationQueueV1AdminModerationQueueGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        type?: string;
-    };
-};
-
-export type ListModerationQueueV1AdminModerationQueueGetResponse = (AdminModerationQueueResponse);
-
-export type ListModerationQueueV1AdminModerationQueueGetError = (HTTPValidationError);
-
-export type AssignRoleV1AdminUsersUserIdRolesPatchData = {
-    body: AdminRoleAssignmentRequest;
-    path: {
-        user_id: string;
-    };
-};
-
-export type AssignRoleV1AdminUsersUserIdRolesPatchResponse = (AdminRoleAssignmentResponse);
-
-export type AssignRoleV1AdminUsersUserIdRolesPatchError = (HTTPValidationError);
-
-export type ListAdminUsersV1AdminUsersGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        query?: (string | null);
-        status?: string;
-    };
-};
-
-export type ListAdminUsersV1AdminUsersGetResponse = (AdminUserDirectoryResponse);
-
-export type ListAdminUsersV1AdminUsersGetError = (HTTPValidationError);
-
-export type ListAdminPayoutsV1AdminPayoutsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        provider?: string;
-        status?: string;
-    };
-};
-
-export type ListAdminPayoutsV1AdminPayoutsGetResponse = (AdminPayoutDirectoryResponse);
-
-export type ListAdminPayoutsV1AdminPayoutsGetError = (HTTPValidationError);
-
-export type ListAdminInvoicesV1AdminInvoicesGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        query?: (string | null);
-    };
-};
-
-export type ListAdminInvoicesV1AdminInvoicesGetResponse = (AdminInvoicesResponse);
-
-export type ListAdminInvoicesV1AdminInvoicesGetError = (HTTPValidationError);
-
-export type ListAdminWaitlistV1AdminWaitlistGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        query?: (string | null);
-    };
-};
-
-export type ListAdminWaitlistV1AdminWaitlistGetResponse = (AdminWaitlistResponse);
-
-export type ListAdminWaitlistV1AdminWaitlistGetError = (HTTPValidationError);
-
-export type ListAdminConnectorsV1AdminConnectorsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        provider?: (string | null);
-        status?: string;
-    };
-};
-
-export type ListAdminConnectorsV1AdminConnectorsGetResponse = (AdminConnectorsResponse);
-
-export type ListAdminConnectorsV1AdminConnectorsGetError = (HTTPValidationError);
-
-export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        status?: string;
-    };
-};
-
-export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetResponse = (AdminDeletionRequestsResponse);
-
-export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetError = (HTTPValidationError);
-
-export type ListAdminExportRequestsV1AdminGdprExportRequestsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        status?: string;
-    };
-};
-
-export type ListAdminExportRequestsV1AdminGdprExportRequestsGetResponse = (AdminExportRequestsResponse);
-
-export type ListAdminExportRequestsV1AdminGdprExportRequestsGetError = (HTTPValidationError);
-
-export type SuspendUserV1AdminUsersUserIdSuspendPostData = {
-    body: AdminUserSuspendRequest;
-    path: {
-        user_id: string;
-    };
-};
-
-export type SuspendUserV1AdminUsersUserIdSuspendPostResponse = (AdminUserSuspensionResponse);
-
-export type SuspendUserV1AdminUsersUserIdSuspendPostError = (HTTPValidationError);
-
-export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostData = {
-    body: AdminUserUnsuspendRequest;
-    path: {
-        user_id: string;
-    };
-};
-
-export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostResponse = (AdminUserSuspensionResponse);
-
-export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostError = (HTTPValidationError);
-
-export type ReviewKycV1AdminUsersUserIdKycPatchData = {
-    body: AdminKycReviewRequest;
-    path: {
-        user_id: string;
-    };
-};
-
-export type ReviewKycV1AdminUsersUserIdKycPatchResponse = (AdminKycReviewResponse);
-
-export type ReviewKycV1AdminUsersUserIdKycPatchError = (HTTPValidationError);
-
-export type ListCredentialReviewQueueV1AdminCredentialsGetData = {
-    query?: {
-        status?: ('unverified' | 'pending' | 'verified' | 'rejected' | null);
-    };
-};
-
-export type ListCredentialReviewQueueV1AdminCredentialsGetResponse = (AdminCredentialsResponse);
-
-export type ListCredentialReviewQueueV1AdminCredentialsGetError = (HTTPValidationError);
-
-export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostData = {
-    path: {
-        credential_id: string;
-    };
-};
-
-export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostResponse = (AdminCredentialResponse);
-
-export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostError = (HTTPValidationError);
-
-export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostData = {
-    body: AdminCredentialRejectRequest;
-    path: {
-        credential_id: string;
-    };
-};
-
-export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostResponse = (AdminCredentialResponse);
-
-export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostError = (HTTPValidationError);
-
-export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetData = {
-    path: {
-        credential_id: string;
-    };
-    query: {
-        key: string;
-    };
-};
-
-export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
-
-export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
-
-export type ListAdminFrameworksV1AdminFrameworksGetData = {
-    query?: {
-        query?: (string | null);
-    };
-};
-
-export type ListAdminFrameworksV1AdminFrameworksGetResponse = (AdminFrameworkDirectoryResponse);
-
-export type ListAdminFrameworksV1AdminFrameworksGetError = (HTTPValidationError);
-
-export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetResponse = (AdminSuspendedFrameworksResponse);
-
-export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetError = unknown;
-
-export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData = {
-    body: AdminFrameworkSuspendRequest;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostResponse = (AdminFrameworkStatusResponse);
-
-export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostError = (HTTPValidationError);
-
-export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostResponse = (AdminFrameworkStatusResponse);
-
-export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostError = (HTTPValidationError);
-
-export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostData = {
-    body: AdminRarityBlockOverrideRequest;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostResponse = (AdminFrameworkStatusResponse);
-
-export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostError = (HTTPValidationError);
-
-export type GrantLicenseV1AdminLicensesPostData = {
-    body: AdminLicenseGrantRequest;
-};
-
-export type GrantLicenseV1AdminLicensesPostResponse = (AdminLicenseGrantResponse);
-
-export type GrantLicenseV1AdminLicensesPostError = (HTTPValidationError);
-
-export type ReleaseEscrowV1AdminEscrowsEscrowIdReleasePostData = {
-    body: AdminEscrowOverrideRequest;
-    path: {
-        escrow_id: string;
-    };
-};
-
-export type ReleaseEscrowV1AdminEscrowsEscrowIdReleasePostResponse = (AdminEscrowResponse);
-
-export type ReleaseEscrowV1AdminEscrowsEscrowIdReleasePostError = (HTTPValidationError);
-
-export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostData = {
-    body: AdminEscrowOverrideRequest;
-    path: {
-        escrow_id: string;
-    };
-};
-
-export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostResponse = (AdminEscrowResponse);
-
-export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostError = (HTTPValidationError);
-
-export type RecomputeReputationSubjectV1AdminReputationRecomputePostData = {
-    body: AdminReputationRecomputeRequest;
-};
-
-export type RecomputeReputationSubjectV1AdminReputationRecomputePostResponse = (AdminReputationRecomputeResponse);
-
-export type RecomputeReputationSubjectV1AdminReputationRecomputePostError = (HTTPValidationError);
-
-export type ListProjectDisputesV1AdminProjectsDisputesGetData = {
-    query?: {
-        /**
-         * Filter by an exact dispute status.
-         */
-        status?: ('open' | 'under_review' | 'resolved' | null);
-    };
-};
-
-export type ListProjectDisputesV1AdminProjectsDisputesGetResponse = (AdminDisputesResponse);
-
-export type ListProjectDisputesV1AdminProjectsDisputesGetError = (HTTPValidationError);
-
-export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostData = {
-    body: AdminDisputeResolveRequest;
-    path: {
-        dispute_id: string;
-    };
-};
-
-export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostResponse = (DisputeResponse);
-
-export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostError = (HTTPValidationError);
-
-export type ListAdminTransactionsV1AdminTransactionsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        provider?: string;
-        /**
-         * Exact provider charge or transfer reference.
-         */
-        provider_ref?: (string | null);
-        status?: string;
-    };
-};
-
-export type ListAdminTransactionsV1AdminTransactionsGetResponse = (AdminTransactionDirectoryResponse);
-
-export type ListAdminTransactionsV1AdminTransactionsGetError = (HTTPValidationError);
-
-export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetData = {
-    path: {
-        transaction_id: string;
-    };
-};
-
-export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetResponse = (AdminTransactionDetailResponse);
-
-export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetError = (HTTPValidationError);
-
-export type ListAdminFinancialEventsV1AdminFinancialEventsGetData = {
-    query?: {
-        entity_type?: (string | null);
-        event_type?: (string | null);
-        page?: number;
-        page_size?: number;
-        provider?: string;
-        reason_code?: (string | null);
-    };
-};
-
-export type ListAdminFinancialEventsV1AdminFinancialEventsGetResponse = (AdminFinancialEventsResponse);
-
-export type ListAdminFinancialEventsV1AdminFinancialEventsGetError = (HTTPValidationError);
-
-export type ListAdminEscrowsV1AdminEscrowsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        status?: string;
-    };
-};
-
-export type ListAdminEscrowsV1AdminEscrowsGetResponse = (AdminEscrowDirectoryResponse);
-
-export type ListAdminEscrowsV1AdminEscrowsGetError = (HTTPValidationError);
-
-export type ListAdminWebhookEventsV1AdminWebhookEventsGetData = {
-    query?: {
-        event_type?: (string | null);
-        page?: number;
-        page_size?: number;
-        provider?: string;
-        status?: string;
-    };
-};
-
-export type ListAdminWebhookEventsV1AdminWebhookEventsGetResponse = (AdminWebhookEventsResponse);
-
-export type ListAdminWebhookEventsV1AdminWebhookEventsGetError = (HTTPValidationError);
-
-export type ListAdminAuditLogsV1AdminAuditLogsGetData = {
-    query?: {
-        action?: (string | null);
-        actor_id?: (string | null);
-        page?: number;
-        page_size?: number;
-        target_type?: (string | null);
-    };
-};
-
-export type ListAdminAuditLogsV1AdminAuditLogsGetResponse = (AdminAuditLogsResponse);
-
-export type ListAdminAuditLogsV1AdminAuditLogsGetError = (HTTPValidationError);
-
-export type RequestAttestationV1AttestationsPostData = {
-    body: AttestationRequestCreateRequest;
-};
-
-export type RequestAttestationV1AttestationsPostResponse = ((AttestationFundingResponse | AttestationConsentPendingResponse));
-
-export type RequestAttestationV1AttestationsPostError = (HTTPValidationError);
-
-export type ListAttestationsV1AttestationsGetData = {
-    query?: {
-        role?: 'requestor' | 'attestor';
-    };
-};
-
-export type ListAttestationsV1AttestationsGetResponse = (AttestationsResponse);
-
-export type ListAttestationsV1AttestationsGetError = (HTTPValidationError);
-
-export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostData = {
-    body: AttestationConsentRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostResponse = (AttestationRequestResponse);
-
-export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostError = (HTTPValidationError);
-
-export type FundAttestationV1AttestationsAttestationIdFundPostData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type FundAttestationV1AttestationsAttestationIdFundPostResponse = (AttestationFundingResponse);
-
-export type FundAttestationV1AttestationsAttestationIdFundPostError = (HTTPValidationError);
-
-export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetResponse = (AttestationFundingResponse);
-
-export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetError = (HTTPValidationError);
-
-export type ListPublicAttestorDirectoryV1AttestorOrgsGetData = {
-    query?: {
-        function?: (string | null);
-        jurisdiction?: (string | null);
-        level?: (number | null);
-        sector?: (string | null);
-    };
-};
-
-export type ListPublicAttestorDirectoryV1AttestorOrgsGetResponse = (AttestorDirectoryResponse);
-
-export type ListPublicAttestorDirectoryV1AttestorOrgsGetError = (HTTPValidationError);
-
-export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetResponse = (Array<AttestorCompletedAttestation>);
-
-export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetError = (HTTPValidationError);
-
-export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetResponse = (AttestorDirectoryEntry);
-
-export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetError = (HTTPValidationError);
-
-export type GetAttestationV1AttestationsAttestationIdGetData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type GetAttestationV1AttestationsAttestationIdGetResponse = (AttestationRequestResponse);
-
-export type GetAttestationV1AttestationsAttestationIdGetError = (HTTPValidationError);
-
-export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostResponse = (AttestationRequestResponse);
-
-export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostError = (HTTPValidationError);
-
-export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostData = {
-    body: AttestationAcceptRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostResponse = (AttestationRequestResponse);
-
-export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostError = (HTTPValidationError);
-
-export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetResponse = (RubricScoresResponse);
-
-export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetError = (HTTPValidationError);
-
-export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutData = {
-    body: RubricScoreUpsertRequest;
-    path: {
-        attestation_id: string;
-        dimension_key: string;
-    };
-};
-
-export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutResponse = (RubricScoreResponse);
-
-export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutError = (HTTPValidationError);
-
-export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetResponse = (Array<AnnotationResponse>);
-
-export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetError = (HTTPValidationError);
-
-export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostData = {
-    body: AnnotationCreateRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostResponse = (AnnotationResponse);
-
-export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostError = (HTTPValidationError);
-
-export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchData = {
-    body: AnnotationUpdateRequest;
-    path: {
-        annotation_id: string;
-        attestation_id: string;
-    };
-};
-
-export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchResponse = (AnnotationResponse);
-
-export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchError = (HTTPValidationError);
-
-export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteData = {
-    path: {
-        annotation_id: string;
-        attestation_id: string;
-    };
-};
-
-export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteResponse = (void);
-
-export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteError = (HTTPValidationError);
-
-export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetResponse = (Array<ClarificationResponse>);
-
-export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetError = (HTTPValidationError);
-
-export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostData = {
-    body: ClarificationCreateRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostResponse = (ClarificationResponse);
-
-export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostError = (HTTPValidationError);
-
-export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostData = {
-    body: ClarificationRespondRequest;
-    path: {
-        attestation_id: string;
-        clarification_id: string;
-    };
-};
-
-export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostResponse = (ClarificationResponse);
-
-export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostError = (HTTPValidationError);
-
-export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostResponse = ({
-    [key: string]: (number);
-});
-
-export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostError = (HTTPValidationError);
-
-export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
-    body: AttestationEvidenceUploadCreateRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostResponse = (AttestationEvidenceUploadSessionResponse);
-
-export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostError = (HTTPValidationError);
-
-export type SubmitAttestationReportV1AttestationsAttestationIdReportPostData = {
-    body: AttestationReportSubmitRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type SubmitAttestationReportV1AttestationsAttestationIdReportPostResponse = (AttestationRequestResponse);
-
-export type SubmitAttestationReportV1AttestationsAttestationIdReportPostError = (HTTPValidationError);
-
-export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostResponse = (AttestationRequestResponse);
-
-export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostError = (HTTPValidationError);
-
-export type GetReportRubricV1AttestationsAttestationIdReportRubricGetData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type GetReportRubricV1AttestationsAttestationIdReportRubricGetResponse = (RequestorReportRubricResponse);
-
-export type GetReportRubricV1AttestationsAttestationIdReportRubricGetError = (HTTPValidationError);
-
-export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostData = {
-    body: AttestationDisputeCreateRequest;
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostResponse = (AttestationDisputeResponse);
-
-export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostError = (HTTPValidationError);
 
 export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostData = {
     body: AdminAttestationDisputeResolveRequest;
@@ -5662,50 +5002,56 @@ export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostResp
 
 export type AdminRefundAttestationV1AdminAttestationsAttestationIdRefundPostError = (HTTPValidationError);
 
-export type ListCredentialsV1CredentialsGetResponse = (CredentialsResponse);
-
-export type ListCredentialsV1CredentialsGetError = unknown;
-
-export type CreateCredentialV1CredentialsPostData = {
-    body: CredentialCreateRequest;
-};
-
-export type CreateCredentialV1CredentialsPostResponse = (CredentialResponse);
-
-export type CreateCredentialV1CredentialsPostError = (HTTPValidationError);
-
-export type UpdateCredentialV1CredentialsCredentialIdPatchData = {
-    body: CredentialUpdateRequest;
-    path: {
-        credential_id: string;
+export type ListAdminAuditLogsV1AdminAuditLogsGetData = {
+    query?: {
+        action?: (string | null);
+        actor_id?: (string | null);
+        page?: number;
+        page_size?: number;
+        target_type?: (string | null);
     };
 };
 
-export type UpdateCredentialV1CredentialsCredentialIdPatchResponse = (CredentialResponse);
+export type ListAdminAuditLogsV1AdminAuditLogsGetResponse = (AdminAuditLogsResponse);
 
-export type UpdateCredentialV1CredentialsCredentialIdPatchError = (HTTPValidationError);
+export type ListAdminAuditLogsV1AdminAuditLogsGetError = (HTTPValidationError);
 
-export type DeleteCredentialV1CredentialsCredentialIdDeleteData = {
-    path: {
-        credential_id: string;
+export type ListPlatformConfigV1AdminConfigGetResponse = (AdminConfigResponse);
+
+export type ListPlatformConfigV1AdminConfigGetError = unknown;
+
+export type UpdatePlatformConfigV1AdminConfigPatchData = {
+    body: AdminConfigPatchRequest;
+};
+
+export type UpdatePlatformConfigV1AdminConfigPatchResponse = (AdminConfigResponse);
+
+export type UpdatePlatformConfigV1AdminConfigPatchError = (HTTPValidationError);
+
+export type ListAdminConnectorsV1AdminConnectorsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        provider?: (string | null);
+        status?: string;
     };
 };
 
-export type DeleteCredentialV1CredentialsCredentialIdDeleteResponse = (void);
+export type ListAdminConnectorsV1AdminConnectorsGetResponse = (AdminConnectorsResponse);
 
-export type DeleteCredentialV1CredentialsCredentialIdDeleteError = (HTTPValidationError);
+export type ListAdminConnectorsV1AdminConnectorsGetError = (HTTPValidationError);
 
-export type SubmitCredentialV1CredentialsCredentialIdSubmitPostData = {
-    path: {
-        credential_id: string;
+export type ListCredentialReviewQueueV1AdminCredentialsGetData = {
+    query?: {
+        status?: ('unverified' | 'pending' | 'verified' | 'rejected' | null);
     };
 };
 
-export type SubmitCredentialV1CredentialsCredentialIdSubmitPostResponse = (CredentialResponse);
+export type ListCredentialReviewQueueV1AdminCredentialsGetResponse = (AdminCredentialsResponse);
 
-export type SubmitCredentialV1CredentialsCredentialIdSubmitPostError = (HTTPValidationError);
+export type ListCredentialReviewQueueV1AdminCredentialsGetError = (HTTPValidationError);
 
-export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetData = {
+export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetData = {
     path: {
         credential_id: string;
     };
@@ -5714,20 +5060,733 @@ export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetData =
     };
 };
 
-export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
+export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
 
-export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
+export type DownloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
 
-export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostData = {
-    body: CredentialEvidenceUploadCreateRequest;
+export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostData = {
+    body: AdminCredentialRejectRequest;
     path: {
         credential_id: string;
     };
 };
 
-export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
+export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostResponse = (AdminCredentialResponse);
 
-export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
+export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostError = (HTTPValidationError);
+
+export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostData = {
+    path: {
+        credential_id: string;
+    };
+};
+
+export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostResponse = (AdminCredentialResponse);
+
+export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostError = (HTTPValidationError);
+
+export type ListDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGetData = {
+    query?: {
+        status?: ('pending' | 'approved' | 'rejected' | 'withdrawn' | null);
+    };
+};
+
+export type ListDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGetResponse = (DeveloperApplicationsResponse);
+
+export type ListDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGetError = (HTTPValidationError);
+
+export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostData = {
+    body: DeveloperApplicationReviewRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostResponse = (DeveloperApplicationResponse);
+
+export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostError = (HTTPValidationError);
+
+export type ListAdminEscrowsV1AdminEscrowsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: string;
+    };
+};
+
+export type ListAdminEscrowsV1AdminEscrowsGetResponse = (AdminEscrowDirectoryResponse);
+
+export type ListAdminEscrowsV1AdminEscrowsGetError = (HTTPValidationError);
+
+export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostData = {
+    body: AdminEscrowOverrideRequest;
+    path: {
+        escrow_id: string;
+    };
+};
+
+export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostResponse = (AdminEscrowResponse);
+
+export type RefundEscrowV1AdminEscrowsEscrowIdRefundPostError = (HTTPValidationError);
+
+export type ReleaseEscrowV1AdminEscrowsEscrowIdReleasePostData = {
+    body: AdminEscrowOverrideRequest;
+    path: {
+        escrow_id: string;
+    };
+};
+
+export type ReleaseEscrowV1AdminEscrowsEscrowIdReleasePostResponse = (AdminEscrowResponse);
+
+export type ReleaseEscrowV1AdminEscrowsEscrowIdReleasePostError = (HTTPValidationError);
+
+export type ListAdminFinancialEventsV1AdminFinancialEventsGetData = {
+    query?: {
+        entity_type?: (string | null);
+        event_type?: (string | null);
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        reason_code?: (string | null);
+    };
+};
+
+export type ListAdminFinancialEventsV1AdminFinancialEventsGetResponse = (AdminFinancialEventsResponse);
+
+export type ListAdminFinancialEventsV1AdminFinancialEventsGetError = (HTTPValidationError);
+
+export type ListAdminFrameworksV1AdminFrameworksGetData = {
+    query?: {
+        query?: (string | null);
+    };
+};
+
+export type ListAdminFrameworksV1AdminFrameworksGetResponse = (AdminFrameworkDirectoryResponse);
+
+export type ListAdminFrameworksV1AdminFrameworksGetError = (HTTPValidationError);
+
+export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetResponse = (AdminSuspendedFrameworksResponse);
+
+export type ListSuspendedFrameworksV1AdminFrameworksSuspendedGetError = unknown;
+
+export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostData = {
+    body: AdminRarityBlockOverrideRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostResponse = (AdminFrameworkStatusResponse);
+
+export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostError = (HTTPValidationError);
+
+export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostResponse = (AdminFrameworkStatusResponse);
+
+export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostError = (HTTPValidationError);
+
+export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData = {
+    body: AdminFrameworkSuspendRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostResponse = (AdminFrameworkStatusResponse);
+
+export type SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostError = (HTTPValidationError);
+
+export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: string;
+    };
+};
+
+export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetResponse = (AdminDeletionRequestsResponse);
+
+export type ListAdminDeletionRequestsV1AdminGdprDeletionRequestsGetError = (HTTPValidationError);
+
+export type ListAdminExportRequestsV1AdminGdprExportRequestsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: string;
+    };
+};
+
+export type ListAdminExportRequestsV1AdminGdprExportRequestsGetResponse = (AdminExportRequestsResponse);
+
+export type ListAdminExportRequestsV1AdminGdprExportRequestsGetError = (HTTPValidationError);
+
+export type ListAdminInvoicesV1AdminInvoicesGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+    };
+};
+
+export type ListAdminInvoicesV1AdminInvoicesGetResponse = (AdminInvoicesResponse);
+
+export type ListAdminInvoicesV1AdminInvoicesGetError = (HTTPValidationError);
+
+export type GrantLicenseV1AdminLicensesPostData = {
+    body: AdminLicenseGrantRequest;
+};
+
+export type GrantLicenseV1AdminLicensesPostResponse = (AdminLicenseGrantResponse);
+
+export type GrantLicenseV1AdminLicensesPostError = (HTTPValidationError);
+
+export type ListModerationQueueV1AdminModerationQueueGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        type?: string;
+    };
+};
+
+export type ListModerationQueueV1AdminModerationQueueGetResponse = (AdminModerationQueueResponse);
+
+export type ListModerationQueueV1AdminModerationQueueGetError = (HTTPValidationError);
+
+export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        status?: (string | null);
+    };
+};
+
+export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetResponse = (OrgAttestorAdminListResponse);
+
+export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetError = (HTTPValidationError);
+
+export type AdminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGetResponse = (CalibrationFixturesResponse);
+
+export type AdminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGetError = unknown;
+
+export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostData = {
+    body: CreateCalibrationFixtureRequest;
+};
+
+export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostResponse = (CalibrationFixtureItem);
+
+export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostError = (HTTPValidationError);
+
+export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutData = {
+    body: UpsertTrialAnswerKeyRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutResponse = (void);
+
+export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutError = (HTTPValidationError);
+
+export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetResponse = (TrialAnswerKeysResponse);
+
+export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetError = (HTTPValidationError);
+
+export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetResponse = (FixtureArtifactsResponse);
+
+export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetError = (HTTPValidationError);
+
+export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostData = {
+    body: FixtureArtifactConfirmRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostResponse = (FixtureArtifactItem);
+
+export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
+
+export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostData = {
+    body: FixtureArtifactUploadUrlRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostResponse = (FixtureArtifactUploadUrlResponse);
+
+export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
+
+export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
+
+export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
+
+export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostError = (HTTPValidationError);
+
+export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetResponse = (OrgAttestorDocumentsResponse);
+
+export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetError = (HTTPValidationError);
+
+export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostData = {
+    body: OrgAttestorFeedbackRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostError = (HTTPValidationError);
+
+export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostData = {
+    body: OrgAttestorFeedbackRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostError = (HTTPValidationError);
+
+export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostData = {
+    body: AdminStartTrialRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostError = (HTTPValidationError);
+
+export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetResponse = (AdminTrialGradeResponse);
+
+export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetError = (HTTPValidationError);
+
+export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostData = {
+    body: TrialDecideRequest;
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostError = (HTTPValidationError);
+
+export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostData = {
+    path: {
+        application_id: string;
+    };
+};
+
+export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostResponse = (OrgAttestorApplicationResponse);
+
+export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostError = (HTTPValidationError);
+
+export type AdminListOrgsV1AdminOrgsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+    };
+};
+
+export type AdminListOrgsV1AdminOrgsGetResponse = (AdminOrgsResponse);
+
+export type AdminListOrgsV1AdminOrgsGetError = (HTTPValidationError);
+
+export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostResponse = (void);
+
+export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostError = (HTTPValidationError);
+
+export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostResponse = (void);
+
+export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostError = (HTTPValidationError);
+
+export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostResponse = (void);
+
+export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostResponse = (void);
+
+export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostError = (HTTPValidationError);
+
+export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostResponse = (void);
+
+export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostError = (HTTPValidationError);
+
+export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostResponse = (void);
+
+export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostResponse = (void);
+
+export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostError = (HTTPValidationError);
+
+export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostResponse = (void);
+
+export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostError = (HTTPValidationError);
+
+export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostResponse = (void);
+
+export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostResponse = (void);
+
+export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostError = (HTTPValidationError);
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
+
+export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
+
+export type ListAdminPayoutsV1AdminPayoutsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        status?: string;
+    };
+};
+
+export type ListAdminPayoutsV1AdminPayoutsGetResponse = (AdminPayoutDirectoryResponse);
+
+export type ListAdminPayoutsV1AdminPayoutsGetError = (HTTPValidationError);
+
+export type ListProjectDisputesV1AdminProjectsDisputesGetData = {
+    query?: {
+        /**
+         * Filter by an exact dispute status.
+         */
+        status?: ('open' | 'under_review' | 'resolved' | null);
+    };
+};
+
+export type ListProjectDisputesV1AdminProjectsDisputesGetResponse = (AdminDisputesResponse);
+
+export type ListProjectDisputesV1AdminProjectsDisputesGetError = (HTTPValidationError);
+
+export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostData = {
+    body: AdminDisputeResolveRequest;
+    path: {
+        dispute_id: string;
+    };
+};
+
+export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostResponse = (DisputeResponse);
+
+export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostError = (HTTPValidationError);
+
+export type RecomputeReputationSubjectV1AdminReputationRecomputePostData = {
+    body: AdminReputationRecomputeRequest;
+};
+
+export type RecomputeReputationSubjectV1AdminReputationRecomputePostResponse = (AdminReputationRecomputeResponse);
+
+export type RecomputeReputationSubjectV1AdminReputationRecomputePostError = (HTTPValidationError);
+
+export type ListAdminTransactionsV1AdminTransactionsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        /**
+         * Exact provider charge or transfer reference.
+         */
+        provider_ref?: (string | null);
+        status?: string;
+    };
+};
+
+export type ListAdminTransactionsV1AdminTransactionsGetResponse = (AdminTransactionDirectoryResponse);
+
+export type ListAdminTransactionsV1AdminTransactionsGetError = (HTTPValidationError);
+
+export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetData = {
+    path: {
+        transaction_id: string;
+    };
+};
+
+export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetResponse = (AdminTransactionDetailResponse);
+
+export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetError = (HTTPValidationError);
+
+export type ListAdminUsersV1AdminUsersGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+        status?: string;
+    };
+};
+
+export type ListAdminUsersV1AdminUsersGetResponse = (AdminUserDirectoryResponse);
+
+export type ListAdminUsersV1AdminUsersGetError = (HTTPValidationError);
+
+export type ReviewKycV1AdminUsersUserIdKycPatchData = {
+    body: AdminKycReviewRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type ReviewKycV1AdminUsersUserIdKycPatchResponse = (AdminKycReviewResponse);
+
+export type ReviewKycV1AdminUsersUserIdKycPatchError = (HTTPValidationError);
+
+export type AssignRoleV1AdminUsersUserIdRolesPatchData = {
+    body: AdminRoleAssignmentRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type AssignRoleV1AdminUsersUserIdRolesPatchResponse = (AdminRoleAssignmentResponse);
+
+export type AssignRoleV1AdminUsersUserIdRolesPatchError = (HTTPValidationError);
+
+export type SuspendUserV1AdminUsersUserIdSuspendPostData = {
+    body: AdminUserSuspendRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type SuspendUserV1AdminUsersUserIdSuspendPostResponse = (AdminUserSuspensionResponse);
+
+export type SuspendUserV1AdminUsersUserIdSuspendPostError = (HTTPValidationError);
+
+export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostData = {
+    body: AdminUserUnsuspendRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostResponse = (AdminUserSuspensionResponse);
+
+export type UnsuspendUserV1AdminUsersUserIdUnsuspendPostError = (HTTPValidationError);
+
+export type ListAdminWaitlistV1AdminWaitlistGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+        query?: (string | null);
+    };
+};
+
+export type ListAdminWaitlistV1AdminWaitlistGetResponse = (AdminWaitlistResponse);
+
+export type ListAdminWaitlistV1AdminWaitlistGetError = (HTTPValidationError);
+
+export type ListAdminWebhookEventsV1AdminWebhookEventsGetData = {
+    query?: {
+        event_type?: (string | null);
+        page?: number;
+        page_size?: number;
+        provider?: string;
+        status?: string;
+    };
+};
+
+export type ListAdminWebhookEventsV1AdminWebhookEventsGetResponse = (AdminWebhookEventsResponse);
+
+export type ListAdminWebhookEventsV1AdminWebhookEventsGetError = (HTTPValidationError);
+
+export type ListAttestationsV1AttestationsGetData = {
+    query?: {
+        role?: 'requestor' | 'attestor';
+    };
+};
+
+export type ListAttestationsV1AttestationsGetResponse = (AttestationsResponse);
+
+export type ListAttestationsV1AttestationsGetError = (HTTPValidationError);
+
+export type RequestAttestationV1AttestationsPostData = {
+    body: AttestationRequestCreateRequest;
+};
+
+export type RequestAttestationV1AttestationsPostResponse = ((AttestationFundingResponse | AttestationConsentPendingResponse));
+
+export type RequestAttestationV1AttestationsPostError = (HTTPValidationError);
+
+export type GetAttestationV1AttestationsAttestationIdGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationV1AttestationsAttestationIdGetResponse = (AttestationRequestResponse);
+
+export type GetAttestationV1AttestationsAttestationIdGetError = (HTTPValidationError);
+
+export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostResponse = (AttestationRequestResponse);
+
+export type AcceptAttestationReportV1AttestationsAttestationIdAcceptReportPostError = (HTTPValidationError);
+
+export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetResponse = (Array<AnnotationResponse>);
+
+export type ListAttestationAnnotationsV1AttestationsAttestationIdAnnotationsGetError = (HTTPValidationError);
+
+export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostData = {
+    body: AnnotationCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostResponse = (AnnotationResponse);
+
+export type CreateAttestationAnnotationV1AttestationsAttestationIdAnnotationsPostError = (HTTPValidationError);
+
+export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteData = {
+    path: {
+        annotation_id: string;
+        attestation_id: string;
+    };
+};
+
+export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteResponse = (void);
+
+export type DeleteAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdDeleteError = (HTTPValidationError);
+
+export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchData = {
+    body: AnnotationUpdateRequest;
+    path: {
+        annotation_id: string;
+        attestation_id: string;
+    };
+};
+
+export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchResponse = (AnnotationResponse);
+
+export type UpdateAttestationAnnotationV1AttestationsAttestationIdAnnotationsAnnotationIdPatchError = (HTTPValidationError);
 
 export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPostData = {
     path: {
@@ -5740,6 +5799,114 @@ export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifacts
 
 export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPostError = (HTTPValidationError);
 
+export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetResponse = (Array<ClarificationResponse>);
+
+export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetError = (HTTPValidationError);
+
+export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostData = {
+    body: ClarificationCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostResponse = (ClarificationResponse);
+
+export type CreateAttestationClarificationV1AttestationsAttestationIdClarificationsPostError = (HTTPValidationError);
+
+export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostResponse = ({
+    [key: string]: (number);
+});
+
+export type MarkAttestationClarificationsSeenV1AttestationsAttestationIdClarificationsMarkSeenPostError = (HTTPValidationError);
+
+export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostData = {
+    body: ClarificationRespondRequest;
+    path: {
+        attestation_id: string;
+        clarification_id: string;
+    };
+};
+
+export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostResponse = (ClarificationResponse);
+
+export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostError = (HTTPValidationError);
+
+export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostData = {
+    body: AttestationConsentRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostResponse = (AttestationRequestResponse);
+
+export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostError = (HTTPValidationError);
+
+export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostData = {
+    body: AttestationAcceptRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostResponse = (AttestationRequestResponse);
+
+export type AcknowledgeAttestationContentV1AttestationsAttestationIdContentAckPostError = (HTTPValidationError);
+
+export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostData = {
+    body: AttestationDisputeCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostResponse = (AttestationDisputeResponse);
+
+export type CreateAttestationDisputeV1AttestationsAttestationIdDisputesPostError = (HTTPValidationError);
+
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetResponse = (unknown);
+
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (HTTPValidationError);
+
+export type FundAttestationV1AttestationsAttestationIdFundPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type FundAttestationV1AttestationsAttestationIdFundPostResponse = (AttestationFundingResponse);
+
+export type FundAttestationV1AttestationsAttestationIdFundPostError = (HTTPValidationError);
+
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse = (unknown);
+
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetError = (HTTPValidationError);
+
 export type GetAttestationPackageV1AttestationsAttestationIdPackageGetData = {
     path: {
         attestation_id: string;
@@ -5749,6 +5916,16 @@ export type GetAttestationPackageV1AttestationsAttestationIdPackageGetData = {
 export type GetAttestationPackageV1AttestationsAttestationIdPackageGetResponse = (AttestationPackageResponse);
 
 export type GetAttestationPackageV1AttestationsAttestationIdPackageGetError = (HTTPValidationError);
+
+export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetResponse = (AttestationFundingResponse);
+
+export type GetAttestationFeePaymentV1AttestationsAttestationIdPaymentGetError = (HTTPValidationError);
 
 export type RateAttestationV1AttestationsAttestationIdRatingPostData = {
     body: AttestationRatingCreate;
@@ -5761,36 +5938,150 @@ export type RateAttestationV1AttestationsAttestationIdRatingPostResponse = (Atte
 
 export type RateAttestationV1AttestationsAttestationIdRatingPostError = (HTTPValidationError);
 
-export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetData = {
+export type SubmitAttestationReportV1AttestationsAttestationIdReportPostData = {
+    body: AttestationReportSubmitRequest;
     path: {
         attestation_id: string;
     };
 };
 
-export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse = (unknown);
+export type SubmitAttestationReportV1AttestationsAttestationIdReportPostResponse = (AttestationRequestResponse);
 
-export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetError = (HTTPValidationError);
+export type SubmitAttestationReportV1AttestationsAttestationIdReportPostError = (HTTPValidationError);
 
-export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetData = {
+export type GetReportRubricV1AttestationsAttestationIdReportRubricGetData = {
     path: {
         attestation_id: string;
     };
 };
 
-export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetResponse = (unknown);
+export type GetReportRubricV1AttestationsAttestationIdReportRubricGetResponse = (RequestorReportRubricResponse);
 
-export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (HTTPValidationError);
+export type GetReportRubricV1AttestationsAttestationIdReportRubricGetError = (HTTPValidationError);
 
-export type GoogleStartV1AuthGoogleStartGetData = {
+export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetResponse = (RubricScoresResponse);
+
+export type ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetError = (HTTPValidationError);
+
+export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutData = {
+    body: RubricScoreUpsertRequest;
+    path: {
+        attestation_id: string;
+        dimension_key: string;
+    };
+};
+
+export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutResponse = (RubricScoreResponse);
+
+export type UpsertAttestationRubricScoreV1AttestationsAttestationIdRubricDimensionKeyPutError = (HTTPValidationError);
+
+export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostResponse = (AttestationRequestResponse);
+
+export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostError = (HTTPValidationError);
+
+export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
+    body: AttestationEvidenceUploadCreateRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostResponse = (AttestationEvidenceUploadSessionResponse);
+
+export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostError = (HTTPValidationError);
+
+export type ListPublicAttestorDirectoryV1AttestorOrgsGetData = {
     query?: {
-        next?: (string | null);
-        terms?: boolean;
+        function?: (string | null);
+        jurisdiction?: (string | null);
+        level?: (number | null);
+        sector?: (string | null);
     };
 };
 
-export type GoogleStartV1AuthGoogleStartGetResponse = (unknown);
+export type ListPublicAttestorDirectoryV1AttestorOrgsGetResponse = (AttestorDirectoryResponse);
 
-export type GoogleStartV1AuthGoogleStartGetError = (HTTPValidationError);
+export type ListPublicAttestorDirectoryV1AttestorOrgsGetError = (HTTPValidationError);
+
+export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetResponse = (AttestorDirectoryEntry);
+
+export type GetPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGetError = (HTTPValidationError);
+
+export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetResponse = (Array<AttestorCompletedAttestation>);
+
+export type ListAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGetError = (HTTPValidationError);
+
+export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostData = {
+    body: TotpCodeRequest;
+};
+
+export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostResponse = (TotpBackupCodesResponse);
+
+export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostError = (HTTPValidationError);
+
+export type DisableTotpV1Auth2FaDisablePostData = {
+    body: TotpCodeRequest;
+};
+
+export type DisableTotpV1Auth2FaDisablePostResponse = (TotpStatusResponse);
+
+export type DisableTotpV1Auth2FaDisablePostError = (HTTPValidationError);
+
+export type SetupTotpV1Auth2FaSetupPostResponse = (TotpSetupResponse);
+
+export type SetupTotpV1Auth2FaSetupPostError = unknown;
+
+export type TotpStatusV1Auth2FaStatusGetResponse = (TotpStatusResponse);
+
+export type TotpStatusV1Auth2FaStatusGetError = unknown;
+
+export type VerifyTotpV1Auth2FaVerifyPostData = {
+    body: TotpCodeRequest;
+};
+
+export type VerifyTotpV1Auth2FaVerifyPostResponse = (TotpStatusResponse);
+
+export type VerifyTotpV1Auth2FaVerifyPostError = (HTTPValidationError);
+
+export type VerifyTotpLoginV1Auth2FaVerifyLoginPostData = {
+    body: TotpLoginVerifyRequest;
+};
+
+export type VerifyTotpLoginV1Auth2FaVerifyLoginPostResponse = (LoginResponse);
+
+export type VerifyTotpLoginV1Auth2FaVerifyLoginPostError = (HTTPValidationError);
+
+export type ForgotPasswordV1AuthForgotPasswordPostData = {
+    body: ForgotPasswordRequest;
+};
+
+export type ForgotPasswordV1AuthForgotPasswordPostResponse = (RegisterResponse);
+
+export type ForgotPasswordV1AuthForgotPasswordPostError = (HTTPValidationError);
 
 export type GoogleCallbackV1AuthGoogleCallbackGetData = {
     query: {
@@ -5804,45 +6095,16 @@ export type GoogleCallbackV1AuthGoogleCallbackGetResponse = (unknown);
 
 export type GoogleCallbackV1AuthGoogleCallbackGetError = (HTTPValidationError);
 
-export type RegisterV1AuthRegisterPostData = {
-    body: RegisterRequest;
+export type GoogleStartV1AuthGoogleStartGetData = {
+    query?: {
+        next?: (string | null);
+        terms?: boolean;
+    };
 };
 
-export type RegisterV1AuthRegisterPostResponse = (RegisterResponse);
+export type GoogleStartV1AuthGoogleStartGetResponse = (unknown);
 
-export type RegisterV1AuthRegisterPostError = (HTTPValidationError);
-
-export type VerifyEmailV1AuthVerifyEmailPostData = {
-    body: VerifyEmailRequest;
-};
-
-export type VerifyEmailV1AuthVerifyEmailPostResponse = (RegisterResponse);
-
-export type VerifyEmailV1AuthVerifyEmailPostError = (HTTPValidationError);
-
-export type ResendVerificationV1AuthResendVerificationPostData = {
-    body: ResendVerificationRequest;
-};
-
-export type ResendVerificationV1AuthResendVerificationPostResponse = (RegisterResponse);
-
-export type ResendVerificationV1AuthResendVerificationPostError = (HTTPValidationError);
-
-export type ForgotPasswordV1AuthForgotPasswordPostData = {
-    body: ForgotPasswordRequest;
-};
-
-export type ForgotPasswordV1AuthForgotPasswordPostResponse = (RegisterResponse);
-
-export type ForgotPasswordV1AuthForgotPasswordPostError = (HTTPValidationError);
-
-export type ResetPasswordV1AuthResetPasswordPostData = {
-    body: ResetPasswordRequest;
-};
-
-export type ResetPasswordV1AuthResetPasswordPostResponse = (RegisterResponse);
-
-export type ResetPasswordV1AuthResetPasswordPostError = (HTTPValidationError);
+export type GoogleStartV1AuthGoogleStartGetError = (HTTPValidationError);
 
 export type LoginV1AuthLoginPostData = {
     body: LoginRequest;
@@ -5852,10 +6114,6 @@ export type LoginV1AuthLoginPostResponse = (LoginResponse);
 
 export type LoginV1AuthLoginPostError = (HTTPValidationError);
 
-export type RefreshV1AuthRefreshPostResponse = (LoginResponse);
-
-export type RefreshV1AuthRefreshPostError = unknown;
-
 export type LogoutV1AuthLogoutPostResponse = (RegisterResponse);
 
 export type LogoutV1AuthLogoutPostError = unknown;
@@ -5863,6 +6121,34 @@ export type LogoutV1AuthLogoutPostError = unknown;
 export type MeV1AuthMeGetResponse = (CurrentUserResponse);
 
 export type MeV1AuthMeGetError = unknown;
+
+export type RefreshV1AuthRefreshPostResponse = (LoginResponse);
+
+export type RefreshV1AuthRefreshPostError = unknown;
+
+export type RegisterV1AuthRegisterPostData = {
+    body: RegisterRequest;
+};
+
+export type RegisterV1AuthRegisterPostResponse = (RegisterResponse);
+
+export type RegisterV1AuthRegisterPostError = (HTTPValidationError);
+
+export type ResendVerificationV1AuthResendVerificationPostData = {
+    body: ResendVerificationRequest;
+};
+
+export type ResendVerificationV1AuthResendVerificationPostResponse = (RegisterResponse);
+
+export type ResendVerificationV1AuthResendVerificationPostError = (HTTPValidationError);
+
+export type ResetPasswordV1AuthResetPasswordPostData = {
+    body: ResetPasswordRequest;
+};
+
+export type ResetPasswordV1AuthResetPasswordPostResponse = (RegisterResponse);
+
+export type ResetPasswordV1AuthResetPasswordPostError = (HTTPValidationError);
 
 export type AddRoleV1AuthRolesPostData = {
     body: AddRoleRequest;
@@ -5872,45 +6158,13 @@ export type AddRoleV1AuthRolesPostResponse = (RoleAssignmentResponse);
 
 export type AddRoleV1AuthRolesPostError = (HTTPValidationError);
 
-export type TotpStatusV1Auth2FaStatusGetResponse = (TotpStatusResponse);
-
-export type TotpStatusV1Auth2FaStatusGetError = unknown;
-
-export type SetupTotpV1Auth2FaSetupPostResponse = (TotpSetupResponse);
-
-export type SetupTotpV1Auth2FaSetupPostError = unknown;
-
-export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostData = {
-    body: TotpCodeRequest;
+export type VerifyEmailV1AuthVerifyEmailPostData = {
+    body: VerifyEmailRequest;
 };
 
-export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostResponse = (TotpBackupCodesResponse);
+export type VerifyEmailV1AuthVerifyEmailPostResponse = (RegisterResponse);
 
-export type RegenerateBackupCodesV1Auth2FaBackupCodesRegeneratePostError = (HTTPValidationError);
-
-export type VerifyTotpV1Auth2FaVerifyPostData = {
-    body: TotpCodeRequest;
-};
-
-export type VerifyTotpV1Auth2FaVerifyPostResponse = (TotpStatusResponse);
-
-export type VerifyTotpV1Auth2FaVerifyPostError = (HTTPValidationError);
-
-export type DisableTotpV1Auth2FaDisablePostData = {
-    body: TotpCodeRequest;
-};
-
-export type DisableTotpV1Auth2FaDisablePostResponse = (TotpStatusResponse);
-
-export type DisableTotpV1Auth2FaDisablePostError = (HTTPValidationError);
-
-export type VerifyTotpLoginV1Auth2FaVerifyLoginPostData = {
-    body: TotpLoginVerifyRequest;
-};
-
-export type VerifyTotpLoginV1Auth2FaVerifyLoginPostResponse = (LoginResponse);
-
-export type VerifyTotpLoginV1Auth2FaVerifyLoginPostError = (HTTPValidationError);
+export type VerifyEmailV1AuthVerifyEmailPostError = (HTTPValidationError);
 
 export type CreateCollectionV1CollectionsPostData = {
     body: CollectionCreateRequest;
@@ -5987,6 +6241,140 @@ export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostResponse = 
 
 export type UnpublishCollectionV1CollectionsCollectionIdUnpublishPostError = (HTTPValidationError);
 
+export type ListPublicContributorOrgsV1ContributorsGetResponse = (ContributorOrgDirectoryResponse);
+
+export type ListPublicContributorOrgsV1ContributorsGetError = unknown;
+
+export type GetPublicContributorOrgV1ContributorsOrgSlugGetData = {
+    path: {
+        org_slug: string;
+    };
+};
+
+export type GetPublicContributorOrgV1ContributorsOrgSlugGetResponse = (ContributorOrgDirectoryEntry);
+
+export type GetPublicContributorOrgV1ContributorsOrgSlugGetError = (HTTPValidationError);
+
+export type ListCredentialsV1CredentialsGetResponse = (CredentialsResponse);
+
+export type ListCredentialsV1CredentialsGetError = unknown;
+
+export type CreateCredentialV1CredentialsPostData = {
+    body: CredentialCreateRequest;
+};
+
+export type CreateCredentialV1CredentialsPostResponse = (CredentialResponse);
+
+export type CreateCredentialV1CredentialsPostError = (HTTPValidationError);
+
+export type DeleteCredentialV1CredentialsCredentialIdDeleteData = {
+    path: {
+        credential_id: string;
+    };
+};
+
+export type DeleteCredentialV1CredentialsCredentialIdDeleteResponse = (void);
+
+export type DeleteCredentialV1CredentialsCredentialIdDeleteError = (HTTPValidationError);
+
+export type UpdateCredentialV1CredentialsCredentialIdPatchData = {
+    body: CredentialUpdateRequest;
+    path: {
+        credential_id: string;
+    };
+};
+
+export type UpdateCredentialV1CredentialsCredentialIdPatchResponse = (CredentialResponse);
+
+export type UpdateCredentialV1CredentialsCredentialIdPatchError = (HTTPValidationError);
+
+export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetData = {
+    path: {
+        credential_id: string;
+    };
+    query: {
+        key: string;
+    };
+};
+
+export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetResponse = (CredentialEvidenceDownloadResponse);
+
+export type DownloadCredentialEvidenceV1CredentialsCredentialIdEvidenceGetError = (HTTPValidationError);
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostData = {
+    path: {
+        credential_id: string;
+    };
+};
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostResponse = (CredentialResponse);
+
+export type SubmitCredentialV1CredentialsCredentialIdSubmitPostError = (HTTPValidationError);
+
+export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostData = {
+    body: CredentialEvidenceUploadCreateRequest;
+    path: {
+        credential_id: string;
+    };
+};
+
+export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
+
+export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetData = {
+    query?: {
+        days?: number;
+    };
+};
+
+export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetResponse = (DeveloperSalesAnalyticsResponse);
+
+export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetError = (HTTPValidationError);
+
+export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetData = {
+    query?: {
+        days?: number;
+    };
+};
+
+export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetResponse = (DeveloperUsageAnalyticsResponse);
+
+export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetError = (HTTPValidationError);
+
+export type ListApiKeysV1DeveloperApiKeysGetResponse = (ApiKeysResponse);
+
+export type ListApiKeysV1DeveloperApiKeysGetError = unknown;
+
+export type CreateApiKeyV1DeveloperApiKeysPostData = {
+    body: ApiKeyCreateRequest;
+};
+
+export type CreateApiKeyV1DeveloperApiKeysPostResponse = (ApiKeyCreateResponse);
+
+export type CreateApiKeyV1DeveloperApiKeysPostError = (HTTPValidationError);
+
+export type RevokeApiKeyV1DeveloperApiKeysApiKeyIdDeleteData = {
+    path: {
+        api_key_id: string;
+    };
+};
+
+export type RevokeApiKeyV1DeveloperApiKeysApiKeyIdDeleteResponse = (ApiKeyResponse);
+
+export type RevokeApiKeyV1DeveloperApiKeysApiKeyIdDeleteError = (HTTPValidationError);
+
+export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchData = {
+    body: ApiKeyUpdateRequest;
+    path: {
+        api_key_id: string;
+    };
+};
+
+export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchResponse = (ApiKeyResponse);
+
+export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchError = (HTTPValidationError);
+
 export type SubmitDeveloperApplicationV1DeveloperApplicationsPostData = {
     body: DeveloperApplicationCreateRequest;
 };
@@ -6009,43 +6397,6 @@ export type WithdrawDeveloperApplicationV1DeveloperApplicationsApplicationIdWith
 
 export type WithdrawDeveloperApplicationV1DeveloperApplicationsApplicationIdWithdrawPatchError = (HTTPValidationError);
 
-export type ListDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGetData = {
-    query?: {
-        status?: ('pending' | 'approved' | 'rejected' | 'withdrawn' | null);
-    };
-};
-
-export type ListDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGetResponse = (DeveloperApplicationsResponse);
-
-export type ListDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGetError = (HTTPValidationError);
-
-export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostData = {
-    body: DeveloperApplicationReviewRequest;
-    path: {
-        application_id: string;
-    };
-};
-
-export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostResponse = (DeveloperApplicationResponse);
-
-export type ReviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPostError = (HTTPValidationError);
-
-export type ListApiKeysV1DeveloperApiKeysGetResponse = (ApiKeysResponse);
-
-export type ListApiKeysV1DeveloperApiKeysGetError = unknown;
-
-export type CreateApiKeyV1DeveloperApiKeysPostData = {
-    body: ApiKeyCreateRequest;
-};
-
-export type CreateApiKeyV1DeveloperApiKeysPostResponse = (ApiKeyCreateResponse);
-
-export type CreateApiKeyV1DeveloperApiKeysPostError = (HTTPValidationError);
-
-export type GetDeveloperTierProgressV1DeveloperTierGetResponse = (DeveloperTierProgressResponse);
-
-export type GetDeveloperTierProgressV1DeveloperTierGetError = unknown;
-
 export type ListPartnerPayoutsV1DeveloperPayoutsGetResponse = (PartnerPayoutsResponse);
 
 export type ListPartnerPayoutsV1DeveloperPayoutsGetError = unknown;
@@ -6058,25 +6409,9 @@ export type RequestPartnerPayoutV1DeveloperPayoutsPostResponse = (PartnerPayoutR
 
 export type RequestPartnerPayoutV1DeveloperPayoutsPostError = (HTTPValidationError);
 
-export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetData = {
-    query?: {
-        days?: number;
-    };
-};
+export type GetDeveloperTierProgressV1DeveloperTierGetResponse = (DeveloperTierProgressResponse);
 
-export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetResponse = (DeveloperUsageAnalyticsResponse);
-
-export type GetDeveloperUsageAnalyticsV1DeveloperAnalyticsUsageGetError = (HTTPValidationError);
-
-export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetData = {
-    query?: {
-        days?: number;
-    };
-};
-
-export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetResponse = (DeveloperSalesAnalyticsResponse);
-
-export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetError = (HTTPValidationError);
+export type GetDeveloperTierProgressV1DeveloperTierGetError = unknown;
 
 export type ListPartnerWebhooksV1DeveloperWebhooksGetResponse = (PartnerWebhooksResponse);
 
@@ -6090,16 +6425,6 @@ export type CreatePartnerWebhookV1DeveloperWebhooksPostResponse = (PartnerWebhoo
 
 export type CreatePartnerWebhookV1DeveloperWebhooksPostError = (HTTPValidationError);
 
-export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteData = {
-    path: {
-        webhook_id: string;
-    };
-};
-
-export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteResponse = (PartnerWebhookResponse);
-
-export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteError = (HTTPValidationError);
-
 export type RetryPartnerWebhookDeliveryV1DeveloperWebhooksDeliveriesDeliveryIdRetryPostData = {
     path: {
         delivery_id: string;
@@ -6110,51 +6435,15 @@ export type RetryPartnerWebhookDeliveryV1DeveloperWebhooksDeliveriesDeliveryIdRe
 
 export type RetryPartnerWebhookDeliveryV1DeveloperWebhooksDeliveriesDeliveryIdRetryPostError = (HTTPValidationError);
 
-export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchData = {
-    body: ApiKeyUpdateRequest;
+export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteData = {
     path: {
-        api_key_id: string;
+        webhook_id: string;
     };
 };
 
-export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchResponse = (ApiKeyResponse);
+export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteResponse = (PartnerWebhookResponse);
 
-export type UpdateApiKeyV1DeveloperApiKeysApiKeyIdPatchError = (HTTPValidationError);
-
-export type RevokeApiKeyV1DeveloperApiKeysApiKeyIdDeleteData = {
-    path: {
-        api_key_id: string;
-    };
-};
-
-export type RevokeApiKeyV1DeveloperApiKeysApiKeyIdDeleteResponse = (ApiKeyResponse);
-
-export type RevokeApiKeyV1DeveloperApiKeysApiKeyIdDeleteError = (HTTPValidationError);
-
-export type ListFrameworksV1ExploreFrameworksGetData = {
-    query?: {
-        attestation_status?: ('pending_acceptance' | 'attested' | 'conditionally_attested' | 'none' | null);
-        category?: (string | null);
-        complexity?: (number | null);
-        function?: (string | null);
-        industry?: (string | null);
-        jurisdiction?: (string | null);
-        license_type?: (string | null);
-        lifecycle_stage?: (string | null);
-        org_size?: (string | null);
-        page?: number;
-        page_size?: number;
-        price_max?: (number | string | null);
-        price_min?: (number | string | null);
-        q?: (string | null);
-        sector?: (string | null);
-        sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
-    };
-};
-
-export type ListFrameworksV1ExploreFrameworksGetResponse = (ExploreFrameworkListResponse);
-
-export type ListFrameworksV1ExploreFrameworksGetError = (HTTPValidationError);
+export type DeletePartnerWebhookV1DeveloperWebhooksWebhookIdDeleteError = (HTTPValidationError);
 
 export type ListMixedCatalogV1ExploreCatalogGetData = {
     query?: {
@@ -6216,6 +6505,31 @@ export type GetContributorProfileV1ExploreContributorsContributorIdGetResponse =
 
 export type GetContributorProfileV1ExploreContributorsContributorIdGetError = (HTTPValidationError);
 
+export type ListFrameworksV1ExploreFrameworksGetData = {
+    query?: {
+        attestation_status?: ('pending_acceptance' | 'attested' | 'conditionally_attested' | 'none' | null);
+        category?: (string | null);
+        complexity?: (number | null);
+        function?: (string | null);
+        industry?: (string | null);
+        jurisdiction?: (string | null);
+        license_type?: (string | null);
+        lifecycle_stage?: (string | null);
+        org_size?: (string | null);
+        page?: number;
+        page_size?: number;
+        price_max?: (number | string | null);
+        price_min?: (number | string | null);
+        q?: (string | null);
+        sector?: (string | null);
+        sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+    };
+};
+
+export type ListFrameworksV1ExploreFrameworksGetResponse = (ExploreFrameworkListResponse);
+
+export type ListFrameworksV1ExploreFrameworksGetError = (HTTPValidationError);
+
 export type GetFrameworkDetailV1ExploreFrameworksFrameworkIdGetData = {
     path: {
         framework_id: string;
@@ -6236,6 +6550,21 @@ export type GetRelatedFrameworksV1ExploreFrameworksFrameworkIdRelatedGetResponse
 
 export type GetRelatedFrameworksV1ExploreFrameworksFrameworkIdRelatedGetError = (HTTPValidationError);
 
+export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostData = {
+    body: PurchaseRequest;
+    path: {
+        collection_id: string;
+    };
+};
+
+export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostResponse = (PurchaseResponse);
+
+export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostError = (HTTPValidationError);
+
+export type GetContributorEarningsV1FinancialsEarningsGetResponse = (EarningsResponse);
+
+export type GetContributorEarningsV1FinancialsEarningsGetError = unknown;
+
 export type ListPaymentMethodsV1FinancialsPaymentMethodsGetResponse = (PaymentMethodsResponse);
 
 export type ListPaymentMethodsV1FinancialsPaymentMethodsGetError = unknown;
@@ -6248,17 +6577,6 @@ export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostResponse = (Pa
 
 export type CreatePaymentMethodSetupV1FinancialsPaymentMethodsPostError = (HTTPValidationError);
 
-export type ListFrameworkPurchasesV1FinancialsPurchasesGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-    };
-};
-
-export type ListFrameworkPurchasesV1FinancialsPurchasesGetResponse = (PurchaseHistoryResponse);
-
-export type ListFrameworkPurchasesV1FinancialsPurchasesGetError = (HTTPValidationError);
-
 export type DeletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDeleteData = {
     body: PaymentMethodDeleteRequest;
     path: {
@@ -6269,6 +6587,41 @@ export type DeletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDeleteDa
 export type DeletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDeleteResponse = (PaymentMethodDeleteResponse);
 
 export type DeletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDeleteError = (HTTPValidationError);
+
+export type ListPayoutAccountsV1FinancialsPayoutAccountsGetResponse = (PayoutAccountsResponse);
+
+export type ListPayoutAccountsV1FinancialsPayoutAccountsGetError = unknown;
+
+export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostData = {
+    body: PayoutAccountOnboardRequest;
+};
+
+export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostResponse = (PayoutAccountOnboardResponse);
+
+export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostError = (HTTPValidationError);
+
+export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteData = {
+    body: PayoutAccountDeleteRequest;
+    path: {
+        payout_account_id: string;
+    };
+};
+
+export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteResponse = (PayoutAccountDeleteResponse);
+
+export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteError = (HTTPValidationError);
+
+export type ListPayoutsV1FinancialsPayoutsGetResponse = (PayoutsResponse);
+
+export type ListPayoutsV1FinancialsPayoutsGetError = unknown;
+
+export type RequestPayoutV1FinancialsPayoutsPostData = {
+    body: PayoutRequest;
+};
+
+export type RequestPayoutV1FinancialsPayoutsPostResponse = (PayoutResponse);
+
+export type RequestPayoutV1FinancialsPayoutsPostError = (HTTPValidationError);
 
 export type CreateFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPostData = {
     body: PurchaseRequest;
@@ -6281,26 +6634,16 @@ export type CreateFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPostResponse =
 
 export type CreateFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPostError = (HTTPValidationError);
 
-export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostData = {
-    body: PurchaseRequest;
-    path: {
-        collection_id: string;
+export type ListFrameworkPurchasesV1FinancialsPurchasesGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
     };
 };
 
-export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostResponse = (PurchaseResponse);
+export type ListFrameworkPurchasesV1FinancialsPurchasesGetResponse = (PurchaseHistoryResponse);
 
-export type CreateCollectionPurchaseV1FinancialsCollectionsCollectionIdPurchasePostError = (HTTPValidationError);
-
-export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostData = {
-    path: {
-        transaction_id: string;
-    };
-};
-
-export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostResponse = (RefundResponse);
-
-export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostError = (HTTPValidationError);
+export type ListFrameworkPurchasesV1FinancialsPurchasesGetError = (HTTPValidationError);
 
 export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoiceGetData = {
     path: {
@@ -6318,44 +6661,15 @@ export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoice
 
 export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoiceGetError = (HTTPValidationError);
 
-export type GetContributorEarningsV1FinancialsEarningsGetResponse = (EarningsResponse);
-
-export type GetContributorEarningsV1FinancialsEarningsGetError = unknown;
-
-export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostData = {
-    body: PayoutAccountOnboardRequest;
-};
-
-export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostResponse = (PayoutAccountOnboardResponse);
-
-export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostError = (HTTPValidationError);
-
-export type ListPayoutAccountsV1FinancialsPayoutAccountsGetResponse = (PayoutAccountsResponse);
-
-export type ListPayoutAccountsV1FinancialsPayoutAccountsGetError = unknown;
-
-export type ListPayoutsV1FinancialsPayoutsGetResponse = (PayoutsResponse);
-
-export type ListPayoutsV1FinancialsPayoutsGetError = unknown;
-
-export type RequestPayoutV1FinancialsPayoutsPostData = {
-    body: PayoutRequest;
-};
-
-export type RequestPayoutV1FinancialsPayoutsPostResponse = (PayoutResponse);
-
-export type RequestPayoutV1FinancialsPayoutsPostError = (HTTPValidationError);
-
-export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteData = {
-    body: PayoutAccountDeleteRequest;
+export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostData = {
     path: {
-        payout_account_id: string;
+        transaction_id: string;
     };
 };
 
-export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteResponse = (PayoutAccountDeleteResponse);
+export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostResponse = (RefundResponse);
 
-export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteError = (HTTPValidationError);
+export type RefundFrameworkPurchaseV1FinancialsPurchasesTransactionIdRefundPostError = (HTTPValidationError);
 
 export type ListFrameworksV1FrameworksGetResponse = (Array<FrameworkListItem>);
 
@@ -6369,37 +6683,15 @@ export type CreateFrameworkV1FrameworksPostResponse = (FrameworkResponse);
 
 export type CreateFrameworkV1FrameworksPostError = (HTTPValidationError);
 
-export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostData = {
-    body: FrameworkReviewCreate;
+export type DeleteFrameworkV1FrameworksFrameworkIdDeleteData = {
     path: {
         framework_id: string;
     };
 };
 
-export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostResponse = (FrameworkReviewResponse);
+export type DeleteFrameworkV1FrameworksFrameworkIdDeleteResponse = (void);
 
-export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostError = (HTTPValidationError);
-
-export type ListFrameworkReviewsV1FrameworksFrameworkIdReviewsGetData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type ListFrameworkReviewsV1FrameworksFrameworkIdReviewsGetResponse = (FrameworkReviewListResponse);
-
-export type ListFrameworkReviewsV1FrameworksFrameworkIdReviewsGetError = (HTTPValidationError);
-
-export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchData = {
-    body: FrameworkReviewUpdate;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchResponse = (FrameworkReviewResponse);
-
-export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchError = (HTTPValidationError);
+export type DeleteFrameworkV1FrameworksFrameworkIdDeleteError = (HTTPValidationError);
 
 export type GetFrameworkV1FrameworksFrameworkIdGetData = {
     path: {
@@ -6422,77 +6714,6 @@ export type UpdateFrameworkV1FrameworksFrameworkIdPatchResponse = (FrameworkResp
 
 export type UpdateFrameworkV1FrameworksFrameworkIdPatchError = (HTTPValidationError);
 
-export type DeleteFrameworkV1FrameworksFrameworkIdDeleteData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type DeleteFrameworkV1FrameworksFrameworkIdDeleteResponse = (void);
-
-export type DeleteFrameworkV1FrameworksFrameworkIdDeleteError = (HTTPValidationError);
-
-export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetResponse = (Array<AttestationBadgeDetail>);
-
-export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetError = (HTTPValidationError);
-
-export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostResponse = (FrameworkResponse);
-
-export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostError = (HTTPValidationError);
-
-export type RelistFrameworkV1FrameworksFrameworkIdRelistPostData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type RelistFrameworkV1FrameworksFrameworkIdRelistPostResponse = (FrameworkResponse);
-
-export type RelistFrameworkV1FrameworksFrameworkIdRelistPostError = (HTTPValidationError);
-
-export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostData = {
-    body: FrameworkVersionCreate;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostResponse = (FrameworkResponse);
-
-export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostError = (HTTPValidationError);
-
-export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostResponse = (FrameworkResponse);
-
-export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostError = (HTTPValidationError);
-
-export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostResponse = (FrameworkResponse);
-
-export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostError = (HTTPValidationError);
-
 export type AcknowledgeSoftFailV1FrameworksFrameworkIdAcknowledgeSoftFailPostData = {
     path: {
         framework_id: string;
@@ -6503,38 +6724,6 @@ export type AcknowledgeSoftFailV1FrameworksFrameworkIdAcknowledgeSoftFailPostRes
 
 export type AcknowledgeSoftFailV1FrameworksFrameworkIdAcknowledgeSoftFailPostError = (HTTPValidationError);
 
-export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAcknowledgePostData = {
-    body: SimilarityNoticeAcknowledgementRequest;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAcknowledgePostResponse = (FrameworkResponse);
-
-export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAcknowledgePostError = (HTTPValidationError);
-
-export type PublishFrameworkV1FrameworksFrameworkIdPublishPostData = {
-    path: {
-        framework_id: string;
-    };
-};
-
-export type PublishFrameworkV1FrameworksFrameworkIdPublishPostResponse = (FrameworkResponse);
-
-export type PublishFrameworkV1FrameworksFrameworkIdPublishPostError = (HTTPValidationError);
-
-export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPostData = {
-    body: ArtifactUploadUrlRequest;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPostResponse = (ArtifactUploadUrlResponse);
-
-export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
-
 export type ListArtifactsV1FrameworksFrameworkIdArtifactsGetData = {
     path: {
         framework_id: string;
@@ -6544,6 +6733,17 @@ export type ListArtifactsV1FrameworksFrameworkIdArtifactsGetData = {
 export type ListArtifactsV1FrameworksFrameworkIdArtifactsGetResponse = (Array<ArtifactResponse>);
 
 export type ListArtifactsV1FrameworksFrameworkIdArtifactsGetError = (HTTPValidationError);
+
+export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostData = {
+    body: ArtifactConfirmRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostResponse = (ArtifactResponse);
+
+export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
 
 export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConnectorPostData = {
     body: ArtifactFromConnectorRequest;
@@ -6556,27 +6756,38 @@ export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConne
 
 export type ImportArtifactFromConnectorV1FrameworksFrameworkIdArtifactsFromConnectorPostError = (HTTPValidationError);
 
-export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetData = {
+export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPostData = {
+    body: ArtifactUploadUrlRequest;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPostResponse = (ArtifactUploadUrlResponse);
+
+export type RequestArtifactUploadUrlV1FrameworksFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
+
+export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteData = {
     path: {
         artifact_id: string;
         framework_id: string;
     };
 };
 
-export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetResponse = (SourcePreviewResponse);
+export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
 
-export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetError = (HTTPValidationError);
+export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
 
-export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostData = {
+export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostData = {
     path: {
         artifact_id: string;
         framework_id: string;
     };
 };
 
-export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostResponse = (ArtifactResponse);
+export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
 
-export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostError = (HTTPValidationError);
+export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
 
 export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostData = {
     body: BindSourceRequest;
@@ -6590,49 +6801,16 @@ export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSour
 
 export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostError = (HTTPValidationError);
 
-export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteData = {
+export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGetData = {
     path: {
         artifact_id: string;
         framework_id: string;
     };
 };
 
-export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteResponse = (ArtifactResponse);
+export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGetResponse = (ArtifactDownloadResponse);
 
-export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteError = (HTTPValidationError);
-
-export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostData = {
-    body: ArtifactConfirmRequest;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostResponse = (ArtifactResponse);
-
-export type ConfirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
-
-export type SetPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatchData = {
-    body: PreviewArtifactRequest;
-    path: {
-        framework_id: string;
-    };
-};
-
-export type SetPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatchResponse = (FrameworkResponse);
-
-export type SetPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatchError = (HTTPValidationError);
-
-export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteData = {
-    path: {
-        artifact_id: string;
-        framework_id: string;
-    };
-};
-
-export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
-
-export type DeleteArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
+export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGetError = (HTTPValidationError);
 
 export type ResolvePiiReviewV1FrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostData = {
     path: {
@@ -6645,245 +6823,179 @@ export type ResolvePiiReviewV1FrameworksFrameworkIdArtifactsArtifactIdResolvePii
 
 export type ResolvePiiReviewV1FrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostError = (HTTPValidationError);
 
-export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostData = {
+export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostData = {
     path: {
         artifact_id: string;
         framework_id: string;
     };
 };
 
-export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
+export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostResponse = (ArtifactResponse);
 
-export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
+export type ResyncArtifactV1FrameworksFrameworkIdArtifactsArtifactIdResyncPostError = (HTTPValidationError);
 
-export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostData = {
-    body: FrameworkCreate;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostResponse = (FrameworkResponse);
-
-export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostError = (HTTPValidationError);
-
-export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetResponse = (Array<FrameworkListItem>);
-
-export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetError = (HTTPValidationError);
-
-export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetData = {
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetResponse = (FrameworkResponse);
-
-export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetError = (HTTPValidationError);
-
-export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchData = {
-    body: FrameworkMetadataUpdate;
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchResponse = (FrameworkResponse);
-
-export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchError = (HTTPValidationError);
-
-export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchData = {
-    body: FrameworkPricingUpdate;
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchResponse = (FrameworkResponse);
-
-export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchError = (HTTPValidationError);
-
-export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostData = {
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostResponse = (FrameworkResponse);
-
-export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostError = (HTTPValidationError);
-
-export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostData = {
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostResponse = (FrameworkResponse);
-
-export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostError = (HTTPValidationError);
-
-export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostData = {
-    body: FrameworkVersionCreate;
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostResponse = (FrameworkResponse);
-
-export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostError = (HTTPValidationError);
-
-export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostData = {
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostResponse = (FrameworkResponse);
-
-export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostError = (HTTPValidationError);
-
-export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostData = {
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostResponse = (FrameworkResponse);
-
-export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostError = (HTTPValidationError);
-
-export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostData = {
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostResponse = (FrameworkResponse);
-
-export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostError = (HTTPValidationError);
-
-export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostData = {
-    body: ArtifactUploadUrlRequest;
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostResponse = (ArtifactUploadUrlResponse);
-
-export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
-
-export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetData = {
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetResponse = (Array<ArtifactResponse>);
-
-export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetError = (HTTPValidationError);
-
-export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteData = {
+export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteData = {
     path: {
         artifact_id: string;
         framework_id: string;
-        org_id: string;
     };
 };
 
-export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
+export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteResponse = (ArtifactResponse);
 
-export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
+export type DetachArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdSourceDeleteError = (HTTPValidationError);
 
-export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchData = {
+export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetResponse = (SourcePreviewResponse);
+
+export type GetArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGetError = (HTTPValidationError);
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetResponse = (Array<AttestationBadgeDetail>);
+
+export type ListFrameworkAttestationBadgesV1FrameworksFrameworkIdAttestationBadgesGetError = (HTTPValidationError);
+
+export type SetPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatchData = {
     body: PreviewArtifactRequest;
     path: {
         framework_id: string;
-        org_id: string;
     };
 };
 
-export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchResponse = (FrameworkResponse);
+export type SetPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatchResponse = (FrameworkResponse);
 
-export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchError = (HTTPValidationError);
+export type SetPreviewArtifactV1FrameworksFrameworkIdPreviewArtifactPatchError = (HTTPValidationError);
 
-export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostData = {
-    path: {
-        artifact_id: string;
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostResponse = (ArtifactResponse);
-
-export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostError = (HTTPValidationError);
-
-export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostData = {
-    path: {
-        artifact_id: string;
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
-
-export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
-
-export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostData = {
+export type PublishFrameworkV1FrameworksFrameworkIdPublishPostData = {
     path: {
         framework_id: string;
-        org_id: string;
     };
 };
 
-export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostResponse = (FrameworkResponse);
+export type PublishFrameworkV1FrameworksFrameworkIdPublishPostResponse = (FrameworkResponse);
 
-export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostError = (HTTPValidationError);
+export type PublishFrameworkV1FrameworksFrameworkIdPublishPostError = (HTTPValidationError);
 
-export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostData = {
+export type RelistFrameworkV1FrameworksFrameworkIdRelistPostData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type RelistFrameworkV1FrameworksFrameworkIdRelistPostResponse = (FrameworkResponse);
+
+export type RelistFrameworkV1FrameworksFrameworkIdRelistPostError = (HTTPValidationError);
+
+export type ListFrameworkReviewsV1FrameworksFrameworkIdReviewsGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ListFrameworkReviewsV1FrameworksFrameworkIdReviewsGetResponse = (FrameworkReviewListResponse);
+
+export type ListFrameworkReviewsV1FrameworksFrameworkIdReviewsGetError = (HTTPValidationError);
+
+export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostData = {
+    body: FrameworkReviewCreate;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostResponse = (FrameworkReviewResponse);
+
+export type CreateFrameworkReviewV1FrameworksFrameworkIdReviewsPostError = (HTTPValidationError);
+
+export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchData = {
+    body: FrameworkReviewUpdate;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchResponse = (FrameworkReviewResponse);
+
+export type UpdateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatchError = (HTTPValidationError);
+
+export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostResponse = (FrameworkResponse);
+
+export type ReviseFrameworkV1FrameworksFrameworkIdRevisePostError = (HTTPValidationError);
+
+export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAcknowledgePostData = {
     body: SimilarityNoticeAcknowledgementRequest;
     path: {
         framework_id: string;
-        org_id: string;
     };
 };
 
-export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostResponse = (FrameworkResponse);
+export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAcknowledgePostResponse = (FrameworkResponse);
 
-export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostError = (HTTPValidationError);
+export type AcknowledgeSimilarityNoticeV1FrameworksFrameworkIdSimilarityNoticeAcknowledgePostError = (HTTPValidationError);
 
-export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
-    body: ArtifactConfirmRequest;
+export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostData = {
     path: {
         framework_id: string;
-        org_id: string;
     };
 };
 
-export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostResponse = (ArtifactResponse);
+export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostResponse = (FrameworkResponse);
 
-export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
+export type SubmitFrameworkV1FrameworksFrameworkIdSubmitPostError = (HTTPValidationError);
+
+export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostResponse = (FrameworkResponse);
+
+export type UnpublishFrameworkV1FrameworksFrameworkIdUnpublishPostError = (HTTPValidationError);
+
+export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostData = {
+    body: FrameworkVersionCreate;
+    path: {
+        framework_id: string;
+    };
+};
+
+export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostResponse = (FrameworkResponse);
+
+export type CreateNewVersionV1FrameworksFrameworkIdVersionsPostError = (HTTPValidationError);
+
+export type GetAccountDeletionStatusV1GdprAccountDeletionGetResponse = (AccountDeletionStatusResponse);
+
+export type GetAccountDeletionStatusV1GdprAccountDeletionGetError = unknown;
+
+export type RequestAccountDeletionV1GdprAccountDeletionPostData = {
+    body: AccountDeletionRequestBody;
+};
+
+export type RequestAccountDeletionV1GdprAccountDeletionPostResponse = (AccountDeletionStatusResponse);
+
+export type RequestAccountDeletionV1GdprAccountDeletionPostError = (AccountDeletionStatusResponse | HTTPValidationError);
+
+export type CancelAccountDeletionV1GdprAccountDeletionCancelPostResponse = (AccountDeletionStatusResponse);
+
+export type CancelAccountDeletionV1GdprAccountDeletionCancelPostError = (unknown);
 
 export type ListConsentHistoryV1GdprConsentGetResponse = (ConsentHistoryResponse);
 
@@ -6927,35 +7039,23 @@ export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetData = {
     };
 };
 
-export type GetAccountDeletionStatusV1GdprAccountDeletionGetResponse = (AccountDeletionStatusResponse);
+export type GetHealthV1HealthGetResponse = (HealthResponse);
 
-export type GetAccountDeletionStatusV1GdprAccountDeletionGetError = unknown;
-
-export type RequestAccountDeletionV1GdprAccountDeletionPostData = {
-    body: AccountDeletionRequestBody;
-};
-
-export type RequestAccountDeletionV1GdprAccountDeletionPostResponse = (AccountDeletionStatusResponse);
-
-export type RequestAccountDeletionV1GdprAccountDeletionPostError = (AccountDeletionStatusResponse | HTTPValidationError);
-
-export type CancelAccountDeletionV1GdprAccountDeletionCancelPostResponse = (AccountDeletionStatusResponse);
-
-export type CancelAccountDeletionV1GdprAccountDeletionCancelPostError = (unknown);
+export type GetHealthV1HealthGetError = (HealthResponse);
 
 export type ListConnectorsV1IntegrationsConnectorsGetResponse = (ConnectorsResponse);
 
 export type ListConnectorsV1IntegrationsConnectorsGetError = unknown;
 
-export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostData = {
+export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteData = {
     path: {
         provider: string;
     };
 };
 
-export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostResponse = (ConnectorConnectResponse);
+export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteResponse = (void);
 
-export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostError = (HTTPValidationError);
+export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteError = (HTTPValidationError);
 
 export type ProviderCallbackV1IntegrationsConnectorsProviderCallbackGetData = {
     path: {
@@ -6972,15 +7072,15 @@ export type ProviderCallbackV1IntegrationsConnectorsProviderCallbackGetResponse 
 
 export type ProviderCallbackV1IntegrationsConnectorsProviderCallbackGetError = (HTTPValidationError);
 
-export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteData = {
+export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostData = {
     path: {
         provider: string;
     };
 };
 
-export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteResponse = (void);
+export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostResponse = (ConnectorConnectResponse);
 
-export type DisconnectProviderV1IntegrationsConnectorsProviderDeleteError = (HTTPValidationError);
+export type ConnectProviderV1IntegrationsConnectorsProviderConnectPostError = (HTTPValidationError);
 
 export type ListConnectorFilesV1IntegrationsConnectorsProviderFilesGetData = {
     path: {
@@ -7008,17 +7108,6 @@ export type ListLibraryV1LibraryGetResponse = (LibraryResponse);
 
 export type ListLibraryV1LibraryGetError = (HTTPValidationError);
 
-export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGetData = {
-    path: {
-        artifact_id: string;
-        framework_id: string;
-    };
-};
-
-export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGetResponse = (ArtifactDownloadResponse);
-
-export type DownloadArtifactV1FrameworksFrameworkIdArtifactsArtifactIdDownloadGetError = (HTTPValidationError);
-
 export type ListNotificationsV1NotificationsGetData = {
     query?: {
         page?: number;
@@ -7044,689 +7133,6 @@ export type MarkNotificationReadV1NotificationsNotificationIdReadPatchData = {
 export type MarkNotificationReadV1NotificationsNotificationIdReadPatchResponse = (NotificationItem);
 
 export type MarkNotificationReadV1NotificationsNotificationIdReadPatchError = (HTTPValidationError);
-
-export type CreateOrganizationV1OrgsPostData = {
-    body: OrganizationCreateRequest;
-};
-
-export type CreateOrganizationV1OrgsPostResponse = (OrganizationResponse);
-
-export type CreateOrganizationV1OrgsPostError = (HTTPValidationError);
-
-export type ListMyOrganizationsV1OrgsMineGetResponse = (MyOrganizationsResponse);
-
-export type ListMyOrganizationsV1OrgsMineGetError = unknown;
-
-export type GetPublicOrgV1OrgsSlugGetData = {
-    path: {
-        slug: string;
-    };
-};
-
-export type GetPublicOrgV1OrgsSlugGetResponse = (PublicOrganizationResponse);
-
-export type GetPublicOrgV1OrgsSlugGetError = (HTTPValidationError);
-
-export type UpdateOrganizationV1OrgsOrgIdPatchData = {
-    body: OrganizationUpdateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type UpdateOrganizationV1OrgsOrgIdPatchResponse = (OrganizationResponse);
-
-export type UpdateOrganizationV1OrgsOrgIdPatchError = (HTTPValidationError);
-
-export type DeactivateOrganizationV1OrgsOrgIdDeleteData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type DeactivateOrganizationV1OrgsOrgIdDeleteResponse = (void);
-
-export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (HTTPValidationError);
-
-export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostData = {
-    body: LogoUploadUrlRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostResponse = (LogoUploadUrlResponse);
-
-export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostError = (HTTPValidationError);
-
-export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostData = {
-    body: LogoConfirmRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostResponse = (OrganizationResponse);
-
-export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostError = (HTTPValidationError);
-
-export type ListMembersV1OrgsOrgIdMembersGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListMembersV1OrgsOrgIdMembersGetResponse = (OrgMembersResponse);
-
-export type ListMembersV1OrgsOrgIdMembersGetError = (HTTPValidationError);
-
-export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostResponse = (OrgCapabilityResponse);
-
-export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostError = (HTTPValidationError);
-
-export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostResponse = (OrgCapabilityResponse);
-
-export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostError = (HTTPValidationError);
-
-export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostData = {
-    body: OrgLicenseGrantRequest;
-    path: {
-        license_id: string;
-        org_id: string;
-    };
-};
-
-export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostResponse = (OrgLicenseGrantResponse);
-
-export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostError = (HTTPValidationError);
-
-export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetData = {
-    path: {
-        license_id: string;
-        org_id: string;
-    };
-};
-
-export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetResponse = (OrgLicenseGrantsResponse);
-
-export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetError = (HTTPValidationError);
-
-export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteData = {
-    path: {
-        grant_id: string;
-        license_id: string;
-        org_id: string;
-    };
-};
-
-export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteResponse = (void);
-
-export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteError = (HTTPValidationError);
-
-export type ListOrgLibraryV1OrgsOrgIdLibraryGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgLibraryV1OrgsOrgIdLibraryGetResponse = (OrgLibraryResponse);
-
-export type ListOrgLibraryV1OrgsOrgIdLibraryGetError = (HTTPValidationError);
-
-export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostData = {
-    path: {
-        artifact_id: string;
-        license_id: string;
-        org_id: string;
-    };
-};
-
-export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostResponse = (ArtifactDownloadResponse);
-
-export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostError = (HTTPValidationError);
-
-export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteData = {
-    path: {
-        member_id: string;
-        org_id: string;
-    };
-};
-
-export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteResponse = (void);
-
-export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteError = (HTTPValidationError);
-
-export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchData = {
-    body: OrgMemberRoleUpdateRequest;
-    path: {
-        member_id: string;
-        org_id: string;
-    };
-};
-
-export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchResponse = (OrgMemberResponse);
-
-export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchError = (HTTPValidationError);
-
-export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostData = {
-    body: OrgOwnershipTransferRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostResponse = (void);
-
-export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostError = (HTTPValidationError);
-
-export type CreateInvitationV1OrgsOrgIdInvitationsPostData = {
-    body: OrgInvitationCreateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateInvitationV1OrgsOrgIdInvitationsPostResponse = (OrgInvitationResponse);
-
-export type CreateInvitationV1OrgsOrgIdInvitationsPostError = (HTTPValidationError);
-
-export type ListInvitationsV1OrgsOrgIdInvitationsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListInvitationsV1OrgsOrgIdInvitationsGetResponse = (OrgInvitationsResponse);
-
-export type ListInvitationsV1OrgsOrgIdInvitationsGetError = (HTTPValidationError);
-
-export type SearchOrgMembersData = {
-    path: {
-        org_id: string;
-    };
-    query: {
-        q: string;
-    };
-};
-
-export type SearchOrgMembersResponse = (MemberSearchResponse);
-
-export type SearchOrgMembersError = (HTTPValidationError);
-
-export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
-    path: {
-        invitation_id: string;
-        org_id: string;
-    };
-};
-
-export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteResponse = (void);
-
-export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteError = (HTTPValidationError);
-
-export type CreateTeamV1OrgsOrgIdTeamsPostData = {
-    body: OrgTeamCreateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateTeamV1OrgsOrgIdTeamsPostResponse = (OrgTeamResponse);
-
-export type CreateTeamV1OrgsOrgIdTeamsPostError = (HTTPValidationError);
-
-export type ListTeamsV1OrgsOrgIdTeamsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListTeamsV1OrgsOrgIdTeamsGetResponse = (OrgTeamsResponse);
-
-export type ListTeamsV1OrgsOrgIdTeamsGetError = (HTTPValidationError);
-
-export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchData = {
-    body: OrgTeamRenameRequest;
-    path: {
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchResponse = (OrgTeamResponse);
-
-export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchError = (HTTPValidationError);
-
-export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteData = {
-    path: {
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteResponse = (void);
-
-export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteError = (HTTPValidationError);
-
-export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetData = {
-    path: {
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetResponse = (OrgTeamMembersResponse);
-
-export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetError = (HTTPValidationError);
-
-export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutData = {
-    path: {
-        member_id: string;
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutResponse = (void);
-
-export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutError = (HTTPValidationError);
-
-export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteData = {
-    path: {
-        member_id: string;
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteResponse = (void);
-
-export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteError = (HTTPValidationError);
-
-export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutData = {
-    path: {
-        capability: 'contributor' | 'operator' | 'attestor';
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutResponse = (void);
-
-export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutError = (HTTPValidationError);
-
-export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteData = {
-    path: {
-        capability: 'contributor' | 'operator' | 'attestor';
-        org_id: string;
-        team_id: string;
-    };
-};
-
-export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteResponse = (void);
-
-export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteError = (HTTPValidationError);
-
-export type GetNdaStatusV1OrgsOrgIdNdaGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type GetNdaStatusV1OrgsOrgIdNdaGetResponse = (OrgNdaStatusResponse);
-
-export type GetNdaStatusV1OrgsOrgIdNdaGetError = (HTTPValidationError);
-
-export type SignNdaV1OrgsOrgIdNdaSignPostData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type SignNdaV1OrgsOrgIdNdaSignPostResponse = (OrgNdaStatusResponse);
-
-export type SignNdaV1OrgsOrgIdNdaSignPostError = (HTTPValidationError);
-
-export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostData = {
-    body: OrgAttestorApplicationCreateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostResponse = (OrgAttestorApplicationResponse);
-
-export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostError = (HTTPValidationError);
-
-export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetResponse = (OrgAttestorApplicationResponse);
-
-export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetError = (HTTPValidationError);
-
-export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchData = {
-    body: OrgAttestorApplicationUpdateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchResponse = (OrgAttestorApplicationResponse);
-
-export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchError = (HTTPValidationError);
-
-export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostResponse = (OrgAttestorApplicationResponse);
-
-export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostError = (HTTPValidationError);
-
-export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostData = {
-    body: OrgUndertakingsSignRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostResponse = (OrgAttestorApplicationResponse);
-
-export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostError = (HTTPValidationError);
-
-export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostData = {
-    body: OrgAttestorTaxDocumentRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
-
-export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostError = (HTTPValidationError);
-
-export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostData = {
-    body: OrgAttestorIncorporationDocumentRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
-
-export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostError = (HTTPValidationError);
-
-export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteData = {
-    body: OrgAttestorIncorporationDocumentDeleteRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteResponse = (OrgAttestorApplicationResponse);
-
-export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteError = (HTTPValidationError);
-
-export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostData = {
-    body: OrgNominateTrialMemberRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostResponse = (OrgAttestorApplicationResponse);
-
-export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostError = (HTTPValidationError);
-
-export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetResponse = (NomineeTrialResponse);
-
-export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetError = (HTTPValidationError);
-
-export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostData = {
-    body: TrialSubmitRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostResponse = (NomineeTrialResponse);
-
-export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostError = (HTTPValidationError);
-
-export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetResponse = (OrgAttestationOffersResponse);
-
-export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetError = (HTTPValidationError);
-
-export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostData = {
-    body: OrgAcceptOfferRequest;
-    path: {
-        offer_id: string;
-        org_id: string;
-    };
-};
-
-export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostResponse = (OrgAttestationItem);
-
-export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostError = (HTTPValidationError);
-
-export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostData = {
-    path: {
-        offer_id: string;
-        org_id: string;
-    };
-};
-
-export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostResponse = (OrgAttestationItem);
-
-export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostError = (HTTPValidationError);
-
-export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostData = {
-    body: OrgReassignReviewerRequest;
-    path: {
-        attestation_id: string;
-        org_id: string;
-    };
-};
-
-export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostResponse = (OrgAttestationItem);
-
-export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostError = (HTTPValidationError);
-
-export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetResponse = (OrgAttestationsResponse);
-
-export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetError = (HTTPValidationError);
-
-export type GetLegalProfileV1OrgsOrgIdLegalProfileGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type GetLegalProfileV1OrgsOrgIdLegalProfileGetResponse = (OrgLegalProfileResponse);
-
-export type GetLegalProfileV1OrgsOrgIdLegalProfileGetError = (HTTPValidationError);
-
-export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutData = {
-    body: OrgLegalProfileUpdateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutResponse = (OrgLegalProfileResponse);
-
-export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutError = (HTTPValidationError);
-
-export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostData = {
-    body: OrgAttestorTaxDocumentRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
-
-export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostError = (HTTPValidationError);
-
-export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetResponse = (EarningsResponse);
-
-export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetError = (HTTPValidationError);
-
-export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostData = {
-    body: OrgPaymentMethodSetupRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostResponse = (OrgPaymentMethodSetupResponse);
-
-export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostError = (HTTPValidationError);
-
-export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetResponse = (OrgPaymentMethodsResponse);
-
-export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetError = (HTTPValidationError);
-
-export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteData = {
-    body: OrgPaymentMethodDeleteRequest;
-    path: {
-        org_id: string;
-        payment_method_id: string;
-    };
-};
-
-export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteResponse = (OrgPaymentMethodDeleteResponse);
-
-export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteError = (HTTPValidationError);
-
-export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData = {
-    body: OrgPayoutAccountOnboardRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostResponse = (PayoutAccountOnboardResponse);
-
-export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostError = (HTTPValidationError);
-
-export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostData = {
-    body: PayoutRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostResponse = (PayoutResponse);
-
-export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostError = (HTTPValidationError);
-
-export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetResponse = (OrgInvoicesResponse);
-
-export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetError = (HTTPValidationError);
-
-export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetData = {
-    path: {
-        org_id: string;
-        transaction_id: string;
-    };
-};
-
-export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetResponse = (unknown);
-
-export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetError = (HTTPValidationError);
-
-export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostData = {
-    body: PurchaseRequest;
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostResponse = (PurchaseResponse);
-
-export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostError = (HTTPValidationError);
-
-export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostData = {
-    body: FrameworkReviewCreate;
-    path: {
-        framework_id: string;
-        org_id: string;
-    };
-};
-
-export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostResponse = (FrameworkReviewResponse);
-
-export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostError = (HTTPValidationError);
-
-export type ListPublicContributorOrgsV1ContributorsGetResponse = (ContributorOrgDirectoryResponse);
-
-export type ListPublicContributorOrgsV1ContributorsGetError = unknown;
-
-export type GetPublicContributorOrgV1ContributorsOrgSlugGetData = {
-    path: {
-        org_slug: string;
-    };
-};
-
-export type GetPublicContributorOrgV1ContributorsOrgSlugGetResponse = (ContributorOrgDirectoryEntry);
-
-export type GetPublicContributorOrgV1ContributorsOrgSlugGetError = (HTTPValidationError);
 
 export type ListReceivedInvitationsResponse = (MyInvitationsResponse);
 
@@ -7782,299 +7188,1183 @@ export type DeclineInvitationV1OrgInvitationsTokenDeclinePostResponse = (void);
 
 export type DeclineInvitationV1OrgInvitationsTokenDeclinePostError = (HTTPValidationError);
 
-export type AdminListOrgsV1AdminOrgsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        query?: (string | null);
-    };
+export type CreateOrganizationV1OrgsPostData = {
+    body: OrganizationCreateRequest;
 };
 
-export type AdminListOrgsV1AdminOrgsGetResponse = (AdminOrgsResponse);
+export type CreateOrganizationV1OrgsPostResponse = (OrganizationResponse);
 
-export type AdminListOrgsV1AdminOrgsGetError = (HTTPValidationError);
+export type CreateOrganizationV1OrgsPostError = (HTTPValidationError);
 
-export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
+export type ListMyOrganizationsV1OrgsMineGetResponse = (MyOrganizationsResponse);
+
+export type ListMyOrganizationsV1OrgsMineGetError = unknown;
+
+export type DeactivateOrganizationV1OrgsOrgIdDeleteData = {
     path: {
         org_id: string;
     };
 };
 
-export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
+export type DeactivateOrganizationV1OrgsOrgIdDeleteResponse = (void);
 
-export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
+export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (HTTPValidationError);
 
-export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostData = {
+export type UpdateOrganizationV1OrgsOrgIdPatchData = {
+    body: OrganizationUpdateRequest;
     path: {
         org_id: string;
     };
 };
 
-export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostResponse = (void);
+export type UpdateOrganizationV1OrgsOrgIdPatchResponse = (OrganizationResponse);
 
-export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostError = (HTTPValidationError);
+export type UpdateOrganizationV1OrgsOrgIdPatchError = (HTTPValidationError);
 
-export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostData = {
+export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetData = {
     path: {
         org_id: string;
     };
 };
 
-export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostResponse = (void);
+export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetResponse = (OrgAttestationOffersResponse);
 
-export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostError = (HTTPValidationError);
+export type ListOrgAttestationOffersV1OrgsOrgIdAttestationOffersGetError = (HTTPValidationError);
 
-export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostData = {
+export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostData = {
+    body: OrgAcceptOfferRequest;
+    path: {
+        offer_id: string;
+        org_id: string;
+    };
+};
+
+export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostResponse = (OrgAttestationItem);
+
+export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostError = (HTTPValidationError);
+
+export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostData = {
+    path: {
+        offer_id: string;
+        org_id: string;
+    };
+};
+
+export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostResponse = (OrgAttestationItem);
+
+export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostError = (HTTPValidationError);
+
+export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetData = {
     path: {
         org_id: string;
     };
 };
 
-export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostResponse = (void);
+export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetResponse = (OrgAttestationsResponse);
 
-export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostError = (HTTPValidationError);
+export type ListOrgAttestationsV1OrgsOrgIdAttestationsGetError = (HTTPValidationError);
 
-export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostData = {
+export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostData = {
+    body: OrgReassignReviewerRequest;
+    path: {
+        attestation_id: string;
+        org_id: string;
+    };
+};
+
+export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostResponse = (OrgAttestationItem);
+
+export type ReassignOrgReviewingMemberV1OrgsOrgIdAttestationsAttestationIdReassignPostError = (HTTPValidationError);
+
+export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetData = {
     path: {
         org_id: string;
     };
 };
 
-export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostResponse = (void);
+export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetResponse = (OrgAttestorApplicationResponse);
 
-export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostError = (HTTPValidationError);
+export type GetAttestorApplicationV1OrgsOrgIdAttestorApplicationGetError = (HTTPValidationError);
 
-export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostData = {
+export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchData = {
+    body: OrgAttestorApplicationUpdateRequest;
     path: {
         org_id: string;
     };
 };
 
-export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostResponse = (void);
+export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchResponse = (OrgAttestorApplicationResponse);
 
-export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostError = (HTTPValidationError);
+export type UpdateAttestorApplicationV1OrgsOrgIdAttestorApplicationPatchError = (HTTPValidationError);
 
-export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostData = {
+export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostData = {
+    body: OrgAttestorApplicationCreateRequest;
     path: {
         org_id: string;
     };
 };
 
-export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostResponse = (void);
+export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostResponse = (OrgAttestorApplicationResponse);
 
-export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostError = (HTTPValidationError);
+export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostError = (HTTPValidationError);
 
-export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostData = {
+export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteData = {
+    body: OrgAttestorIncorporationDocumentDeleteRequest;
     path: {
         org_id: string;
     };
 };
 
-export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostResponse = (void);
+export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteResponse = (OrgAttestorApplicationResponse);
 
-export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostError = (HTTPValidationError);
+export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteError = (HTTPValidationError);
 
-export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostData = {
+export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostData = {
+    body: OrgAttestorIncorporationDocumentRequest;
     path: {
         org_id: string;
     };
 };
 
-export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostResponse = (void);
+export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
 
-export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostError = (HTTPValidationError);
+export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostError = (HTTPValidationError);
 
-export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostData = {
+export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostData = {
+    body: OrgNominateTrialMemberRequest;
     path: {
         org_id: string;
     };
 };
 
-export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostResponse = (void);
+export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostResponse = (OrgAttestorApplicationResponse);
 
-export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostError = (HTTPValidationError);
+export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostError = (HTTPValidationError);
 
-export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostData = {
+export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostData = {
+    body: OrgUndertakingsSignRequest;
     path: {
         org_id: string;
     };
 };
 
-export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostResponse = (void);
+export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostResponse = (OrgAttestorApplicationResponse);
 
-export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostError = (HTTPValidationError);
+export type SignAttestorUndertakingsV1OrgsOrgIdAttestorApplicationSignUndertakingsPostError = (HTTPValidationError);
 
-export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetData = {
-    query?: {
-        page?: number;
-        page_size?: number;
-        status?: (string | null);
-    };
-};
-
-export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetResponse = (OrgAttestorAdminListResponse);
-
-export type AdminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGetError = (HTTPValidationError);
-
-export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetData = {
+export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostData = {
     path: {
-        application_id: string;
+        org_id: string;
     };
 };
 
-export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetResponse = (OrgAttestorDocumentsResponse);
+export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostResponse = (OrgAttestorApplicationResponse);
 
-export type AdminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGetError = (HTTPValidationError);
+export type SubmitAttestorApplicationV1OrgsOrgIdAttestorApplicationSubmitPostError = (HTTPValidationError);
 
-export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostData = {
+export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostData = {
+    body: OrgAttestorTaxDocumentRequest;
     path: {
-        application_id: string;
+        org_id: string;
     };
 };
 
-export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostResponse = (OrgAttestorApplicationResponse);
+export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
 
-export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostError = (HTTPValidationError);
+export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostError = (HTTPValidationError);
 
-export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostData = {
-    body: OrgAttestorFeedbackRequest;
+export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetData = {
     path: {
-        application_id: string;
+        org_id: string;
     };
 };
 
-export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostResponse = (OrgAttestorApplicationResponse);
+export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetResponse = (NomineeTrialResponse);
 
-export type AdminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPostError = (HTTPValidationError);
+export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetError = (HTTPValidationError);
 
-export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostData = {
-    body: AdminStartTrialRequest;
+export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostData = {
+    body: TrialSubmitRequest;
     path: {
-        application_id: string;
+        org_id: string;
     };
 };
 
-export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostResponse = (OrgAttestorApplicationResponse);
+export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostResponse = (NomineeTrialResponse);
 
-export type AdminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPostError = (HTTPValidationError);
+export type SubmitAttestorTrialV1OrgsOrgIdAttestorTrialSubmitPostError = (HTTPValidationError);
 
-export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetData = {
+export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostData = {
     path: {
-        application_id: string;
+        org_id: string;
     };
 };
 
-export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetResponse = (AdminTrialGradeResponse);
+export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostResponse = (OrgCapabilityResponse);
 
-export type AdminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGetError = (HTTPValidationError);
+export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostError = (HTTPValidationError);
 
-export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostData = {
-    body: TrialDecideRequest;
+export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetData = {
     path: {
-        application_id: string;
+        org_id: string;
     };
 };
 
-export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostResponse = (OrgAttestorApplicationResponse);
+export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetResponse = (OrgDeliveriesResponse);
 
-export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostError = (HTTPValidationError);
+export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetError = (HTTPValidationError);
 
-export type AdminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGetResponse = (CalibrationFixturesResponse);
-
-export type AdminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGetError = unknown;
-
-export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostData = {
-    body: CreateCalibrationFixtureRequest;
+export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetData = {
+    path: {
+        org_id: string;
+    };
 };
 
-export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostResponse = (CalibrationFixtureItem);
+export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetResponse = (EarningsResponse);
 
-export type AdminCreateCalibrationFixtureV1AdminOrgAttestorApplicationsCalibrationFixturesPostError = (HTTPValidationError);
+export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetError = (HTTPValidationError);
 
-export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutData = {
-    body: UpsertTrialAnswerKeyRequest;
+export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetResponse = (OrgInvoicesResponse);
+
+export type ListOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGetError = (HTTPValidationError);
+
+export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetResponse = (OrgPaymentMethodsResponse);
+
+export type ListOrgPaymentMethodsV1OrgsOrgIdFinancialsPaymentMethodsGetError = (HTTPValidationError);
+
+export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostData = {
+    body: OrgPaymentMethodSetupRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostResponse = (OrgPaymentMethodSetupResponse);
+
+export type CreateOrgPaymentMethodSetupV1OrgsOrgIdFinancialsPaymentMethodsSetupPostError = (HTTPValidationError);
+
+export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteData = {
+    body: OrgPaymentMethodDeleteRequest;
+    path: {
+        org_id: string;
+        payment_method_id: string;
+    };
+};
+
+export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteResponse = (OrgPaymentMethodDeleteResponse);
+
+export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteError = (HTTPValidationError);
+
+export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData = {
+    body: OrgPayoutAccountOnboardRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostResponse = (PayoutAccountOnboardResponse);
+
+export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostError = (HTTPValidationError);
+
+export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostData = {
+    body: PayoutRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostResponse = (PayoutResponse);
+
+export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostError = (HTTPValidationError);
+
+export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetData = {
+    path: {
+        org_id: string;
+        transaction_id: string;
+    };
+};
+
+export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetResponse = (unknown);
+
+export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetError = (HTTPValidationError);
+
+export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetResponse = (Array<FrameworkListItem>);
+
+export type ListOrgFrameworksV1OrgsOrgIdFrameworksGetError = (HTTPValidationError);
+
+export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostData = {
+    body: FrameworkCreate;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostResponse = (FrameworkResponse);
+
+export type CreateOrgFrameworkV1OrgsOrgIdFrameworksPostError = (HTTPValidationError);
+
+export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetData = {
     path: {
         framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutResponse = (void);
+export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetResponse = (FrameworkResponse);
 
-export type AdminUpsertTrialAnswerKeyV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeyPutError = (HTTPValidationError);
+export type GetOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdGetError = (HTTPValidationError);
 
-export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetData = {
+export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchData = {
+    body: FrameworkMetadataUpdate;
     path: {
         framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetResponse = (TrialAnswerKeysResponse);
+export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchResponse = (FrameworkResponse);
 
-export type AdminListTrialAnswerKeysV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdAnswerKeysGetError = (HTTPValidationError);
+export type UpdateOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPatchError = (HTTPValidationError);
 
-export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetData = {
+export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostData = {
     path: {
         framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetResponse = (FixtureArtifactsResponse);
+export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostResponse = (FrameworkResponse);
 
-export type AdminListFixtureArtifactsV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsGetError = (HTTPValidationError);
+export type AcknowledgeOrgFrameworkSoftFailV1OrgsOrgIdFrameworksFrameworkIdAcknowledgeSoftFailPostError = (HTTPValidationError);
 
-export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostData = {
-    body: FixtureArtifactUploadUrlRequest;
+export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetData = {
     path: {
         framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostResponse = (FixtureArtifactUploadUrlResponse);
+export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetResponse = (Array<ArtifactResponse>);
 
-export type AdminCreateFixtureArtifactUploadUrlV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
+export type ListOrgFrameworkArtifactsV1OrgsOrgIdFrameworksFrameworkIdArtifactsGetError = (HTTPValidationError);
 
-export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostData = {
-    body: FixtureArtifactConfirmRequest;
+export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostData = {
+    body: ArtifactConfirmRequest;
     path: {
         framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostResponse = (FixtureArtifactItem);
+export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostResponse = (ArtifactResponse);
 
-export type AdminConfirmFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
+export type ConfirmOrgArtifactUploadV1OrgsOrgIdFrameworksFrameworkIdArtifactsConfirmPostError = (HTTPValidationError);
 
-export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteData = {
+export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostData = {
+    body: ArtifactUploadUrlRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostResponse = (ArtifactUploadUrlResponse);
+
+export type RequestOrgArtifactUploadUrlV1OrgsOrgIdFrameworksFrameworkIdArtifactsUploadUrlPostError = (HTTPValidationError);
+
+export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteData = {
     path: {
         artifact_id: string;
         framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
+export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteResponse = (void);
 
-export type AdminDeleteFixtureArtifactV1AdminOrgAttestorApplicationsCalibrationFixturesFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
+export type DeleteOrgFrameworkArtifactV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeleteError = (HTTPValidationError);
 
-export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostData = {
+export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostData = {
     path: {
-        application_id: string;
+        artifact_id: string;
+        framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostResponse = (OrgAttestorApplicationResponse);
+export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
 
-export type AdminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePostError = (HTTPValidationError);
+export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
 
-export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostData = {
-    body: OrgAttestorFeedbackRequest;
+export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostData = {
     path: {
-        application_id: string;
+        artifact_id: string;
+        framework_id: string;
+        org_id: string;
     };
 };
 
-export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostResponse = (OrgAttestorApplicationResponse);
+export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostResponse = (ArtifactResponse);
 
-export type AdminRejectV1AdminOrgAttestorApplicationsApplicationIdRejectPostError = (HTTPValidationError);
+export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostError = (HTTPValidationError);
+
+export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchData = {
+    body: PreviewArtifactRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchResponse = (FrameworkResponse);
+
+export type SetOrgFrameworkPreviewArtifactV1OrgsOrgIdFrameworksFrameworkIdPreviewArtifactPatchError = (HTTPValidationError);
+
+export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchData = {
+    body: FrameworkPricingUpdate;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchResponse = (FrameworkResponse);
+
+export type UpdateOrgFrameworkPricingV1OrgsOrgIdFrameworksFrameworkIdPricingPatchError = (HTTPValidationError);
+
+export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostResponse = (FrameworkResponse);
+
+export type PublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPostError = (HTTPValidationError);
+
+export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostData = {
+    body: PurchaseRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostResponse = (PurchaseResponse);
+
+export type CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostError = (HTTPValidationError);
+
+export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostResponse = (FrameworkResponse);
+
+export type RelistOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRelistPostError = (HTTPValidationError);
+
+export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostData = {
+    body: FrameworkReviewCreate;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostResponse = (FrameworkReviewResponse);
+
+export type CreateOrgFrameworkReviewV1OrgsOrgIdFrameworksFrameworkIdReviewPostError = (HTTPValidationError);
+
+export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostResponse = (FrameworkResponse);
+
+export type ReviseOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdRevisePostError = (HTTPValidationError);
+
+export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostData = {
+    body: SimilarityNoticeAcknowledgementRequest;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostResponse = (FrameworkResponse);
+
+export type AcknowledgeOrgFrameworkSimilarityNoticeV1OrgsOrgIdFrameworksFrameworkIdSimilarityNoticeAcknowledgePostError = (HTTPValidationError);
+
+export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostResponse = (FrameworkResponse);
+
+export type SubmitOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdSubmitPostError = (HTTPValidationError);
+
+export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostData = {
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostResponse = (FrameworkResponse);
+
+export type UnpublishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdUnpublishPostError = (HTTPValidationError);
+
+export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostData = {
+    body: FrameworkVersionCreate;
+    path: {
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostResponse = (FrameworkResponse);
+
+export type CreateNewOrgVersionV1OrgsOrgIdFrameworksFrameworkIdVersionPostError = (HTTPValidationError);
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetResponse = (OrgInvitationsResponse);
+
+export type ListInvitationsV1OrgsOrgIdInvitationsGetError = (HTTPValidationError);
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostData = {
+    body: OrgInvitationCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostResponse = (OrgInvitationResponse);
+
+export type CreateInvitationV1OrgsOrgIdInvitationsPostError = (HTTPValidationError);
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
+    path: {
+        invitation_id: string;
+        org_id: string;
+    };
+};
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteResponse = (void);
+
+export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteError = (HTTPValidationError);
+
+export type GetLegalProfileV1OrgsOrgIdLegalProfileGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetLegalProfileV1OrgsOrgIdLegalProfileGetResponse = (OrgLegalProfileResponse);
+
+export type GetLegalProfileV1OrgsOrgIdLegalProfileGetError = (HTTPValidationError);
+
+export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutData = {
+    body: OrgLegalProfileUpdateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutResponse = (OrgLegalProfileResponse);
+
+export type UpsertLegalProfileV1OrgsOrgIdLegalProfilePutError = (HTTPValidationError);
+
+export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostData = {
+    body: OrgAttestorTaxDocumentRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostError = (HTTPValidationError);
+
+export type ListOrgLibraryV1OrgsOrgIdLibraryGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgLibraryV1OrgsOrgIdLibraryGetResponse = (OrgLibraryResponse);
+
+export type ListOrgLibraryV1OrgsOrgIdLibraryGetError = (HTTPValidationError);
+
+export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostData = {
+    path: {
+        artifact_id: string;
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostResponse = (ArtifactDownloadResponse);
+
+export type RequestOrgLibraryArtifactDownloadV1OrgsOrgIdLibraryLicenseIdArtifactsArtifactIdDownloadPostError = (HTTPValidationError);
+
+export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetData = {
+    path: {
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetResponse = (OrgLicenseGrantsResponse);
+
+export type ListOrgLicenseGrantsV1OrgsOrgIdLicensesLicenseIdGrantsGetError = (HTTPValidationError);
+
+export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostData = {
+    body: OrgLicenseGrantRequest;
+    path: {
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostResponse = (OrgLicenseGrantResponse);
+
+export type AddOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsPostError = (HTTPValidationError);
+
+export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteData = {
+    path: {
+        grant_id: string;
+        license_id: string;
+        org_id: string;
+    };
+};
+
+export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteResponse = (void);
+
+export type RevokeOrgLicenseGrantV1OrgsOrgIdLicensesLicenseIdGrantsGrantIdDeleteError = (HTTPValidationError);
+
+export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostData = {
+    body: LogoConfirmRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostResponse = (OrganizationResponse);
+
+export type ConfirmOrgLogoUploadV1OrgsOrgIdLogoConfirmPostError = (HTTPValidationError);
+
+export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostData = {
+    body: LogoUploadUrlRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostResponse = (LogoUploadUrlResponse);
+
+export type RequestOrgLogoUploadUrlV1OrgsOrgIdLogoUploadUrlPostError = (HTTPValidationError);
+
+export type SearchOrgMembersData = {
+    path: {
+        org_id: string;
+    };
+    query: {
+        q: string;
+    };
+};
+
+export type SearchOrgMembersResponse = (MemberSearchResponse);
+
+export type SearchOrgMembersError = (HTTPValidationError);
+
+export type ListMembersV1OrgsOrgIdMembersGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListMembersV1OrgsOrgIdMembersGetResponse = (OrgMembersResponse);
+
+export type ListMembersV1OrgsOrgIdMembersGetError = (HTTPValidationError);
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteData = {
+    path: {
+        member_id: string;
+        org_id: string;
+    };
+};
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteResponse = (void);
+
+export type RemoveMemberV1OrgsOrgIdMembersMemberIdDeleteError = (HTTPValidationError);
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchData = {
+    body: OrgMemberRoleUpdateRequest;
+    path: {
+        member_id: string;
+        org_id: string;
+    };
+};
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchResponse = (OrgMemberResponse);
+
+export type ChangeMemberRoleV1OrgsOrgIdMembersMemberIdPatchError = (HTTPValidationError);
+
+export type GetNdaStatusV1OrgsOrgIdNdaGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetNdaStatusV1OrgsOrgIdNdaGetResponse = (OrgNdaStatusResponse);
+
+export type GetNdaStatusV1OrgsOrgIdNdaGetError = (HTTPValidationError);
+
+export type SignNdaV1OrgsOrgIdNdaSignPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type SignNdaV1OrgsOrgIdNdaSignPostResponse = (OrgNdaStatusResponse);
+
+export type SignNdaV1OrgsOrgIdNdaSignPostError = (HTTPValidationError);
+
+export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostResponse = (OrgCapabilityResponse);
+
+export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostError = (HTTPValidationError);
+
+export type ListOrgProjectsV1OrgsOrgIdProjectsGetData = {
+    path: {
+        org_id: string;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type ListOrgProjectsV1OrgsOrgIdProjectsGetResponse = (ProjectsResponse);
+
+export type ListOrgProjectsV1OrgsOrgIdProjectsGetError = (HTTPValidationError);
+
+export type CreateOrgProjectV1OrgsOrgIdProjectsPostData = {
+    body: ProjectCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateOrgProjectV1OrgsOrgIdProjectsPostResponse = (ProjectResponse);
+
+export type CreateOrgProjectV1OrgsOrgIdProjectsPostError = (HTTPValidationError);
+
+export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteResponse = (void);
+
+export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteError = (HTTPValidationError);
+
+export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetResponse = (ProjectResponse);
+
+export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetError = (HTTPValidationError);
+
+export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostResponse = (ProjectResponse);
+
+export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostError = (HTTPValidationError);
+
+export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostData = {
+    path: {
+        deliverable_id: string;
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostResponse = (DeliverableResponse);
+
+export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostError = (HTTPValidationError);
+
+export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostData = {
+    body: DisputeCreateRequest;
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostResponse = (DisputeResponse);
+
+export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostError = (HTTPValidationError);
+
+export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostData = {
+    body: DeliverableRevisionRequest;
+    path: {
+        deliverable_id: string;
+        milestone_id: string;
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostResponse = (DeliverableResponse);
+
+export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostError = (HTTPValidationError);
+
+export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostData = {
+    path: {
+        milestone_id: string;
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostResponse = (MilestoneFundingResponse);
+
+export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostError = (HTTPValidationError);
+
+export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetData = {
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetResponse = (ProposalsResponse);
+
+export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetError = (HTTPValidationError);
+
+export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostData = {
+    body: OrgProposalCreateRequest;
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostResponse = (ProposalResponse);
+
+export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostError = (HTTPValidationError);
+
+export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostData = {
+    path: {
+        org_id: string;
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostResponse = (ProjectResponse);
+
+export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostError = (HTTPValidationError);
+
+export type ListOrgProposalsV1OrgsOrgIdProposalsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgProposalsV1OrgsOrgIdProposalsGetResponse = (ProposalsResponse);
+
+export type ListOrgProposalsV1OrgsOrgIdProposalsGetError = (HTTPValidationError);
+
+export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteData = {
+    path: {
+        org_id: string;
+        proposal_id: string;
+    };
+};
+
+export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteResponse = (ProposalResponse);
+
+export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteError = (HTTPValidationError);
+
+export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostData = {
+    body: OrgProposalReassignRequest;
+    path: {
+        org_id: string;
+        proposal_id: string;
+    };
+};
+
+export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostResponse = (ProposalResponse);
+
+export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostError = (HTTPValidationError);
+
+export type ListTeamsV1OrgsOrgIdTeamsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListTeamsV1OrgsOrgIdTeamsGetResponse = (OrgTeamsResponse);
+
+export type ListTeamsV1OrgsOrgIdTeamsGetError = (HTTPValidationError);
+
+export type CreateTeamV1OrgsOrgIdTeamsPostData = {
+    body: OrgTeamCreateRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type CreateTeamV1OrgsOrgIdTeamsPostResponse = (OrgTeamResponse);
+
+export type CreateTeamV1OrgsOrgIdTeamsPostError = (HTTPValidationError);
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteData = {
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteResponse = (void);
+
+export type DeleteTeamV1OrgsOrgIdTeamsTeamIdDeleteError = (HTTPValidationError);
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchData = {
+    body: OrgTeamRenameRequest;
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchResponse = (OrgTeamResponse);
+
+export type RenameTeamV1OrgsOrgIdTeamsTeamIdPatchError = (HTTPValidationError);
+
+export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteData = {
+    path: {
+        capability: 'contributor' | 'operator' | 'attestor';
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteResponse = (void);
+
+export type DisableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityDeleteError = (HTTPValidationError);
+
+export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutData = {
+    path: {
+        capability: 'contributor' | 'operator' | 'attestor';
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutResponse = (void);
+
+export type EnableTeamCapabilityV1OrgsOrgIdTeamsTeamIdCapabilitiesCapabilityPutError = (HTTPValidationError);
+
+export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetData = {
+    path: {
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetResponse = (OrgTeamMembersResponse);
+
+export type ListTeamMembersV1OrgsOrgIdTeamsTeamIdMembersGetError = (HTTPValidationError);
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteData = {
+    path: {
+        member_id: string;
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteResponse = (void);
+
+export type RemoveTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDeleteError = (HTTPValidationError);
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutData = {
+    path: {
+        member_id: string;
+        org_id: string;
+        team_id: string;
+    };
+};
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutResponse = (void);
+
+export type AddTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPutError = (HTTPValidationError);
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostData = {
+    body: OrgOwnershipTransferRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostResponse = (void);
+
+export type TransferOwnershipV1OrgsOrgIdTransferOwnershipPostError = (HTTPValidationError);
+
+export type GetPublicOrgV1OrgsSlugGetData = {
+    path: {
+        slug: string;
+    };
+};
+
+export type GetPublicOrgV1OrgsSlugGetResponse = (PublicOrganizationResponse);
+
+export type GetPublicOrgV1OrgsSlugGetError = (HTTPValidationError);
+
+export type ListPartnerCatalogV1PartnerCatalogGetData = {
+    headers?: {
+        'X-API-Key'?: (string | null);
+    };
+    query?: {
+        attestation_status?: ('pending_acceptance' | 'attested' | 'conditionally_attested' | 'none' | null);
+        category?: (string | null);
+        complexity?: (number | null);
+        function?: (string | null);
+        industry?: (string | null);
+        jurisdiction?: (string | null);
+        license_type?: (string | null);
+        lifecycle_stage?: (string | null);
+        org_size?: (string | null);
+        page?: number;
+        page_size?: number;
+        price_max?: (number | string | null);
+        price_min?: (number | string | null);
+        q?: (string | null);
+        sector?: (string | null);
+        sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
+    };
+};
+
+export type ListPartnerCatalogV1PartnerCatalogGetResponse = (ExploreFrameworkListResponse);
+
+export type ListPartnerCatalogV1PartnerCatalogGetError = (HTTPValidationError);
+
+export type GetPartnerFrameworkDetailV1PartnerCatalogFrameworkIdGetData = {
+    headers?: {
+        'X-API-Key'?: (string | null);
+    };
+    path: {
+        framework_id: string;
+    };
+};
+
+export type GetPartnerFrameworkDetailV1PartnerCatalogFrameworkIdGetResponse = (PartnerFrameworkDetailResponse);
+
+export type GetPartnerFrameworkDetailV1PartnerCatalogFrameworkIdGetError = (HTTPValidationError);
+
+export type ListPartnerFrameworkAttestationsV1PartnerCatalogFrameworkIdAttestationsGetData = {
+    headers?: {
+        'X-API-Key'?: (string | null);
+    };
+    path: {
+        framework_id: string;
+    };
+};
+
+export type ListPartnerFrameworkAttestationsV1PartnerCatalogFrameworkIdAttestationsGetResponse = (PartnerAttestationsResponse);
+
+export type ListPartnerFrameworkAttestationsV1PartnerCatalogFrameworkIdAttestationsGetError = (HTTPValidationError);
+
+export type GetPartnerFrameworkPreviewV1PartnerCatalogFrameworkIdPreviewGetData = {
+    headers?: {
+        'X-API-Key'?: (string | null);
+    };
+    path: {
+        framework_id: string;
+    };
+};
+
+export type GetPartnerFrameworkPreviewV1PartnerCatalogFrameworkIdPreviewGetResponse = (PartnerPreviewArtifactResponse);
+
+export type GetPartnerFrameworkPreviewV1PartnerCatalogFrameworkIdPreviewGetError = (HTTPValidationError);
+
+export type InitiatePartnerFrameworkPurchaseV1PartnerFrameworksFrameworkIdPurchasePostData = {
+    body: PartnerPurchaseRequest;
+    headers?: {
+        'X-API-Key'?: (string | null);
+    };
+    path: {
+        framework_id: string;
+    };
+};
+
+export type InitiatePartnerFrameworkPurchaseV1PartnerFrameworksFrameworkIdPurchasePostResponse = (PartnerPurchaseResponse);
+
+export type InitiatePartnerFrameworkPurchaseV1PartnerFrameworksFrameworkIdPurchasePostError = (HTTPValidationError);
+
+export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetData = {
+    headers?: {
+        'X-API-Key'?: (string | null);
+    };
+    path: {
+        transaction_id: string;
+    };
+};
+
+export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetResponse = (PartnerPurchaseStatusResponse);
+
+export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetError = (HTTPValidationError);
 
 export type GetMyProfileV1ProfilesMeGetResponse = (PublicProfileResponse);
 
@@ -8088,14 +8378,6 @@ export type UpdateMyProfileV1ProfilesMePatchResponse = (PublicProfileResponse);
 
 export type UpdateMyProfileV1ProfilesMePatchError = (HTTPValidationError);
 
-export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostData = {
-    body: AvatarUploadUrlRequest;
-};
-
-export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostResponse = (AvatarUploadUrlResponse);
-
-export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostError = (HTTPValidationError);
-
 export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostData = {
     body: AvatarConfirmRequest;
 };
@@ -8104,13 +8386,13 @@ export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostResponse = (PublicPr
 
 export type ConfirmAvatarUploadV1ProfilesMeAvatarConfirmPostError = (HTTPValidationError);
 
-export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostData = {
-    body: BannerUploadUrlRequest;
+export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostData = {
+    body: AvatarUploadUrlRequest;
 };
 
-export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostResponse = (BannerUploadUrlResponse);
+export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostResponse = (AvatarUploadUrlResponse);
 
-export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostError = (HTTPValidationError);
+export type RequestAvatarUploadUrlV1ProfilesMeAvatarUploadUrlPostError = (HTTPValidationError);
 
 export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostData = {
     body: BannerConfirmRequest;
@@ -8119,6 +8401,14 @@ export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostData = {
 export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostResponse = (PublicProfileResponse);
 
 export type ConfirmBannerUploadV1ProfilesMeBannerConfirmPostError = (HTTPValidationError);
+
+export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostData = {
+    body: BannerUploadUrlRequest;
+};
+
+export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostResponse = (BannerUploadUrlResponse);
+
+export type RequestBannerUploadUrlV1ProfilesMeBannerUploadUrlPostError = (HTTPValidationError);
 
 export type GetPublicProfileV1ProfilesUserIdGetData = {
     path: {
@@ -8129,14 +8419,6 @@ export type GetPublicProfileV1ProfilesUserIdGetData = {
 export type GetPublicProfileV1ProfilesUserIdGetResponse = (PublicProfileResponse);
 
 export type GetPublicProfileV1ProfilesUserIdGetError = (HTTPValidationError);
-
-export type CreateProjectV1ProjectsPostData = {
-    body: ProjectCreateRequest;
-};
-
-export type CreateProjectV1ProjectsPostResponse = (ProjectResponse);
-
-export type CreateProjectV1ProjectsPostError = (HTTPValidationError);
 
 export type ListProjectsV1ProjectsGetData = {
     query: {
@@ -8150,6 +8432,24 @@ export type ListProjectsV1ProjectsGetData = {
 export type ListProjectsV1ProjectsGetResponse = (ProjectsResponse);
 
 export type ListProjectsV1ProjectsGetError = (HTTPValidationError);
+
+export type CreateProjectV1ProjectsPostData = {
+    body: ProjectCreateRequest;
+};
+
+export type CreateProjectV1ProjectsPostResponse = (ProjectResponse);
+
+export type CreateProjectV1ProjectsPostError = (HTTPValidationError);
+
+export type DeleteProjectV1ProjectsProjectIdDeleteData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type DeleteProjectV1ProjectsProjectIdDeleteResponse = (void);
+
+export type DeleteProjectV1ProjectsProjectIdDeleteError = (HTTPValidationError);
 
 export type GetProjectV1ProjectsProjectIdGetData = {
     path: {
@@ -8172,46 +8472,103 @@ export type UpdateProjectV1ProjectsProjectIdPatchResponse = (ProjectResponse);
 
 export type UpdateProjectV1ProjectsProjectIdPatchError = (HTTPValidationError);
 
-export type DeleteProjectV1ProjectsProjectIdDeleteData = {
+export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostData = {
     path: {
         project_id: string;
     };
 };
 
-export type DeleteProjectV1ProjectsProjectIdDeleteResponse = (void);
+export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostResponse = (ProjectResponse);
 
-export type DeleteProjectV1ProjectsProjectIdDeleteError = (HTTPValidationError);
+export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostError = (HTTPValidationError);
 
-export type SubmitProposalV1ProjectsProjectIdProposalsPostData = {
-    body: ProposalCreateRequest;
+export type CloseDeliveredProjectV1ProjectsProjectIdClosePostData = {
     path: {
         project_id: string;
     };
 };
 
-export type SubmitProposalV1ProjectsProjectIdProposalsPostResponse = (ProposalResponse);
+export type CloseDeliveredProjectV1ProjectsProjectIdClosePostResponse = (ProjectResponse);
 
-export type SubmitProposalV1ProjectsProjectIdProposalsPostError = (HTTPValidationError);
+export type CloseDeliveredProjectV1ProjectsProjectIdClosePostError = (HTTPValidationError);
 
-export type ListProjectProposalsV1ProjectsProjectIdProposalsGetData = {
+export type ListDisputesV1ProjectsProjectIdDisputesGetData = {
     path: {
         project_id: string;
     };
 };
 
-export type ListProjectProposalsV1ProjectsProjectIdProposalsGetResponse = (ProposalsResponse);
+export type ListDisputesV1ProjectsProjectIdDisputesGetResponse = (DisputesResponse);
 
-export type ListProjectProposalsV1ProjectsProjectIdProposalsGetError = (HTTPValidationError);
+export type ListDisputesV1ProjectsProjectIdDisputesGetError = (HTTPValidationError);
 
-export type ListMyProjectProposalsV1ProjectsProjectIdProposalsMineGetData = {
+export type CreateDisputeV1ProjectsProjectIdDisputesPostData = {
+    body: DisputeCreateRequest;
     path: {
         project_id: string;
     };
 };
 
-export type ListMyProjectProposalsV1ProjectsProjectIdProposalsMineGetResponse = (ProposalsResponse);
+export type CreateDisputeV1ProjectsProjectIdDisputesPostResponse = (DisputeResponse);
 
-export type ListMyProjectProposalsV1ProjectsProjectIdProposalsMineGetError = (HTTPValidationError);
+export type CreateDisputeV1ProjectsProjectIdDisputesPostError = (HTTPValidationError);
+
+export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetData = {
+    path: {
+        dispute_id: string;
+        project_id: string;
+    };
+};
+
+export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetResponse = (DisputeResponse);
+
+export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetError = (HTTPValidationError);
+
+export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetData = {
+    path: {
+        project_id: string;
+    };
+    query?: {
+        before?: (string | null);
+        limit?: number;
+    };
+};
+
+export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetResponse = (WorkspaceMessagesResponse);
+
+export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetError = (HTTPValidationError);
+
+export type CreateWorkspaceMessageV1ProjectsProjectIdMessagesPostData = {
+    body: WorkspaceMessageCreateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type CreateWorkspaceMessageV1ProjectsProjectIdMessagesPostResponse = (WorkspaceMessageResponse);
+
+export type CreateWorkspaceMessageV1ProjectsProjectIdMessagesPostError = (HTTPValidationError);
+
+export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostData = {
+    body: WorkspaceUploadCreateRequest;
+    path: {
+        project_id: string;
+    };
+};
+
+export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostResponse = (WorkspaceUploadSessionResponse);
+
+export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostError = (HTTPValidationError);
+
+export type ListMilestonesV1ProjectsProjectIdMilestonesGetData = {
+    path: {
+        project_id: string;
+    };
+};
+
+export type ListMilestonesV1ProjectsProjectIdMilestonesGetResponse = (MilestonesResponse);
+
+export type ListMilestonesV1ProjectsProjectIdMilestonesGetError = (HTTPValidationError);
 
 export type CreateMilestoneV1ProjectsProjectIdMilestonesPostData = {
     body: MilestoneCreateRequest;
@@ -8223,16 +8580,6 @@ export type CreateMilestoneV1ProjectsProjectIdMilestonesPostData = {
 export type CreateMilestoneV1ProjectsProjectIdMilestonesPostResponse = (MilestoneResponse);
 
 export type CreateMilestoneV1ProjectsProjectIdMilestonesPostError = (HTTPValidationError);
-
-export type ListMilestonesV1ProjectsProjectIdMilestonesGetData = {
-    path: {
-        project_id: string;
-    };
-};
-
-export type ListMilestonesV1ProjectsProjectIdMilestonesGetResponse = (MilestonesResponse);
-
-export type ListMilestonesV1ProjectsProjectIdMilestonesGetError = (HTTPValidationError);
 
 export type FinalizeMilestonePlanV1ProjectsProjectIdMilestonesFinalizePostData = {
     path: {
@@ -8254,16 +8601,16 @@ export type ReopenMilestonePlanV1ProjectsProjectIdMilestonesReopenPostResponse =
 
 export type ReopenMilestonePlanV1ProjectsProjectIdMilestonesReopenPostError = (HTTPValidationError);
 
-export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostData = {
+export type DeleteMilestoneV1ProjectsProjectIdMilestonesMilestoneIdDeleteData = {
     path: {
         milestone_id: string;
         project_id: string;
     };
 };
 
-export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostResponse = (MilestoneFundingResponse);
+export type DeleteMilestoneV1ProjectsProjectIdMilestonesMilestoneIdDeleteResponse = (void);
 
-export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostError = (HTTPValidationError);
+export type DeleteMilestoneV1ProjectsProjectIdMilestonesMilestoneIdDeleteError = (HTTPValidationError);
 
 export type UpdateMilestoneV1ProjectsProjectIdMilestonesMilestoneIdPatchData = {
     body: MilestoneUpdateRequest;
@@ -8277,16 +8624,16 @@ export type UpdateMilestoneV1ProjectsProjectIdMilestonesMilestoneIdPatchResponse
 
 export type UpdateMilestoneV1ProjectsProjectIdMilestonesMilestoneIdPatchError = (HTTPValidationError);
 
-export type DeleteMilestoneV1ProjectsProjectIdMilestonesMilestoneIdDeleteData = {
+export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetData = {
     path: {
         milestone_id: string;
         project_id: string;
     };
 };
 
-export type DeleteMilestoneV1ProjectsProjectIdMilestonesMilestoneIdDeleteResponse = (void);
+export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetResponse = (DeliverablesResponse);
 
-export type DeleteMilestoneV1ProjectsProjectIdMilestonesMilestoneIdDeleteError = (HTTPValidationError);
+export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetError = (HTTPValidationError);
 
 export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesPostData = {
     body: DeliverableSubmitRequest;
@@ -8300,16 +8647,17 @@ export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverable
 
 export type SubmitDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesPostError = (HTTPValidationError);
 
-export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetData = {
+export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePostData = {
     path: {
+        deliverable_id: string;
         milestone_id: string;
         project_id: string;
     };
 };
 
-export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetResponse = (DeliverablesResponse);
+export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePostResponse = (DeliverableResponse);
 
-export type ListDeliverablesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesGetError = (HTTPValidationError);
+export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePostError = (HTTPValidationError);
 
 export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdDownloadGetData = {
     path: {
@@ -8323,7 +8671,7 @@ export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeli
 
 export type DownloadDeliverableFilesV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdDownloadGetError = (HTTPValidationError);
 
-export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePostData = {
+export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdFrameworkPrefillGetData = {
     path: {
         deliverable_id: string;
         milestone_id: string;
@@ -8331,9 +8679,9 @@ export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverabl
     };
 };
 
-export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePostResponse = (DeliverableResponse);
+export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdFrameworkPrefillGetResponse = (FrameworkPrefillResponse);
 
-export type ApproveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePostError = (HTTPValidationError);
+export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdFrameworkPrefillGetError = (HTTPValidationError);
 
 export type RequestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostData = {
     body: DeliverableRevisionRequest;
@@ -8348,59 +8696,58 @@ export type RequestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDe
 
 export type RequestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostError = (HTTPValidationError);
 
-export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdFrameworkPrefillGetData = {
+export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostData = {
     path: {
-        deliverable_id: string;
         milestone_id: string;
         project_id: string;
     };
 };
 
-export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdFrameworkPrefillGetResponse = (FrameworkPrefillResponse);
+export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostResponse = (MilestoneFundingResponse);
 
-export type GetFrameworkPrefillFromDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdFrameworkPrefillGetError = (HTTPValidationError);
+export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostError = (HTTPValidationError);
 
-export type CreateDisputeV1ProjectsProjectIdDisputesPostData = {
-    body: DisputeCreateRequest;
+export type ListProjectProposalsV1ProjectsProjectIdProposalsGetData = {
     path: {
         project_id: string;
     };
 };
 
-export type CreateDisputeV1ProjectsProjectIdDisputesPostResponse = (DisputeResponse);
+export type ListProjectProposalsV1ProjectsProjectIdProposalsGetResponse = (ProposalsResponse);
 
-export type CreateDisputeV1ProjectsProjectIdDisputesPostError = (HTTPValidationError);
+export type ListProjectProposalsV1ProjectsProjectIdProposalsGetError = (HTTPValidationError);
 
-export type ListDisputesV1ProjectsProjectIdDisputesGetData = {
+export type SubmitProposalV1ProjectsProjectIdProposalsPostData = {
+    body: ProposalCreateRequest;
     path: {
         project_id: string;
     };
 };
 
-export type ListDisputesV1ProjectsProjectIdDisputesGetResponse = (DisputesResponse);
+export type SubmitProposalV1ProjectsProjectIdProposalsPostResponse = (ProposalResponse);
 
-export type ListDisputesV1ProjectsProjectIdDisputesGetError = (HTTPValidationError);
+export type SubmitProposalV1ProjectsProjectIdProposalsPostError = (HTTPValidationError);
 
-export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetData = {
-    path: {
-        dispute_id: string;
-        project_id: string;
-    };
-};
-
-export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetResponse = (DisputeResponse);
-
-export type GetDisputeV1ProjectsProjectIdDisputesDisputeIdGetError = (HTTPValidationError);
-
-export type CloseDeliveredProjectV1ProjectsProjectIdClosePostData = {
+export type ListMyProjectProposalsV1ProjectsProjectIdProposalsMineGetData = {
     path: {
         project_id: string;
     };
 };
 
-export type CloseDeliveredProjectV1ProjectsProjectIdClosePostResponse = (ProjectResponse);
+export type ListMyProjectProposalsV1ProjectsProjectIdProposalsMineGetResponse = (ProposalsResponse);
 
-export type CloseDeliveredProjectV1ProjectsProjectIdClosePostError = (HTTPValidationError);
+export type ListMyProjectProposalsV1ProjectsProjectIdProposalsMineGetError = (HTTPValidationError);
+
+export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostData = {
+    path: {
+        project_id: string;
+        proposal_id: string;
+    };
+};
+
+export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostResponse = (ProjectResponse);
+
+export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostError = (HTTPValidationError);
 
 export type ProposeAmendmentV1ProjectsProjectIdProposalsProposalIdAmendmentsPostData = {
     body: AmendmentCreateRequest;
@@ -8461,306 +8808,15 @@ export type WithdrawProposalV1ProjectsProjectIdProposalsProposalIdWithdrawPatchR
 
 export type WithdrawProposalV1ProjectsProjectIdProposalsProposalIdWithdrawPatchError = (HTTPValidationError);
 
-export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostData = {
+export type GetContributorReputationV1ReputationContributorContributorIdGetData = {
     path: {
-        project_id: string;
-        proposal_id: string;
+        contributor_id: string;
     };
 };
 
-export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostResponse = (ProjectResponse);
+export type GetContributorReputationV1ReputationContributorContributorIdGetResponse = (ReputationResponse);
 
-export type AcceptProposalV1ProjectsProjectIdProposalsProposalIdAcceptPostError = (HTTPValidationError);
-
-export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostData = {
-    path: {
-        project_id: string;
-    };
-};
-
-export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostResponse = (ProjectResponse);
-
-export type CancelAcceptanceV1ProjectsProjectIdCancelAcceptancePostError = (HTTPValidationError);
-
-export type CreateOrgProjectV1OrgsOrgIdProjectsPostData = {
-    body: ProjectCreateRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type CreateOrgProjectV1OrgsOrgIdProjectsPostResponse = (ProjectResponse);
-
-export type CreateOrgProjectV1OrgsOrgIdProjectsPostError = (HTTPValidationError);
-
-export type ListOrgProjectsV1OrgsOrgIdProjectsGetData = {
-    path: {
-        org_id: string;
-    };
-    query?: {
-        page?: number;
-        page_size?: number;
-    };
-};
-
-export type ListOrgProjectsV1OrgsOrgIdProjectsGetResponse = (ProjectsResponse);
-
-export type ListOrgProjectsV1OrgsOrgIdProjectsGetError = (HTTPValidationError);
-
-export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetData = {
-    path: {
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetResponse = (ProjectResponse);
-
-export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetError = (HTTPValidationError);
-
-export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteData = {
-    path: {
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteResponse = (void);
-
-export type DeleteOrgProjectV1OrgsOrgIdProjectsProjectIdDeleteError = (HTTPValidationError);
-
-export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostData = {
-    body: OrgProposalCreateRequest;
-    path: {
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostResponse = (ProposalResponse);
-
-export type SubmitOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsPostError = (HTTPValidationError);
-
-export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetData = {
-    path: {
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetResponse = (ProposalsResponse);
-
-export type ListOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGetError = (HTTPValidationError);
-
-export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostData = {
-    body: OrgProposalReassignRequest;
-    path: {
-        org_id: string;
-        proposal_id: string;
-    };
-};
-
-export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostResponse = (ProposalResponse);
-
-export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostError = (HTTPValidationError);
-
-export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteData = {
-    path: {
-        org_id: string;
-        proposal_id: string;
-    };
-};
-
-export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteResponse = (ProposalResponse);
-
-export type WithdrawOrgProposalV1OrgsOrgIdProposalsProposalIdDeleteError = (HTTPValidationError);
-
-export type ListOrgProposalsV1OrgsOrgIdProposalsGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgProposalsV1OrgsOrgIdProposalsGetResponse = (ProposalsResponse);
-
-export type ListOrgProposalsV1OrgsOrgIdProposalsGetError = (HTTPValidationError);
-
-export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetData = {
-    path: {
-        org_id: string;
-    };
-};
-
-export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetResponse = (OrgDeliveriesResponse);
-
-export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetError = (HTTPValidationError);
-
-export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostData = {
-    path: {
-        org_id: string;
-        project_id: string;
-        proposal_id: string;
-    };
-};
-
-export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostResponse = (ProjectResponse);
-
-export type AcceptOrgProposalV1OrgsOrgIdProjectsProjectIdProposalsProposalIdAcceptPostError = (HTTPValidationError);
-
-export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostData = {
-    path: {
-        milestone_id: string;
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostResponse = (MilestoneFundingResponse);
-
-export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostError = (HTTPValidationError);
-
-export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostData = {
-    path: {
-        deliverable_id: string;
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostResponse = (DeliverableResponse);
-
-export type ApproveOrgDeliverableV1OrgsOrgIdProjectsProjectIdDeliverablesDeliverableIdApprovePostError = (HTTPValidationError);
-
-export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostData = {
-    body: DeliverableRevisionRequest;
-    path: {
-        deliverable_id: string;
-        milestone_id: string;
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostResponse = (DeliverableResponse);
-
-export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostError = (HTTPValidationError);
-
-export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostData = {
-    body: DisputeCreateRequest;
-    path: {
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostResponse = (DisputeResponse);
-
-export type CreateOrgDisputeV1OrgsOrgIdProjectsProjectIdDisputesPostError = (HTTPValidationError);
-
-export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostData = {
-    path: {
-        org_id: string;
-        project_id: string;
-    };
-};
-
-export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostResponse = (ProjectResponse);
-
-export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostError = (HTTPValidationError);
-
-export type ListPartnerCatalogV1PartnerCatalogGetData = {
-    headers?: {
-        'X-API-Key'?: (string | null);
-    };
-    query?: {
-        attestation_status?: ('pending_acceptance' | 'attested' | 'conditionally_attested' | 'none' | null);
-        category?: (string | null);
-        complexity?: (number | null);
-        function?: (string | null);
-        industry?: (string | null);
-        jurisdiction?: (string | null);
-        license_type?: (string | null);
-        lifecycle_stage?: (string | null);
-        org_size?: (string | null);
-        page?: number;
-        page_size?: number;
-        price_max?: (number | string | null);
-        price_min?: (number | string | null);
-        q?: (string | null);
-        sector?: (string | null);
-        sort?: 'newest' | 'top-rated' | 'most-purchased' | 'price_asc' | 'price_desc';
-    };
-};
-
-export type ListPartnerCatalogV1PartnerCatalogGetResponse = (ExploreFrameworkListResponse);
-
-export type ListPartnerCatalogV1PartnerCatalogGetError = (HTTPValidationError);
-
-export type GetPartnerFrameworkDetailV1PartnerCatalogFrameworkIdGetData = {
-    headers?: {
-        'X-API-Key'?: (string | null);
-    };
-    path: {
-        framework_id: string;
-    };
-};
-
-export type GetPartnerFrameworkDetailV1PartnerCatalogFrameworkIdGetResponse = (PartnerFrameworkDetailResponse);
-
-export type GetPartnerFrameworkDetailV1PartnerCatalogFrameworkIdGetError = (HTTPValidationError);
-
-export type GetPartnerFrameworkPreviewV1PartnerCatalogFrameworkIdPreviewGetData = {
-    headers?: {
-        'X-API-Key'?: (string | null);
-    };
-    path: {
-        framework_id: string;
-    };
-};
-
-export type GetPartnerFrameworkPreviewV1PartnerCatalogFrameworkIdPreviewGetResponse = (PartnerPreviewArtifactResponse);
-
-export type GetPartnerFrameworkPreviewV1PartnerCatalogFrameworkIdPreviewGetError = (HTTPValidationError);
-
-export type ListPartnerFrameworkAttestationsV1PartnerCatalogFrameworkIdAttestationsGetData = {
-    headers?: {
-        'X-API-Key'?: (string | null);
-    };
-    path: {
-        framework_id: string;
-    };
-};
-
-export type ListPartnerFrameworkAttestationsV1PartnerCatalogFrameworkIdAttestationsGetResponse = (PartnerAttestationsResponse);
-
-export type ListPartnerFrameworkAttestationsV1PartnerCatalogFrameworkIdAttestationsGetError = (HTTPValidationError);
-
-export type InitiatePartnerFrameworkPurchaseV1PartnerFrameworksFrameworkIdPurchasePostData = {
-    body: PartnerPurchaseRequest;
-    headers?: {
-        'X-API-Key'?: (string | null);
-    };
-    path: {
-        framework_id: string;
-    };
-};
-
-export type InitiatePartnerFrameworkPurchaseV1PartnerFrameworksFrameworkIdPurchasePostResponse = (PartnerPurchaseResponse);
-
-export type InitiatePartnerFrameworkPurchaseV1PartnerFrameworksFrameworkIdPurchasePostError = (HTTPValidationError);
-
-export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetData = {
-    headers?: {
-        'X-API-Key'?: (string | null);
-    };
-    path: {
-        transaction_id: string;
-    };
-};
-
-export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetResponse = (PartnerPurchaseStatusResponse);
-
-export type GetPartnerPurchaseStatusV1PartnerPurchasesTransactionIdGetError = (HTTPValidationError);
+export type GetContributorReputationV1ReputationContributorContributorIdGetError = (HTTPValidationError);
 
 export type GetFrameworkReputationV1ReputationFrameworkFrameworkIdGetData = {
     path: {
@@ -8771,16 +8827,6 @@ export type GetFrameworkReputationV1ReputationFrameworkFrameworkIdGetData = {
 export type GetFrameworkReputationV1ReputationFrameworkFrameworkIdGetResponse = (ReputationResponse);
 
 export type GetFrameworkReputationV1ReputationFrameworkFrameworkIdGetError = (HTTPValidationError);
-
-export type GetContributorReputationV1ReputationContributorContributorIdGetData = {
-    path: {
-        contributor_id: string;
-    };
-};
-
-export type GetContributorReputationV1ReputationContributorContributorIdGetResponse = (ReputationResponse);
-
-export type GetContributorReputationV1ReputationContributorContributorIdGetError = (HTTPValidationError);
 
 export type GetOperatorReputationV1ReputationOperatorOperatorIdGetData = {
     path: {
@@ -8804,6 +8850,27 @@ export type CreateSavedSearchV1SavedSearchesPostResponse = (SavedSearchResponse)
 
 export type CreateSavedSearchV1SavedSearchesPostError = (HTTPValidationError);
 
+export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteData = {
+    path: {
+        saved_search_id: string;
+    };
+};
+
+export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteResponse = (void);
+
+export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteError = (HTTPValidationError);
+
+export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchData = {
+    body: SavedSearchUpdateRequest;
+    path: {
+        saved_search_id: string;
+    };
+};
+
+export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchResponse = (SavedSearchResponse);
+
+export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchError = (HTTPValidationError);
+
 export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetData = {
     path: {
         saved_search_id: string;
@@ -8817,73 +8884,6 @@ export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetData = {
 export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetResponse = (ExploreFrameworkListResponse);
 
 export type RunSavedSearchV1SavedSearchesSavedSearchIdRunGetError = (HTTPValidationError);
-
-export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchData = {
-    body: SavedSearchUpdateRequest;
-    path: {
-        saved_search_id: string;
-    };
-};
-
-export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchResponse = (SavedSearchResponse);
-
-export type UpdateSavedSearchV1SavedSearchesSavedSearchIdPatchError = (HTTPValidationError);
-
-export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteData = {
-    path: {
-        saved_search_id: string;
-    };
-};
-
-export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteResponse = (void);
-
-export type DeleteSavedSearchV1SavedSearchesSavedSearchIdDeleteError = (HTTPValidationError);
-
-export type StartIdentityVerificationV1SettingsKycSessionPostResponse = (KycVerificationSessionResponse);
-
-export type StartIdentityVerificationV1SettingsKycSessionPostError = unknown;
-
-export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
-
-export type GetKycStatusV1SettingsKycGetError = unknown;
-
-export type SyncKycFromReturnV1SettingsKycSyncPostData = {
-    body: KycSyncRequest;
-};
-
-export type SyncKycFromReturnV1SettingsKycSyncPostResponse = (KycStatusResponse);
-
-export type SyncKycFromReturnV1SettingsKycSyncPostError = (HTTPValidationError);
-
-export type ListSessionsV1SettingsSessionsGetResponse = (SessionsResponse);
-
-export type ListSessionsV1SettingsSessionsGetError = unknown;
-
-export type RevokeOtherSessionsV1SettingsSessionsDeleteResponse = (RegisterResponse);
-
-export type RevokeOtherSessionsV1SettingsSessionsDeleteError = unknown;
-
-export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetResponse = (NotificationPreferencesResponse);
-
-export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetError = unknown;
-
-export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchData = {
-    body: NotificationPreferencesUpdateRequest;
-};
-
-export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchResponse = (NotificationPreferencesResponse);
-
-export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchError = (HTTPValidationError);
-
-export type RevokeSessionV1SettingsSessionsSessionIdDeleteData = {
-    path: {
-        session_id: string;
-    };
-};
-
-export type RevokeSessionV1SettingsSessionsSessionIdDeleteResponse = (RegisterResponse);
-
-export type RevokeSessionV1SettingsSessionsSessionIdDeleteError = (HTTPValidationError);
 
 export type RequestEmailChangeV1SettingsAccountEmailChangePostData = {
     body: EmailChangeRequest;
@@ -8901,6 +8901,52 @@ export type ConfirmEmailChangeV1SettingsAccountEmailChangeConfirmPostResponse = 
 
 export type ConfirmEmailChangeV1SettingsAccountEmailChangeConfirmPostError = (HTTPValidationError);
 
+export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
+
+export type GetKycStatusV1SettingsKycGetError = unknown;
+
+export type StartIdentityVerificationV1SettingsKycSessionPostResponse = (KycVerificationSessionResponse);
+
+export type StartIdentityVerificationV1SettingsKycSessionPostError = unknown;
+
+export type SyncKycFromReturnV1SettingsKycSyncPostData = {
+    body: KycSyncRequest;
+};
+
+export type SyncKycFromReturnV1SettingsKycSyncPostResponse = (KycStatusResponse);
+
+export type SyncKycFromReturnV1SettingsKycSyncPostError = (HTTPValidationError);
+
+export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetResponse = (NotificationPreferencesResponse);
+
+export type GetNotificationPreferencesV1SettingsNotificationPreferencesGetError = unknown;
+
+export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchData = {
+    body: NotificationPreferencesUpdateRequest;
+};
+
+export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchResponse = (NotificationPreferencesResponse);
+
+export type UpdateNotificationPreferencesV1SettingsNotificationPreferencesPatchError = (HTTPValidationError);
+
+export type RevokeOtherSessionsV1SettingsSessionsDeleteResponse = (RegisterResponse);
+
+export type RevokeOtherSessionsV1SettingsSessionsDeleteError = unknown;
+
+export type ListSessionsV1SettingsSessionsGetResponse = (SessionsResponse);
+
+export type ListSessionsV1SettingsSessionsGetError = unknown;
+
+export type RevokeSessionV1SettingsSessionsSessionIdDeleteData = {
+    path: {
+        session_id: string;
+    };
+};
+
+export type RevokeSessionV1SettingsSessionsSessionIdDeleteResponse = (RegisterResponse);
+
+export type RevokeSessionV1SettingsSessionsSessionIdDeleteError = (HTTPValidationError);
+
 export type JoinWaitlistV1WaitlistPostData = {
     body: WaitlistJoinRequest;
 };
@@ -8909,15 +8955,15 @@ export type JoinWaitlistV1WaitlistPostResponse = (WaitlistJoinResponse);
 
 export type JoinWaitlistV1WaitlistPostError = (HTTPValidationError);
 
-export type IngestStripeWebhookV1WebhooksStripePostData = {
+export type IngestPaystackWebhookV1WebhooksPaystackPostData = {
     headers?: {
-        'Stripe-Signature'?: (string | null);
+        'x-paystack-signature'?: (string | null);
     };
 };
 
-export type IngestStripeWebhookV1WebhooksStripePostResponse = (WebhookIngestResponse);
+export type IngestPaystackWebhookV1WebhooksPaystackPostResponse = (WebhookIngestResponse);
 
-export type IngestStripeWebhookV1WebhooksStripePostError = (HTTPValidationError);
+export type IngestPaystackWebhookV1WebhooksPaystackPostError = (HTTPValidationError);
 
 export type IngestPersonaWebhookV1WebhooksPersonaPostData = {
     headers?: {
@@ -8929,45 +8975,15 @@ export type IngestPersonaWebhookV1WebhooksPersonaPostResponse = (WebhookIngestRe
 
 export type IngestPersonaWebhookV1WebhooksPersonaPostError = (HTTPValidationError);
 
-export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostData = {
-    body: WorkspaceUploadCreateRequest;
-    path: {
-        project_id: string;
+export type IngestStripeWebhookV1WebhooksStripePostData = {
+    headers?: {
+        'Stripe-Signature'?: (string | null);
     };
 };
 
-export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostResponse = (WorkspaceUploadSessionResponse);
+export type IngestStripeWebhookV1WebhooksStripePostResponse = (WebhookIngestResponse);
 
-export type CreateWorkspaceUploadSessionV1ProjectsProjectIdMessagesUploadsPostError = (HTTPValidationError);
-
-export type CreateWorkspaceMessageV1ProjectsProjectIdMessagesPostData = {
-    body: WorkspaceMessageCreateRequest;
-    path: {
-        project_id: string;
-    };
-};
-
-export type CreateWorkspaceMessageV1ProjectsProjectIdMessagesPostResponse = (WorkspaceMessageResponse);
-
-export type CreateWorkspaceMessageV1ProjectsProjectIdMessagesPostError = (HTTPValidationError);
-
-export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetData = {
-    path: {
-        project_id: string;
-    };
-    query?: {
-        before?: (string | null);
-        limit?: number;
-    };
-};
-
-export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetResponse = (WorkspaceMessagesResponse);
-
-export type ListWorkspaceMessagesV1ProjectsProjectIdMessagesGetError = (HTTPValidationError);
-
-export type GetHealthV1HealthGetResponse = (HealthResponse);
-
-export type GetHealthV1HealthGetError = (HealthResponse);
+export type IngestStripeWebhookV1WebhooksStripePostError = (HTTPValidationError);
 
 // Compatibility aliases used by application code.
 export type ExploreAttestationStatus = ListFrameworksV1ExploreFrameworksGetData["query"] extends infer Query ? NonNullable<Query extends { attestation_status?: infer Value } ? Value : never> : never;

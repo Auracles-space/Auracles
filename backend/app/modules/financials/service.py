@@ -22,8 +22,9 @@ from app.core.security import (
     encrypt_payout_provider_account_id,
     hash_payout_provider_account_id,
 )
-from app.integrations import s3, stripe
-from app.integrations.payment_router import select_provider
+from app.integrations import paystack, s3, stripe
+from app.integrations.payment_router import PaymentProvider, select_provider
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
@@ -864,14 +865,32 @@ async def _create_pending_purchase_transaction(
     db: AsyncSession,
     *,
     operator_id: UUID,
-    customer_id: str,
+    customer_id: str | None,
     payee_id: UUID | None,
     payee_org_id: UUID | None,
     framework_id: UUID,
     amount: Decimal,
     currency: str,
+    provider: PaymentProvider = "stripe",
 ) -> UUID:
-    """Persist the local purchase record before provider confirmation."""
+    """Persist the local purchase record before provider confirmation.
+
+    Args:
+        db: Async SQLAlchemy session.
+        operator_id: UUID of the paying Operator.
+        customer_id: Stripe customer to remember on the account, or None on
+            rails that hold no reusable customer object.
+        payee_id: Selling Contributor, when the seller is an individual.
+        payee_org_id: Selling Organization, when the seller is an org.
+        framework_id: Framework being licensed.
+        amount: Charge amount in major units.
+        currency: ISO 4217 code the charge is denominated in.
+        provider: Rail settling the charge, stamped on the row so the webhook
+            can refuse an event arriving on the wrong one.
+
+    Returns:
+        UUID of the newly created pending transaction.
+    """
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -881,7 +900,7 @@ async def _create_pending_purchase_transaction(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token.",
             )
-        if operator.stripe_customer_id is None:
+        if customer_id is not None and operator.stripe_customer_id is None:
             operator.stripe_customer_id = customer_id
         transaction = Transaction(
             payer_id=operator_id,
@@ -893,7 +912,7 @@ async def _create_pending_purchase_transaction(
             net_amount=amount,
             transaction_type="purchase",
             status="pending",
-            provider="stripe",
+            provider=provider,
             ref_id=framework_id,
             ref_type="framework",
         )
@@ -952,6 +971,7 @@ async def _mark_purchase_initiated(
     provider_ref: str,
     framework_id: UUID,
     license_type: str,
+    provider: PaymentProvider = "stripe",
 ) -> None:
     """Attach provider intent metadata and audit a checkout start."""
     if db.in_transaction():
@@ -971,7 +991,7 @@ async def _mark_purchase_initiated(
             target_type="transaction",
             target_id=transaction.id,
             metadata={
-                "provider": "stripe",
+                "provider": provider,
                 "provider_ref": _masked_provider_ref(provider_ref),
                 "framework_id": str(framework_id),
                 "license_type": license_type,
@@ -986,6 +1006,7 @@ async def _mark_purchase_failed(
     transaction_id: UUID,
     framework_id: UUID,
     license_type: str,
+    provider: PaymentProvider = "stripe",
 ) -> None:
     """Mark checkout failure without granting a License."""
     if db.in_transaction():
@@ -1005,11 +1026,115 @@ async def _mark_purchase_failed(
             target_type="transaction",
             target_id=transaction.id,
             metadata={
-                "provider": "stripe",
+                "provider": provider,
                 "framework_id": str(framework_id),
                 "license_type": license_type,
             },
         )
+
+
+async def _start_paystack_purchase(
+    db: AsyncSession,
+    *,
+    operator_id: UUID,
+    operator_email: str,
+    payee_id: UUID | None,
+    payee_org_id: UUID | None,
+    framework_id: UUID,
+    license_type: str,
+    amount: Decimal,
+    currency: str,
+) -> PurchaseResponse:
+    """Book a pending Paystack purchase and return its hosted checkout URL.
+
+    Paystack has no stored-payment-method equivalent, so there is no customer
+    to create first: the transaction row is written, the charge is initialized,
+    and the browser is sent to Paystack's own page to enter card details.
+
+    Args:
+        db: Async SQLAlchemy session.
+        operator_id: UUID of the paying Operator.
+        operator_email: Email Paystack sends the receipt to.
+        payee_id: Selling Contributor, when the seller is an individual.
+        payee_org_id: Selling Organization, when the seller is an org.
+        framework_id: Framework being licensed.
+        license_type: License tier being bought, echoed back by the webhook.
+        amount: Charge amount in major units.
+        currency: ISO 4217 code the charge is denominated in.
+
+    Returns:
+        The pending transaction id and the URL to redirect the browser to.
+
+    Raises:
+        HTTPException(502): Paystack could not initialize the charge. The
+            pending transaction is marked failed first so it never strands.
+    """
+    transaction_id = await _create_pending_purchase_transaction(
+        db=db,
+        operator_id=operator_id,
+        customer_id=None,
+        payee_id=payee_id,
+        payee_org_id=payee_org_id,
+        framework_id=framework_id,
+        amount=amount,
+        currency=currency,
+        provider="paystack",
+    )
+
+    try:
+        initialized = await paystack.initialize_transaction(
+            email=operator_email,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "purchase",
+                "framework_id": str(framework_id),
+                "license_type": license_type,
+            },
+        )
+    except PaystackProviderError as exc:
+        await _mark_purchase_failed(
+            db=db,
+            operator_id=operator_id,
+            transaction_id=transaction_id,
+            framework_id=framework_id,
+            license_type=license_type,
+            provider="paystack",
+        )
+        logger.bind(
+            module="financials",
+            action="create_framework_purchase",
+            user_id=operator_id,
+            framework_id=framework_id,
+            transaction_id=transaction_id,
+        ).error("paystack_initialize_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_purchase_initiated(
+        db=db,
+        operator_id=operator_id,
+        transaction_id=transaction_id,
+        provider_ref=initialized.reference,
+        framework_id=framework_id,
+        license_type=license_type,
+        provider="paystack",
+    )
+    logger.bind(
+        module="financials",
+        action="create_framework_purchase",
+        user_id=operator_id,
+        framework_id=framework_id,
+        transaction_id=transaction_id,
+    ).info("purchase_initiated")
+    return PurchaseResponse(
+        transaction_id=transaction_id,
+        provider="paystack",
+        authorization_url=initialized.authorization_url,
+    )
 
 
 async def create_framework_purchase(
@@ -1019,7 +1144,12 @@ async def create_framework_purchase(
     framework_id: UUID,
     payload: PurchaseRequest,
 ) -> PurchaseResponse:
-    """Create a pending transaction and Stripe PaymentIntent for checkout."""
+    """Create a pending transaction and provider checkout handoff.
+
+    The payment rail is chosen from the payer's stated country: Nigerian
+    payers settle on Paystack's hosted redirect flow, everyone else on a
+    Stripe PaymentIntent confirmed in-page.
+    """
     operator_id = operator.id
     operator_email = operator.email
     operator_display_name = operator.display_name
@@ -1118,6 +1248,20 @@ async def create_framework_purchase(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Only USD purchases are supported.",
+        )
+
+    provider = select_provider(user_country=payload.country, currency=currency)
+    if provider == "paystack":
+        return await _start_paystack_purchase(
+            db=db,
+            operator_id=operator_id,
+            operator_email=operator_email,
+            payee_id=contributor_id,
+            payee_org_id=seller.org_id,
+            framework_id=framework_id,
+            license_type=payload.license_type,
+            amount=amount,
+            currency=currency,
         )
 
     try:

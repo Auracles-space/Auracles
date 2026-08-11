@@ -17,6 +17,7 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.main import app
 from app.modules.auth.models import User, UserRole
@@ -49,6 +50,16 @@ class FakeStripePaymentIntent:
         """Store the provider intent id and browser client secret."""
         self.id = payment_intent_id
         self.client_secret = client_secret
+
+
+class FakePaystackTransaction:
+    """Small stand-in for a Paystack initialized transaction result."""
+
+    def __init__(self, reference: str, authorization_url: str) -> None:
+        """Store the charge reference and hosted checkout URL."""
+        self.reference = reference
+        self.authorization_url = authorization_url
+        self.access_code = "acc_purchase_123"
 
 
 async def reset_purchase_state() -> None:
@@ -91,6 +102,7 @@ async def purchase_context(
     calls: dict[str, list[Any]] = {
         "customers": [],
         "payment_intents": [],
+        "paystack_transactions": [],
     }
 
     await engine.dispose()
@@ -133,10 +145,39 @@ async def purchase_context(
         "create_customer",
         fake_create_customer,
     )
+
+    async def fake_initialize_transaction(
+        *,
+        email: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        callback_url: str | None = None,
+    ) -> FakePaystackTransaction:
+        """Record Paystack initialization and return a hosted checkout URL."""
+        calls["paystack_transactions"].append(
+            {
+                "email": email,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+                "callback_url": callback_url,
+            }
+        )
+        return FakePaystackTransaction(
+            "auracles_ref_123",
+            "https://checkout.paystack.com/auracles_ref_123",
+        )
+
     monkeypatch.setattr(
         financials_service.stripe,
         "create_payment_intent",
         fake_create_payment_intent,
+    )
+    monkeypatch.setattr(
+        financials_service.paystack,
+        "initialize_transaction",
+        fake_initialize_transaction,
     )
     try:
         yield calls
@@ -870,3 +911,187 @@ async def test_failed_payment_provider_marks_purchase_transaction_failed(
     assert license_row is None
     assert audit is not None
     assert audit.target_id == transaction.id
+
+
+async def test_nigerian_operator_checks_out_on_paystack(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """A payer in Nigeria is routed to Paystack and gets a redirect URL.
+
+    Paystack has no client-secret equivalent: the browser is sent to a hosted
+    page, so the response carries `authorization_url` and no client secret.
+    """
+    contributor_id = await create_user_with_roles(
+        "ngn-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "ngn-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        license_types=["single_user", "team", "organizational"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team", "country": "NG"},
+    )
+
+    async with async_session_factory() as session:
+        operator = await session.get(User, operator_id)
+        transaction = await session.scalar(select(Transaction))
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["provider"] == "paystack"
+    assert body["authorization_url"] == (
+        "https://checkout.paystack.com/auracles_ref_123"
+    )
+    assert body["client_secret"] is None
+    assert transaction is not None
+    assert transaction.provider == "paystack"
+    assert transaction.provider_ref == "auracles_ref_123"
+    assert transaction.status == "pending"
+    # The Paystack rail stores nothing on the customer: no Stripe customer is
+    # created, so an NG buyer never acquires one as a side effect of checkout.
+    assert operator is not None
+    assert operator.stripe_customer_id is None
+    assert purchase_context["customers"] == []
+    assert purchase_context["payment_intents"] == []
+    assert purchase_context["paystack_transactions"] == [
+        {
+            "email": "ngn-operator@auracles.space",
+            "amount": Decimal("149.00"),
+            "currency": "USD",
+            "metadata": {
+                "transaction_id": str(transaction.id),
+                "kind": "purchase",
+                "framework_id": str(framework_id),
+                "license_type": "team",
+            },
+            "callback_url": None,
+        }
+    ]
+
+
+async def test_omitted_country_still_checks_out_on_stripe(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Country is optional, so an omitted value keeps the existing rail."""
+    contributor_id = await create_user_with_roles(
+        "default-rail-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "default-rail-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        license_types=["single_user", "team"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["provider"] == "stripe"
+    assert body["client_secret"] == "pi_secret_123"
+    assert body["authorization_url"] is None
+    assert transaction is not None
+    assert transaction.provider == "stripe"
+    assert purchase_context["paystack_transactions"] == []
+
+
+async def test_paystack_failure_marks_purchase_failed(
+    client: AsyncClient,
+    migrated_database: None,
+    monkeypatch: pytest.MonkeyPatch,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """A Paystack outage fails the pending transaction instead of stranding it.
+
+    Parity with the Stripe path: the local row must never sit `pending`
+    forever when the provider call did not succeed.
+    """
+    contributor_id = await create_user_with_roles(
+        "ngn-fail-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "ngn-fail-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        license_types=["single_user", "team"],
+    )
+
+    async def fake_initialize_failure(**_kwargs: Any) -> None:
+        """Fail initialization the way an unreachable Paystack would."""
+        raise PaystackProviderError("paystack unavailable")
+
+    monkeypatch.setattr(
+        financials_service.paystack,
+        "initialize_transaction",
+        fake_initialize_failure,
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team", "country": "NG"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+        license_row = await session.scalar(select(License))
+
+    assert response.status_code == 502
+    assert transaction is not None
+    assert transaction.status == "failed"
+    assert transaction.provider == "paystack"
+    assert transaction.provider_ref is None
+    assert license_row is None
+
+
+async def test_purchase_rejects_malformed_country(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Country is a 2-letter ISO code; anything else is refused by Pydantic."""
+    contributor_id = await create_user_with_roles(
+        "bad-country-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "bad-country-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        license_types=["single_user", "team"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team", "country": "Nigeria"},
+    )
+
+    assert response.status_code == 422
