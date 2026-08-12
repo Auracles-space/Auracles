@@ -45,7 +45,12 @@ const MAX_UPDATES_PER_SAVE = 10;
 const CONFIG_GROUPS: { title: string; keys: ConfigKey[] }[] = [
   {
     title: "Financial",
-    keys: ["commission_rate", "min_payout_usd", "refund_window_hours"],
+    keys: [
+      "commission_rate",
+      "min_payout_usd",
+      "min_payout_ngn",
+      "refund_window_hours",
+    ],
   },
   {
     title: "Attestation fees",
