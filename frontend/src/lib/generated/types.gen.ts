@@ -3640,11 +3640,16 @@ export type OrgPaymentMethodsResponse = {
  *
  * The organization's registered ``country`` is authoritative for provider
  * routing, so — unlike the individual request — no country is accepted here.
+ * Which fields are required follows from that country: the Stripe rail needs
+ * only redirect URLs, while Paystack has no hosted flow and needs the org's
+ * NUBAN account number and bank code.
  */
 export type OrgPayoutAccountOnboardRequest = {
+    account_number?: (string | null);
+    bank_code?: (string | null);
     provider: 'stripe' | 'paystack';
-    refresh_url: string;
-    return_url: string;
+    refresh_url?: (string | null);
+    return_url?: (string | null);
 };
 
 /**

@@ -7,6 +7,11 @@ import {
 import { PayoutAccountGate } from "./payout-account-gate";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
+  listPayoutBanks: vi.fn(async () => ({
+    data: { banks: [{ code: "044", name: "Access Bank" }] },
+    error: undefined,
+    response: { ok: true },
+  })),
   onboardOrgPayoutAccount: vi.fn(),
   updateOrgAttestorApplication: vi.fn(),
 }));
@@ -111,5 +116,55 @@ describe("PayoutAccountGate", () => {
     expect(
       screen.queryByRole("button", { name: /set up payout account/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("collects bank details and onboards a Nigerian org via Paystack", async () => {
+    // On an NGN deployment Stripe Connect cannot pay out at all, so the gate
+    // must register the org's bank account rather than redirect to a hosted
+    // flow that would 422 on the routing check.
+    vi.stubEnv("NEXT_PUBLIC_PLATFORM_CURRENCY", "NGN");
+    vi.resetModules();
+    const { PayoutAccountGate: NgnGate } = await import("./payout-account-gate");
+
+    vi.mocked(onboardOrgPayoutAccount).mockResolvedValue({
+      data: {
+        account_name: "ATTESTOR ORG LLC",
+        onboarding_url: null,
+        payout_account: { id: "acct-uuid-ng" },
+        provider: "paystack",
+      },
+      error: undefined,
+    } as never);
+    vi.mocked(updateOrgAttestorApplication).mockResolvedValue({
+      data: {},
+      error: undefined,
+    } as never);
+    const onChange = vi.fn();
+
+    render(<NgnGate application={draftApp()} onChange={onChange} orgId="org-1" />);
+
+    fireEvent.change(await screen.findByLabelText(/Bank/i), {
+      target: { value: "044" },
+    });
+    fireEvent.change(screen.getByLabelText(/Account number/i), {
+      target: { value: "0123456789" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Set up payout account/i }));
+
+    await waitFor(() => {
+      expect(onboardOrgPayoutAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: {
+            account_number: "0123456789",
+            bank_code: "044",
+            provider: "paystack",
+          },
+        }),
+      );
+    });
+    // No redirect exists on this rail, so the gate must refresh in place
+    // rather than dead-ending on a null onboarding URL.
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    vi.unstubAllEnvs();
   });
 });

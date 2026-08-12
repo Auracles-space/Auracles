@@ -143,6 +143,7 @@ async def _attestor_org(
     *,
     approved: bool = True,
     legal_name: str | None = "Attestor Org LLC",
+    country: str = "US",
 ) -> tuple[UUID, UUID, str]:
     """Create an attestor org with a TOTP owner. Return (org_id, owner_id, secret)."""
     owner_id, secret = await _new_user("owner", totp=True)
@@ -153,7 +154,7 @@ async def _attestor_org(
             org = Organization(
                 slug=f"org-{uuid4().hex[:6]}",
                 name="Attestor Org",
-                country="US",
+                country=country,
                 created_by=owner_id,
             )
             session.add(org)
@@ -678,3 +679,92 @@ async def _seed_invoice(attestation_id: UUID) -> None:
                     s3_key=f"invoices/earnings/{attestation_id}.pdf",
                 )
             )
+
+
+async def test_onboard_nigerian_org_payout_account_uses_paystack(
+    client: AsyncClient, clean_state: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Nigerian organization settles on Paystack, not Stripe Connect.
+
+    Connect cannot create a Nigerian payout account at all, so before the
+    Paystack rail existed an NG org had no way to be paid — the endpoint
+    returned 422 with no alternative.
+    """
+    del clean_state
+
+    async def _fake_recipient(
+        *, name: str, account_number: str, bank_code: str, currency: str
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            recipient_code="RCP_org_1", account_name="ATTESTOR ORG LLC"
+        )
+
+    monkeypatch.setattr(
+        financials_service.paystack, "create_transfer_recipient", _fake_recipient
+    )
+    org_id, owner_id, _secret = await _attestor_org(country="NG")
+
+    response = await client.post(
+        f"/v1/orgs/{org_id}/financials/payout-accounts",
+        headers=_auth(owner_id),
+        json={
+            "provider": "paystack",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        account = await session.scalar(
+            select(PayoutAccount).where(PayoutAccount.org_id == org_id)
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["provider"] == "paystack"
+    assert body["onboarding_url"] is None
+    assert body["account_name"] == "ATTESTOR ORG LLC"
+    assert account is not None
+    assert account.user_id is None
+    assert account.account_type == "nuban"
+    assert account.verified_at is not None
+
+
+async def test_onboard_org_payout_account_rejects_mismatched_provider(
+    client: AsyncClient, clean_state: None
+) -> None:
+    """An NG org asking for Stripe is refused rather than silently rerouted.
+
+    Registering a Nigerian bank account against Connect would create a payout
+    destination that can never be paid.
+    """
+    del clean_state
+    org_id, owner_id, _secret = await _attestor_org(country="NG")
+
+    response = await client.post(
+        f"/v1/orgs/{org_id}/financials/payout-accounts",
+        headers=_auth(owner_id),
+        json={
+            "provider": "stripe",
+            "refresh_url": "https://app.test/refresh",
+            "return_url": "https://app.test/return",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_onboard_org_paystack_payout_account_requires_bank_details(
+    client: AsyncClient, clean_state: None
+) -> None:
+    """Without bank details there is nothing to register, so reject at the schema."""
+    del clean_state
+    org_id, owner_id, _secret = await _attestor_org(country="NG")
+
+    response = await client.post(
+        f"/v1/orgs/{org_id}/financials/payout-accounts",
+        headers=_auth(owner_id),
+        json={"provider": "paystack"},
+    )
+
+    assert response.status_code == 422

@@ -31,10 +31,8 @@ import type {
   PayoutBank,
 } from "@/lib/generated/types.gen";
 import { Select } from "@/components/ui/select";
-import {
-  PAYOUT_COUNTRIES,
-  PAYSTACK_PAYOUT_COUNTRIES,
-} from "@/lib/marketplace/countries";
+import { PAYOUT_COUNTRIES } from "@/lib/marketplace/countries";
+import { payoutProviderForCountry } from "@/lib/marketplace/currency";
 import { formatLabel } from "@/lib/marketplace/format";
 
 /** NUBAN account numbers are always exactly ten digits. */
@@ -56,7 +54,10 @@ export function PayoutAccountConnect() {
   const [accountNumber, setAccountNumber] = useState("");
   const [confirmedName, setConfirmedName] = useState<string | null>(null);
 
-  const isPaystackRail = PAYSTACK_PAYOUT_COUNTRIES.includes(country);
+  // Mirrors the backend's routing rather than checking the country alone: on
+  // an NGN deployment every country settles through Paystack, so a
+  // country-only rule would ask Stripe to pay an account it cannot.
+  const isPaystackRail = payoutProviderForCountry(country) === "paystack";
 
   useEffect(() => {
     async function loadAccounts() {

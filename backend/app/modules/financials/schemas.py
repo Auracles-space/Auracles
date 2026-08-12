@@ -285,13 +285,36 @@ class OrgPayoutAccountOnboardRequest(BaseModel):
 
     The organization's registered ``country`` is authoritative for provider
     routing, so — unlike the individual request — no country is accepted here.
+    Which fields are required follows from that country: the Stripe rail needs
+    only redirect URLs, while Paystack has no hosted flow and needs the org's
+    NUBAN account number and bank code.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     provider: PayoutProvider
-    refresh_url: str = Field(min_length=1)
-    return_url: str = Field(min_length=1)
+    # Stripe-only: Paystack returns no onboarding URL to redirect back from.
+    refresh_url: str | None = Field(default=None, min_length=1)
+    return_url: str | None = Field(default=None, min_length=1)
+    # Paystack-only. Bank codes come from the payout banks endpoint.
+    account_number: str | None = Field(default=None, min_length=10, max_length=10)
+    bank_code: str | None = Field(default=None, min_length=1, max_length=10)
+
+    @model_validator(mode="after")
+    def provider_has_the_fields_its_rail_requires(
+        self,
+    ) -> OrgPayoutAccountOnboardRequest:
+        """Reject a payload missing the fields its chosen rail cannot work without."""
+        if self.provider == "paystack":
+            if not self.account_number or not self.bank_code:
+                raise ValueError(
+                    "Paystack payout accounts require account_number and bank_code."
+                )
+        elif not self.refresh_url or not self.return_url:
+            raise ValueError(
+                "Stripe payout accounts require refresh_url and return_url."
+            )
+        return self
 
 
 class OrgInvoiceListItem(BaseModel):

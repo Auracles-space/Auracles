@@ -32,3 +32,31 @@ export function currencySymbol(currency: string = PLATFORM_CURRENCY): string {
   }).formatToParts(0);
   return parts.find((part) => part.type === "currency")?.value ?? currency;
 }
+
+/** Payment rails a payout account can settle on. */
+export type PayoutProvider = "paystack" | "stripe";
+
+/**
+ * Return the rail a payout account in `country` settles on.
+ *
+ * Mirrors `select_provider` in backend/app/integrations/payment_router.py. The
+ * backend is authoritative and rejects a provider that disagrees with its own
+ * routing, so this exists only to send the right one and ask for the right
+ * fields — not to make the decision.
+ *
+ * Note the currency arm: on an NGN deployment every country settles through
+ * Paystack, because Stripe cannot pay out naira at all. Deciding from country
+ * alone would send "stripe" for a non-NG account and earn a 422.
+ *
+ * @param country - ISO 3166-1 alpha-2 country of the payout account.
+ * @returns The provider that settles that country on this deployment.
+ */
+export function payoutProviderForCountry(country: string): PayoutProvider {
+  if (country.toUpperCase() === "NG") {
+    return "paystack";
+  }
+  if (PLATFORM_CURRENCY.toUpperCase() === "NGN") {
+    return "paystack";
+  }
+  return "stripe";
+}

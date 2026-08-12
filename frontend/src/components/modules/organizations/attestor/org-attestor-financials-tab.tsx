@@ -10,6 +10,11 @@ import {
 } from "@/lib/generated/sdk.gen";
 import type { EarningsResponse, OrgAttestorApplicationResponse, OrgInvoiceListItem } from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
+import {
+  PaystackBankFields,
+  paystackDetailsComplete,
+} from "@/components/modules/financials/paystack-bank-fields";
+import { payoutProviderForCountry } from "@/lib/marketplace/currency";
 import { Spinner } from "@/components/ui/spinner";
 import { TotpInput } from "@/components/modules/auth/totp-input";
 import {
@@ -28,6 +33,12 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   const [invoices, setInvoices] = useState<OrgInvoiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [bankCode, setBankCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+
+  // Mirrors the backend routing. On an NGN deployment Stripe Connect cannot pay
+  // out at all, so bank details are collected here instead of redirecting.
+  const isPaystackRail = payoutProviderForCountry("") === "paystack";
   const [showTotp, setShowTotp] = useState(false);
   const [totpCode, setTotpCode] = useState("");
   const [payoutError, setPayoutError] = useState<string | null>(null);
@@ -64,14 +75,26 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
       const res = await onboardOrgPayoutAccount({
         headers: getAccessTokenHeaders(),
         path: { org_id: orgId },
-        body: {
-          provider: "stripe",
-          refresh_url: window.location.href,
-          return_url: window.location.href,
-        },
+        body: isPaystackRail
+          ? {
+              account_number: accountNumber,
+              bank_code: bankCode,
+              provider: "paystack" as const,
+            }
+          : {
+              provider: "stripe" as const,
+              refresh_url: window.location.href,
+              return_url: window.location.href,
+            },
       });
       if (res.data?.onboarding_url) {
         window.location.href = res.data.onboarding_url;
+        return;
+      }
+      if (res.data) {
+        // Paystack registers the account outright — there is no redirect, so
+        // refresh in place to pick up the now-linked payout account.
+        await fetchData();
         return;
       }
       // Non-2xx responses resolve with `error` (the generated client does not
@@ -160,7 +183,26 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
             <p className="text-sm text-foreground-subtle mb-4">
               You need to configure a payout account to receive earnings.
             </p>
-            <Button onClick={handleSetupPayoutAccount} disabled={isActionLoading}>
+            {isPaystackRail ? (
+              <div className="mb-4">
+                <PaystackBankFields
+                  accountNumber={accountNumber}
+                  bankCode={bankCode}
+                  disabled={isActionLoading}
+                  idPrefix="org-financials-payout"
+                  onAccountNumberChange={setAccountNumber}
+                  onBankCodeChange={setBankCode}
+                />
+              </div>
+            ) : null}
+            <Button
+              onClick={handleSetupPayoutAccount}
+              disabled={
+                isActionLoading ||
+                (isPaystackRail &&
+                  !paystackDetailsComplete(bankCode, accountNumber))
+              }
+            >
               Setup Payout Account
             </Button>
           </div>
@@ -192,6 +234,7 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
                 Request Payout
               </Button>
               <Button
+                className={isPaystackRail ? "hidden" : undefined}
                 variant="secondary"
                 onClick={handleSetupPayoutAccount}
                 disabled={isActionLoading}
