@@ -2448,7 +2448,7 @@ async def request_org_payout(
     if requested_net < minimum:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Minimum payout is ${minimum}.",
+            detail=f"Minimum payout is {currency} {minimum}.",
         )
 
     if db.in_transaction():
@@ -2576,7 +2576,7 @@ async def request_payout(
     if requested_net < minimum:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Minimum payout is ${minimum}.",
+            detail=f"Minimum payout is {currency} {minimum}.",
         )
 
     if db.in_transaction():

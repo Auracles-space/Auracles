@@ -733,6 +733,8 @@ async def test_payout_request_rejects_below_minimum_and_unavailable_balance(
     )
 
     assert too_small.status_code == 422
-    assert too_small.json()["detail"] == "Minimum payout is $50.00."
+    # The currency is named rather than assumed: a bare "$" on a naira
+    # amount would tell a Nigerian Contributor the wrong number entirely.
+    assert too_small.json()["detail"] == "Minimum payout is USD 50.00."
     assert too_large.status_code == 422
     assert too_large.json()["detail"] == "Requested payout exceeds available balance."
