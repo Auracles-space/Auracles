@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -99,12 +99,17 @@ def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
 
 
 def credential_payload() -> dict[str, object]:
-    """Return a valid Credential create payload."""
+    """Return a valid Credential create payload.
+
+    The expiry is computed from today rather than written as a literal: a
+    credential that has expired is a different fixture than one that has not,
+    so a fixed date silently changes what this payload means once it elapses.
+    """
     return {
         "title": "Certified Healthcare Operations Lead",
         "issuer": "Global Health Institute",
         "issued_date": "2024-05-01",
-        "expires_date": "2029-05-01",
+        "expires_date": (date.today() + timedelta(days=365 * 3)).isoformat(),
     }
 
 

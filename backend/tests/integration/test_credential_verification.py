@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -280,7 +280,9 @@ async def test_editing_non_material_field_keeps_verification(
             db=session,
             user=user,
             credential_id=credential_id,
-            payload=CredentialUpdateRequest(expires_date="2030-01-01"),
+            payload=CredentialUpdateRequest(
+                expires_date=(date.today() + timedelta(days=365 * 3)).isoformat()
+            ),
         )
     assert result.verification_status == "verified"
 

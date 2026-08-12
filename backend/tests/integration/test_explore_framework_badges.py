@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -218,7 +218,12 @@ async def _create_badge(
                             "issuer": "Global Institute",
                             "credential_type": "professional",
                             "issued_date": "2024-01-01",
-                            "expires_date": "2027-01-01",
+                            # Relative, because `expired: False` below has to
+                            # stay true for the snapshot to mean what the
+                            # assertions read it as.
+                            "expires_date": (
+                                date.today() + timedelta(days=365 * 3)
+                            ).isoformat(),
                             "expired": False,
                         }
                     ],

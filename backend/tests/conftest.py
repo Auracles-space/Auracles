@@ -70,10 +70,11 @@ async def client() -> AsyncIterator[AsyncClient]:
 
 # Tables migrations populate and tests only read. They hold reference data, not
 # test fixtures: `alembic_version` tracks the schema, the two rubric tables are
-# bulk-inserted by 0048, and `platform_config` by the config migration. Emptying
-# any of them leaves the schema at head with the data it is supposed to carry
-# gone, which surfaces far from here — a rubric-less trial fixture aborts, and
-# config lookups silently fall back to their defaults.
+# bulk-inserted by 0048, and `platform_config` by 0009. Emptying any of them
+# leaves the schema at head with the data it is supposed to carry gone, which
+# surfaces far from here — a rubric-less trial fixture aborts, and config
+# lookups silently fall back to their code defaults, so a test asserting a
+# seeded value passes or fails on which module ran before it.
 #
 # Anything added here must be written by a migration and never by a test. A
 # table a test writes to belongs in the truncation set, or it leaks across
@@ -83,6 +84,24 @@ _MIGRATION_OWNED_TABLES = (
     "attestation_rubric_dimensions",
     "attestation_rubric_methodology",
     "platform_config",
+)
+
+# Foreign keys a preserved table points out with. Excluding a table from the
+# TRUNCATE list is not enough to save it: TRUNCATE ... CASCADE empties every
+# table holding a reference to one being truncated, so `platform_config` goes
+# down with `users` through its `updated_by` column. Its rows are therefore
+# snapshotted and reinserted, with these columns nulled — the row they pointed
+# at no longer exists, and on migration-seeded rows they are null anyway.
+_OUTBOUND_FK_COLUMNS = sa.text(
+    "SELECT kcu.column_name "
+    "FROM information_schema.table_constraints AS tc "
+    "JOIN information_schema.key_column_usage AS kcu "
+    "  ON kcu.constraint_name = tc.constraint_name "
+    "JOIN information_schema.constraint_column_usage AS ccu "
+    "  ON ccu.constraint_name = tc.constraint_name "
+    "WHERE tc.constraint_type = 'FOREIGN KEY' "
+    "  AND tc.table_name = :table "
+    "  AND ccu.table_name <> :table"
 )
 
 
@@ -122,8 +141,51 @@ def _isolate_test_module() -> None:
                     )
                 )
             ]
-            if tables:
-                quoted = ", ".join(f'"{name}"' for name in tables)
-                connection.execute(sa.text(f"TRUNCATE {quoted} CASCADE"))
+            if not tables:
+                return
+            snapshot = _snapshot_preserved_tables(connection)
+            quoted = ", ".join(f'"{name}"' for name in tables)
+            connection.execute(sa.text(f"TRUNCATE {quoted} CASCADE"))
+            _restore_preserved_tables(connection, snapshot)
     finally:
         engine.dispose()
+
+
+def _snapshot_preserved_tables(
+    connection: sa.Connection,
+) -> dict[str, list[dict[str, object]]]:
+    """Read every preserved table, nulling the columns CASCADE will orphan."""
+    snapshot: dict[str, list[dict[str, object]]] = {}
+    for name in _MIGRATION_OWNED_TABLES:
+        rows = connection.execute(sa.text(f'SELECT * FROM "{name}"')).mappings().all()
+        if not rows:
+            continue
+        fk_columns = {
+            row[0]
+            for row in connection.execute(_OUTBOUND_FK_COLUMNS, {"table": name})
+        }
+        snapshot[name] = [
+            {key: None if key in fk_columns else value for key, value in row.items()}
+            for row in rows
+        ]
+    return snapshot
+
+
+def _restore_preserved_tables(
+    connection: sa.Connection,
+    snapshot: dict[str, list[dict[str, object]]],
+) -> None:
+    """Reinsert snapshotted rows into any preserved table CASCADE emptied."""
+    for name, rows in snapshot.items():
+        still_populated = connection.execute(
+            sa.text(f'SELECT 1 FROM "{name}" LIMIT 1')
+        ).first()
+        if still_populated:
+            continue
+        columns = list(rows[0])
+        column_list = ", ".join(f'"{column}"' for column in columns)
+        placeholders = ", ".join(f":{column}" for column in columns)
+        connection.execute(
+            sa.text(f'INSERT INTO "{name}" ({column_list}) VALUES ({placeholders})'),
+            rows,
+        )
