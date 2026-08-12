@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -124,7 +124,9 @@ def _project_payload() -> dict[str, Any]:
         "budget_min": "1000.00",
         "budget_max": "2000.00",
         "currency": "USD",
-        "deadline": "2026-08-01",
+        # Relative to today: the API rejects a deadline in the past, so a
+        # literal date passes only until it elapses.
+        "deadline": (date.today() + timedelta(days=30)).isoformat(),
     }
 
 

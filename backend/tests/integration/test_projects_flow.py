@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator, Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -221,6 +221,17 @@ def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def project_deadline() -> date:
+    """Return the deadline every Project payload in this file is created with.
+
+    Computed from today rather than written as a literal. The API rejects a
+    deadline in the past, so a fixed date passes only until it elapses and
+    then fails every test in this file at once, on a day unrelated to any
+    change. Milestone due dates below are expressed relative to this.
+    """
+    return date.today() + timedelta(days=30)
+
+
 def project_payload() -> dict[str, Any]:
     """Return a valid Project create payload."""
     return {
@@ -233,7 +244,7 @@ def project_payload() -> dict[str, Any]:
         "budget_min": "1000.00",
         "budget_max": "2000.00",
         "currency": "USD",
-        "deadline": date(2026, 8, 1).isoformat(),
+        "deadline": project_deadline().isoformat(),
     }
 
 
@@ -1600,9 +1611,9 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
 ) -> None:
     """A Milestone due date must be today-or-later and on/before the deadline.
 
-    The Project deadline is 2026-08-01. A due date after it is rejected, a past
-    due date is rejected, and a date inside the window is accepted and stored.
-    Editing a Milestone to a date beyond the deadline is rejected too.
+    A due date after the Project deadline is rejected, a past due date is
+    rejected, and a date inside the window is accepted and stored. Editing a
+    Milestone to a date beyond the deadline is rejected too.
     """
     operator_id = await create_user("due-operator@auracles.space", ["operator"])
     contributor_id = await create_user(
@@ -1617,6 +1628,8 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
 
     past_due = date.fromordinal(date.today().toordinal() - 1).isoformat()
     valid_due = date.today().isoformat()
+    past_deadline_due = (project_deadline() + timedelta(days=1)).isoformat()
+    past_deadline_edit = (project_deadline() + timedelta(days=14)).isoformat()
     after_deadline = await client.post(
         f"/v1/projects/{project_id}/milestones",
         headers=contributor_headers,
@@ -1626,7 +1639,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
             "description": "Due after the project deadline.",
             "budget": "500.00",
             "currency": "USD",
-            "due_date": "2026-09-01",
+            "due_date": past_deadline_due,
         },
     )
     in_past = await client.post(
@@ -1657,7 +1670,7 @@ async def test_milestone_due_date_must_fall_within_project_deadline(
     edit_after_deadline = await client.patch(
         f"/v1/projects/{project_id}/milestones/{milestone_id}",
         headers=contributor_headers,
-        json={"due_date": "2026-08-15"},
+        json={"due_date": past_deadline_edit},
     )
 
     assert after_deadline.status_code == 422

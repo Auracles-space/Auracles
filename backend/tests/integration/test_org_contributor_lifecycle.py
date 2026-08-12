@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Iterator, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -293,7 +293,9 @@ def _project_payload() -> dict[str, Any]:
         "budget_min": "1000.00",
         "budget_max": "2000.00",
         "currency": "USD",
-        "deadline": "2026-08-01",
+        # Relative to today: the API rejects a deadline in the past, so a
+        # literal date passes only until it elapses.
+        "deadline": (date.today() + timedelta(days=30)).isoformat(),
     }
 
 
@@ -569,6 +571,27 @@ async def test_org_contributor_full_lifecycle(
         headers=auth(owner_token),
     )
     assert activated.status_code == 200
+
+    # Activating the org capability alone grants the derived role to owners and
+    # admins only. A plain member reaches it through a team the capability is
+    # enabled on, so the lifecycle walks that path before authoring anything.
+    team = await client.post(
+        f"/v1/orgs/{org['id']}/teams",
+        json={"name": "Authoring"},
+        headers=auth(owner_token),
+    )
+    assert team.status_code == 201
+    team_id = team.json()["id"]
+    team_capability = await client.put(
+        f"/v1/orgs/{org['id']}/teams/{team_id}/capabilities/contributor",
+        headers=auth(owner_token),
+    )
+    assert team_capability.status_code == 204
+    team_member = await client.put(
+        f"/v1/orgs/{org['id']}/teams/{team_id}/members/{member_row_id}",
+        headers=auth(owner_token),
+    )
+    assert team_member.status_code == 204
 
     async with async_session_factory() as session:
         derived_role = await session.scalar(
