@@ -1,10 +1,11 @@
 /**
  * Country lists for payout onboarding and checkout.
  *
- * Two different questions need two different lists. `STRIPE_CONNECT_COUNTRIES`
- * answers "where can we pay someone out", which is bounded by Stripe Connect.
+ * Three questions need three lists. `STRIPE_CONNECT_COUNTRIES` is bounded by
+ * Stripe Connect and stays authoritative for organization registration.
  * `CHECKOUT_COUNTRIES` answers "where is this buyer paying from", which routes
- * the charge and includes the Paystack corridor Connect cannot serve.
+ * the charge. `PAYOUT_COUNTRIES` answers "where can we pay someone out", which
+ * now spans both rails: Connect for its own countries, Paystack for Nigeria.
  *
  * Codes are the value; names are display-only. Kept sorted by name so the
  * rendered dropdown reads alphabetically.
@@ -19,9 +20,10 @@ export type CountryOption = {
 /**
  * Countries where Stripe Connect can create a payout account.
  *
- * Authoritative for organization registration (`country`) and contributor
- * payout onboarding. Nigeria (NG) is intentionally absent — Connect does not
- * support Nigerian payout accounts, and the Paystack payout rail is not built.
+ * Authoritative for organization registration (`country`). Nigeria (NG) is
+ * intentionally absent: Connect does not support Nigerian payout accounts.
+ * Contributor payout onboarding uses `PAYOUT_COUNTRIES`, which adds Nigeria
+ * on the Paystack rail.
  *
  * Source: https://stripe.com/global — cross-border payouts availability.
  */
@@ -84,3 +86,18 @@ export const CHECKOUT_COUNTRIES: readonly CountryOption[] = [
   ...STRIPE_CONNECT_COUNTRIES,
   { code: "NG", name: "Nigeria" },
 ].sort((a, b) => a.name.localeCompare(b.name));
+
+/**
+ * Countries a Contributor can register a payout account in.
+ *
+ * Spans both rails — Stripe Connect for its own countries, Paystack for
+ * Nigerian NUBAN accounts. The backend decides which rail a country settles on
+ * and rejects a mismatch, so this list only governs what is offered.
+ */
+export const PAYOUT_COUNTRIES: readonly CountryOption[] = [
+  ...STRIPE_CONNECT_COUNTRIES,
+  { code: "NG", name: "Nigeria" },
+].sort((a, b) => a.name.localeCompare(b.name));
+
+/** Countries whose payout accounts settle on the Paystack rail. */
+export const PAYSTACK_PAYOUT_COUNTRIES: readonly string[] = ["NG"];

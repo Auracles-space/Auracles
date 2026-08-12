@@ -85,6 +85,7 @@ const compatibilityAliases = {
   listOperatorLibrary: "listLibraryV1LibraryGet",
   listPaymentMethods: "listPaymentMethodsV1FinancialsPaymentMethodsGet",
   listPayoutAccounts: "listPayoutAccountsV1FinancialsPayoutAccountsGet",
+  listPayoutBanks: "listPayoutBanksV1FinancialsPayoutAccountsBanksGet",
   listPayouts: "listPayoutsV1FinancialsPayoutsGet",
   listProjectProposals: "listProjectProposalsV1ProjectsProjectIdProposalsGet",
   listOrgProjectProposals: "listOrgProjectProposalsV1OrgsOrgIdProjectsProjectIdProposalsGet",

@@ -3642,7 +3642,7 @@ export type OrgPaymentMethodsResponse = {
  * routing, so — unlike the individual request — no country is accepted here.
  */
 export type OrgPayoutAccountOnboardRequest = {
-    provider: "stripe";
+    provider: 'stripe' | 'paystack';
     refresh_url: string;
     return_url: string;
 };
@@ -3990,21 +3990,30 @@ export type PayoutAccountDeleteResponse = {
 
 /**
  * Request body for creating a provider-held payout destination.
+ *
+ * The two rails collect different things. Stripe Connect runs hosted
+ * onboarding, so it needs only the redirect URLs and never sees a bank
+ * detail here. Paystack has no hosted flow — the Contributor's NUBAN account
+ * number and bank code are submitted directly and registered as a transfer
+ * recipient, which is also what verifies the account exists.
  */
 export type PayoutAccountOnboardRequest = {
+    account_number?: (string | null);
+    bank_code?: (string | null);
     country: string;
-    provider: "stripe";
-    refresh_url: string;
-    return_url: string;
+    provider: 'stripe' | 'paystack';
+    refresh_url?: (string | null);
+    return_url?: (string | null);
 };
 
 /**
  * Response body for a provider payout-account onboarding request.
  */
 export type PayoutAccountOnboardResponse = {
+    account_name?: (string | null);
     onboarding_url: (string | null);
     payout_account: PayoutAccountResponse;
-    provider: "stripe";
+    provider: 'stripe' | 'paystack';
 };
 
 /**
@@ -4015,7 +4024,7 @@ export type PayoutAccountResponse = {
     created_at: string;
     id: string;
     is_default: boolean;
-    provider: "stripe";
+    provider: 'stripe' | 'paystack';
     provider_account_ref: string;
     verified_at: (string | null);
 };
@@ -4025,6 +4034,21 @@ export type PayoutAccountResponse = {
  */
 export type PayoutAccountsResponse = {
     payout_accounts: Array<PayoutAccountResponse>;
+};
+
+/**
+ * A bank a Contributor payout account can be held at.
+ */
+export type PayoutBank = {
+    code: string;
+    name: string;
+};
+
+/**
+ * Response body listing banks available for payout onboarding.
+ */
+export type PayoutBanksResponse = {
+    banks: Array<PayoutBank>;
 };
 
 /**
@@ -6591,6 +6615,10 @@ export type DeletePaymentMethodV1FinancialsPaymentMethodsPaymentMethodIdDeleteEr
 export type ListPayoutAccountsV1FinancialsPayoutAccountsGetResponse = (PayoutAccountsResponse);
 
 export type ListPayoutAccountsV1FinancialsPayoutAccountsGetError = unknown;
+
+export type ListPayoutBanksV1FinancialsPayoutAccountsBanksGetResponse = (PayoutBanksResponse);
+
+export type ListPayoutBanksV1FinancialsPayoutAccountsBanksGetError = unknown;
 
 export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostData = {
     body: PayoutAccountOnboardRequest;

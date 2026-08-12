@@ -3,11 +3,18 @@
 /**
  * Contributor payout account connection.
  *
- * Uses Stripe Connect hosted onboarding. Auracles does not collect bank details
- * or account numbers; it stores and displays provider-hosted metadata only.
+ * Two rails, chosen by the account's country. Stripe Connect runs hosted
+ * onboarding, so Auracles never sees a bank detail — the contributor is
+ * redirected and Stripe collects everything. Paystack has no hosted flow, so
+ * the NUBAN account number and bank code are collected here and registered as
+ * a transfer recipient; Paystack resolving them against the bank is what
+ * verifies the account, and the confirmed name is shown back so a mistyped
+ * account number is caught before any money is addressed to it.
+ *
+ * Maps to: FR-FIN-* (Contributor payout onboarding).
  */
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   configureBrowserClient,
@@ -16,24 +23,40 @@ import {
 } from "@/lib/auth/form-client";
 import {
   listPayoutAccounts,
+  listPayoutBanks,
   onboardPayoutAccount,
 } from "@/lib/generated/sdk.gen";
-import type { PayoutAccountResponse } from "@/lib/generated/types.gen";
+import type {
+  PayoutAccountResponse,
+  PayoutBank,
+} from "@/lib/generated/types.gen";
 import { Select } from "@/components/ui/select";
-import { STRIPE_CONNECT_COUNTRIES } from "@/lib/marketplace/countries";
+import {
+  PAYOUT_COUNTRIES,
+  PAYSTACK_PAYOUT_COUNTRIES,
+} from "@/lib/marketplace/countries";
 import { formatLabel } from "@/lib/marketplace/format";
 
+/** NUBAN account numbers are always exactly ten digits. */
+const NUBAN_LENGTH = 10;
+
 /**
- * Render Stripe Connect onboarding and current payout account metadata.
+ * Render payout onboarding and current payout account metadata.
  */
 export function PayoutAccountConnect() {
   const [accounts, setAccounts] = useState<PayoutAccountResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  // Country the payout account is registered in. Determines which Stripe
-  // onboarding form the contributor gets; defaults to the US.
+  // Country the payout account is registered in. Decides the rail, so it also
+  // decides which fields below are asked for.
   const [country, setCountry] = useState("US");
+  const [banks, setBanks] = useState<PayoutBank[]>([]);
+  const [bankCode, setBankCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [confirmedName, setConfirmedName] = useState<string | null>(null);
+
+  const isPaystackRail = PAYSTACK_PAYOUT_COUNTRIES.includes(country);
 
   useEffect(() => {
     async function loadAccounts() {
@@ -53,18 +76,46 @@ export function PayoutAccountConnect() {
     void loadAccounts();
   }, []);
 
-  async function handleConnect() {
+  // Bank codes change and new institutions appear, so the list is read from
+  // the provider on demand rather than shipped in the bundle.
+  useEffect(() => {
+    if (!isPaystackRail) {
+      return;
+    }
+    async function loadBanks() {
+      configureBrowserClient();
+      const result = await listPayoutBanks({ headers: getAccessTokenHeaders() });
+      if (!result.response.ok || !result.data) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      setBanks(result.data.banks);
+    }
+
+    void loadBanks();
+  }, [isPaystackRail]);
+
+  const handleConnect = useCallback(async () => {
     setError(null);
+    setConfirmedName(null);
     setSubmitting(true);
     configureBrowserClient();
     const origin = window.location.origin;
+    const body = isPaystackRail
+      ? {
+          account_number: accountNumber,
+          bank_code: bankCode,
+          country,
+          provider: "paystack" as const,
+        }
+      : {
+          country,
+          provider: "stripe" as const,
+          refresh_url: `${origin}/settings/payout-accounts?refresh=1`,
+          return_url: `${origin}/settings/payout-accounts?connected=1`,
+        };
     const result = await onboardPayoutAccount({
-      body: {
-        country,
-        provider: "stripe",
-        refresh_url: `${origin}/settings/payout-accounts?refresh=1`,
-        return_url: `${origin}/settings/payout-accounts?connected=1`,
-      },
+      body,
       headers: getAccessTokenHeaders(),
     });
     setSubmitting(false);
@@ -79,8 +130,16 @@ export function PayoutAccountConnect() {
       return;
     }
 
+    // Paystack settles here: nothing to redirect to, so the new account and
+    // the bank-confirmed name are rendered in place.
+    setConfirmedName(result.data.account_name ?? null);
     setAccounts((current) => [result.data.payout_account, ...current]);
-  }
+    setAccountNumber("");
+  }, [accountNumber, bankCode, country, isPaystackRail]);
+
+  const canSubmit = isPaystackRail
+    ? bankCode !== "" && accountNumber.length === NUBAN_LENGTH
+    : true;
 
   if (loading) {
     return <p className="text-sm text-foreground-muted">Loading payout accounts.</p>;
@@ -112,46 +171,113 @@ export function PayoutAccountConnect() {
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-          Stripe Connect
+          {isPaystackRail ? "Paystack" : "Stripe Connect"}
         </p>
         <h1 className="mt-2 font-heading text-3xl font-bold text-foreground">
           Payout accounts
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">
-          Connect a provider-hosted payout account before requesting transfers.
-          Bank details stay inside Stripe Connect.
+          {isPaystackRail
+            ? "Add the bank account your earnings should be paid into. Payouts are sent straight to this account."
+            : "Connect a provider-hosted payout account before requesting transfers. Bank details stay inside Stripe Connect."}
         </p>
         {error ? <p className="mt-4 text-sm text-error">{error}</p> : null}
-        <div className="mt-5 max-w-xs">
-          <label
-            htmlFor="payout-country"
-            className="mb-1 block text-sm font-semibold text-foreground"
-          >
-            Country
-          </label>
-          <Select
-            id="payout-country"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-          >
-            {STRIPE_CONNECT_COUNTRIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-          <p className="mt-1 text-xs text-foreground-muted">
-            Where your payout account is registered. Stripe tailors onboarding
-            to this country.
+        {confirmedName ? (
+          <p className="mt-4 rounded-xl border border-border-default bg-surface-2 p-4 text-sm text-foreground">
+            Connected. Payouts will be sent to{" "}
+            <strong className="font-semibold">{confirmedName}</strong>. If that
+            is not your name, remove this account and check the number.
           </p>
+        ) : null}
+
+        <div className="mt-5 grid gap-4 sm:max-w-md">
+          <div>
+            <label
+              htmlFor="payout-country"
+              className="mb-1 block text-sm font-semibold text-foreground"
+            >
+              Country
+            </label>
+            <Select
+              id="payout-country"
+              value={country}
+              onChange={(event) => setCountry(event.target.value)}
+            >
+              {PAYOUT_COUNTRIES.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-foreground-muted">
+              Where your payout account is registered. This decides how your
+              earnings are sent.
+            </p>
+          </div>
+
+          {isPaystackRail ? (
+            <>
+              <div>
+                <label
+                  htmlFor="payout-bank"
+                  className="mb-1 block text-sm font-semibold text-foreground"
+                >
+                  Bank
+                </label>
+                <Select
+                  id="payout-bank"
+                  value={bankCode}
+                  onChange={(event) => setBankCode(event.target.value)}
+                >
+                  <option value="">Select a bank</option>
+                  {banks.map((bank) => (
+                    <option key={bank.code} value={bank.code}>
+                      {bank.name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <label
+                  htmlFor="payout-account-number"
+                  className="mb-1 block text-sm font-semibold text-foreground"
+                >
+                  Account number
+                </label>
+                <input
+                  className="flex min-h-12 w-full rounded-xl border border-border-default bg-surface-1 px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
+                  id="payout-account-number"
+                  inputMode="numeric"
+                  maxLength={NUBAN_LENGTH}
+                  onChange={(event) =>
+                    setAccountNumber(event.target.value.replace(/\D/g, ""))
+                  }
+                  pattern="\d{10}"
+                  placeholder="0123456789"
+                  value={accountNumber}
+                />
+                <p className="mt-1 text-xs text-foreground-muted">
+                  Your {NUBAN_LENGTH}-digit NUBAN account number. We confirm the
+                  account name with your bank before any payout is sent.
+                </p>
+              </div>
+            </>
+          ) : null}
         </div>
+
         <button
           className="mt-5 inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={submitting}
+          disabled={submitting || !canSubmit}
           onClick={handleConnect}
           type="button"
         >
-          {submitting ? "Opening Stripe" : "Connect Stripe"}
+          {isPaystackRail
+            ? submitting
+              ? "Connecting"
+              : "Connect bank account"
+            : submitting
+              ? "Opening Stripe"
+              : "Connect Stripe"}
         </button>
       </div>
 
@@ -173,7 +299,8 @@ export function PayoutAccountConnect() {
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="font-heading text-base font-bold text-foreground">
-                      Stripe {formatLabel(account.account_type)}
+                      {account.provider === "paystack" ? "Bank account" : "Stripe"}{" "}
+                      {formatLabel(account.account_type)}
                     </h3>
                     <p className="mt-1 text-sm text-foreground-muted">
                       {account.provider_account_ref}
