@@ -121,10 +121,18 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
   useEffect(() => {
     async function loadNeedsAdminCount() {
       configureBrowserClient();
-      const result = await listAdminAttestations({
-        headers: getAccessTokenHeaders(),
-        query: { status: "needs_admin" },
-      });
+      // The count is a badge, not the page. A failed request leaves it at zero
+      // rather than rejecting: this shell wraps every admin route, so an
+      // uncaught rejection here lands on screens unrelated to attestations.
+      let result;
+      try {
+        result = await listAdminAttestations({
+          headers: getAccessTokenHeaders(),
+          query: { status: "needs_admin" },
+        });
+      } catch {
+        return;
+      }
       if (result.response.ok && result.data) {
         setNeedsAdminCount(result.data.attestations.length);
       }

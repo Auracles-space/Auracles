@@ -45,13 +45,22 @@ export function SourcePreviewBadge({
 
     async function loadPreview() {
       configureBrowserClient();
-      const result =
-        await getArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGet(
-          {
-            headers: getAccessTokenHeaders(),
-            path: { artifact_id: artifactId, framework_id: frameworkId },
-          },
-        );
+      // The badge is optional chrome on a page that works without it, so a
+      // failed request leaves it unrendered rather than surfacing an error the
+      // owner cannot act on. Caught rather than left to reject: an uncaught
+      // rejection here escapes the component as a page-level error.
+      let result;
+      try {
+        result =
+          await getArtifactSourcePreviewV1FrameworksFrameworkIdArtifactsArtifactIdSourcePreviewGet(
+            {
+              headers: getAccessTokenHeaders(),
+              path: { artifact_id: artifactId, framework_id: frameworkId },
+            },
+          );
+      } catch {
+        return;
+      }
       if (!isActive || !result.response.ok || !result.data?.preview_url) {
         return;
       }

@@ -67,4 +67,26 @@ describe("SourcePreviewBadge", () => {
     await screen.findByRole("img");
     expect(screen.queryByText(/source updated/i)).toBeNull();
   });
+
+  it("renders nothing and swallows nothing loudly when the request fails", async () => {
+    // A rejected request must not escape as an unhandled rejection: the badge
+    // is optional chrome on a page that works without it, and an uncaught
+    // promise here surfaces as a page-level error the user cannot act on.
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    getPreview.mockRejectedValue(new Error("network down"));
+
+    const { container } = render(
+      <SourcePreviewBadge artifactId="a1" frameworkId="fw1" />,
+    );
+
+    await waitFor(() => {
+      expect(getPreview).toHaveBeenCalled();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    process.off("unhandledRejection", unhandled);
+
+    expect(container).toBeEmptyDOMElement();
+    expect(unhandled).not.toHaveBeenCalled();
+  });
 });
