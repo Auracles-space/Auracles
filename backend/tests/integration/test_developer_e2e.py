@@ -43,7 +43,7 @@ from app.modules.developer.models import (
     PartnerWebhook,
     PartnerWebhookDelivery,
 )
-from app.modules.financials.models import PayoutAccount, Transaction
+from app.modules.financials.models import FinancialEvent, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License, Review
 from app.modules.frameworks.models_artifact import (
     Artifact,
@@ -190,6 +190,10 @@ async def cleanup_developer_e2e_state() -> None:
         await session.execute(delete(ApiKey))
         await session.execute(delete(DeveloperAccount))
         await session.execute(delete(DeveloperApplication))
+        # Written by the purchase and payout paths this flow exercises, and
+        # keyed to both the actor and the transaction, so it has to go before
+        # either of those.
+        await session.execute(delete(FinancialEvent))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
         await session.execute(delete(UserRole))

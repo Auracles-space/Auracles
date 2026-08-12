@@ -19,6 +19,7 @@ from alembic.config import Config
 from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, func, select, update
 
+from app.core.currency import platform_currency
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
@@ -366,7 +367,12 @@ async def test_framework_creation_rejects_non_usd_pricing(
     migrated_database: None,
     framework_test_context: dict[str, Any],
 ) -> None:
-    """Contributors cannot create non-USD Frameworks during Stripe-only MVP."""
+    """Contributors cannot price a Framework outside the platform currency.
+
+    The suite pins `PLATFORM_CURRENCY=USD`, so NGN is the off-currency here;
+    the rejection message is read from the setting rather than hardcoded so
+    this keeps asserting the rule and not one deployment's currency.
+    """
     del migrated_database, framework_test_context
     contributor_id = await create_user_with_roles(
         "ngn-creator@auracles.space",
@@ -382,7 +388,7 @@ async def test_framework_creation_rejects_non_usd_pricing(
     )
 
     assert response.status_code == 422
-    assert "Only USD Framework pricing is supported." in response.text
+    assert f"Only {platform_currency()} amounts are supported." in response.text
 
 
 @pytest.mark.parametrize("kyc_status", ["unverified", "pending"])

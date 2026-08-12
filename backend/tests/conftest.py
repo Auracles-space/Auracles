@@ -68,9 +68,27 @@ async def client() -> AsyncIterator[AsyncClient]:
         yield test_client
 
 
+# Tables migrations populate and tests only read. They hold reference data, not
+# test fixtures: `alembic_version` tracks the schema, the two rubric tables are
+# bulk-inserted by 0048, and `platform_config` by the config migration. Emptying
+# any of them leaves the schema at head with the data it is supposed to carry
+# gone, which surfaces far from here — a rubric-less trial fixture aborts, and
+# config lookups silently fall back to their defaults.
+#
+# Anything added here must be written by a migration and never by a test. A
+# table a test writes to belongs in the truncation set, or it leaks across
+# modules and reintroduces exactly the interference this fixture removes.
+_MIGRATION_OWNED_TABLES = (
+    "alembic_version",
+    "attestation_rubric_dimensions",
+    "attestation_rubric_methodology",
+    "platform_config",
+)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _isolate_test_module() -> None:
-    """Empty every table before each test module runs.
+    """Empty every test-written table before each test module runs.
 
     Test fixtures each clean up the tables their own module touches, which is
     correct in isolation but not across a full-suite run: a module that leaves
@@ -82,7 +100,7 @@ def _isolate_test_module() -> None:
     each module starts from an empty database. TRUNCATE ... CASCADE ignores
     foreign-key ordering, so this stays correct as tables are added.
 
-    `alembic_version` is preserved — truncating it would strand the schema.
+    Migration-owned reference data is preserved — see `_MIGRATION_OWNED_TABLES`.
     """
     settings = get_settings()
     engine = sa.create_engine(settings.sync_database_url, pool_pre_ping=True)
@@ -94,7 +112,13 @@ def _isolate_test_module() -> None:
                     sa.text(
                         "SELECT tablename FROM pg_tables "
                         "WHERE schemaname = 'public' "
-                        "AND tablename <> 'alembic_version'"
+                        "AND tablename NOT IN :preserved"
+                    ).bindparams(
+                        sa.bindparam(
+                            "preserved",
+                            value=_MIGRATION_OWNED_TABLES,
+                            expanding=True,
+                        )
                     )
                 )
             ]
