@@ -10,6 +10,10 @@ import { ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
+import {
+  PLATFORM_CURRENCY,
+  currencySymbol,
+} from "@/lib/marketplace/currency";
 import type {
   FrameworkCreate,
   FrameworkResponse,
@@ -431,7 +435,7 @@ export function FrameworkForm({
               </span>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
-                  <span className="text-sm font-medium">$</span>
+                  <span className="text-sm font-medium">{currencySymbol()}</span>
                 </div>
                 <input
                   type="text"
@@ -449,7 +453,7 @@ export function FrameworkForm({
                   value={form.price}
                 />
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
-                  <span className="text-xs uppercase">USD</span>
+                  <span className="text-xs uppercase">{PLATFORM_CURRENCY}</span>
                 </div>
               </div>
             </label>
@@ -461,7 +465,7 @@ export function FrameworkForm({
                 </span>
                 <div className="relative">
                   <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
-                    <span className="text-sm font-medium">$</span>
+                    <span className="text-sm font-medium">{currencySymbol()}</span>
                   </div>
                   <input
                     type="text"
@@ -478,7 +482,7 @@ export function FrameworkForm({
                     value={form.orgPrice}
                   />
                   <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
-                    <span className="text-xs uppercase">USD</span>
+                    <span className="text-xs uppercase">{PLATFORM_CURRENCY}</span>
                   </div>
                 </div>
                 <span className="mt-1.5 block text-xs text-foreground-muted">
