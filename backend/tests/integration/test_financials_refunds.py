@@ -30,7 +30,12 @@ from app.modules.developer.models import (
     PartnerCommission,
 )
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.financials.models import (
+    FinancialEvent,
+    Payout,
+    PayoutAccount,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
 from app.shared.models.audit_log import AuditLog
@@ -62,6 +67,7 @@ async def reset_refund_state() -> None:
     """Remove refund-flow rows in foreign-key-safe order."""
     async with async_session_factory() as session:
         await session.execute(delete(AuditLog))
+        await session.execute(delete(FinancialEvent))
         await session.execute(delete(ArtifactDownload))
         await session.execute(delete(Artifact))
         await session.execute(delete(CollectionEarningAllocation))
@@ -555,6 +561,51 @@ async def test_operator_can_refund_paystack_purchase(
     assert license_row.status == "revoked"
     assert audit is not None
     assert audit.metadata_["provider"] == "paystack"
+
+
+async def test_refund_records_a_ledger_event_carrying_the_refund_id(
+    client: AsyncClient,
+    refund_context: dict[str, list[Any]],
+) -> None:
+    """A refund appends to the money ledger, not only the audit log.
+
+    The row is what the reconciliation task reads: it marks the refund as
+    requested-but-unsettled, and carries the provider's refund id in full so
+    the task can ask Paystack what actually happened. The audit log stores that
+    id masked, so it cannot serve this purpose.
+    """
+    operator_id = await create_user_with_roles(
+        "refund-ledger-operator@auracles.space",
+        ["operator"],
+    )
+    transaction_id, _ = await create_completed_purchase(
+        operator_id,
+        provider="paystack",
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchases/{transaction_id}/refund",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        event = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == transaction_id,
+                FinancialEvent.event_type == "refund_requested",
+            )
+        )
+
+    assert response.status_code == 200
+    assert event is not None
+    assert event.entity_type == "transaction"
+    assert event.from_status == "completed"
+    assert event.to_status == "refunded"
+    assert event.amount == Decimal("149.00")
+    assert event.currency == "USD"
+    assert event.provider == "paystack"
+    assert event.provider_ref == "rf_refund_456"
+    assert event.actor_id == operator_id
 
 
 async def test_paystack_refund_provider_failure_preserves_purchase_state(

@@ -302,6 +302,48 @@ async def refund_transaction(
     )
 
 
+async def fetch_refund(
+    *,
+    refund_id: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> PaystackRefund:
+    """Fetch one refund's current status from Paystack.
+
+    Used by reconciliation when a refund's settlement webhook never arrived.
+    Paystack's List Refunds endpoint cannot filter by transaction, so the
+    refund's own id — stored on the ledger event at request time — is the only
+    way to ask about a specific refund.
+
+    Args:
+        refund_id: Paystack's identifier for the refund.
+        settings: Optional settings override.
+        client: Optional HTTP client, for reuse across a batch.
+
+    Returns:
+        The refund with its current provider status.
+
+    Raises:
+        PaystackProviderError: If the call fails or the response has no status.
+    """
+    data = await _get_json(
+        f"/refund/{refund_id}",
+        {},
+        settings=settings,
+        client=client,
+    )
+    if not isinstance(data, dict):
+        raise PaystackProviderError("Paystack refund response was not an object.")
+    raw_id = data.get("id")
+    refund_status = data.get("status")
+    if not isinstance(refund_status, str):
+        raise PaystackProviderError("Paystack refund response missing status.")
+    return PaystackRefund(
+        id=str(raw_id) if isinstance(raw_id, int | str) else refund_id,
+        status=refund_status,
+    )
+
+
 async def create_subaccount(
     *,
     business_name: str,

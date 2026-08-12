@@ -32,6 +32,7 @@ from app.modules.auth.models import User
 from app.modules.collections.models import CollectionEarningAllocation
 from app.modules.developer.models import PartnerCommission
 from app.modules.financials import invoices as financials_invoices
+from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import (
     Escrow,
     Payout,
@@ -1171,8 +1172,7 @@ async def create_framework_purchase(
     customer_id = operator.stripe_customer_id
 
     framework = await db.scalar(
-        select(Framework)
-        .where(
+        select(Framework).where(
             Framework.id == framework_id,
             Framework.status == "published",
             Framework.deleted_at.is_(None),
@@ -1815,6 +1815,44 @@ async def _create_provider_refund(
         ) from exc
 
 
+async def _record_refund_requested(
+    db: AsyncSession,
+    *,
+    transaction: Transaction,
+    refund_id: str,
+    operator_id: UUID,
+) -> None:
+    """Append the refund to the money ledger, carrying the provider's id.
+
+    Written for both rails so every refund appears in the ledger, but it is the
+    Paystack case the id matters for: their refunds settle asynchronously, and
+    `GET /refund/{id}` is the only way to ask what became of one. The audit log
+    masks that id, so this row is the sole place it survives in full.
+
+    The event is `refund_requested` rather than `refunded` because the money
+    has not moved yet. The settlement webhook appends the outcome.
+
+    Args:
+        db: Async session already inside the caller's transaction.
+        transaction: The purchase being refunded, already marked refunded.
+        refund_id: The provider's identifier for the refund it accepted.
+        operator_id: The Operator who requested it.
+    """
+    await record_financial_event(
+        db,
+        entity_type="transaction",
+        entity_id=transaction.id,
+        event_type="refund_requested",
+        from_status="completed",
+        to_status="refunded",
+        amount=_normalise_money(transaction.amount),
+        currency=transaction.currency,
+        provider=transaction.provider,
+        provider_ref=refund_id,
+        actor_id=operator_id,
+    )
+
+
 async def refund_framework_purchase(
     db: AsyncSession,
     operator: User,
@@ -1896,6 +1934,12 @@ async def refund_framework_purchase(
                 )
 
             collection_transaction.status = "refunded"
+            await _record_refund_requested(
+                db,
+                transaction=collection_transaction,
+                refund_id=refund_id,
+                operator_id=operator_id,
+            )
             for license_row in licenses:
                 license_row.status = "revoked"
             allocations = list(
@@ -1967,6 +2011,12 @@ async def refund_framework_purchase(
                 detail="Refund provider call completed but a download was recorded.",
             )
         transaction.status = "refunded"
+        await _record_refund_requested(
+            db,
+            transaction=transaction,
+            refund_id=refund_id,
+            operator_id=operator_id,
+        )
         license_row.status = "revoked"
         await _void_partner_commission_for_refund(
             db,

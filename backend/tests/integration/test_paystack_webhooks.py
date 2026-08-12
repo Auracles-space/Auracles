@@ -216,9 +216,7 @@ async def test_charge_success_completes_purchase_and_grants_license(
     paystack_context: dict[str, Any],
 ) -> None:
     """A verified charge.success completes the purchase and grants access."""
-    transaction_id, framework_id, operator_id = (
-        await create_pending_paystack_purchase()
-    )
+    transaction_id, framework_id, operator_id = await create_pending_paystack_purchase()
     paystack_context["event"] = charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -455,9 +453,7 @@ async def create_processing_paystack_payout() -> tuple[UUID, str]:
             payout_account = PayoutAccount(
                 user_id=contributor_id,
                 provider="paystack",
-                provider_account_id=encrypt_payout_provider_account_id(
-                    "RCP_settle_1"
-                ),
+                provider_account_id=encrypt_payout_provider_account_id("RCP_settle_1"),
                 provider_account_lookup_hash=hash_payout_provider_account_id(
                     "RCP_settle_1"
                 ),
@@ -786,6 +782,12 @@ async def test_refund_processed_confirms_the_refunded_purchase(
         audit = await session.scalar(
             select(AuditLog).where(AuditLog.action == "refund_settled")
         )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == transaction_id,
+                FinancialEvent.event_type == "refund_settled",
+            )
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "processed"
@@ -795,6 +797,11 @@ async def test_refund_processed_confirms_the_refunded_purchase(
     assert license_row.status == "revoked"
     assert audit is not None
     assert audit.target_id == transaction_id
+    # The ledger closes the refund out: without this row the reconciliation
+    # task cannot tell a settled refund from one still in flight.
+    assert ledger is not None
+    assert ledger.to_status == "refunded"
+    assert ledger.provider == "paystack"
 
 
 async def test_refund_failed_restores_the_purchase_and_access(
@@ -818,6 +825,12 @@ async def test_refund_failed_restores_the_purchase_and_access(
         audit = await session.scalar(
             select(AuditLog).where(AuditLog.action == "refund_failed")
         )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == transaction_id,
+                FinancialEvent.event_type == "refund_failed",
+            )
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "processed"
@@ -827,6 +840,11 @@ async def test_refund_failed_restores_the_purchase_and_access(
     assert license_row.status == "active"
     assert audit is not None
     assert audit.target_id == transaction_id
+    # The reversal is itself a money state change, so it belongs in the ledger
+    # rather than only in the audit log.
+    assert ledger is not None
+    assert ledger.from_status == "refunded"
+    assert ledger.to_status == "completed"
 
 
 async def test_refund_failed_reinstates_a_voided_partner_commission(

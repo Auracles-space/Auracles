@@ -110,4 +110,11 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.artifacts_beat.reap_stalled_artifacts",
         "schedule": 900.0,
     },
+    # Hourly rather than daily: the window this closes is one where a buyer has
+    # paid, holds nothing, and is owed money back, so the cost of an extra pass
+    # over an empty result set is worth the shorter exposure.
+    "reconcile-pending-refunds-hourly": {
+        "task": "app.workers.tasks.financials_beat.reconcile_pending_refunds_task",
+        "schedule": 3600.0,
+    },
 }

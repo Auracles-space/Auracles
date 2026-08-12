@@ -46,6 +46,7 @@ from app.modules.developer.models import (
 from app.modules.financials import escrow_service
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
+from app.modules.financials.refunds import reverse_refund, settle_refund
 from app.modules.frameworks.models import Framework, License
 from app.modules.notifications.service import create_notification
 from app.modules.projects import notifications as project_notifications
@@ -1461,19 +1462,7 @@ async def _handle_paystack_refund_processed(
     transaction = await _refunded_purchase_for_event(db, event)
     if transaction is None:
         return
-    await write_audit(
-        db=db,
-        actor_id=transaction.payer_id,
-        action="refund_settled",
-        target_type="transaction",
-        target_id=transaction.id,
-        metadata={"provider": "paystack"},
-    )
-    logger.bind(
-        module="webhooks",
-        action="paystack_refund_processed",
-        transaction_id=transaction.id,
-    ).info("refund_settled")
+    await settle_refund(db, transaction, source="webhook")
 
 
 async def _handle_paystack_refund_failed(
@@ -1482,108 +1471,15 @@ async def _handle_paystack_refund_failed(
 ) -> None:
     """Reverse an optimistically applied refund that Paystack declined.
 
-    Access is revoked as soon as Paystack accepts a refund, before the money
-    has moved. When it declines, the buyer has paid and holds nothing, so the
-    purchase and every licence it minted are restored to where they were.
-
-    Any Partner commission the clearing task voided on seeing the purchase
-    marked refunded is returned to `pending`, because the commission follows
-    the sale: the refund never happened, so the Partner is owed for it exactly
-    as before. It is not cleared here — whether the 48-hour window has elapsed
-    is the clearing task's decision, and `pending` is the state it expects.
+    The reversal itself lives in `financials.refunds` because the
+    reconciliation task applies the same outcome when this webhook never
+    arrives, and two implementations of a money reversal would eventually
+    disagree.
     """
     transaction = await _refunded_purchase_for_event(db, event)
     if transaction is None:
         return
-
-    transaction.status = "completed"
-    licenses = list(
-        (
-            await db.execute(
-                select(License)
-                .where(
-                    License.transaction_id == transaction.id,
-                    License.status == "revoked",
-                )
-                .with_for_update()
-            )
-        )
-        .scalars()
-        .all()
-    )
-    for license_row in licenses:
-        license_row.status = "active"
-
-    await _reinstate_voided_commissions(db, transaction)
-
-    await write_audit(
-        db=db,
-        actor_id=transaction.payer_id,
-        action="refund_failed",
-        target_type="transaction",
-        target_id=transaction.id,
-        metadata={
-            "provider": "paystack",
-            "restored_license_ids": [str(row.id) for row in licenses],
-        },
-    )
-    # CRITICAL, not ERROR: the ledger said refunded while the money never
-    # moved, and a Contributor payout may have been sized against that.
-    logger.bind(
-        module="webhooks",
-        action="paystack_refund_failed",
-        transaction_id=transaction.id,
-    ).critical("refund_reversed_after_provider_failure")
-
-
-async def _reinstate_voided_commissions(
-    db: AsyncSession,
-    transaction: Transaction,
-) -> None:
-    """Return commissions voided by a declined refund to `pending`.
-
-    Only rows still marked `voided` are touched, so a redelivered
-    `refund.failed` is a no-op and a commission the clearing task has since
-    re-cleared is left alone. A voided commission cannot have been paid — payout
-    selection excludes that status — so there is no settled money to unwind.
-
-    Args:
-        db: Async SQLAlchemy session, inside the caller's transaction.
-        transaction: The purchase whose refund the provider declined.
-    """
-    commissions = list(
-        (
-            await db.execute(
-                select(PartnerCommission)
-                .where(
-                    PartnerCommission.transaction_id == transaction.id,
-                    PartnerCommission.status == "voided",
-                )
-                .with_for_update()
-            )
-        )
-        .scalars()
-        .all()
-    )
-    for commission in commissions:
-        commission.status = "pending"
-        commission.cleared_at = None
-        await write_audit(
-            db=db,
-            actor_id=None,
-            action="partner_commission_reinstated",
-            target_type="partner_commission",
-            target_id=commission.id,
-            metadata={
-                "transaction_id": str(transaction.id),
-                "reason": "provider_declined_refund",
-            },
-        )
-        logger.bind(
-            module="webhooks",
-            action="partner_commission_reinstated",
-            transaction_id=transaction.id,
-        ).info("commission_restored_after_failed_refund")
+    await reverse_refund(db, transaction, source="webhook")
 
 
 def _paystack_envelope(event: dict[str, Any]) -> dict[str, Any]:
