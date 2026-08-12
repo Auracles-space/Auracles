@@ -46,10 +46,12 @@ FINANCIAL_ENUMS = {
     "payout_status_enum",
     "webhook_event_status_enum",
 }
+# Values at head, not as 0009 first wrote them: the NGN floor was seeded at
+# 20,000 as a placeholder and raised to the pilot figure by 0095.
 PLATFORM_CONFIG_SEEDS = {
     "commission_rate": "0.15",
     "min_payout_usd": "50",
-    "min_payout_ngn": "20000",
+    "min_payout_ngn": "50000",
     "refund_window_hours": "48",
 }
 

@@ -201,12 +201,11 @@ async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
     )
 
 
-# Fallback payout floors, used only until an admin sets `min_payout_<ccy>` in
+# Fallback payout floors, used only if `min_payout_<ccy>` is missing from
 # platform_config. A floor of zero would let a payout be worth less than the
 # provider's own transfer fee, so every settleable currency needs a real number.
-# TODO(william, 2026-08-11, FR-FIN-012): confirm the NGN floor before pilot
-# launch — 50,000 is a placeholder chosen to sit well clear of Paystack's
-# per-transfer fee, not a product decision.
+# Both keys are admin-editable, and the seeded rows are the operative values —
+# these are the last resort for a database that never received them.
 _MINIMUM_PAYOUT_DEFAULTS = {
     "USD": Decimal("50.00"),
     "NGN": Decimal("50000.00"),

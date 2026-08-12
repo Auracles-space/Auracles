@@ -25,7 +25,7 @@ from app.shared.models.audit_log import AuditLog
 DEFAULT_PLATFORM_CONFIG = {
     "commission_rate": "0.15",
     "min_payout_usd": "50",
-    "min_payout_ngn": "20000",
+    "min_payout_ngn": "50000",
     "refund_window_hours": "48",
     "attestation_fee_framework": "250.00",
     "attestation_fee_contributor": "300.00",
@@ -237,7 +237,8 @@ async def test_admin_can_read_platform_config(
         "completion": "0.0000",
         "recency": "0.0000",
     }
-    assert config["min_payout_ngn"]["editable"] is False
+    assert config["min_payout_ngn"]["value"] == "50000"
+    assert config["min_payout_ngn"]["editable"] is True
 
 
 async def test_non_super_admin_cannot_update_platform_config(
@@ -333,6 +334,51 @@ async def test_admin_updates_editable_config_with_totp_reason_and_audit(
     assert {audit.metadata_["new_value"] for audit in audits} == {"0.12", "72"}
 
 
+async def test_admin_updates_ngn_payout_floor_within_range(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """The NGN payout floor is admin-tunable within its guard rails.
+
+    The pilot settles in NGN, so the floor that decides whether a Contributor
+    can withdraw has to be movable without a deploy. The bounds exist so a
+    typo cannot set it below Paystack's own transfer fee, or so high that no
+    Contributor can ever withdraw.
+    """
+    del migrated_database, admin_config_context
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+
+    accepted = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Raise the NGN withdrawal floor for the pilot.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "min_payout_ngn", "value": "75000"}],
+        },
+    )
+    below_floor = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "updates": [{"key": "min_payout_ngn", "value": "100"}],
+        },
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.get(PlatformConfig, "min_payout_ngn")
+
+    assert accepted.status_code == 200
+    assert below_floor.status_code == 422
+    assert stored is not None
+    assert stored.value == "75000"
+    assert stored.updated_by == admin_id
+
+
 async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
     client: AsyncClient,
     migrated_database: None,
@@ -365,15 +411,17 @@ async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
-            "reason": "Paystack is deferred.",
+            "reason": "Reputation decay is not admin-tunable.",
             "totp_code": pyotp.TOTP(totp_secret).now(),
-            "updates": [{"key": "min_payout_ngn", "value": "30000"}],
+            "updates": [{"key": "reputation_decay_halflife_days", "value": "90"}],
         },
     )
 
     async with async_session_factory() as session:
         commission_rate = await session.get(PlatformConfig, "commission_rate")
-        min_payout_ngn = await session.get(PlatformConfig, "min_payout_ngn")
+        decay_halflife = await session.get(
+            PlatformConfig, "reputation_decay_halflife_days"
+        )
         audit_count = len(
             (
                 await session.execute(
@@ -389,8 +437,8 @@ async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
     assert uneditable_key.status_code == 422
     assert commission_rate is not None
     assert commission_rate.value == "0.15"
-    assert min_payout_ngn is not None
-    assert min_payout_ngn.value == "20000"
+    assert decay_halflife is not None
+    assert decay_halflife.value == "180"
     assert audit_count == 0
 
 

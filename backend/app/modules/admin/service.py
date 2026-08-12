@@ -67,6 +67,7 @@ from app.workers.tasks.processing.minhash_index import (
 EDITABLE_PLATFORM_CONFIG_KEYS = {
     "commission_rate",
     "min_payout_usd",
+    "min_payout_ngn",
     "refund_window_hours",
     "attestation_fee_framework",
     "attestation_fee_contributor",
@@ -98,6 +99,17 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
 COMMISSION_RATE_MAX = Decimal("0.50")
 MIN_PAYOUT_USD_MIN = Decimal("1.00")
 MIN_PAYOUT_USD_MAX = Decimal("100000.00")
+# The NGN floor is a whole-naira figure roughly three orders of magnitude above
+# its USD counterpart, so it gets its own band rather than sharing one. The
+# lower bound keeps a payout worth more than the Paystack transfer fee that
+# consumes it; the upper bound stops a mistyped floor locking every Contributor
+# out of their own earnings.
+MIN_PAYOUT_NGN_MIN = Decimal("1000.00")
+MIN_PAYOUT_NGN_MAX = Decimal("10000000.00")
+MIN_PAYOUT_RANGES = {
+    "min_payout_usd": (MIN_PAYOUT_USD_MIN, MIN_PAYOUT_USD_MAX),
+    "min_payout_ngn": (MIN_PAYOUT_NGN_MIN, MIN_PAYOUT_NGN_MAX),
+}
 REFUND_WINDOW_HOURS_MIN = 0
 REFUND_WINDOW_HOURS_MAX = 720
 SAVED_SEARCH_ALERT_CADENCE_HOURS_MIN = 1
@@ -2307,12 +2319,13 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
             )
         return _format_decimal_config(value.quantize(Decimal("0.0001")))
 
-    if key == "min_payout_usd":
+    if key in MIN_PAYOUT_RANGES:
         value = _parse_decimal_config(key, raw_value)
-        if value < MIN_PAYOUT_USD_MIN or value > MIN_PAYOUT_USD_MAX:
+        minimum, maximum = MIN_PAYOUT_RANGES[key]
+        if value < minimum or value > maximum:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="min_payout_usd must be between 1.00 and 100000.00.",
+                detail=f"{key} must be between {minimum} and {maximum}.",
             )
         return _format_decimal_config(value.quantize(Decimal("0.01")))
 
