@@ -42,8 +42,15 @@ def test_publish_framework_uses_explicit_transaction_boundary() -> None:
 
 
 def test_acknowledge_soft_fail_uses_explicit_transaction_boundary() -> None:
-    """Soft-fail acknowledgement writes rarity audit, Framework state, and audit."""
-    assert "async with db.begin()" in _source(framework_service.acknowledge_soft_fail)
+    """Soft-fail acknowledgement writes rarity audit, Framework state, and audit.
+
+    Asserted against the `_for_owner` form because that is where the writes
+    happen: `acknowledge_soft_fail` is now a thin personal-owner wrapper that
+    delegates, so checking it would test a function that touches no rows.
+    """
+    assert "async with db.begin()" in _source(
+        framework_service.acknowledge_soft_fail_for_owner
+    )
 
 
 def test_request_artifact_download_uses_explicit_transaction_boundary() -> None:

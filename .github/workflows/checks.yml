@@ -53,6 +53,15 @@ jobs:
         with:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v5
+      # WeasyPrint renders invoice and earnings-statement PDFs through Pango,
+      # which is a system library rather than a Python dependency. Installed
+      # explicitly rather than relying on whatever the runner image ships, and
+      # mirrors backend/Dockerfile so CI and the deployed image agree.
+      - name: Install PDF rendering system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangocairo-1.0-0
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run mypy app

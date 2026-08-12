@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, update
 
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
@@ -53,6 +53,9 @@ async def org_framework_state() -> AsyncIterator[None]:
         """Delete framework rows before clearing shared identity state."""
         async with async_session_factory() as session:
             await session.execute(delete(Review))
+            # frameworks.preview_artifact_id points at an artifact, so the
+            # reference must be cleared before the artifacts it names are.
+            await session.execute(update(Framework).values(preview_artifact_id=None))
             await session.execute(delete(Artifact))
             await session.execute(delete(FrameworkVersion))
             await session.execute(delete(Framework))
@@ -396,7 +399,15 @@ async def test_org_admin_can_publish_org_framework(
         authoring_member_id=member_id,
         status="pipeline_passed",
     )
-    await _create_artifact(framework.id)
+    artifact = await _create_artifact(framework.id)
+    # Publishing requires a preview whenever an eligible artifact exists, so a
+    # buyer can inspect the Framework before paying. Set here because this test
+    # is about org authorization, not the preview rule.
+    async with async_session_factory() as session:
+        async with session.begin():
+            stored = await session.get(Framework, framework.id)
+            assert stored is not None
+            stored.preview_artifact_id = artifact.id
 
     async def _noop_pipeline(*args: object, **kwargs: object) -> None:
         return None

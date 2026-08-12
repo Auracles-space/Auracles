@@ -94,7 +94,11 @@ async def _create_org_with_member(owner: User, member: User) -> Organization:
             session.add_all(
                 [
                     OrgMember(org_id=organization.id, user_id=owner.id, role="owner"),
-                    OrgMember(org_id=organization.id, user_id=member.id, role="member"),
+                    # "admin" not "member": since 0779585f derived roles are scoped to
+                    # owner/admin plus members of a team with the capability
+                    # enabled. A plain member with no team correctly receives
+                    # nothing, so these tests would assert the pre-0779585f rule.
+                    OrgMember(org_id=organization.id, user_id=member.id, role="admin"),
                 ]
             )
             await session.refresh(organization)

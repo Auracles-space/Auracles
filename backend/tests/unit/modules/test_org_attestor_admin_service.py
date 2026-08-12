@@ -140,7 +140,9 @@ async def _org_with_members(member_count: int = 1) -> tuple[UUID, UUID, list[UUI
         member_ids.append(uid)
         async with async_session_factory() as session:
             async with session.begin():
-                session.add(OrgMember(org_id=org_id, user_id=uid, role="member"))
+                # "admin": derived roles are scoped to owner/admin plus
+                # capability-enabled teams since 0779585f.
+                session.add(OrgMember(org_id=org_id, user_id=uid, role="admin"))
     return org_id, admin_id, member_ids
 
 
