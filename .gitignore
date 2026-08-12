@@ -26,3 +26,8 @@ frontend/tsconfig.tsbuildinfo
 # Local tooling
 .env
 .env.prod
+# Celery Beat's local run-state database. Machine-specific and regenerated on
+# start; committing it would hand another machine this one's last-run times.
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
