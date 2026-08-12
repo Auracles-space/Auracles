@@ -28,6 +28,12 @@ from app.core.security import (
 )
 from app.integrations.paystack import PaystackProviderError
 from app.modules.auth.models import User, UserRole
+from app.modules.developer.models import (
+    ApiKey,
+    DeveloperAccount,
+    DeveloperApplication,
+    PartnerCommission,
+)
 from app.modules.financials.models import (
     FinancialEvent,
     Payout,
@@ -681,6 +687,67 @@ async def create_refunded_paystack_purchase() -> tuple[UUID, UUID]:
             return transaction.id, license_row.id
 
 
+async def create_voided_partner_commission(transaction_id: UUID) -> UUID:
+    """Void a Partner commission against a purchase, as the clearing task does.
+
+    The commission is not voided by the refund itself — `clear_partner_commissions`
+    voids it on its next run after seeing the purchase marked refunded. This
+    reproduces the state where that run landed inside Paystack's settlement
+    window, which is the only way a declined refund can find a voided commission.
+    """
+    developer_id = await create_user_with_roles(
+        f"paystack-refund-developer-{uuid4()}@auracles.space",
+        ["developer"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = await session.get(Transaction, transaction_id)
+            assert transaction is not None
+            application = DeveloperApplication(
+                user_id=developer_id,
+                company_name="Paystack Refund Partner",
+                website="https://paystack-refund-partner.example.com",
+                use_case="Verify commission reinstatement on a declined refund.",
+                status="approved",
+                reviewed_at=datetime.now(UTC),
+            )
+            session.add(application)
+            await session.flush()
+            account = DeveloperAccount(
+                user_id=developer_id,
+                application_id=application.id,
+                company_name=application.company_name,
+                commission_tier=1,
+                tier_rate=Decimal("0.0500"),
+            )
+            session.add(account)
+            await session.flush()
+            api_key = ApiKey(
+                developer_account_id=account.id,
+                name="Paystack refund key",
+                key_prefix="ak_psrf",
+                key_hash=f"paystack-refund-hash-{uuid4()}",
+                scopes=["purchase:write"],
+            )
+            session.add(api_key)
+            await session.flush()
+            commission = PartnerCommission(
+                api_key_id=api_key.id,
+                developer_account_id=account.id,
+                transaction_id=transaction.id,
+                framework_id=transaction.ref_id,
+                sale_amount=Decimal("149.00"),
+                currency="USD",
+                tier_at_sale=1,
+                tier_rate=Decimal("0.0500"),
+                commission_amount=Decimal("7.45"),
+                status="voided",
+            )
+            session.add(commission)
+            await session.flush()
+            return commission.id
+
+
 def refund_event(
     event_name: str,
     *,
@@ -760,6 +827,41 @@ async def test_refund_failed_restores_the_purchase_and_access(
     assert license_row.status == "active"
     assert audit is not None
     assert audit.target_id == transaction_id
+
+
+async def test_refund_failed_reinstates_a_voided_partner_commission(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A commission voided by a refund that never happened must come back.
+
+    The commission follows the sale. If Paystack declines the refund the sale
+    stands, so the Partner is owed for it exactly as before; leaving it voided
+    would keep their earnings for a purchase that was never reversed.
+
+    It returns to `pending`, not `cleared` — clearing is the periodic task's
+    decision to make against the 48-hour window, and this restores the row to
+    the state that task expects to find.
+    """
+    transaction_id, _ = await create_refunded_paystack_purchase()
+    commission_id = await create_voided_partner_commission(transaction_id)
+    paystack_context["event"] = refund_event("refund.failed")
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        commission = await session.get(PartnerCommission, commission_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "partner_commission_reinstated")
+        )
+
+    assert response.status_code == 200
+    assert commission is not None
+    assert commission.status == "pending"
+    assert commission.cleared_at is None
+    assert audit is not None
+    assert audit.target_id == commission_id
+    assert audit.metadata_["transaction_id"] == str(transaction_id)
 
 
 async def test_refund_event_for_an_unknown_reference_is_acknowledged(

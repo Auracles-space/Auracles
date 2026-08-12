@@ -1486,10 +1486,11 @@ async def _handle_paystack_refund_failed(
     has moved. When it declines, the buyer has paid and holds nothing, so the
     purchase and every licence it minted are restored to where they were.
 
-    Partner commission voided by the refund is deliberately left voided and
-    logged instead: it re-clears from `pending` on its own schedule, and
-    silently reinstating a commission on money that may yet be refunded again
-    is the worse error.
+    Any Partner commission the clearing task voided on seeing the purchase
+    marked refunded is returned to `pending`, because the commission follows
+    the sale: the refund never happened, so the Partner is owed for it exactly
+    as before. It is not cleared here — whether the 48-hour window has elapsed
+    is the clearing task's decision, and `pending` is the state it expects.
     """
     transaction = await _refunded_purchase_for_event(db, event)
     if transaction is None:
@@ -1513,6 +1514,8 @@ async def _handle_paystack_refund_failed(
     for license_row in licenses:
         license_row.status = "active"
 
+    await _reinstate_voided_commissions(db, transaction)
+
     await write_audit(
         db=db,
         actor_id=transaction.payer_id,
@@ -1531,6 +1534,56 @@ async def _handle_paystack_refund_failed(
         action="paystack_refund_failed",
         transaction_id=transaction.id,
     ).critical("refund_reversed_after_provider_failure")
+
+
+async def _reinstate_voided_commissions(
+    db: AsyncSession,
+    transaction: Transaction,
+) -> None:
+    """Return commissions voided by a declined refund to `pending`.
+
+    Only rows still marked `voided` are touched, so a redelivered
+    `refund.failed` is a no-op and a commission the clearing task has since
+    re-cleared is left alone. A voided commission cannot have been paid — payout
+    selection excludes that status — so there is no settled money to unwind.
+
+    Args:
+        db: Async SQLAlchemy session, inside the caller's transaction.
+        transaction: The purchase whose refund the provider declined.
+    """
+    commissions = list(
+        (
+            await db.execute(
+                select(PartnerCommission)
+                .where(
+                    PartnerCommission.transaction_id == transaction.id,
+                    PartnerCommission.status == "voided",
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for commission in commissions:
+        commission.status = "pending"
+        commission.cleared_at = None
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="partner_commission_reinstated",
+            target_type="partner_commission",
+            target_id=commission.id,
+            metadata={
+                "transaction_id": str(transaction.id),
+                "reason": "provider_declined_refund",
+            },
+        )
+        logger.bind(
+            module="webhooks",
+            action="partner_commission_reinstated",
+            transaction_id=transaction.id,
+        ).info("commission_restored_after_failed_refund")
 
 
 def _paystack_envelope(event: dict[str, Any]) -> dict[str, Any]:
