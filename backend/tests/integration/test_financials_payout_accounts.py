@@ -23,6 +23,7 @@ from app.core.security import (
     hash_password,
     hash_payout_provider_account_id,
 )
+from app.integrations.paystack import PaystackProviderError
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
@@ -99,6 +100,15 @@ def migrated_database() -> Iterator[None]:
         sync_engine.dispose()
 
 
+class FakePaystackRecipient:
+    """Paystack transfer recipient test double."""
+
+    def __init__(self, recipient_code: str, account_name: str) -> None:
+        """Store the recipient code and bank-confirmed account name."""
+        self.recipient_code = recipient_code
+        self.account_name = account_name
+
+
 @pytest.fixture
 async def payout_account_context(
     monkeypatch: pytest.MonkeyPatch,
@@ -108,7 +118,9 @@ async def payout_account_context(
     calls: dict[str, list[Any]] = {
         "stripe_accounts": [],
         "stripe_links": [],
+        "paystack_recipients": [],
     }
+    failures: dict[str, bool] = {"paystack_recipient": False}
 
     await engine.dispose()
     async with async_session_factory() as session:
@@ -147,7 +159,32 @@ async def payout_account_context(
         )
         return FakeStripeAccountLink("https://connect.stripe.com/setup/test")
 
+    async def fake_create_transfer_recipient(
+        *,
+        name: str,
+        account_number: str,
+        bank_code: str,
+        currency: str,
+    ) -> FakePaystackRecipient:
+        """Record recipient registration and return a recipient code."""
+        if failures["paystack_recipient"]:
+            raise PaystackProviderError("Paystack rejected the account.")
+        calls["paystack_recipients"].append(
+            {
+                "name": name,
+                "account_number": account_number,
+                "bank_code": bank_code,
+                "currency": currency,
+            }
+        )
+        return FakePaystackRecipient("RCP_test_9876", "ADA LOVELACE")
+
     app.dependency_overrides[get_redis] = lambda: fake_redis
+    monkeypatch.setattr(
+        financials_service.paystack,
+        "create_transfer_recipient",
+        fake_create_transfer_recipient,
+    )
     monkeypatch.setattr(
         financials_service.stripe,
         "create_express_account",
@@ -159,7 +196,7 @@ async def payout_account_context(
         fake_create_account_link,
     )
     try:
-        yield {"redis": fake_redis, "calls": calls}
+        yield {"redis": fake_redis, "calls": calls, "failures": failures}
     finally:
         app.dependency_overrides.pop(get_redis, None)
         await engine.dispose()
@@ -406,3 +443,192 @@ async def test_payout_account_onboarding_reuses_existing_account(
             .all()
         )
         assert len(accounts) == 1
+
+
+async def test_nigerian_contributor_onboards_a_paystack_payout_account(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """A NG payout account registers a transfer recipient and verifies at once.
+
+    Paystack has no hosted onboarding: the NUBAN details are submitted
+    directly, and Paystack resolving them against the bank is what proves the
+    account exists. There is no redirect and nothing to wait on, so the
+    response carries no onboarding URL and the account is verified immediately.
+    """
+    contributor_id, _ = await create_user_with_roles(
+        "ng-contributor@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        payout_account = await session.scalar(select(PayoutAccount))
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["provider"] == "paystack"
+    assert body["onboarding_url"] is None
+    # Surfaced so the Contributor can catch a mistyped account number before
+    # any money is addressed to the recipient.
+    assert body["account_name"] == "ADA LOVELACE"
+    assert body["payout_account"]["account_type"] == "nuban"
+    assert body["payout_account"]["provider_account_ref"] == "****9876"
+    assert body["payout_account"]["verified_at"] is not None
+    assert payout_account is not None
+    # The recipient code is the payout address; it must never sit in plaintext.
+    assert payout_account.provider_account_id != "RCP_test_9876"
+    assert payout_account.provider_account_lookup_hash == (
+        hash_payout_provider_account_id("RCP_test_9876")
+    )
+    assert payout_account_context["calls"]["paystack_recipients"] == [
+        {
+            "name": "ng-contributor",
+            "account_number": "0123456789",
+            "bank_code": "044",
+            "currency": "USD",
+        }
+    ]
+
+
+async def test_paystack_onboarding_rejects_a_country_that_settles_elsewhere(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """The rail follows the country, so a mismatched provider is refused.
+
+    Letting the caller pick would register a Nigerian bank account against
+    Stripe Connect, which cannot pay it, and the money would strand.
+    """
+    contributor_id, _ = await create_user_with_roles(
+        "mismatch-contributor@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "US",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    assert response.status_code == 422
+    assert payout_account_context["calls"]["paystack_recipients"] == []
+
+
+async def test_paystack_onboarding_requires_bank_details(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Without an account number there is nothing to register, so reject early.
+
+    Caught by the schema so the request never reaches the provider and cannot
+    leave a half-created recipient behind.
+    """
+    contributor_id, _ = await create_user_with_roles(
+        "nodetails-contributor@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={"provider": "paystack", "country": "NG"},
+    )
+
+    assert response.status_code == 422
+    assert payout_account_context["calls"]["paystack_recipients"] == []
+
+
+async def test_paystack_onboarding_failure_stores_no_payout_account(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """A rejected account must leave no row a payout could later be sent to."""
+    contributor_id, _ = await create_user_with_roles(
+        "rejected-contributor@auracles.space",
+        ["contributor"],
+    )
+    payout_account_context["failures"]["paystack_recipient"] = True
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0000000000",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        payout_account = await session.scalar(select(PayoutAccount))
+
+    assert response.status_code == 502
+    assert payout_account is None
+
+
+async def test_paystack_onboarding_reuses_an_existing_account(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Re-onboarding must not register a second recipient for the same person.
+
+    Unlike Stripe there is no link to refresh, so the existing account is
+    returned as-is and the provider is never called again.
+    """
+    contributor_id, _ = await create_user_with_roles(
+        "repeat-ng-contributor@auracles.space",
+        ["contributor"],
+    )
+    payload = {
+        "provider": "paystack",
+        "country": "NG",
+        "account_number": "0123456789",
+        "bank_code": "044",
+    }
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    first = await client.post(
+        "/v1/financials/payout-accounts/onboard", headers=headers, json=payload
+    )
+    second = await client.post(
+        "/v1/financials/payout-accounts/onboard", headers=headers, json=payload
+    )
+
+    async with async_session_factory() as session:
+        accounts = (
+            (
+                await session.execute(
+                    select(PayoutAccount).where(PayoutAccount.user_id == contributor_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["payout_account"]["id"] == second.json()["payout_account"]["id"]
+    assert len(accounts) == 1
+    assert len(payout_account_context["calls"]["paystack_recipients"]) == 1

@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PaymentMethodSetupRequest(BaseModel):
@@ -60,7 +60,7 @@ class PaymentMethodDeleteResponse(BaseModel):
     removed: bool
 
 
-PayoutProvider = Literal["stripe"]
+PayoutProvider = Literal["stripe", "paystack"]
 SelfServeLicenseType = Literal["single_user", "team", "organizational"]
 
 
@@ -134,14 +134,58 @@ class InvoiceGenerationResponse(BaseModel):
 
 
 class PayoutAccountOnboardRequest(BaseModel):
-    """Request body for creating a provider-held payout destination."""
+    """Request body for creating a provider-held payout destination.
+
+    The two rails collect different things. Stripe Connect runs hosted
+    onboarding, so it needs only the redirect URLs and never sees a bank
+    detail here. Paystack has no hosted flow — the Contributor's NUBAN account
+    number and bank code are submitted directly and registered as a transfer
+    recipient, which is also what verifies the account exists.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     provider: PayoutProvider
     country: str = Field(min_length=2, max_length=2)
-    refresh_url: str = Field(min_length=1)
-    return_url: str = Field(min_length=1)
+    # Stripe-only: Paystack returns no onboarding URL to redirect back from.
+    refresh_url: str | None = Field(default=None, min_length=1)
+    return_url: str | None = Field(default=None, min_length=1)
+    # Paystack-only. NUBAN numbers are fixed-length; the bank code comes from
+    # GET /financials/payout-accounts/banks, never from a hardcoded list.
+    account_number: str | None = Field(default=None, min_length=10, max_length=10)
+    bank_code: str | None = Field(default=None, min_length=1, max_length=10)
+
+    @model_validator(mode="after")
+    def provider_has_the_fields_its_rail_requires(self) -> PayoutAccountOnboardRequest:
+        """Reject a payload missing the fields its chosen rail cannot work without.
+
+        Caught here rather than in the service so an incomplete request is a
+        422 from the schema instead of a provider call that fails halfway and
+        leaves an orphan account at Stripe or Paystack.
+        """
+        if self.provider == "paystack":
+            if not self.account_number or not self.bank_code:
+                raise ValueError(
+                    "Paystack payout accounts require account_number and bank_code."
+                )
+        elif not self.refresh_url or not self.return_url:
+            raise ValueError(
+                "Stripe payout accounts require refresh_url and return_url."
+            )
+        return self
+
+
+class PayoutBank(BaseModel):
+    """A bank a Contributor payout account can be held at."""
+
+    name: str
+    code: str
+
+
+class PayoutBanksResponse(BaseModel):
+    """Response body listing banks available for payout onboarding."""
+
+    banks: list[PayoutBank]
 
 
 class PayoutAccountResponse(BaseModel):
@@ -162,6 +206,14 @@ class PayoutAccountOnboardResponse(BaseModel):
     provider: PayoutProvider
     onboarding_url: str | None
     payout_account: PayoutAccountResponse
+    account_name: str | None = None
+    """Bank-confirmed account holder name. Paystack rail only.
+
+    Returned at onboarding rather than stored, because this is the moment it
+    matters: it is how a Contributor catches a mistyped account number before
+    any money is addressed to it. Paystack resolves the name against the bank
+    while registering the transfer recipient, so it costs no extra call.
+    """
 
 
 class PayoutAccountsResponse(BaseModel):

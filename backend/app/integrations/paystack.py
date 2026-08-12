@@ -56,11 +56,35 @@ class PaystackSubaccount:
 
 
 @dataclass(frozen=True)
+class PaystackTransferRecipient:
+    """Normalized Paystack transfer recipient result.
+
+    Attributes:
+        recipient_code: The `RCP_...` code every later transfer is addressed to.
+        account_name: Name the bank holds for the account. Shown back to the
+            Contributor so a mistyped account number is caught before money
+            moves, since Paystack resolves it during recipient creation.
+    """
+
+    recipient_code: str
+    account_name: str | None
+
+
+@dataclass(frozen=True)
+class PaystackBank:
+    """A bank a Nigerian payout account can be held at."""
+
+    name: str
+    code: str
+
+
+@dataclass(frozen=True)
 class PaystackTransfer:
     """Normalized Paystack transfer result."""
 
     id: str
     status: str | None
+    transfer_code: str | None = None
 
 
 def _require_secret_key(settings: Settings) -> str:
@@ -116,6 +140,61 @@ async def _post_json(
         if not isinstance(data, dict):
             raise PaystackProviderError("Paystack response missing data.")
         return data
+    except httpx.HTTPError as exc:
+        raise PaystackProviderError("Paystack request failed.") from exc
+    finally:
+        if owns_client:
+            await resolved_client.aclose()
+
+
+async def _get_json(
+    path: str,
+    params: Mapping[str, str],
+    *,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> Any:
+    """GET from Paystack and return the nested data payload.
+
+    Unlike `_post_json` the shape is not narrowed to a dict: Paystack's
+    collection endpoints (`/bank`) return a list under the same `data` key.
+
+    Args:
+        path: API path beginning with a slash.
+        params: Query string parameters.
+        settings: Settings override, defaulting to the app settings.
+        client: HTTP client override, primarily for tests.
+
+    Returns:
+        The value of the response's `data` key.
+
+    Raises:
+        PaystackProviderError: On transport failure, a non-2xx status, or a
+            response Paystack itself marked unsuccessful.
+    """
+    resolved_settings = settings or get_settings()
+    headers = {"Authorization": f"Bearer {_require_secret_key(resolved_settings)}"}
+
+    owns_client = client is None
+    resolved_client = client or httpx.AsyncClient(timeout=PAYSTACK_TIMEOUT_SECONDS)
+    try:
+        response = await resolved_client.get(
+            f"{PAYSTACK_API_BASE_URL}{path}",
+            params=dict(params),
+            headers=headers,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise PaystackProviderError(
+                f"Paystack returned {response.status_code}."
+            ) from exc
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("status") is not True:
+            raise PaystackProviderError("Paystack returned an unsuccessful response.")
+        if "data" not in payload:
+            raise PaystackProviderError("Paystack response missing data.")
+        return payload["data"]
     except httpx.HTTPError as exc:
         raise PaystackProviderError("Paystack request failed.") from exc
     finally:
@@ -250,6 +329,107 @@ async def create_subaccount(
     return PaystackSubaccount(provider_account_id=subaccount_code)
 
 
+async def create_transfer_recipient(
+    *,
+    name: str,
+    account_number: str,
+    bank_code: str,
+    currency: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> PaystackTransferRecipient:
+    """Register a Nigerian bank account as a payout destination.
+
+    Paystack resolves the account number against the bank during creation, so a
+    successful response doubles as verification that the account exists — there
+    is no separate confirmation step to wait on, unlike Stripe Connect's hosted
+    onboarding.
+
+    Args:
+        name: Account holder name to register the recipient under.
+        account_number: NUBAN account number.
+        bank_code: Paystack bank code, from `list_banks`.
+        currency: Settlement currency for the recipient.
+        settings: Settings override, defaulting to the app settings.
+        client: HTTP client override, primarily for tests.
+
+    Returns:
+        The recipient code and the bank-confirmed account name.
+
+    Raises:
+        PaystackProviderError: If Paystack rejects the account or the response
+            carries no recipient code to address later transfers to.
+    """
+    data = await _post_json(
+        "/transferrecipient",
+        {
+            "type": "nuban",
+            "name": name,
+            "account_number": account_number,
+            "bank_code": bank_code,
+            "currency": currency.upper(),
+        },
+        settings=settings,
+        client=client,
+    )
+    recipient_code = data.get("recipient_code")
+    if not isinstance(recipient_code, str):
+        raise PaystackProviderError(
+            "Paystack transfer recipient response missing recipient code."
+        )
+    details = data.get("details")
+    account_name = details.get("account_name") if isinstance(details, dict) else None
+    return PaystackTransferRecipient(
+        recipient_code=recipient_code,
+        account_name=account_name if isinstance(account_name, str) else None,
+    )
+
+
+async def list_banks(
+    *,
+    country: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> list[PaystackBank]:
+    """List banks a payout account can be held at, as Paystack reports them.
+
+    Never hardcode this list. Bank codes change and new institutions appear, so
+    a stale local copy either rejects a valid account or addresses money to the
+    wrong institution.
+
+    Entries missing a name or code are skipped rather than failing the call: one
+    unusable row must not deny the Contributor the entire list.
+
+    Args:
+        country: Paystack country slug, e.g. `nigeria`.
+        settings: Settings override, defaulting to the app settings.
+        client: HTTP client override, primarily for tests.
+
+    Returns:
+        Banks with both a display name and a usable code.
+
+    Raises:
+        PaystackProviderError: On transport failure or an unexpected shape.
+    """
+    data = await _get_json(
+        "/bank",
+        {"country": country},
+        settings=settings,
+        client=client,
+    )
+    if not isinstance(data, list):
+        raise PaystackProviderError("Paystack bank list response is not a list.")
+    banks: list[PaystackBank] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        code = entry.get("code")
+        if isinstance(name, str) and isinstance(code, str | int):
+            banks.append(PaystackBank(name=name, code=str(code)))
+    return banks
+
+
 async def initiate_transfer(
     *,
     amount: Decimal,
@@ -281,11 +461,13 @@ async def initiate_transfer(
     )
     raw_id = data.get("id")
     status = data.get("status")
+    transfer_code = data.get("transfer_code")
     if not isinstance(raw_id, int | str):
         raise PaystackProviderError("Paystack transfer response missing id.")
     return PaystackTransfer(
         id=str(raw_id),
         status=status if isinstance(status, str) else None,
+        transfer_code=transfer_code if isinstance(transfer_code, str) else None,
     )
 
 

@@ -1,4 +1,11 @@
-"""Celery tasks for Contributor payout processing."""
+"""Celery tasks for Contributor payout processing.
+
+Payouts settle on the rail their payout account was registered on: Stripe
+Connect transfers for connected accounts, Paystack transfers for Nigerian
+NUBAN recipients. The provider is read from the account row rather than a
+global setting, because a recipient code issued by one provider means nothing
+to the other.
+"""
 
 from __future__ import annotations
 
@@ -11,14 +18,27 @@ from sqlalchemy import select
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
 from app.core.security import decrypt_payout_provider_account_id
-from app.integrations import stripe
+from app.integrations import paystack, stripe
 from app.modules.financials.models import Payout, PayoutAccount
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
 
 async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
-    """Create a provider transfer for a pending payout request."""
+    """Create a provider transfer for a pending payout request.
+
+    Idempotent by design: a payout already carrying a provider reference is
+    returned untouched, so a Celery retry cannot send the money twice.
+
+    Args:
+        payout_id: String UUID of the payout to process.
+
+    Returns:
+        The payout id, its provider reference, and its resulting status.
+
+    Raises:
+        ValueError: If no payout row matches the id.
+    """
     parsed_payout_id = UUID(payout_id)
     async with async_session_factory() as db:
         row = await db.execute(
@@ -50,18 +70,43 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
             if payout.contributor_id is not None
             else {"org_id": str(payout.org_id)}
         )
-        transfer = await stripe.create_transfer(
-            amount=payout.net_amount,
-            currency=payout.currency,
-            destination_account_id=decrypt_payout_provider_account_id(
-                payout_account.provider_account_id
-            ),
-            metadata={
-                "payout_id": str(payout.id),
-                **beneficiary_meta,
-            },
-            idempotency_key=f"payout:{payout.id}",
+        destination_account_id = decrypt_payout_provider_account_id(
+            payout_account.provider_account_id
         )
+        # The rail comes from the payout account, never from a global setting.
+        # A recipient code issued by one provider is meaningless to the other,
+        # so a mismatch would address the money nowhere.
+        provider = payout_account.provider
+
+        if provider == "paystack":
+            # Our own reference, not Paystack's id, is the durable handle: it
+            # is the idempotency key for a retried transfer AND the only value
+            # the `transfer.success` webhook carries back that we can match a
+            # payout row on. Paystack's numeric id is not known until after the
+            # call, so it cannot serve either purpose.
+            reference = f"payout-{payout.id}"
+            paystack_transfer = await paystack.initiate_transfer(
+                amount=payout.net_amount,
+                currency=payout.currency,
+                recipient=destination_account_id,
+                reason="Auracles payout",
+                reference=reference,
+            )
+            provider_ref = reference
+            audit_ref = paystack_transfer.transfer_code or reference
+        else:
+            stripe_transfer = await stripe.create_transfer(
+                amount=payout.net_amount,
+                currency=payout.currency,
+                destination_account_id=destination_account_id,
+                metadata={
+                    "payout_id": str(payout.id),
+                    **beneficiary_meta,
+                },
+                idempotency_key=f"payout:{payout.id}",
+            )
+            provider_ref = stripe_transfer.id
+            audit_ref = stripe_transfer.id
 
         if db.in_transaction():
             await db.rollback()
@@ -70,7 +115,7 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
             if payout is None:
                 raise ValueError("Payout not found.")
             payout.status = "processing"
-            payout.provider_ref = transfer.id
+            payout.provider_ref = provider_ref
             await write_audit(
                 db=db,
                 actor_id=payout.contributor_id,
@@ -78,21 +123,21 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
                 target_type="payout",
                 target_id=payout.id,
                 metadata={
-                    "provider": "stripe",
-                    "transfer_ref": transfer.id[-4:],
+                    "provider": provider,
+                    "transfer_ref": audit_ref[-4:],
                     "net_amount": str(payout.net_amount),
                 },
             )
         return {
             "payout_id": str(parsed_payout_id),
-            "provider_ref": transfer.id,
+            "provider_ref": provider_ref,
             "status": "processing",
         }
 
 
 @app.task(bind=True, max_retries=3)  # type: ignore[untyped-decorator]
 def process_payout(self: Any, payout_id: str) -> dict[str, str]:
-    """Process a pending payout by creating a Stripe Connect transfer."""
+    """Process a pending payout by creating a transfer on its own rail."""
     log = logger.bind(
         module="financials",
         action="process_payout",

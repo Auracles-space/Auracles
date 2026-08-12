@@ -15,7 +15,10 @@ from app.core.config import Settings
 from app.integrations.paystack import (
     PaystackProviderError,
     create_subaccount,
+    create_transfer_recipient,
     initialize_transaction,
+    initiate_transfer,
+    list_banks,
     verify_webhook,
 )
 
@@ -87,6 +90,167 @@ async def test_paystack_creates_subaccount_for_provider_hosted_onboarding() -> N
 
     assert result.provider_account_id == "ACCT_123"
     assert json.loads(route.calls.last.request.content)["bank_code"] == "044"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_creates_nuban_transfer_recipient() -> None:
+    """Recipient creation returns the code every later transfer is keyed by.
+
+    A NUBAN recipient is the payout destination for a Nigerian bank account.
+    Paystack validates the account number during creation, so a successful
+    response is also the account's verification.
+    """
+    route = respx.post("https://api.paystack.co/transferrecipient").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": {
+                    "recipient_code": "RCP_abc123",
+                    "details": {
+                        "account_name": "ADA LOVELACE",
+                        "account_number": "0123456789",
+                        "bank_code": "044",
+                    },
+                },
+            },
+        )
+    )
+
+    result = await create_transfer_recipient(
+        name="Ada Lovelace",
+        account_number="0123456789",
+        bank_code="044",
+        currency="NGN",
+        settings=PAYSTACK_SETTINGS,
+    )
+
+    assert result.recipient_code == "RCP_abc123"
+    # The bank-confirmed name is what the Contributor sees before they can
+    # request money — it is how they catch a mistyped account number.
+    assert result.account_name == "ADA LOVELACE"
+    assert json.loads(route.calls.last.request.content) == {
+        "type": "nuban",
+        "name": "Ada Lovelace",
+        "account_number": "0123456789",
+        "bank_code": "044",
+        "currency": "NGN",
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_transfer_recipient_rejects_a_response_without_a_code() -> None:
+    """A recipient with no code cannot be paid, so it must not be stored."""
+    respx.post("https://api.paystack.co/transferrecipient").mock(
+        return_value=httpx.Response(
+            200,
+            json={"status": True, "data": {"details": {"account_name": "ADA"}}},
+        )
+    )
+
+    with pytest.raises(PaystackProviderError, match="recipient"):
+        await create_transfer_recipient(
+            name="Ada Lovelace",
+            account_number="0123456789",
+            bank_code="044",
+            currency="NGN",
+            settings=PAYSTACK_SETTINGS,
+        )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_initiates_transfer_in_minor_units_with_our_reference() -> None:
+    """Transfers send kobo and carry our own reference for idempotent retries."""
+    route = respx.post("https://api.paystack.co/transfer").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": {
+                    "id": 98765,
+                    "status": "pending",
+                    "transfer_code": "TRF_xyz",
+                },
+            },
+        )
+    )
+
+    result = await initiate_transfer(
+        amount=Decimal("50000.00"),
+        currency="NGN",
+        recipient="RCP_abc123",
+        reason="Auracles payout",
+        reference="payout-1234",
+        settings=PAYSTACK_SETTINGS,
+    )
+
+    assert result.id == "98765"
+    assert result.status == "pending"
+    assert result.transfer_code == "TRF_xyz"
+    assert json.loads(route.calls.last.request.content) == {
+        "source": "balance",
+        "amount": 5000000,
+        "currency": "NGN",
+        "recipient": "RCP_abc123",
+        "reason": "Auracles payout",
+        "reference": "payout-1234",
+    }
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_lists_banks_for_the_payout_country() -> None:
+    """The bank list is fetched from Paystack, never hardcoded.
+
+    Bank codes change and new institutions appear; a stale local list would
+    send a Contributor's money to the wrong institution or reject a valid one.
+    """
+    route = respx.get("https://api.paystack.co/bank").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": [
+                    {"name": "Access Bank", "code": "044", "currency": "NGN"},
+                    {"name": "Kuda Bank", "code": "50211", "currency": "NGN"},
+                ],
+            },
+        )
+    )
+
+    banks = await list_banks(country="nigeria", settings=PAYSTACK_SETTINGS)
+
+    assert [(bank.name, bank.code) for bank in banks] == [
+        ("Access Bank", "044"),
+        ("Kuda Bank", "50211"),
+    ]
+    assert route.calls.last.request.url.params["country"] == "nigeria"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_list_banks_skips_malformed_entries() -> None:
+    """One unusable entry must not deny the Contributor the whole bank list."""
+    respx.get("https://api.paystack.co/bank").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": [
+                    {"name": "Access Bank", "code": "044"},
+                    {"name": "Broken Bank"},
+                    {"code": "999"},
+                ],
+            },
+        )
+    )
+
+    banks = await list_banks(country="nigeria", settings=PAYSTACK_SETTINGS)
+
+    assert [bank.code for bank in banks] == ["044"]
 
 
 def test_paystack_webhook_signature_matrix_accepts_only_valid_raw_payload() -> None:

@@ -4501,7 +4501,6 @@ components:
             type: string
           title: Bundle Price
         currency:
-          default: USD
           maxLength: 3
           minLength: 3
           title: Currency
@@ -8454,7 +8453,6 @@ components:
             type: string
           title: Budget
         currency:
-          default: USD
           maxLength: 3
           minLength: 3
           title: Currency
@@ -10468,7 +10466,9 @@ components:
         routing, so — unlike the individual request — no country is accepted here.'
       properties:
         provider:
-          const: stripe
+          enum:
+          - stripe
+          - paystack
           title: Provider
           type: string
         refresh_url:
@@ -10496,7 +10496,6 @@ components:
             type: string
           title: Budget
         currency:
-          default: USD
           maxLength: 3
           minLength: 3
           title: Currency
@@ -11526,35 +11525,69 @@ components:
       type: object
     PayoutAccountOnboardRequest:
       additionalProperties: false
-      description: Request body for creating a provider-held payout destination.
+      description: 'Request body for creating a provider-held payout destination.
+
+
+        The two rails collect different things. Stripe Connect runs hosted
+
+        onboarding, so it needs only the redirect URLs and never sees a bank
+
+        detail here. Paystack has no hosted flow — the Contributor''s NUBAN account
+
+        number and bank code are submitted directly and registered as a transfer
+
+        recipient, which is also what verifies the account exists.'
       properties:
+        account_number:
+          anyOf:
+          - maxLength: 10
+            minLength: 10
+            type: string
+          - type: 'null'
+          title: Account Number
+        bank_code:
+          anyOf:
+          - maxLength: 10
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Bank Code
         country:
           maxLength: 2
           minLength: 2
           title: Country
           type: string
         provider:
-          const: stripe
+          enum:
+          - stripe
+          - paystack
           title: Provider
           type: string
         refresh_url:
-          minLength: 1
+          anyOf:
+          - minLength: 1
+            type: string
+          - type: 'null'
           title: Refresh Url
-          type: string
         return_url:
-          minLength: 1
+          anyOf:
+          - minLength: 1
+            type: string
+          - type: 'null'
           title: Return Url
-          type: string
       required:
       - provider
       - country
-      - refresh_url
-      - return_url
       title: PayoutAccountOnboardRequest
       type: object
     PayoutAccountOnboardResponse:
       description: Response body for a provider payout-account onboarding request.
       properties:
+        account_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Name
         onboarding_url:
           anyOf:
           - type: string
@@ -11563,7 +11596,9 @@ components:
         payout_account:
           $ref: '#/components/schemas/PayoutAccountResponse'
         provider:
-          const: stripe
+          enum:
+          - stripe
+          - paystack
           title: Provider
           type: string
       required:
@@ -11590,7 +11625,9 @@ components:
           title: Is Default
           type: boolean
         provider:
-          const: stripe
+          enum:
+          - stripe
+          - paystack
           title: Provider
           type: string
         provider_account_ref:
@@ -11623,6 +11660,32 @@ components:
       required:
       - payout_accounts
       title: PayoutAccountsResponse
+      type: object
+    PayoutBank:
+      description: A bank a Contributor payout account can be held at.
+      properties:
+        code:
+          title: Code
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - name
+      - code
+      title: PayoutBank
+      type: object
+    PayoutBanksResponse:
+      description: Response body listing banks available for payout onboarding.
+      properties:
+        banks:
+          items:
+            $ref: '#/components/schemas/PayoutBank'
+          title: Banks
+          type: array
+      required:
+      - banks
+      title: PayoutBanksResponse
       type: object
     PayoutRequest:
       additionalProperties: false
@@ -11745,7 +11808,6 @@ components:
           - type: 'null'
           title: Commercial Rights
         currency:
-          default: USD
           maxLength: 3
           minLength: 3
           title: Currency
@@ -11795,7 +11857,6 @@ components:
           - type: 'null'
           title: Commercial Rights
         currency:
-          default: USD
           maxLength: 3
           minLength: 3
           title: Currency
@@ -12140,7 +12201,6 @@ components:
           title: Category
           type: string
         currency:
-          default: USD
           maxLength: 3
           minLength: 3
           title: Currency
@@ -12394,7 +12454,6 @@ components:
             type: string
           title: Budget
         currency:
-          default: USD
           maxLength: 3
           minLength: 3
           title: Currency
@@ -19767,6 +19826,24 @@ paths:
       security:
       - HTTPBearer: []
       summary: List Payout Accounts
+      tags:
+      - Financials
+  /v1/financials/payout-accounts/banks:
+    get:
+      description: Returns the banks a Contributor can register a payout account at,
+        read live from the payment provider. Bank codes change over time, so clients
+        must not cache or hardcode this list.
+      operationId: list_payout_banks_v1_financials_payout_accounts_banks_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutBanksResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: List banks available for payout onboarding
       tags:
       - Financials
   /v1/financials/payout-accounts/onboard:

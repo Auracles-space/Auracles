@@ -1157,12 +1157,26 @@ async def _handle_transfer_event(
     event: dict[str, Any],
     *,
     payout_status: str,
+    provider: str = "stripe",
 ) -> list[Callable[[], None]]:
-    """Apply a terminal Stripe transfer status to an existing payout row.
+    """Apply a terminal transfer status to an existing payout row.
+
+    Shared by both rails, which differ in what a terminal transfer means. A
+    Stripe transfer only moves money into a connected account's balance, so it
+    reaches here solely via `transfer.reversed`; a Paystack transfer goes
+    straight to the beneficiary's bank, so its success is genuinely final.
 
     Unknown transfers no-op. Returns post-commit callables (an admin failure
     alert on a newly failed payout) so the notification only fires once the
     status change is durable.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        event: The verified event, in the internal envelope shape.
+        payout_status: Terminal status to apply to the payout row.
+        provider: Rail the event arrived on. Selects the failure normalizer —
+            Stripe reports a coded error object while Paystack reports prose,
+            and the wrong parser yields "unknown" with no cause to act on.
     """
     payout, transfer_id = await _payout_for_transfer(db, event)
     if payout is None:
@@ -1179,15 +1193,17 @@ async def _handle_transfer_event(
         action=f"payout_{payout_status}",
         target_type="payout",
         target_id=payout.id,
-        metadata={"provider": "stripe", "transfer_ref": transfer_id[-4:]},
+        metadata={"provider": provider, "transfer_ref": transfer_id[-4:]},
     )
     # The audit row above deliberately keeps only the last four characters of
     # the transfer reference; the ledger carries the cause a failed payout needs.
-    failure = (
-        normalize_stripe_failure(_event_object(event))
-        if payout_status == "failed"
-        else None
-    )
+    failure = None
+    if payout_status == "failed":
+        failure = (
+            normalize_paystack_failure(_event_object(event))
+            if provider == "paystack"
+            else normalize_stripe_failure(_event_object(event))
+        )
     await record_financial_event(
         db,
         entity_type="payout",
@@ -1197,7 +1213,7 @@ async def _handle_transfer_event(
         to_status=payout_status,
         amount=payout.amount,
         currency=payout.currency,
-        provider="stripe",
+        provider=provider,
         provider_ref=transfer_id,
         reason_code=failure.code if failure else None,
         reason_message=failure.message if failure else None,
@@ -1462,8 +1478,8 @@ async def _dispatch_paystack_event(
     event_id: str,
     event_type: str,
     envelope: dict[str, Any],
-) -> tuple[str, UUID | None]:
-    """Dispatch a verified Paystack event and return status plus invoice work."""
+) -> tuple[str, UUID | None, list[Callable[[], None]]]:
+    """Dispatch a verified Paystack event and return status plus follow-up work."""
     metadata = _event_metadata(envelope)
     if event_type == "charge.success" and metadata.get("kind") == "purchase":
         invoice_transaction_id, _ = await _handle_purchase_succeeded(
@@ -1472,7 +1488,7 @@ async def _dispatch_paystack_event(
         await _mark_event_status(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
-        return "processed", invoice_transaction_id
+        return "processed", invoice_transaction_id, []
     if event_type in {"charge.failed", "charge.abandoned"}:
         await _handle_purchase_failed(
             db, envelope, provider="paystack", reason=event_type
@@ -1480,7 +1496,26 @@ async def _dispatch_paystack_event(
         await _mark_event_status(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
-        return "processed", None
+        return "processed", None, []
+    if event_type == "transfer.success":
+        # Terminal on this rail, unlike Stripe. A Paystack transfer settles
+        # directly to the beneficiary's bank rather than into a provider-held
+        # balance, so there is no later bank-payout event to wait for.
+        await _handle_transfer_event(
+            db, envelope, payout_status="completed", provider="paystack"
+        )
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", None, []
+    if event_type in {"transfer.failed", "transfer.reversed"}:
+        transfer_notifications = await _handle_transfer_event(
+            db, envelope, payout_status="failed", provider="paystack"
+        )
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", None, transfer_notifications
 
     # Paystack delivers every event enabled on the integration, most of which
     # this platform never acts on. Storing without dispatching keeps the
@@ -1490,7 +1525,7 @@ async def _dispatch_paystack_event(
         action="unknown_paystack_event",
         provider_event_id=event_id,
     ).warning("unknown_event_type")
-    return "received", None
+    return "received", None, []
 
 
 async def handle_paystack_webhook(
@@ -1553,6 +1588,7 @@ async def handle_paystack_webhook(
         if db.in_transaction():
             await db.rollback()
         invoice_transaction_id: UUID | None = None
+        after_commit_notifications: list[Callable[[], None]] = []
         async with db.begin():
             locked_event = await db.scalar(
                 select(WebhookEvent)
@@ -1573,7 +1609,11 @@ async def handle_paystack_webhook(
                     provider_event_id=event_id,
                 ).info("webhook_replay")
                 return WebhookIngestResponse(received=True, status="duplicate")
-            event_status, invoice_transaction_id = await _dispatch_paystack_event(
+            (
+                event_status,
+                invoice_transaction_id,
+                after_commit_notifications,
+            ) = await _dispatch_paystack_event(
                 db,
                 event_id=event_id,
                 event_type=event_type,
@@ -1602,6 +1642,8 @@ async def handle_paystack_webhook(
 
     if invoice_transaction_id is not None:
         _queue_purchase_invoice_generation(invoice_transaction_id)
+    for queue_notification in after_commit_notifications:
+        queue_notification()
 
     logger.bind(
         module="webhooks",

@@ -22,9 +22,18 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.core.database import async_session_factory, engine
+from app.core.security import (
+    encrypt_payout_provider_account_id,
+    hash_payout_provider_account_id,
+)
 from app.integrations.paystack import PaystackProviderError
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import FinancialEvent, Transaction
+from app.modules.financials.models import (
+    FinancialEvent,
+    Payout,
+    PayoutAccount,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework, License
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
@@ -427,3 +436,181 @@ async def test_unknown_event_type_is_stored_without_dispatch(
     assert response.json() == {"received": True, "status": "received"}
     assert event_row is not None
     assert event_row.event_type == "subscription.create"
+
+
+async def create_processing_paystack_payout() -> tuple[UUID, str]:
+    """Create an in-flight Paystack payout a transfer event can settle."""
+    contributor_id = await create_user_with_roles(
+        f"paystack-payee-{uuid4()}@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=contributor_id,
+                provider="paystack",
+                provider_account_id=encrypt_payout_provider_account_id(
+                    "RCP_settle_1"
+                ),
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    "RCP_settle_1"
+                ),
+                account_type="nuban",
+                is_default=True,
+                verified_at=datetime.now(UTC),
+            )
+            session.add(payout_account)
+            await session.flush()
+            payout = Payout(
+                contributor_id=contributor_id,
+                payout_account_id=payout_account.id,
+                amount=Decimal("100.00"),
+                currency="USD",
+                commission_deducted=Decimal("15.00"),
+                net_amount=Decimal("85.00"),
+                status="processing",
+            )
+            session.add(payout)
+            await session.flush()
+            payout.provider_ref = f"payout-{payout.id}"
+            return payout.id, payout.provider_ref
+
+
+def transfer_event(event_name: str, *, reference: str, reason: str = "") -> dict:
+    """Build a Paystack transfer event in the provider's envelope shape."""
+    data: dict[str, Any] = {
+        "id": 998877,
+        "reference": reference,
+        "amount": 8500,
+        "currency": "USD",
+        "transfer_code": "TRF_settle_1",
+        "status": "success" if event_name == "transfer.success" else "failed",
+    }
+    if reason:
+        data["reason"] = reason
+    return {"event": event_name, "data": data}
+
+
+async def test_transfer_success_completes_the_payout(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A successful transfer is the moment a Contributor's bank was funded.
+
+    Unlike Stripe — where `transfer.created` only moves money into a connected
+    account's balance — a Paystack transfer goes straight to the bank, so this
+    event is genuinely terminal and completes the payout.
+    """
+    payout_id, reference = await create_processing_paystack_payout()
+    paystack_context["event"] = transfer_event(
+        "transfer.success",
+        reference=reference,
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        payout = await session.get(Payout, payout_id)
+        assert payout is not None
+        await session.refresh(payout)
+        status_ = payout.status
+        completed_at = payout.completed_at
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == payout_id,
+                FinancialEvent.event_type == "payout_completed",
+            )
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+    assert status_ == "completed"
+    assert completed_at is not None
+    assert ledger is not None
+    assert ledger.provider == "paystack"
+
+
+async def test_transfer_failed_records_the_cause_and_alerts_admins(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A failed transfer must leave the reason on the payout's ledger trail.
+
+    Paystack states the cause in prose, so it goes through the Paystack
+    normalizer — reading it with Stripe's coded parser would yield "unknown"
+    and strand an admin with no reason to act on.
+    """
+    payout_id, reference = await create_processing_paystack_payout()
+    paystack_context["event"] = transfer_event(
+        "transfer.failed",
+        reference=reference,
+        reason="Account name mismatch",
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        payout = await session.get(Payout, payout_id)
+        assert payout is not None
+        await session.refresh(payout)
+        status_ = payout.status
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == payout_id,
+                FinancialEvent.event_type == "payout_failed",
+            )
+        )
+
+    assert response.status_code == 200
+    assert status_ == "failed"
+    assert ledger is not None
+    assert ledger.provider == "paystack"
+    assert ledger.reason_message is not None
+
+
+async def test_transfer_event_for_an_unknown_reference_is_acknowledged(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A transfer we did not book must not error, or Paystack retries forever."""
+    paystack_context["event"] = transfer_event(
+        "transfer.success",
+        reference="payout-00000000-0000-4000-8000-000000000000",
+    )
+
+    response = await post_webhook(client)
+
+    assert response.status_code == 200
+
+
+async def test_transfer_success_replay_does_not_recomplete_the_payout(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Redelivery must not write a second completion to the ledger."""
+    payout_id, reference = await create_processing_paystack_payout()
+    paystack_context["event"] = transfer_event(
+        "transfer.success",
+        reference=reference,
+    )
+
+    first = await post_webhook(client)
+    second = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        ledger_rows = (
+            (
+                await session.execute(
+                    select(FinancialEvent).where(
+                        FinancialEvent.entity_id == payout_id,
+                        FinancialEvent.event_type == "payout_completed",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert first.json()["status"] == "processed"
+    assert second.json()["status"] == "duplicate"
+    assert len(ledger_rows) == 1

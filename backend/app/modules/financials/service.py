@@ -54,6 +54,8 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardResponse,
     PayoutAccountResponse,
     PayoutAccountsResponse,
+    PayoutBank,
+    PayoutBanksResponse,
     PayoutRequest,
     PayoutResponse,
     PayoutsResponse,
@@ -2690,13 +2692,223 @@ async def list_payouts(
     return PayoutsResponse(payouts=[_payout_response(payout) for payout in payouts])
 
 
+# Paystack's country slug for the Nigerian bank list. Their `/bank` endpoint
+# takes a lowercase country name, not an ISO code.
+_PAYSTACK_BANK_COUNTRY = "nigeria"
+
+
+async def list_payout_banks() -> PayoutBanksResponse:
+    """List banks a Contributor can register a payout account at.
+
+    Proxied from Paystack rather than served from a local table: bank codes
+    change and new institutions appear, so a stale list would either reject a
+    valid account or address a Contributor's money to the wrong bank.
+
+    Returns:
+        Banks available for payout onboarding on the Paystack rail.
+
+    Raises:
+        HTTPException(502): Paystack was unreachable or returned an
+            unusable response. Failing closed is deliberate — an empty list
+            would look like "no banks" and invite a guessed bank code.
+    """
+    try:
+        banks = await paystack.list_banks(country=_PAYSTACK_BANK_COUNTRY)
+    except PaystackProviderError as exc:
+        logger.bind(module="financials", action="list_payout_banks").error(
+            "payout_bank_list_failed: {error}", error=str(exc)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Bank list is unavailable.",
+        ) from exc
+    return PayoutBanksResponse(
+        banks=[PayoutBank(name=bank.name, code=bank.code) for bank in banks]
+    )
+
+
+async def _onboard_paystack_payout_account(
+    db: AsyncSession,
+    contributor: User,
+    payload: PayoutAccountOnboardRequest,
+) -> PayoutAccountOnboardResponse:
+    """Register a Nigerian bank account as a Paystack transfer recipient.
+
+    Paystack has no hosted onboarding to redirect to. The NUBAN details are
+    submitted directly and Paystack resolves them against the bank while
+    creating the recipient, so a successful call is itself the verification —
+    unlike Stripe Connect, there is no `account.updated` webhook to wait for
+    and the account is usable immediately.
+
+    Args:
+        db: Async SQLAlchemy session.
+        contributor: The authenticated, KYC-verified Contributor.
+        payload: Onboarding request carrying `account_number` and `bank_code`.
+
+    Returns:
+        The stored payout account plus the bank-confirmed account name.
+
+    Raises:
+        HTTPException(502): Paystack rejected the account or was unreachable.
+        HTTPException(409): A concurrent request already registered it.
+    """
+    contributor_id = contributor.id
+
+    # Re-onboarding returns the existing account untouched. There is no link to
+    # refresh here, so calling the provider again would only risk a duplicate
+    # recipient for the same person.
+    existing_account = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.user_id == contributor_id,
+            PayoutAccount.provider == "paystack",
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if existing_account is not None:
+        logger.bind(
+            module="financials",
+            action="onboard_payout_account",
+            user_id=contributor_id,
+        ).info("payout_account_onboard_reused", provider="paystack")
+        return PayoutAccountOnboardResponse(
+            provider="paystack",
+            onboarding_url=None,
+            payout_account=_payout_account_response(existing_account),
+        )
+
+    # Narrowed by PayoutAccountOnboardRequest's model validator, which rejects a
+    # Paystack payload missing either field before it can reach the provider.
+    assert payload.account_number is not None
+    assert payload.bank_code is not None
+
+    try:
+        recipient = await paystack.create_transfer_recipient(
+            name=contributor.display_name,
+            account_number=payload.account_number,
+            bank_code=payload.bank_code,
+            currency=platform_currency(),
+        )
+    except PaystackProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="onboard_payout_account",
+            user_id=contributor_id,
+        ).error("payout_account_provider_failed: {error}", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payout provider is unavailable.",
+        ) from exc
+
+    if db.in_transaction():
+        await db.rollback()
+    try:
+        async with db.begin():
+            payout_account = PayoutAccount(
+                user_id=contributor_id,
+                provider="paystack",
+                provider_account_id=encrypt_payout_provider_account_id(
+                    recipient.recipient_code
+                ),
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    recipient.recipient_code
+                ),
+                account_type="nuban",
+                is_default=not await _has_active_payout_account(db, contributor_id),
+                # Paystack resolved the account against the bank to create the
+                # recipient, so there is nothing further to confirm.
+                verified_at=datetime.now(UTC),
+            )
+            db.add(payout_account)
+            await db.flush()
+            await write_audit(
+                db=db,
+                actor_id=contributor_id,
+                action="payout_account_onboarded",
+                target_type="payout_account",
+                target_id=payout_account.id,
+                metadata={
+                    "provider": "paystack",
+                    "account_type": "nuban",
+                    "provider_account_ref": _masked_provider_ref(
+                        recipient.recipient_code
+                    ),
+                    # Deliberately not the full account number: the masked
+                    # recipient ref is enough to trace, and the audit log is
+                    # read far more widely than the payout table.
+                    "bank_code": payload.bank_code,
+                },
+            )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payout account already exists.",
+        ) from exc
+
+    logger.bind(
+        module="financials",
+        action="onboard_payout_account",
+        user_id=contributor_id,
+    ).info("payout_account_onboarded", provider="paystack")
+    return PayoutAccountOnboardResponse(
+        provider="paystack",
+        onboarding_url=None,
+        payout_account=_payout_account_response(payout_account),
+        account_name=recipient.account_name,
+    )
+
+
 async def onboard_payout_account(
     db: AsyncSession,
     contributor: User,
     payload: PayoutAccountOnboardRequest,
 ) -> PayoutAccountOnboardResponse:
-    """Create a provider-held payout destination for a KYC-verified Contributor."""
+    """Create a provider-held payout destination for a KYC-verified Contributor.
+
+    The rail is decided by the account's country, not by the caller. A Nigerian
+    bank account registered against Stripe Connect could never be paid, so a
+    provider that disagrees with the routing is refused rather than honoured.
+
+    Args:
+        db: Async SQLAlchemy session.
+        contributor: The authenticated, KYC-verified Contributor.
+        payload: Onboarding request naming the provider and account country.
+
+    Returns:
+        The stored payout account and, on the Stripe rail, a hosted onboarding
+        URL to redirect the Contributor to.
+
+    Raises:
+        HTTPException(422): The requested provider does not settle that country.
+        HTTPException(502): The payout provider rejected the request.
+    """
+    routed_provider = select_provider(
+        user_country=payload.country,
+        currency=platform_currency(),
+    )
+    if routed_provider != payload.provider:
+        logger.bind(
+            module="financials",
+            action="onboard_payout_account",
+            user_id=contributor.id,
+        ).warning(
+            "payout_provider_mismatch",
+            requested=payload.provider,
+            routed=routed_provider,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"Payout accounts for {payload.country} settle on "
+            f"{routed_provider}.",
+        )
+    if routed_provider == "paystack":
+        return await _onboard_paystack_payout_account(db, contributor, payload)
+
     contributor_id = contributor.id
+
+    # Narrowed by the request validator, which requires both URLs on this rail.
+    assert payload.refresh_url is not None
+    assert payload.return_url is not None
 
     # Reuse the existing active Stripe account to avoid orphan express accounts
     existing_account = await db.scalar(

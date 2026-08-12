@@ -25,6 +25,7 @@ from app.modules.financials.schemas import (
     PayoutAccountOnboardRequest,
     PayoutAccountOnboardResponse,
     PayoutAccountsResponse,
+    PayoutBanksResponse,
     PayoutRequest,
     PayoutResponse,
     PayoutsResponse,
@@ -199,6 +200,23 @@ async def onboard_payout_account(
         contributor=contributor,
         payload=payload,
     )
+
+
+@router.get(
+    "/payout-accounts/banks",
+    response_model=PayoutBanksResponse,
+    summary="List banks available for payout onboarding",
+    description=(
+        "Returns the banks a Contributor can register a payout account at, "
+        "read live from the payment provider. Bank codes change over time, so "
+        "clients must not cache or hardcode this list."
+    ),
+)
+async def list_payout_banks(
+    _: ContributorUser,
+) -> PayoutBanksResponse:
+    """List banks available for Contributor payout onboarding."""
+    return await service.list_payout_banks()
 
 
 @router.get("/payout-accounts", response_model=PayoutAccountsResponse)
