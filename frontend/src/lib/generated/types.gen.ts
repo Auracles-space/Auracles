@@ -4501,9 +4501,14 @@ export type PurchaseResponse = {
 
 /**
  * Response body for a successful self-serve purchase refund.
+ *
+ * `status` describes the purchase, not the provider's transfer of funds. A
+ * Stripe refund is terminal on return; a Paystack refund is accepted here
+ * and settles afterwards. In both cases the purchase is refunded and access
+ * is revoked from this point on.
  */
 export type RefundResponse = {
-    provider: "stripe";
+    provider: 'stripe' | 'paystack';
     refund_id: string;
     status: "refunded";
     transaction_id: string;

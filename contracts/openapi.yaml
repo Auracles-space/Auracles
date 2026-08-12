@@ -12958,10 +12958,21 @@ components:
       title: PurchaseResponse
       type: object
     RefundResponse:
-      description: Response body for a successful self-serve purchase refund.
+      description: 'Response body for a successful self-serve purchase refund.
+
+
+        `status` describes the purchase, not the provider''s transfer of funds. A
+
+        Stripe refund is terminal on return; a Paystack refund is accepted here
+
+        and settles afterwards. In both cases the purchase is refunded and access
+
+        is revoked from this point on.'
       properties:
         provider:
-          const: stripe
+          enum:
+          - stripe
+          - paystack
           title: Provider
           type: string
         refund_id:

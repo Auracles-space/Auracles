@@ -1419,6 +1419,120 @@ async def handle_stripe_webhook(
     return WebhookIngestResponse(received=True, status=event_status)
 
 
+async def _refunded_purchase_for_event(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> Transaction | None:
+    """Return the refunded purchase a Paystack refund event refers to.
+
+    Keyed on the charge reference, which is what `provider_ref` holds for a
+    Paystack purchase. A purchase that is not currently refunded is treated as
+    unknown: refund events for charges we never refunded, and redeliveries
+    arriving after a failure already reversed one, must both no-op rather than
+    move state a second time.
+    """
+    reference = _event_object_id(event)
+    if reference is None:
+        return None
+    transaction: Transaction | None = await db.scalar(
+        select(Transaction)
+        .where(
+            Transaction.provider == "paystack",
+            Transaction.provider_ref == reference,
+            Transaction.transaction_type == "purchase",
+            Transaction.status == "refunded",
+        )
+        .with_for_update()
+    )
+    return transaction
+
+
+async def _handle_paystack_refund_processed(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> None:
+    """Record that an accepted Paystack refund has actually settled.
+
+    No state moves. The purchase was marked refunded and its licences revoked
+    when the refund was accepted (see `refund_framework_purchase`), so this
+    event only closes the loop for audit — it is the evidence that the money
+    reached the buyer.
+    """
+    transaction = await _refunded_purchase_for_event(db, event)
+    if transaction is None:
+        return
+    await write_audit(
+        db=db,
+        actor_id=transaction.payer_id,
+        action="refund_settled",
+        target_type="transaction",
+        target_id=transaction.id,
+        metadata={"provider": "paystack"},
+    )
+    logger.bind(
+        module="webhooks",
+        action="paystack_refund_processed",
+        transaction_id=transaction.id,
+    ).info("refund_settled")
+
+
+async def _handle_paystack_refund_failed(
+    db: AsyncSession,
+    event: dict[str, Any],
+) -> None:
+    """Reverse an optimistically applied refund that Paystack declined.
+
+    Access is revoked as soon as Paystack accepts a refund, before the money
+    has moved. When it declines, the buyer has paid and holds nothing, so the
+    purchase and every licence it minted are restored to where they were.
+
+    Partner commission voided by the refund is deliberately left voided and
+    logged instead: it re-clears from `pending` on its own schedule, and
+    silently reinstating a commission on money that may yet be refunded again
+    is the worse error.
+    """
+    transaction = await _refunded_purchase_for_event(db, event)
+    if transaction is None:
+        return
+
+    transaction.status = "completed"
+    licenses = list(
+        (
+            await db.execute(
+                select(License)
+                .where(
+                    License.transaction_id == transaction.id,
+                    License.status == "revoked",
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for license_row in licenses:
+        license_row.status = "active"
+
+    await write_audit(
+        db=db,
+        actor_id=transaction.payer_id,
+        action="refund_failed",
+        target_type="transaction",
+        target_id=transaction.id,
+        metadata={
+            "provider": "paystack",
+            "restored_license_ids": [str(row.id) for row in licenses],
+        },
+    )
+    # CRITICAL, not ERROR: the ledger said refunded while the money never
+    # moved, and a Contributor payout may have been sized against that.
+    logger.bind(
+        module="webhooks",
+        action="paystack_refund_failed",
+        transaction_id=transaction.id,
+    ).critical("refund_reversed_after_provider_failure")
+
+
 def _paystack_envelope(event: dict[str, Any]) -> dict[str, Any]:
     """Reshape a Paystack event into the internal Stripe-shaped envelope.
 
@@ -1431,6 +1545,11 @@ def _paystack_envelope(event: dict[str, Any]) -> dict[str, Any]:
     not Paystack's numeric `id` — is what we store as `provider_ref` at
     initialization and what refunds are keyed by.
 
+    Refund events are the exception: they name the charge under
+    `transaction_reference` and use `reference` for the refund itself, so that
+    field is read first. Without it a refund event carries no id to key
+    idempotency on and is rejected as unreferenced.
+
     Args:
         event: Verified Paystack event payload.
 
@@ -1439,7 +1558,9 @@ def _paystack_envelope(event: dict[str, Any]) -> dict[str, Any]:
     """
     raw_data = event.get("data")
     event_object = dict(raw_data) if isinstance(raw_data, dict) else {}
-    reference = event_object.get("reference")
+    reference = event_object.get("transaction_reference") or event_object.get(
+        "reference"
+    )
     if isinstance(reference, str):
         event_object["id"] = reference
     return {"type": event.get("event"), "data": {"object": event_object}}
@@ -1516,6 +1637,18 @@ async def _dispatch_paystack_event(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
         return "processed", None, transfer_notifications
+    if event_type == "refund.processed":
+        await _handle_paystack_refund_processed(db, envelope)
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", None, []
+    if event_type == "refund.failed":
+        await _handle_paystack_refund_failed(db, envelope)
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", None, []
 
     # Paystack delivers every event enabled on the integration, most of which
     # this platform never acts on. Storing without dispatching keeps the

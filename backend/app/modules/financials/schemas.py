@@ -94,10 +94,16 @@ class PurchaseResponse(BaseModel):
 
 
 class RefundResponse(BaseModel):
-    """Response body for a successful self-serve purchase refund."""
+    """Response body for a successful self-serve purchase refund.
+
+    `status` describes the purchase, not the provider's transfer of funds. A
+    Stripe refund is terminal on return; a Paystack refund is accepted here
+    and settles afterwards. In both cases the purchase is refunded and access
+    is revoked from this point on.
+    """
 
     transaction_id: UUID
-    provider: Literal["stripe"]
+    provider: Literal["stripe", "paystack"]
     refund_id: str
     status: Literal["refunded"]
 

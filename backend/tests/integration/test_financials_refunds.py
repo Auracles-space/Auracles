@@ -14,6 +14,7 @@ from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User, UserRole
 from app.modules.collections.models import (
@@ -39,6 +40,19 @@ class FakeStripeRefund:
     """Small stand-in for a Stripe refund result."""
 
     def __init__(self, refund_id: str, refund_status: str = "succeeded") -> None:
+        """Store provider refund fields returned by the adapter."""
+        self.id = refund_id
+        self.status = refund_status
+
+
+class FakePaystackRefund:
+    """Small stand-in for a Paystack refund result.
+
+    Paystack accepts a refund and settles it later, so the status returned
+    here is `pending` rather than a terminal one.
+    """
+
+    def __init__(self, refund_id: str, refund_status: str | None = "pending") -> None:
         """Store provider refund fields returned by the adapter."""
         self.id = refund_id
         self.status = refund_status
@@ -75,7 +89,7 @@ async def refund_context(
     """Reset state and replace Stripe refund calls with a test double."""
     await engine.dispose()
     await reset_refund_state()
-    calls: dict[str, list[Any]] = {"refunds": []}
+    calls: dict[str, list[Any]] = {"refunds": [], "paystack_refunds": []}
 
     async def fake_create_refund(
         *,
@@ -95,10 +109,31 @@ async def refund_context(
         )
         return FakeStripeRefund("re_refund_123")
 
+    async def fake_refund_transaction(
+        *,
+        transaction_reference: str,
+        amount: Decimal,
+        currency: str,
+    ) -> FakePaystackRefund:
+        """Record Paystack refund creation and return a provider id."""
+        calls["paystack_refunds"].append(
+            {
+                "transaction_reference": transaction_reference,
+                "amount": amount,
+                "currency": currency,
+            }
+        )
+        return FakePaystackRefund("rf_refund_456")
+
     monkeypatch.setattr(
         financials_service.stripe,
         "create_refund",
         fake_create_refund,
+    )
+    monkeypatch.setattr(
+        financials_service.paystack,
+        "refund_transaction",
+        fake_refund_transaction,
     )
     try:
         yield calls
@@ -136,8 +171,15 @@ async def create_completed_purchase(
     *,
     created_at: datetime | None = None,
     with_download: bool = False,
+    provider: str = "stripe",
 ) -> tuple[UUID, UUID]:
-    """Create a completed purchase transaction and active license."""
+    """Create a completed purchase transaction and active license.
+
+    `provider` selects the rail the purchase settled on, which decides which
+    adapter a refund of it must call. Paystack purchases store the charge
+    reference as `provider_ref`, not a PaymentIntent id.
+    """
+    provider_ref = "pi_refund_123" if provider == "stripe" else "ref_paystack_123"
     contributor_token = uuid4()
     contributor_id = await create_user_with_roles(
         f"refund-contributor-{contributor_token}@auracles.space",
@@ -171,8 +213,8 @@ async def create_completed_purchase(
                 net_amount=Decimal("149.00"),
                 transaction_type="purchase",
                 status="completed",
-                provider="stripe",
-                provider_ref="pi_refund_123",
+                provider=provider,
+                provider_ref=provider_ref,
                 ref_id=framework.id,
                 ref_type="framework",
             )
@@ -457,6 +499,108 @@ async def test_operator_can_refund_completed_purchase_before_download(
     assert audit is not None
     assert audit.target_id == transaction_id
     assert audit.metadata_["refund_ref"] == "****_123"
+
+
+async def test_operator_can_refund_paystack_purchase(
+    client: AsyncClient,
+    refund_context: dict[str, list[Any]],
+) -> None:
+    """A naira purchase refunds on Paystack and revokes access immediately.
+
+    Paystack settles a refund asynchronously, so access is revoked when the
+    refund is accepted rather than when the money lands. Leaving the licence
+    active in the meantime would let the buyer download during the window and
+    keep both the artifact and the refund.
+    """
+    operator_id = await create_user_with_roles(
+        "refund-paystack-operator@auracles.space",
+        ["operator"],
+    )
+    transaction_id, license_id = await create_completed_purchase(
+        operator_id,
+        provider="paystack",
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchases/{transaction_id}/refund",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        license_row = await session.get(License, license_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "purchase_refunded")
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "transaction_id": str(transaction_id),
+        "provider": "paystack",
+        "refund_id": "rf_refund_456",
+        "status": "refunded",
+    }
+    assert refund_context["paystack_refunds"] == [
+        {
+            "transaction_reference": "ref_paystack_123",
+            "amount": Decimal("149.00"),
+            "currency": "USD",
+        }
+    ]
+    # The Stripe adapter must not be reached for a Paystack purchase.
+    assert refund_context["refunds"] == []
+    assert transaction is not None
+    assert transaction.status == "refunded"
+    assert license_row is not None
+    assert license_row.status == "revoked"
+    assert audit is not None
+    assert audit.metadata_["provider"] == "paystack"
+
+
+async def test_paystack_refund_provider_failure_preserves_purchase_state(
+    client: AsyncClient,
+    refund_context: dict[str, list[Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Paystack failure returns 502 without revoking the local licence."""
+    operator_id = await create_user_with_roles(
+        "refund-paystack-failure@auracles.space",
+        ["operator"],
+    )
+    transaction_id, license_id = await create_completed_purchase(
+        operator_id,
+        provider="paystack",
+    )
+
+    async def fake_refund_failure(
+        *,
+        transaction_reference: str,
+        amount: Decimal,
+        currency: str,
+    ) -> FakePaystackRefund:
+        """Simulate Paystack failing before local state changes."""
+        raise PaystackProviderError("Paystack unavailable.")
+
+    monkeypatch.setattr(
+        financials_service.paystack,
+        "refund_transaction",
+        fake_refund_failure,
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchases/{transaction_id}/refund",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        license_row = await session.get(License, license_id)
+
+    assert response.status_code == 502
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert license_row is not None
+    assert license_row.status == "active"
 
 
 async def test_refund_voids_pending_partner_commission(

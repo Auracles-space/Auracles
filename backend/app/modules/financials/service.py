@@ -1590,7 +1590,7 @@ async def _load_refundable_purchase(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only completed purchases can be refunded.",
         )
-    if transaction.provider != "stripe" or transaction.provider_ref is None:
+    if transaction.provider_ref is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Purchase is missing refundable provider metadata.",
@@ -1657,7 +1657,7 @@ async def _load_refundable_collection_purchase(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only completed purchases can be refunded.",
         )
-    if transaction.provider != "stripe" or transaction.provider_ref is None:
+    if transaction.provider_ref is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Purchase is missing refundable provider metadata.",
@@ -1752,13 +1752,103 @@ async def _void_partner_commission_for_refund(
     )
 
 
+async def _create_provider_refund(
+    transaction: Transaction,
+    *,
+    action: str,
+    operator_id: UUID,
+) -> str:
+    """Refund a purchase on the rail it was paid on and return the refund id.
+
+    The two rails differ in more than the call shape. Stripe refunds a
+    PaymentIntent and reports a terminal status straight away; Paystack
+    refunds a charge reference and only accepts the request here, settling it
+    later and confirming through a `refund.processed` webhook. The caller
+    treats both as refunded immediately — see `refund_framework_purchase` for
+    why, and `_handle_paystack_refund_failed` for the reversal when Paystack
+    ultimately declines it.
+
+    Args:
+        transaction: The completed purchase being refunded. Its `provider_ref`
+            must be set, which the loaders above have already checked.
+        action: Log action tag, so collection and single refunds stay distinct.
+        operator_id: The requesting Operator, for log context.
+
+    Returns:
+        The provider's refund identifier.
+
+    Raises:
+        HTTPException(502): The payment provider rejected or could not be
+            reached. No local state has changed at this point.
+    """
+    assert transaction.provider_ref is not None
+    amount = _normalise_money(transaction.amount)
+    currency = transaction.currency.upper()
+    try:
+        if transaction.provider == "paystack":
+            paystack_refund = await paystack.refund_transaction(
+                transaction_reference=transaction.provider_ref,
+                amount=amount,
+                currency=currency,
+            )
+            return paystack_refund.id
+        stripe_refund = await stripe.create_refund(
+            payment_intent_id=transaction.provider_ref,
+            amount=amount,
+            currency=currency,
+            idempotency_key=f"refund:{transaction.id}",
+        )
+        return stripe_refund.id
+    except (StripeProviderError, PaystackProviderError) as exc:
+        logger.bind(
+            module="financials",
+            action=action,
+            user_id=operator_id,
+            transaction_id=transaction.id,
+        ).error(
+            "provider_refund_failed",
+            provider=transaction.provider,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+
 async def refund_framework_purchase(
     db: AsyncSession,
     operator: User,
     *,
     transaction_id: UUID,
 ) -> RefundResponse:
-    """Refund an eligible Framework or Collection purchase."""
+    """Refund an eligible Framework or Collection purchase.
+
+    Works on both rails. The purchase is marked refunded and every licence it
+    minted is revoked as soon as the provider accepts the refund, which on
+    Paystack is before the money has actually moved. That ordering is
+    deliberate: leaving access live during Paystack's settlement window would
+    let the buyer download the artifacts and keep both them and the refund,
+    and would leave the amount inside the Contributor's payable balance where
+    it could be withdrawn. If Paystack later declines the refund, the
+    `refund.failed` webhook reverses both.
+
+    Args:
+        db: Async SQLAlchemy session.
+        operator: The authenticated Operator, who must be the payer.
+        transaction_id: The purchase to refund.
+
+    Returns:
+        The refund acknowledgement, carrying the rail it settled on.
+
+    Raises:
+        HTTPException(404): No such purchase for this Operator.
+        HTTPException(409): The purchase is not in a refundable state, or an
+            artifact download landed between the provider call and the write.
+        HTTPException(422): The refund window has expired, or an artifact has
+            already been downloaded.
+        HTTPException(502): The payment provider could not be reached.
+    """
     operator_id = operator.id
     if db.in_transaction():
         await db.rollback()
@@ -1779,25 +1869,11 @@ async def refund_framework_purchase(
                 operator_id=operator_id,
                 transaction=collection_transaction,
             )
-            assert collection_transaction.provider_ref is not None
-            try:
-                refund = await stripe.create_refund(
-                    payment_intent_id=collection_transaction.provider_ref,
-                    amount=_normalise_money(collection_transaction.amount),
-                    currency=collection_transaction.currency.upper(),
-                    idempotency_key=f"refund:{transaction_id}",
-                )
-            except StripeProviderError as exc:
-                logger.bind(
-                    module="financials",
-                    action="refund_collection_purchase",
-                    user_id=operator_id,
-                    transaction_id=transaction_id,
-                ).error("stripe_refund_failed", error=str(exc))
-                raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Payment provider is unavailable.",
-                ) from exc
+            refund_id = await _create_provider_refund(
+                collection_transaction,
+                action="refund_collection_purchase",
+                operator_id=operator_id,
+            )
 
             license_ids = [license_row.id for license_row in licenses]
             if (
@@ -1846,8 +1922,8 @@ async def refund_framework_purchase(
                 target_type="transaction",
                 target_id=collection_transaction.id,
                 metadata={
-                    "provider": "stripe",
-                    "refund_ref": _masked_provider_ref(refund.id),
+                    "provider": collection_transaction.provider,
+                    "refund_ref": _masked_provider_ref(refund_id),
                     "collection_id": str(collection_transaction.ref_id),
                     "license_ids": [str(license_id) for license_id in license_ids],
                     "framework_ids": [
@@ -1863,8 +1939,8 @@ async def refund_framework_purchase(
             ).info("collection_refunded")
             return RefundResponse(
                 transaction_id=transaction_id,
-                provider="stripe",
-                refund_id=refund.id,
+                provider=collection_transaction.provider,
+                refund_id=refund_id,
                 status="refunded",
             )
 
@@ -1873,25 +1949,12 @@ async def refund_framework_purchase(
             operator_id=operator_id,
             transaction_id=transaction_id,
         )
-        assert transaction.provider_ref is not None
-        try:
-            refund = await stripe.create_refund(
-                payment_intent_id=transaction.provider_ref,
-                amount=_normalise_money(transaction.amount),
-                currency=transaction.currency.upper(),
-                idempotency_key=f"refund:{transaction_id}",
-            )
-        except StripeProviderError as exc:
-            logger.bind(
-                module="financials",
-                action="refund_framework_purchase",
-                user_id=operator_id,
-                transaction_id=transaction_id,
-            ).error("stripe_refund_failed", error=str(exc))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Payment provider is unavailable.",
-            ) from exc
+        provider = transaction.provider
+        refund_id = await _create_provider_refund(
+            transaction,
+            action="refund_framework_purchase",
+            operator_id=operator_id,
+        )
 
         if await _count_license_downloads(db, license_row.id) > 0:
             logger.bind(
@@ -1918,8 +1981,8 @@ async def refund_framework_purchase(
             target_type="transaction",
             target_id=transaction.id,
             metadata={
-                "provider": "stripe",
-                "refund_ref": _masked_provider_ref(refund.id),
+                "provider": provider,
+                "refund_ref": _masked_provider_ref(refund_id),
                 "license_id": str(license_row.id),
             },
         )
@@ -1932,8 +1995,8 @@ async def refund_framework_purchase(
     ).info("purchase_refunded")
     return RefundResponse(
         transaction_id=transaction_id,
-        provider="stripe",
-        refund_id=refund.id,
+        provider=provider,
+        refund_id=refund_id,
         status="refunded",
     )
 

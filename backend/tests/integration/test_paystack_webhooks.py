@@ -614,3 +614,164 @@ async def test_transfer_success_replay_does_not_recomplete_the_payout(
     assert first.json()["status"] == "processed"
     assert second.json()["status"] == "duplicate"
     assert len(ledger_rows) == 1
+
+
+async def create_refunded_paystack_purchase() -> tuple[UUID, UUID]:
+    """Create a refunded Paystack purchase with the revoked licence it minted.
+
+    Mirrors the state `refund_framework_purchase` leaves behind: because
+    Paystack settles refunds asynchronously, the purchase is already marked
+    refunded and access already revoked while the money is still in flight.
+    """
+    contributor_id = await create_user_with_roles(
+        f"paystack-refund-contributor-{uuid4()}@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        f"paystack-refund-operator-{uuid4()}@auracles.space",
+        ["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = Framework(
+                contributor_id=contributor_id,
+                title="Paystack Refund Framework",
+                description="Framework used by Paystack refund webhook tests.",
+                status="published",
+                category="operations",
+                sector="technology",
+                industry="software",
+                business_function="revenue_operations",
+                tags=["paystack", "refund"],
+                price=Decimal("149.00"),
+                currency="USD",
+                license_types=["single_user", "team"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("149.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("149.00"),
+                transaction_type="purchase",
+                status="refunded",
+                provider="paystack",
+                provider_ref=PAYSTACK_REFERENCE,
+                ref_id=framework.id,
+                ref_type="framework",
+            )
+            session.add(transaction)
+            await session.flush()
+            license_row = License(
+                framework_id=framework.id,
+                operator_id=operator_id,
+                transaction_id=transaction.id,
+                license_type="team",
+                status="revoked",
+                version_at_grant=framework.version,
+                seats_used=1,
+                seats_total=10,
+            )
+            session.add(license_row)
+            await session.flush()
+            return transaction.id, license_row.id
+
+
+def refund_event(
+    event_name: str,
+    *,
+    reference: str = PAYSTACK_REFERENCE,
+) -> dict[str, Any]:
+    """Build a Paystack refund event in the provider's own envelope shape.
+
+    Refund events name the charge under `transaction_reference`, not
+    `reference` as charge events do.
+    """
+    return {
+        "event": event_name,
+        "data": {
+            "status": "processed" if event_name == "refund.processed" else "failed",
+            "transaction_reference": reference,
+            "refund_reference": "rf_ref_001",
+            "amount": 14900,
+            "currency": "NGN",
+        },
+    }
+
+
+async def test_refund_processed_confirms_the_refunded_purchase(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Settlement confirmation leaves the already-refunded purchase as it is."""
+    transaction_id, license_id = await create_refunded_paystack_purchase()
+    paystack_context["event"] = refund_event("refund.processed")
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        license_row = await session.get(License, license_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "refund_settled")
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+    assert transaction is not None
+    assert transaction.status == "refunded"
+    assert license_row is not None
+    assert license_row.status == "revoked"
+    assert audit is not None
+    assert audit.target_id == transaction_id
+
+
+async def test_refund_failed_restores_the_purchase_and_access(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A declined refund must give the buyer back what they paid for.
+
+    Access was revoked optimistically when the refund was accepted. If the
+    money never moves, the buyer has paid and holds nothing, so both the
+    purchase and every licence it minted are restored.
+    """
+    transaction_id, license_id = await create_refunded_paystack_purchase()
+    paystack_context["event"] = refund_event("refund.failed")
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        license_row = await session.get(License, license_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "refund_failed")
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert license_row is not None
+    assert license_row.status == "active"
+    assert audit is not None
+    assert audit.target_id == transaction_id
+
+
+async def test_refund_event_for_an_unknown_reference_is_acknowledged(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A refund we did not book must not error, or Paystack retries forever."""
+    paystack_context["event"] = refund_event(
+        "refund.processed",
+        reference="auracles_ref_never_seen",
+    )
+
+    response = await post_webhook(client)
+
+    assert response.status_code == 200
