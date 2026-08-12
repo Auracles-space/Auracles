@@ -9,6 +9,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
+import { mockSessionBootstrap } from "./helpers/authenticated-shell";
+
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
@@ -183,6 +185,7 @@ async function mockSavedSearchApi(page: Page): Promise<{
   });
 
   return writes;
+  await mockSessionBootstrap(page);
 }
 
 test("Operator saves Explore filters and manages the saved search", async ({

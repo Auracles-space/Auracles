@@ -9,6 +9,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
+import { mockSessionBootstrap } from "./helpers/authenticated-shell";
+
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
@@ -417,6 +419,7 @@ test("Contributor builds a Collection and Operator sees/refunds collection licen
     },
   ]);
   await mockCollectionsApi(page);
+  await mockSessionBootstrap(page);
 
   await page.goto("/dashboard/collections");
   await page.getByPlaceholder("Collection title").fill("Overpriced Collection");
@@ -467,6 +470,7 @@ test("Operator download blocks Collection refund", async ({ context, page }) => 
     },
   ]);
   await mockCollectionsApi(page);
+  await mockSessionBootstrap(page);
   await page.goto("/library");
 
   await Promise.all([

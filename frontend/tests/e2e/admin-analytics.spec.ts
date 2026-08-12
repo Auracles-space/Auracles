@@ -9,6 +9,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
+import { mockSessionBootstrap } from "./helpers/authenticated-shell";
+
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
@@ -283,6 +285,7 @@ test("admin can use analytics, moderation, and user controls", async ({
     },
   ]);
   await mockAdminApi(page);
+  await mockSessionBootstrap(page, { displayName: "Admin User", email: "admin@example.com", roles: ["admin"] });
 
   await page.goto("/admin/analytics");
   await expect(page.getByRole("heading", { name: "Platform analytics" })).toBeVisible();
