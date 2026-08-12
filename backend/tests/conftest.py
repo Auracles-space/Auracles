@@ -33,6 +33,25 @@ os.environ["PLATFORM_CURRENCY"] = "USD"
 # has in `.env`, so the suite passes or fails depending on the machine. `lax` is
 # the field default those tests assert against.
 os.environ["COOKIE_SAMESITE"] = "lax"
+# Presigned-POST/GET signing is offline (no S3 call), but botocore still needs
+# non-null credentials to build the signature. Pinned to the same dummies the
+# CI job sets, so a developer with real AWS keys in their environment runs the
+# suite against the same values CI does — and never against a real bucket.
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+# Google connector credentials. Pinned for the same reason as the datastores:
+# the Drive token-refresh path resolves `get_settings()` directly rather than
+# the settings a test injects through the dependency override, so it reads
+# whatever the process has. A developer with real values in `.env` sees these
+# tests pass while CI, which has none, fails them on "connector is not
+# configured". The values are placeholders — every request on these paths is
+# mocked, so nothing authenticates against Google.
+os.environ["GOOGLE_CLIENT_ID"] = "client-abc.apps.googleusercontent.com"
+os.environ["GOOGLE_CLIENT_SECRET"] = "gclient_secret"
+os.environ["GOOGLE_DRIVE_REDIRECT_URI"] = (
+    "https://auracles.space/v1/integrations/connectors/google-drive/callback"
+)
 os.environ["S3_ARTIFACTS_BUCKET"] = "auracles-artifacts-dev"
 os.environ["S3_AVATARS_BUCKET"] = "auracles-avatars-dev"
 os.environ["S3_REPORTS_BUCKET"] = "auracles-reports-dev"
@@ -161,8 +180,7 @@ def _snapshot_preserved_tables(
         if not rows:
             continue
         fk_columns = {
-            row[0]
-            for row in connection.execute(_OUTBOUND_FK_COLUMNS, {"table": name})
+            row[0] for row in connection.execute(_OUTBOUND_FK_COLUMNS, {"table": name})
         }
         snapshot[name] = [
             {key: None if key in fk_columns else value for key, value in row.items()}
