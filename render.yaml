@@ -103,6 +103,12 @@ services:
         value: production
       - key: LOG_FORMAT
         value: json
+      # Single settlement currency. NGN for the closed Nigerian pilot: both
+      # sides of every trade are Nigerian, so no FX conversion exists. Must
+      # match on the worker and beat services or a payout would be booked in
+      # one currency and transferred in another.
+      - key: PLATFORM_CURRENCY
+        value: NGN
       - key: TRUST_PROXY_HEADERS # behind Render's proxy → trust X-Forwarded-*
         value: "true"
       - key: COOKIE_SAMESITE
@@ -132,6 +138,8 @@ services:
         value: production
       - key: LOG_FORMAT
         value: json
+      - key: PLATFORM_CURRENCY
+        value: NGN
       # Stream uploads to the separate ClamAV service (its ~1GB signature DB
       # must not live on this worker). Host = the private service name below.
       - key: CLAMAV_HOST
@@ -168,3 +176,5 @@ services:
         value: production
       - key: LOG_FORMAT
         value: json
+      - key: PLATFORM_CURRENCY
+        value: NGN
