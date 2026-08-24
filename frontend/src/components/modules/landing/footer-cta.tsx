@@ -12,21 +12,16 @@ import { useState } from "react";
 
 import { BrandLogo } from "@/components/ui/brand-logo";
 
-import {
-  configureBrowserClient,
-  describeGeneratedError,
-} from "@/lib/auth/form-client";
-import { joinWaitlistV1WaitlistPost } from "@/lib/generated/sdk.gen";
-
 const isWaitlistMode = process.env.NEXT_PUBLIC_WAITLIST_MODE !== "false";
 
-
+const FALLBACK_ERROR = "Something went wrong. Please try again.";
 
 /**
  * Render the closing CTA and the site footer.
  */
 export function FooterCta() {
   const [email, setEmail] = useState("");
+  const [honeypot, setHoneypot] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [alreadyJoined, setAlreadyJoined] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,16 +32,31 @@ export function FooterCta() {
     if (!email || isSubmitting) return;
     setIsSubmitting(true);
     setError(null);
-    configureBrowserClient();
-    const result = await joinWaitlistV1WaitlistPost({
-      body: { email, source: "footer" },
-    });
+    // Waitlist-stage collector: the form posts to the app's own route
+    // (Resend Audience behind it) because the platform backend is not
+    // deployed yet. Restore joinWaitlistV1WaitlistPost at full launch.
+    let result: { already_joined?: boolean; message?: string } | null = null;
+    let ok = false;
+    try {
+      const response = await fetch("/api/waitlist", {
+        body: JSON.stringify({ email, source: "footer", website: honeypot }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      ok = response.ok;
+      result = (await response.json()) as {
+        already_joined?: boolean;
+        message?: string;
+      };
+    } catch {
+      result = null;
+    }
     setIsSubmitting(false);
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
+    if (!ok || !result) {
+      setError(result?.message ?? FALLBACK_ERROR);
       return;
     }
-    setAlreadyJoined(result.data.already_joined);
+    setAlreadyJoined(result.already_joined === true);
     setSubmitted(true);
   };
 
@@ -128,6 +138,17 @@ export function FooterCta() {
                   onSubmit={handleSubmit}
                   className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row items-stretch"
                 >
+                  {/* Honeypot: invisible to humans, bots fill it and get a fake success. */}
+                  <input
+                    type="text"
+                    name="website"
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                    tabIndex={-1}
+                    autoComplete="off"
+                    aria-hidden="true"
+                    className="hidden"
+                  />
                   <div className="flex-1">
                     <label className="sr-only" htmlFor="waitlist-email">
                       Email address
