@@ -1,0 +1,33 @@
+# AWS Amplify Hosting build spec (monorepo — app lives in frontend/).
+#
+# Node is pinned to 22: Next.js 15 is broken under Node 24 (edge-runtime
+# EvalError on every route). pnpm comes from corepack at the version pinned
+# in package.json.
+#
+# The env | grep line is load-bearing: Amplify console env vars exist only
+# at build time for SSR apps. Server-side runtime vars (the Resend secrets
+# used by app/api/waitlist) must be written into .env.production during the
+# build to reach the SSR compute. NEXT_PUBLIC_* vars are inlined by
+# `next build` and need no forwarding.
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - nvm install 22 && nvm use 22
+            - corepack enable
+            - corepack prepare pnpm@11.5.2 --activate
+            - pnpm install --frozen-lockfile
+        build:
+          commands:
+            - env | grep -E '^(RESEND_API_KEY|RESEND_AUDIENCE_ID)=' >> .env.production || true
+            - pnpm build
+      artifacts:
+        baseDirectory: .next
+        files:
+          - "**/*"
+      cache:
+        paths:
+          - node_modules/**/*
