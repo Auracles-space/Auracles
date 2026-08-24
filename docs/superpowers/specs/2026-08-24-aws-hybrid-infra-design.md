@@ -1,0 +1,204 @@
+# AWS Hybrid Infrastructure Design (Phase 1.5)
+
+**Date:** 2026-08-24
+**Status:** Approved (human decision, 2026-08-24)
+**Supersedes:** `2026-06-07-pre-scale-infra-design.md` (Render hosting) — Neon/Upstash/Resend sections still apply.
+**Relation to TDD:** Overrides TDD Section 3 (infrastructure) until the Phase 2 upgrade triggers below fire.
+
+---
+
+## 1. Context and decision
+
+Vercel and Render are being abandoned. Full TDD Phase 2 (ECS + RDS + ElastiCache + NAT + ALB, staging + production) costs ~$250–300/mo — roughly one month of the current budget (a few hundred USD). The approved path is a **hybrid**: AWS takes over *compute only*; the serverless data plane stays where it is cheap.
+
+| Decision | Choice | Rejected alternatives |
+| --- | --- | --- |
+| Backend hosting | ECS Fargate (api, worker, beat, clamav) | Single EC2 + compose (throwaway); full Phase 2 now (burns budget) |
+| Frontend hosting | AWS Amplify Hosting | Fargate container (+$18/mo, manual scaling); OpenNext/Lambda (tooling risk) |
+| Database | **Neon stays** | RDS (+$14/mo + forces NAT) |
+| Redis | **Upstash stays** | ElastiCache (+$12/mo + forces NAT) |
+| Email | **Resend stays** | SES (no reason to move yet) |
+| NAT Gateway | **None** — tasks in public subnets with public IPs, locked security groups | NAT (+$35/mo fixed) |
+| Staging | **Ephemeral** — `terraform apply` before a release QA pass, `terraform destroy` after | Always-on parity (~2× cost) |
+| Savings Plan | **No commitment** until load is known | 1-yr Compute SP (~20% off Fargate only; doesn't touch ALB) |
+
+Phase 2 upgrade trigger (unchanged in spirit from the pre-scale doc): sustained load that Neon/Upstash free/low tiers can't hold, or AWS Activate credits landing — then RDS + ElastiCache + private subnets slot in as new Terraform modules and env-var swaps. No code changes.
+
+**Environment parity rule adaptation:** staging uses the *same Terraform modules* as production with smaller sizes, but exists only during release testing. Parity of architecture is kept; parity of uptime is deliberately dropped for budget.
+
+---
+
+## 2. Target architecture
+
+```
+                        ┌─────────────────────────────┐
+  users ──────────────► │ Amplify Hosting (Next.js 15) │  auracles.space
+                        │ CloudFront + Lambda, managed │
+                        └──────────────┬──────────────┘
+                                       │ NEXT_PUBLIC_API_URL
+                                       ▼
+                        ┌──────────────────────────────┐
+  api.auracles.space ─► │ ALB (HTTPS, ACM cert)         │
+                        └──────────────┬───────────────┘
+                                       ▼
+        ┌─────────────────── ECS Fargate cluster ───────────────────┐
+        │  api      0.5 vCPU / 1 GB   desired=1  (alembic on boot)  │
+        │  worker   1 vCPU / 4 GB     desired=1  (+ clamav sidecar) │
+        │  beat     0.25 vCPU / 0.5GB desired=1  (singleton)        │
+        └───────────┬───────────────────┬───────────────────────────┘
+                    │                   │
+          Neon (Postgres)      Upstash (Redis broker+cache)
+          Resend (email)       S3 (artifacts/avatars/reports/thumbnails)
+          Stripe / Paystack / Persona (webhooks → ALB → api)
+```
+
+### ClamAV placement (sub-decision, recommendation pending sign-off)
+
+Render runs clamd as a separate private service (`auracles-clamav`, 2 GB, worker streams via INSTREAM on :3310). On ECS there are two placements:
+
+1. **Sidecar container in the worker task (recommended).** Same task, `CLAMAV_HOST=localhost`. No service discovery, no extra service, one fewer moving part. Cost is folded into the worker task size (worker 1 GB + clamd 2 GB + headroom → 1 vCPU / 4 GB task).
+2. **Separate ECS service + Service Connect.** Mirrors Render exactly; scan capacity scales independently of workers. Adds ~$16–27/mo and service-discovery config. Right answer when there are multiple workers — not yet.
+
+Sidecar is the plan unless the human objects. Switching later is task-definition-only.
+
+---
+
+## 3. Terraform layout
+
+Remote state in S3 + DynamoDB locking from day one (per CLAUDE.md — never local state). Staging and production state fully separate.
+
+```
+infra/
+├── modules/
+│   ├── networking/   # VPC, 2 public subnets (ALB needs 2 AZs), IGW, security groups. No NAT.
+│   ├── ecr/          # One repo: auracles-backend
+│   ├── ecs/          # Cluster, task definitions, services (api, worker+clamav, beat), CloudWatch log groups
+│   ├── alb/          # ALB, target group (health check GET /health), HTTPS listener, ACM cert
+│   ├── amplify/      # aws_amplify_app + branch (monorepo appRoot=frontend), domain association
+│   ├── secrets/      # Secrets Manager entries + IAM policy for task execution role
+│   └── s3/           # Import/manage the four existing buckets + lifecycle + CORS
+├── envs/
+│   ├── production/   # main.tf, variables.tf, backend.tf (state key: production/terraform.tfstate)
+│   └── staging/      # same modules, smaller sizes; applied only during release QA, then destroyed
+└── (no root main.tf — envs are the entry points)
+```
+
+Security groups (deny by default):
+
+| SG | Inbound | Notes |
+| --- | --- | --- |
+| `alb` | 443 from 0.0.0.0/0 (+ 80 → 301 redirect) | Public edge |
+| `api-task` | 8000 from `alb` SG only | Public IP exists but nothing can reach it directly |
+| `worker-task` | none | Outbound only (Neon, Upstash, S3, providers); clamd is localhost |
+| `beat-task` | none | Outbound only |
+
+No NAT means tasks get public IPs for outbound internet (Neon/Upstash/Stripe). All inbound is blocked by SGs except ALB→api. Add an S3 **gateway VPC endpoint** (free) so artifact traffic to S3 never leaves AWS.
+
+### Beat singleton guarantee
+
+`desired_count = 1`, `deployment_minimum_healthy_percent = 0`, `deployment_maximum_percent = 100` — ECS stops the old beat before starting the new one, so two schedulers never overlap during deploys. Beat's `celerybeat-schedule` file is ephemeral container state; all entries are fixed intervals, so losing it on redeploy is harmless (worst case: a periodic task runs once early).
+
+### Migrations
+
+The Dockerfile runs `alembic upgrade head` on API boot. Safe while `api desired_count = 1`. **Before ever scaling the API past 1**, migrations move to a dedicated `aws ecs run-task` step in the deploy workflow (one-off task, then update services). Recorded here so scaling doesn't silently create a migration race.
+
+---
+
+## 4. Secrets and configuration
+
+All secrets in **AWS Secrets Manager**, injected via task-definition `secrets` (execution role reads them; they never appear in the task def in plaintext). ~$0.40/secret/mo → store as **one JSON secret per environment** (`auracles/production/app`) with key-per-variable to keep cost at ~$0.40 + rotation freedom.
+
+Secret keys (from `app/core/config.py`): `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `TOTP_ENCRYPTION_KEY`, `PAYOUT_ACCOUNT_ENCRYPTION_KEY`, `PARTNER_WEBHOOK_ENCRYPTION_KEY`, `CONNECTOR_TOKEN_ENCRYPTION_KEY`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PAYSTACK_SECRET_KEY`, `PAYSTACK_WEBHOOK_SECRET`, `PERSONA_API_KEY`, `PERSONA_WEBHOOK_SECRET`, `GOOGLE_CLIENT_SECRET`, `BRAVE_SEARCH_API_KEY`.
+
+Plain env vars on the task definition: `ENVIRONMENT=production`, `LOG_FORMAT=json`, `CORS_ALLOWED_ORIGINS=https://auracles.space`, `AWS_DEFAULT_REGION`, the four `S3_*_BUCKET` names, `CLAMAV_HOST=localhost`, `CLAMAV_PORT=3310`, Persona/Google IDs and redirect URIs, `PLATFORM_CURRENCY`, invoice seller fields.
+
+**IAM instead of keys:** on Fargate, drop `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` entirely — the **task role** grants S3 access (boto3 picks up the role automatically; `Settings` fields are `None`-defaulted so nothing breaks). One fewer long-lived credential in existence.
+
+Amplify env vars: `NEXT_PUBLIC_API_URL=https://api.auracles.space`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_PLATFORM_CURRENCY`, `NEXT_PUBLIC_WAITLIST_MODE`.
+
+---
+
+## 5. CI/CD
+
+`checks.yml` is unchanged (it already gates everything). `deploy.yml` is rewritten:
+
+```
+on: workflow_run [Checks] success on main
+jobs:
+  deploy:
+    - aws-actions/configure-aws-credentials  (GitHub OIDC role — NO long-lived AWS keys in GH secrets)
+    - docker build backend → push to ECR (tag = git SHA)
+    - aws ecs update-service --force-new-deployment  (api, worker, beat — new task-def revision pinned to the SHA tag)
+    - wait for services-stable on api (rollback signal: deployment circuit breaker enabled)
+```
+
+- **GitHub OIDC** (`aws_iam_openid_connect_provider` + a deploy role scoped to ECR push + ECS deploy) replaces stored AWS keys — Terraform creates it.
+- ECS **deployment circuit breaker** with rollback on: a task that can't pass `/health` auto-rolls back to the previous revision.
+- Frontend deploys via **Amplify's own git integration** (push to `main` → build) — outside GitHub Actions, mirroring how Vercel worked. The Render deploy-hook secrets get deleted.
+- E2E (Playwright) is still not in CI — tracked separately; the ephemeral-staging QA pass is where it runs for now.
+
+---
+
+## 6. Ephemeral staging workflow
+
+```
+make staging-up      # terraform -chdir=infra/envs/staging apply  (≈5–10 min incl. ACM DNS validation reuse)
+make staging-seed    # alembic upgrade + seed script against the Neon `develop` branch
+# ... QA / E2E pass against staging.auracles.space ...
+make staging-down    # terraform destroy — idle cost returns to ~$0
+```
+
+- Staging DB = Neon `develop` branch (already exists per pre-scale doc); staging Redis = separate Upstash db or free instance. Neither is created/destroyed by Terraform — only AWS resources are ephemeral.
+- ACM certs + Route 53 zone live in a tiny **persistent** shared stack (cert validation takes too long to recreate each time); staging apply only attaches to them.
+- Fargate Spot for all staging services (~70% off the already-small window).
+
+---
+
+## 7. Cost estimate (production, monthly, us-east-1 — verify in AWS calculator before apply)
+
+| Item | Size | ~$/mo |
+| --- | --- | --- |
+| ALB | 1, low LCU | 20 |
+| api task | 0.5 vCPU / 1 GB | 18 |
+| worker task (incl. clamd sidecar) | 1 vCPU / 4 GB | 42 |
+| beat task | 0.25 vCPU / 0.5 GB | 9 |
+| Amplify Hosting | low traffic | 1–10 |
+| Secrets Manager (1 JSON secret) + KMS default | | 1 |
+| CloudWatch logs + ECR + data transfer | | 8–12 |
+| Route 53 hosted zone | | 0.50 |
+| Neon / Upstash / Resend | current tiers | 0–20 |
+| **Total** | | **≈ 100–130** |
+
+Honest correction vs. the earlier estimate ($75–90): the ClamAV daemon's 2 GB requirement was not priced in. It is now. Budget survives ~2.5–3 months at this burn; **AWS Activate Founders ($1,000 credits) should be applied for immediately** — it roughly doubles runway or funds the Phase 2 upgrade.
+
+Cheapest lever if burn must drop: fold worker to 0.5 vCPU / 3 GB (~$31) and accept slower artifact processing.
+
+---
+
+## 8. Cutover order
+
+1. **Human:** create/verify AWS account, enable MFA on root, create the Terraform state bucket + DynamoDB table (one-time, manual by design), apply for Activate credits.
+2. Terraform bootstrap: networking, ECR, secrets (values entered by human, never committed), IAM/OIDC.
+3. Build + push backend image to ECR manually once; stand up ECS cluster + services with `desired_count=0→1`; confirm `/health` green through the ALB.
+4. Point **api.auracles.space** DNS at the ALB (ACM cert validated first). Old Render URL keeps working in parallel — this is the rollback path.
+5. Update webhook endpoints at Stripe, Paystack, Persona to the new API host. (Paystack: single URL per mode — swap test URL first, verify, then live.)
+6. Amplify app connected to the GitHub repo (`appRoot=frontend`), env vars set, deploy, attach **auracles.space** domain.
+7. Rewrite `deploy.yml` (ECR + ECS via OIDC), delete Render hook secrets. One full push-to-main → auto-deploy verified.
+8. Run one ephemeral-staging cycle end-to-end to prove the QA workflow.
+9. Decommission Render services; delete `render.yaml` in a follow-up PR; update CLAUDE.md tech-stack table.
+
+Rollback at any step ≤ 7: DNS back to Render, webhooks back to old URLs. Nothing is destroyed until step 9.
+
+---
+
+## 9. Risks
+
+| Risk | Mitigation |
+| --- | --- |
+| Public-IP tasks (no NAT) widen exposure surface | SGs allow zero inbound except ALB→api:8000; this is standard "public subnet + SG" posture. Revisit when private subnets arrive with Phase 2. |
+| Neon egress: traffic now crosses AWS↔Neon | Pick the Neon region matching the AWS region; Neon doesn't bill egress on current tiers, latency is the only cost. |
+| Amplify build quirks vs. Vercel (monorepo, Next 15) | Prove the Amplify build in step 6 **before** DNS cutover; Render/old URL remains live. |
+| clamd cold start (freshclam signature download, ~3 min) | Container healthcheck + ECS grace period 300 s, mirroring compose's `start_period: 180s`. |
+| Migration race if api scales >1 | Locked in §3: move migrations to `ecs run-task` before any scale-out. |
+| Beat double-run during deploy | min-healthy 0 / max 100 deployment config (§3). |
+| Ephemeral staging drift (“works on prod modules only”) | Staging uses identical modules — only tfvars differ; CI runs `terraform fmt`/`validate` on every infra PR. |
