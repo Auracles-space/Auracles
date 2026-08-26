@@ -47,7 +47,7 @@ const tiers = [
  */
 export function PricingStrip() {
   return (
-    <section className="px-5 pb-16 md:px-10 md:pb-24" id="pricing">
+    <section className="px-5 pb-16 pt-16 md:px-10 md:pb-24 md:pt-24" id="pricing">
       <div className="mx-auto w-full max-w-[1280px]">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="font-heading text-3xl font-semibold leading-tight tracking-tight text-foreground md:text-5xl">
