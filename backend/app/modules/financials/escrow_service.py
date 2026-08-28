@@ -17,7 +17,7 @@ from app.core.database import async_session_factory
 from app.integrations import paystack, stripe
 from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
-from app.modules.financials import commission
+from app.modules.financials import commission, refund_intents
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, FinancialEvent, Transaction
 
@@ -409,6 +409,18 @@ async def refund_at_provider(
             detail="Escrow funding transaction is missing provider metadata.",
         )
 
+    # Durable intent before the provider call: a crash between the provider
+    # accepting the refund and our commit would otherwise leave money moved
+    # with no local record. The intent sweeper reconciles orphans.
+    intent_key = await refund_intents.record_refund_intent(
+        transaction_id=transaction.id,
+        charge_ref=transaction.provider_ref,
+        rail=transaction.provider or "stripe",
+        amount=_normalise_money(transaction.amount),
+        currency=transaction.currency,
+        actor_id=actor_id,
+    )
+
     if transaction.provider == "stripe":
         try:
             stripe_refund = await stripe.create_refund(
@@ -466,7 +478,7 @@ async def refund_at_provider(
         provider=transaction.provider,
         provider_ref=refund_ref,
         actor_id=actor_id,
-        metadata={"escrow_id": str(escrow.id)},
+        metadata={"escrow_id": str(escrow.id), "intent_key": intent_key},
     )
     return refund_ref
 
@@ -513,6 +525,16 @@ async def split(
             status_code=status.HTTP_409_CONFLICT,
             detail="Escrow funding transaction is missing provider metadata.",
         )
+
+    # Durable intent for the refund portion; see refund_at_provider.
+    intent_key = await refund_intents.record_refund_intent(
+        transaction_id=transaction.id,
+        charge_ref=transaction.provider_ref,
+        rail=transaction.provider or "stripe",
+        amount=normalized_refund,
+        currency=transaction.currency,
+        actor_id=actor_id,
+    )
 
     if transaction.provider == "stripe":
         try:
@@ -634,7 +656,11 @@ async def split(
         provider=transaction.provider,
         provider_ref=refund_result_id,
         actor_id=actor_id,
-        metadata={"escrow_id": str(escrow.id), "split": "true"},
+        metadata={
+            "escrow_id": str(escrow.id),
+            "split": "true",
+            "intent_key": intent_key,
+        },
     )
     await write_audit(
         db=db,

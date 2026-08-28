@@ -3648,6 +3648,18 @@ async def test_admin_resolves_dispute_refund_on_paystack_rail(
     assert ledger.provider == "paystack"
     assert ledger.provider_ref == "rf_escrow_001"
 
+    # The crash-proof intent written before the provider call carries the same
+    # key the refund_requested event stamped, closing it for the sweeper.
+    async with async_session_factory() as session:
+        intent = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == transaction_id,
+                FinancialEvent.event_type == "refund_initiated",
+            )
+        )
+    assert intent is not None
+    assert intent.metadata_["intent_key"] == ledger.metadata_["intent_key"]
+
     # The escrow state change itself is ledgered alongside the refund request.
     async with async_session_factory() as session:
         escrow_ledger = await session.scalar(

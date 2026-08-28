@@ -25,6 +25,10 @@ from app.modules.financials.reconciliation import (
     ReconciliationResult,
     reconcile_pending_refunds,
 )
+from app.modules.financials.refund_intents import (
+    RefundIntentSweepResult,
+    reconcile_refund_intents,
+)
 from app.modules.webhooks.models import WebhookEvent
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
@@ -112,6 +116,31 @@ def prune_webhook_events_task(self: Any) -> dict[str, int]:
     )
     log.info("task_started")
     result = run_async(_prune_webhook_events())
+    log.info("task_completed", result=result)
+    return result
+
+
+async def _reconcile_refund_intents() -> RefundIntentSweepResult:
+    """Run refund-intent reconciliation inside one database transaction."""
+    async with async_session_factory() as db:
+        async with db.begin():
+            return await reconcile_refund_intents(db)
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def reconcile_refund_intents_task(self: Any) -> RefundIntentSweepResult:
+    """Celery wrapper for hourly refund-intent reconciliation.
+
+    Idempotent: an intent already matched by a `refund_requested` event, or
+    already flagged or closed by an earlier run, is excluded by its key.
+    """
+    log = logger.bind(
+        module="financials",
+        action="reconcile_refund_intents",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    result = run_async(_reconcile_refund_intents())
     log.info("task_completed", result=result)
     return result
 

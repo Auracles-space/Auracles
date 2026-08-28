@@ -27,8 +27,9 @@ from app.core.security import (
 )
 from app.integrations import paystack
 from app.integrations.paystack import PaystackRefund
+from app.integrations.stripe import StripeRefund
 from app.modules.auth.models import User, UserRole
-from app.modules.financials import balance_floor
+from app.modules.financials import balance_floor, refund_intents
 from app.modules.financials.models import (
     Escrow,
     FinancialEvent,
@@ -437,6 +438,178 @@ def test_stranded_payout_sweeper_is_registered_on_the_beat_schedule() -> None:
 
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.requeue_stranded_payouts_task"
+    )
+    assert entry["schedule"] == 3600.0
+
+
+def _seed_refund_intent(
+    *,
+    intent_key: str,
+    occurred_at: datetime,
+    provider: str = "stripe",
+    resolved: bool = False,
+) -> UUID:
+    """Insert one refund_initiated event, optionally with its outcome row."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    transaction_id = uuid4()
+    with session_factory() as session:
+        session.add(
+            FinancialEvent(
+                entity_type="transaction",
+                entity_id=transaction_id,
+                event_type="refund_initiated",
+                amount=Decimal("149.00"),
+                currency="USD",
+                provider=provider,
+                provider_ref="pi_intent_charge_1",
+                occurred_at=occurred_at,
+                metadata_={"intent_key": intent_key},
+            )
+        )
+        if resolved:
+            session.add(
+                FinancialEvent(
+                    entity_type="transaction",
+                    entity_id=transaction_id,
+                    event_type="refund_requested",
+                    amount=Decimal("149.00"),
+                    currency="USD",
+                    provider=provider,
+                    provider_ref="re_done_1",
+                    occurred_at=occurred_at + timedelta(seconds=1),
+                    metadata_={"intent_key": intent_key},
+                )
+            )
+        session.commit()
+    sync_engine.dispose()
+    return transaction_id
+
+
+def test_refund_intent_sweep_flags_untracked_provider_refunds(
+    migrated_database: None,
+    reconciliation_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An orphaned intent whose provider refund exists is flagged CRITICAL.
+
+    A crash between the provider accepting the refund and our commit leaves
+    money moved with no local record; the sweep asks the provider directly
+    and pages an admin with a durable audit + ledger trail.
+    """
+    del migrated_database, reconciliation_context
+    transaction_id = _seed_refund_intent(
+        intent_key="intent-flagged-1",
+        occurred_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    alerts: list[dict[str, Any]] = []
+
+    async def fake_list_refunds(*, payment_intent_id: str, **_: Any) -> list[Any]:
+        """Report one provider refund for the orphaned charge."""
+        del payment_intent_id
+        return [StripeRefund(id="re_orphan_1", status="succeeded")]
+
+    monkeypatch.setattr(refund_intents.stripe, "list_refunds", fake_list_refunds)
+    monkeypatch.setattr(
+        refund_intents,
+        "notify_admins_review_pending",
+        lambda **kwargs: alerts.append(kwargs),
+    )
+
+    result = financials_beat.reconcile_refund_intents_task.apply().get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        audit = session.execute(
+            select(AuditLog).where(
+                AuditLog.action == "untracked_refund_detected"
+            )
+        ).scalar_one_or_none()
+        flagged = session.execute(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "refund_intent_flagged"
+            )
+        ).scalar_one_or_none()
+    sync_engine.dispose()
+
+    assert result == {"checked": 1, "closed": 0, "flagged": 1, "unresolved": 0}
+    assert len(alerts) == 1
+    assert audit is not None
+    assert audit.target_id == transaction_id
+    assert flagged is not None
+    assert flagged.metadata_["provider_refund_ids"] == ["re_orphan_1"]
+
+
+def test_refund_intent_sweep_closes_abandoned_attempts(
+    migrated_database: None,
+    reconciliation_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An orphaned intent with no provider refund closes quietly."""
+    del migrated_database, reconciliation_context
+    _seed_refund_intent(
+        intent_key="intent-abandoned-1",
+        occurred_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    alerts: list[dict[str, Any]] = []
+
+    async def fake_list_refunds(**_: Any) -> list[Any]:
+        """Report no provider refunds: the attempt died before the call."""
+        return []
+
+    monkeypatch.setattr(refund_intents.stripe, "list_refunds", fake_list_refunds)
+    monkeypatch.setattr(
+        refund_intents,
+        "notify_admins_review_pending",
+        lambda **kwargs: alerts.append(kwargs),
+    )
+
+    result = financials_beat.reconcile_refund_intents_task.apply().get()
+    second = financials_beat.reconcile_refund_intents_task.apply().get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        closed = session.execute(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "refund_intent_closed"
+            )
+        ).scalar_one_or_none()
+    sync_engine.dispose()
+
+    assert result == {"checked": 1, "closed": 1, "flagged": 0, "unresolved": 0}
+    assert second == {"checked": 0, "closed": 0, "flagged": 0, "unresolved": 0}
+    assert alerts == []
+    assert closed is not None
+
+
+def test_refund_intent_sweep_skips_intents_with_recorded_outcomes(
+    migrated_database: None,
+    reconciliation_context: None,
+) -> None:
+    """An intent whose refund_requested event landed is never probed."""
+    del migrated_database, reconciliation_context
+    _seed_refund_intent(
+        intent_key="intent-resolved-1",
+        occurred_at=datetime.now(UTC) - timedelta(hours=2),
+        resolved=True,
+    )
+
+    result = financials_beat.reconcile_refund_intents_task.apply().get()
+
+    assert result == {"checked": 0, "closed": 0, "flagged": 0, "unresolved": 0}
+
+
+def test_refund_intent_sweep_is_registered_on_the_beat_schedule() -> None:
+    """The sweep must be scheduled, or crash-orphaned refunds stay invisible."""
+    entry = BEAT_SCHEDULE["reconcile-refund-intents-hourly"]
+
+    assert entry["task"] == (
+        "app.workers.tasks.financials_beat.reconcile_refund_intents_task"
     )
     assert entry["schedule"] == 3600.0
 

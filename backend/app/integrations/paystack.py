@@ -472,6 +472,41 @@ async def list_banks(
     return banks
 
 
+async def list_refunds(
+    *,
+    transaction_reference: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> list[PaystackRefund]:
+    """Return the refunds Paystack holds against one charge reference.
+
+    Used by refund-intent reconciliation to ask whether a refund whose local
+    record was lost mid-crash actually went through at the provider.
+    """
+    data = await _get_json(
+        "/refund",
+        {"transaction": transaction_reference},
+        settings=settings,
+        client=client,
+    )
+    if not isinstance(data, list):
+        raise PaystackProviderError("Paystack refund list response malformed.")
+    refunds: list[PaystackRefund] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        raw_id = entry.get("id")
+        status = entry.get("status")
+        if isinstance(raw_id, int | str):
+            refunds.append(
+                PaystackRefund(
+                    id=str(raw_id),
+                    status=status if isinstance(status, str) else None,
+                )
+            )
+    return refunds
+
+
 async def fetch_balance(
     *,
     settings: Settings | None = None,

@@ -31,7 +31,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.collections.models import CollectionEarningAllocation
 from app.modules.developer.models import PartnerCommission
-from app.modules.financials import commission
+from app.modules.financials import commission, refund_intents
 from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import (
@@ -1862,7 +1862,7 @@ async def _create_provider_refund(
     *,
     action: str,
     operator_id: UUID,
-) -> str:
+) -> tuple[str, str]:
     """Refund a purchase on the rail it was paid on and return the refund id.
 
     The two rails differ in more than the call shape. Stripe refunds a
@@ -1889,6 +1889,17 @@ async def _create_provider_refund(
     assert transaction.provider_ref is not None
     amount = _normalise_money(transaction.amount)
     currency = transaction.currency.upper()
+    # Durable intent before the provider call: a crash between the provider
+    # accepting the refund and our commit would otherwise leave money moved
+    # with no local record. The intent sweeper reconciles orphans.
+    intent_key = await refund_intents.record_refund_intent(
+        transaction_id=transaction.id,
+        charge_ref=transaction.provider_ref,
+        rail=transaction.provider or "stripe",
+        amount=amount,
+        currency=currency,
+        actor_id=operator_id,
+    )
     try:
         if transaction.provider == "paystack":
             paystack_refund = await paystack.refund_transaction(
@@ -1896,14 +1907,14 @@ async def _create_provider_refund(
                 amount=amount,
                 currency=currency,
             )
-            return paystack_refund.id
+            return paystack_refund.id, intent_key
         stripe_refund = await stripe.create_refund(
             payment_intent_id=transaction.provider_ref,
             amount=amount,
             currency=currency,
             idempotency_key=f"refund:{transaction.id}",
         )
-        return stripe_refund.id
+        return stripe_refund.id, intent_key
     except (StripeProviderError, PaystackProviderError) as exc:
         logger.bind(
             module="financials",
@@ -1927,6 +1938,7 @@ async def _record_refund_requested(
     transaction: Transaction,
     refund_id: str,
     operator_id: UUID,
+    intent_key: str | None = None,
 ) -> None:
     """Append the refund to the money ledger, carrying the provider's id.
 
@@ -1956,6 +1968,7 @@ async def _record_refund_requested(
         provider=transaction.provider,
         provider_ref=refund_id,
         actor_id=operator_id,
+        metadata={"intent_key": intent_key} if intent_key else None,
     )
 
 
@@ -2012,7 +2025,7 @@ async def refund_framework_purchase(
                 operator_id=operator_id,
                 transaction=collection_transaction,
             )
-            refund_id = await _create_provider_refund(
+            refund_id, intent_key = await _create_provider_refund(
                 collection_transaction,
                 action="refund_collection_purchase",
                 operator_id=operator_id,
@@ -2045,6 +2058,7 @@ async def refund_framework_purchase(
                 transaction=collection_transaction,
                 refund_id=refund_id,
                 operator_id=operator_id,
+                intent_key=intent_key,
             )
             for license_row in licenses:
                 license_row.status = "revoked"
@@ -2099,7 +2113,7 @@ async def refund_framework_purchase(
             transaction_id=transaction_id,
         )
         provider = transaction.provider
-        refund_id = await _create_provider_refund(
+        refund_id, intent_key = await _create_provider_refund(
             transaction,
             action="refund_framework_purchase",
             operator_id=operator_id,
@@ -2122,6 +2136,7 @@ async def refund_framework_purchase(
             transaction=transaction,
             refund_id=refund_id,
             operator_id=operator_id,
+            intent_key=intent_key,
         )
         license_row.status = "revoked"
         await _void_partner_commission_for_refund(

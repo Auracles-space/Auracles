@@ -410,6 +410,37 @@ async def create_refund(
     return StripeRefund(id=refund_id, status=status)
 
 
+async def list_refunds(
+    *,
+    payment_intent_id: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> list[StripeRefund]:
+    """Return the refunds Stripe holds against one PaymentIntent.
+
+    Used by refund-intent reconciliation to ask whether a refund whose local
+    record was lost mid-crash actually went through at the provider.
+    """
+    payload = await _get_json(
+        "/refunds",
+        params={"payment_intent": payment_intent_id},
+        settings=settings,
+        client=client,
+    )
+    entries = payload.get("data")
+    if not isinstance(entries, list):
+        raise StripeProviderError("Stripe refund list response malformed.")
+    refunds: list[StripeRefund] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        refund_id = entry.get("id")
+        status = entry.get("status")
+        if isinstance(refund_id, str) and isinstance(status, str):
+            refunds.append(StripeRefund(id=refund_id, status=status))
+    return refunds
+
+
 async def create_express_account(
     *,
     email: str,

@@ -134,6 +134,14 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
     # Webhook rows exist for replay dedupe and short-term forensics; the
     # durable money record lives in audit_logs and the ledger, so rows past
     # retention only grow the table.
+    # A crash between the provider accepting a refund and our commit leaves
+    # money moved with no local record; the intent sweep asks the provider
+    # directly and flags orphans. Covers Stripe, which the settlement sweeper
+    # (Paystack-only) never could.
+    "reconcile-refund-intents-hourly": {
+        "task": "app.workers.tasks.financials_beat.reconcile_refund_intents_task",
+        "schedule": 3600.0,
+    },
     "prune-webhook-events-daily": {
         "task": "app.workers.tasks.financials_beat.prune_webhook_events_task",
         "schedule": 86400.0,
