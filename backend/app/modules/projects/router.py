@@ -502,8 +502,14 @@ async def fund_org_milestone(
     context: OrgAdminContext,
     _: Annotated[None, Depends(require_org_capability("operator"))],
     db: DatabaseSession,
+    payload: MilestoneFundingRequest | None = None,
 ) -> MilestoneFundingResponse:
-    """Fund an organization-operated Project Milestone from the org customer."""
+    """Fund an organization-operated Project Milestone on the payer's rail.
+
+    The optional billing country selects the payment rail: Nigeria routes to
+    Paystack hosted checkout billed to the org's billing contact, anything
+    else stays on the org's Stripe customer.
+    """
     del org_id
     return await milestone_service.fund_org_milestone(
         db=db,
@@ -511,6 +517,7 @@ async def fund_org_milestone(
         actor_id=context.user.id,
         project_id=project_id,
         milestone_id=milestone_id,
+        country=payload.country if payload else None,
     )
 
 

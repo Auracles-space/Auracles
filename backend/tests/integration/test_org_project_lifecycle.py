@@ -22,6 +22,8 @@ from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token
+from app.integrations.paystack import PaystackInitializedTransaction
+from app.modules.auth.models import User
 from app.modules.financials.models import Escrow, Transaction
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.modules.projects import milestone_service
@@ -403,6 +405,110 @@ async def test_org_admin_can_list_incoming_project_proposals(
     assert len(proposals) == 1
     assert proposals[0]["id"] == ctx["proposal_id"]
     assert proposals[0]["contributor_name"] is not None
+
+
+async def test_org_milestone_funding_routes_to_paystack_for_nigerian_billing(
+    client: AsyncClient,
+    migrated_database: None,
+    org_project_money_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Nigerian org funds a Milestone through Paystack hosted checkout.
+
+    No org Stripe customer is required on this rail: the charge is
+    initialized against the org's billing contact (falling back to the
+    owner) and the response carries the redirect URL instead of a client
+    secret. Enforces FR-FIN-005 for org Operators on the pilot corridor.
+    """
+    del migrated_database, org_project_money_context
+    paystack_calls: list[dict[str, Any]] = []
+
+    async def fail_payment_intent(**kwargs: Any) -> Any:
+        """Fail the test if the Paystack rail touches Stripe."""
+        raise AssertionError("Stripe intent must not be created on Paystack rail")
+
+    async def fake_initialize_transaction(
+        *,
+        email: str,
+        amount: Decimal,
+        currency: str,
+        metadata: dict[str, str],
+        callback_url: str | None = None,
+    ) -> PaystackInitializedTransaction:
+        """Record the Paystack charge initialization for org funding."""
+        paystack_calls.append(
+            {
+                "email": email,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+            }
+        )
+        return PaystackInitializedTransaction(
+            reference="auracles_org_milestone_ref_001",
+            authorization_url="https://checkout.paystack.com/org_milestone_001",
+            access_code="access_org_milestone_001",
+        )
+
+    monkeypatch.setattr(
+        milestone_service.stripe,
+        "create_payment_intent",
+        fail_payment_intent,
+    )
+    monkeypatch.setattr(
+        milestone_service.paystack,
+        "initialize_transaction",
+        fake_initialize_transaction,
+    )
+    ctx = await _create_org_operated_project(client, org_prefix="ngn-fund")
+    org_id = ctx["org_id"]
+    project_id = ctx["project_id"]
+    contributor_headers = auth(ctx["contributor_token"])
+
+    accepted = await client.post(
+        f"/v1/orgs/{org_id}/projects/{project_id}/proposals/"
+        f"{ctx['proposal_id']}/accept",
+        headers=auth(ctx["admin_token"]),
+    )
+    assert accepted.status_code == 200
+    milestone_id = await _finalize_org_milestone_plan(
+        client, project_id=project_id, contributor_headers=contributor_headers
+    )
+
+    funded = await client.post(
+        f"/v1/orgs/{org_id}/projects/{project_id}/milestones/{milestone_id}/fund",
+        headers=auth(ctx["admin_token"]),
+        json={"country": "NG"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(
+            select(Transaction).where(
+                Transaction.ref_id == UUID(milestone_id),
+                Transaction.ref_type == "project_milestone",
+            )
+        )
+        owner = await session.get(User, UUID(str(ctx["owner_id"])))
+
+    assert funded.status_code == 200
+    body = funded.json()
+    assert body["provider"] == "paystack"
+    assert body["authorization_url"] == (
+        "https://checkout.paystack.com/org_milestone_001"
+    )
+    assert body["client_secret"] is None
+    assert transaction is not None
+    assert transaction.payer_id is None
+    assert transaction.payer_org_id == UUID(org_id)
+    assert transaction.provider == "paystack"
+    assert transaction.provider_ref == "auracles_org_milestone_ref_001"
+    assert owner is not None
+    initialized = paystack_calls[0]
+    # No billing_email is configured, so the charge bills the org owner.
+    assert initialized["email"] == owner.email
+    assert initialized["metadata"]["kind"] == "escrow"
+    assert initialized["metadata"]["transaction_id"] == str(transaction.id)
+    assert initialized["metadata"]["payer_org_id"] == org_id
 
 
 async def test_org_admin_can_cancel_unfunded_project_acceptance(

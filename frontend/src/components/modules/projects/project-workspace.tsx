@@ -592,9 +592,9 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
   async function fundProjectMilestone(milestoneId: string) {
     setError(null);
     setFundingMilestoneId(milestoneId);
-    // Org funding is Stripe-only for now, so the billing country only rides
-    // along on the individual path where the backend routes rails by it.
-    const body = modeKind === "org" ? {} : { country: fundingCountry };
+    // Both funding routes take the billing country now: Nigeria routes to
+    // Paystack hosted checkout on the individual and org rails alike.
+    const body = { country: fundingCountry };
     const result = await projectApi(mode).fundMilestone(projectId, milestoneId, body);
     if (!result.response.ok || !result.data) {
       setFundingMilestoneId(null);
@@ -1169,7 +1169,6 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                       </>
                     )}
                     {isProjectOwner &&
-                    modeKind !== "org" &&
                     milestone.status === "pending" &&
                     project?.milestone_plan_status === "finalized" &&
                     fundingSession?.milestoneId !== milestone.id ? (

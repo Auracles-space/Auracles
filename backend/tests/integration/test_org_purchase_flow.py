@@ -23,6 +23,7 @@ from sqlalchemy import delete, select, update
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
+from app.integrations.paystack import PaystackInitializedTransaction
 from app.main import app
 from app.modules.auth.models import User
 from app.modules.financials import service as financials_service
@@ -367,6 +368,89 @@ async def test_org_purchase_happy_path_and_webhook_grants_org_library_access(
     items = member_library.json()["items"]
     assert len(items) == 1
     assert items[0]["license_id"] == str(license_row.id)
+
+
+async def test_org_purchase_routes_to_paystack_for_nigerian_billing(
+    client: AsyncClient,
+    migrated_database: None,
+    org_purchase_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Nigerian org checkout goes through Paystack hosted checkout.
+
+    Paystack has no stored-payment-method concept, so the org needs no Stripe
+    customer on file: the charge is initialized against the org's billing
+    contact (falling back to the owner) and the browser is redirected.
+    Enforces the org side of the Nigerian pilot corridor.
+    """
+    del migrated_database, org_purchase_context
+    paystack_calls: list[dict[str, Any]] = []
+
+    async def fake_initialize_transaction(
+        *,
+        email: str,
+        amount: Decimal,
+        currency: str,
+        metadata: dict[str, str],
+        callback_url: str | None = None,
+    ) -> PaystackInitializedTransaction:
+        """Record the Paystack charge initialization for the org purchase."""
+        paystack_calls.append(
+            {
+                "email": email,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+                "callback_url": callback_url,
+            }
+        )
+        return PaystackInitializedTransaction(
+            reference="auracles_org_ref_001",
+            authorization_url="https://checkout.paystack.com/org_001",
+            access_code="access_org_001",
+        )
+
+    monkeypatch.setattr(
+        financials_service.paystack,
+        "initialize_transaction",
+        fake_initialize_transaction,
+    )
+    contributor_id = await _create_user("org-ngn-contributor")
+    owner_id = await _create_user("org-ngn-owner")
+    org = await _create_org(client, owner_id, "org-ngn-purchase")
+    await _activate_operator_capability(client, org["id"], owner_id)
+    # Deliberately no Stripe customer: the Paystack rail must not require one.
+    framework_id = await _create_published_framework(contributor_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/purchase",
+        headers=_auth_headers(owner_id),
+        json={"license_type": "team", "country": "NG"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(
+            select(Transaction).where(Transaction.payer_org_id == UUID(org["id"]))
+        )
+        owner = await session.get(User, owner_id)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "paystack"
+    assert body["authorization_url"] == "https://checkout.paystack.com/org_001"
+    assert body["client_secret"] is None
+    assert transaction is not None
+    assert transaction.provider == "paystack"
+    assert transaction.provider_ref == "auracles_org_ref_001"
+    assert transaction.status == "pending"
+    assert transaction.payer_id is None
+    assert owner is not None
+    initialized = paystack_calls[0]
+    # No billing_email is configured, so the charge bills the org owner.
+    assert initialized["email"] == owner.email
+    assert initialized["metadata"]["kind"] == "purchase"
+    assert initialized["metadata"]["transaction_id"] == str(transaction.id)
+    assert initialized["metadata"]["payer_org_id"] == org["id"]
 
 
 async def test_org_purchase_requires_auth_and_admin_role(

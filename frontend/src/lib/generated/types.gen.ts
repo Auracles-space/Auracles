@@ -8139,6 +8139,7 @@ export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesM
 export type RequestOrgDeliverableRevisionV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostError = (HTTPValidationError);
 
 export type FundOrgMilestoneV1OrgsOrgIdProjectsProjectIdMilestonesMilestoneIdFundPostData = {
+    body?: (MilestoneFundingRequest | null);
     path: {
         milestone_id: string;
         org_id: string;

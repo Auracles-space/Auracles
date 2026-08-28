@@ -928,6 +928,7 @@ async def _create_pending_org_purchase_transaction(
     framework_id: UUID,
     amount: Decimal,
     currency: str,
+    provider: PaymentProvider = "stripe",
 ) -> UUID:
     """Persist the local org-payer purchase record before provider confirmation.
 
@@ -950,7 +951,7 @@ async def _create_pending_org_purchase_transaction(
             net_amount=amount,
             transaction_type="purchase",
             status="pending",
-            provider="stripe",
+            provider=provider,
             ref_id=framework_id,
             ref_type="framework",
         )
@@ -1127,6 +1128,111 @@ async def _start_paystack_purchase(
         framework_id=framework_id,
         transaction_id=transaction_id,
     ).info("purchase_initiated")
+    return PurchaseResponse(
+        transaction_id=transaction_id,
+        provider="paystack",
+        authorization_url=initialized.authorization_url,
+    )
+
+
+async def _start_paystack_org_purchase(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    actor_id: UUID,
+    organization: Organization,
+    payee_id: UUID | None,
+    payee_org_id: UUID | None,
+    framework_id: UUID,
+    license_type: str,
+    amount: Decimal,
+    currency: str,
+) -> PurchaseResponse:
+    """Book a pending org Paystack purchase and return its hosted checkout URL.
+
+    Org sibling of `_start_paystack_purchase`: the charge bills the org's
+    billing email (falling back to the owner) and the metadata carries
+    `payer_org_id` so the settlement webhook mints an org-owned License.
+
+    Raises:
+        HTTPException(409): The org has no billing contact to charge.
+        HTTPException(502): Paystack could not initialize the charge. The
+            pending transaction is marked failed first so it never strands.
+    """
+    # Resolved before any commit so the org row is still fresh in-session.
+    try:
+        billing_email = await financials_invoices.resolve_org_billing_email(
+            db, organization
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    transaction_id = await _create_pending_org_purchase_transaction(
+        db=db,
+        org_id=org_id,
+        payee_id=payee_id,
+        payee_org_id=payee_org_id,
+        framework_id=framework_id,
+        amount=amount,
+        currency=currency,
+        provider="paystack",
+    )
+
+    try:
+        initialized = await paystack.initialize_transaction(
+            email=billing_email,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "purchase",
+                "framework_id": str(framework_id),
+                "license_type": license_type,
+                "payer_org_id": str(org_id),
+            },
+        )
+    except PaystackProviderError as exc:
+        await _mark_purchase_failed(
+            db=db,
+            operator_id=actor_id,
+            transaction_id=transaction_id,
+            framework_id=framework_id,
+            license_type=license_type,
+            provider="paystack",
+        )
+        logger.bind(
+            module="financials",
+            action="create_org_framework_purchase",
+            user_id=actor_id,
+            org_id=org_id,
+            framework_id=framework_id,
+            transaction_id=transaction_id,
+        ).error("paystack_initialize_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_purchase_initiated(
+        db=db,
+        operator_id=actor_id,
+        transaction_id=transaction_id,
+        provider_ref=initialized.reference,
+        framework_id=framework_id,
+        license_type=license_type,
+        provider="paystack",
+    )
+    logger.bind(
+        module="financials",
+        action="create_org_framework_purchase",
+        user_id=actor_id,
+        org_id=org_id,
+        framework_id=framework_id,
+        transaction_id=transaction_id,
+    ).info("org_purchase_initiated")
     return PurchaseResponse(
         transaction_id=transaction_id,
         provider="paystack",
@@ -1471,6 +1577,25 @@ async def create_org_framework_purchase(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found.",
         )
+
+    provider = select_provider(user_country=payload.country, currency=currency)
+    if provider == "paystack":
+        # Paystack has no stored-payment-method concept, so no org Stripe
+        # customer is required on this rail: the charge is initialized against
+        # the org's billing contact and the browser is redirected.
+        return await _start_paystack_org_purchase(
+            db=db,
+            org_id=org_id,
+            actor_id=actor_id,
+            organization=organization,
+            payee_id=contributor_id,
+            payee_org_id=seller.org_id,
+            framework_id=framework_id,
+            license_type=payload.license_type,
+            amount=amount,
+            currency=currency,
+        )
+
     customer_id = organization.stripe_customer_id
     if customer_id is None:
         raise HTTPException(

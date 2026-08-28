@@ -583,7 +583,8 @@ async def _create_pending_org_milestone_transaction(
     actor_id: UUID,
     project_id: UUID,
     milestone_id: UUID,
-) -> tuple[UUID, Decimal, str]:
+    provider: str = "stripe",
+) -> tuple[UUID, Decimal, str, str]:
     """Create the pending org-payer transaction for a Milestone funding intent.
 
     Sibling of :func:`_create_pending_milestone_transaction` for the org
@@ -627,6 +628,7 @@ async def _create_pending_org_milestone_transaction(
                 existing.id,
                 _normalise_money(milestone.budget),
                 milestone.currency,
+                existing.provider or "stripe",
             )
 
         amount = _normalise_money(milestone.budget)
@@ -641,7 +643,7 @@ async def _create_pending_org_milestone_transaction(
             net_amount=amount,
             transaction_type="milestone",
             status="pending",
-            provider="stripe",
+            provider=provider,
             ref_id=milestone.id,
             ref_type="project_milestone",
         )
@@ -659,7 +661,7 @@ async def _create_pending_org_milestone_transaction(
                 "payer_org_id": str(org_id),
             },
         )
-        return transaction.id, amount, milestone.currency
+        return transaction.id, amount, milestone.currency, provider
 
 
 async def _mark_milestone_funding_provider_ref(
@@ -1396,6 +1398,96 @@ async def fund_milestone(
     )
 
 
+async def _start_paystack_org_milestone_funding(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    billing_email: str,
+    transaction_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+    amount: Decimal,
+    currency: str,
+) -> MilestoneFundingResponse:
+    """Initialize Paystack hosted checkout for an org Milestone funding.
+
+    Org sibling of `_start_paystack_milestone_funding`: the charge bills the
+    org's billing contact and the escrow metadata carries `payer_org_id` and
+    `approver_org_id` so settlement and approval resolve to the organization.
+
+    Raises:
+        HTTPException(502): Paystack could not initialize the charge. The
+            pending transaction is marked failed first so it never strands.
+    """
+    release_conditions = {
+        "kind": "project_milestone",
+        "milestone_id": str(milestone_id),
+        "project_id": str(project_id),
+        "approver_org_id": str(org_id),
+    }
+    try:
+        initialized = await paystack.initialize_transaction(
+            email=billing_email,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "project_id": str(project_id),
+                "milestone_id": str(milestone_id),
+                "payer_org_id": str(org_id),
+                "release_conditions": json.dumps(release_conditions),
+            },
+        )
+    except PaystackProviderError as exc:
+        await _mark_milestone_funding_failed(
+            db=db,
+            operator_id=actor_id,
+            transaction_id=transaction_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            provider="paystack",
+        )
+        logger.bind(
+            module="projects",
+            action="fund_org_milestone",
+            user_id=actor_id,
+            org_id=org_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            transaction_id=transaction_id,
+        ).error("paystack_initialize_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_milestone_funding_provider_ref(
+        db=db,
+        operator_id=actor_id,
+        transaction_id=transaction_id,
+        provider_ref=initialized.reference,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        provider="paystack",
+    )
+    logger.bind(
+        module="projects",
+        action="fund_org_milestone",
+        user_id=actor_id,
+        org_id=org_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        transaction_id=transaction_id,
+    ).info("milestone_funding_initiated")
+    return MilestoneFundingResponse(
+        transaction_id=transaction_id,
+        provider="paystack",
+        authorization_url=initialized.authorization_url,
+    )
+
+
 async def fund_org_milestone(
     *,
     db: AsyncSession,
@@ -1403,6 +1495,7 @@ async def fund_org_milestone(
     actor_id: UUID,
     project_id: UUID,
     milestone_id: UUID,
+    country: str | None = None,
 ) -> MilestoneFundingResponse:
     """Fund a finalized Milestone of an org-operated Project from the org customer.
 
@@ -1455,28 +1548,70 @@ async def fund_org_milestone(
         customer_id = (
             organization.stripe_customer_id if organization is not None else None
         )
+        # Captured while the org row is fresh: later commits expire it, and
+        # the Paystack leg bills the org's billing contact.
+        org_billing_email = (
+            organization.billing_email if organization is not None else None
+        )
+        org_created_by = (
+            organization.created_by if organization is not None else None
+        )
 
     if currency != platform_currency():
         raise HTTPException(
             status_code=422,
             detail=f"Only {platform_currency()} Milestone funding is supported.",
         )
-    if customer_id is None:
+
+    requested_provider = select_provider(user_country=country, currency=currency)
+    if requested_provider == "stripe" and customer_id is None:
         # No lazy org-customer create on the org path (mirrors org purchase).
+        # The Paystack rail has no stored-payment-method concept and needs none.
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="Organization has no payment method on file.",
         )
 
-    transaction_id, amount, currency = (
+    transaction_id, amount, currency, provider = (
         await _create_pending_org_milestone_transaction(
             db=db,
             org_id=org_id,
             actor_id=actor_id,
             project_id=project_id,
             milestone_id=milestone_id,
+            provider=requested_provider,
         )
     )
+
+    if provider == "paystack":
+        billing_email = org_billing_email
+        if billing_email is None and org_created_by is not None:
+            owner = await db.get(User, org_created_by)
+            billing_email = owner.email if owner is not None else None
+        if billing_email is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Organization has no billing contact.",
+            )
+        return await _start_paystack_org_milestone_funding(
+            db=db,
+            org_id=org_id,
+            actor_id=actor_id,
+            billing_email=billing_email,
+            transaction_id=transaction_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            amount=amount,
+            currency=currency,
+        )
+
+    if customer_id is None:
+        # A Stripe-initiated attempt resumed under a Paystack-routed request
+        # lands here; the stored rail wins but the customer must still exist.
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="Organization has no payment method on file.",
+        )
     release_conditions = {
         "kind": "project_milestone",
         "milestone_id": str(milestone_id),

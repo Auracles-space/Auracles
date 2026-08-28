@@ -24983,6 +24983,14 @@ paths:
           format: uuid
           title: Milestone Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/MilestoneFundingRequest'
+              - type: 'null'
+              title: Payload
       responses:
         '200':
           content:
