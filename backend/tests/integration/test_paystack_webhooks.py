@@ -717,6 +717,21 @@ async def test_escrow_charge_success_funds_the_milestone(
     assert project.status == "in_progress"
     assert audit is not None
 
+    # The hold is money movement, so it must reach the append-only ledger the
+    # admin money UI reconstructs history from — not just audit_logs.
+    async with async_session_factory() as session:
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_type == "escrow",
+                FinancialEvent.entity_id == escrow.id,
+                FinancialEvent.event_type == "escrow_funded",
+            )
+        )
+    assert ledger is not None
+    assert ledger.to_status == "held"
+    assert ledger.amount == Decimal("1500.00")
+    assert ledger.provider == "paystack"
+
 
 async def test_escrow_charge_success_stamps_the_commission_snapshot(
     client: AsyncClient,
@@ -784,6 +799,84 @@ async def test_attestation_fee_stamps_the_attestation_commission(
     # 300.00 at the 10% attestation rate.
     assert transaction.platform_commission == Decimal("30.00")
     assert transaction.net_amount == Decimal("270.00")
+
+
+async def test_escrow_mismatch_is_recorded_durably(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Conflicting funding for one escrow ref leaves a queryable record.
+
+    A second transaction settling against an already-held escrow reference is
+    a data-integrity event. The webhook's transaction rolls back, so the
+    `escrow_mismatch` audit row and ledger event must be written durably on
+    their own — a CRITICAL log line alone ages out of the drain.
+    """
+    transaction_id, project_id, milestone_id, operator_id = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    paystack_context["event"] = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+    await post_webhook(client)
+
+    # A second pending transaction against the same milestone, as if a stale
+    # duplicate funding attempt settled with different money data.
+    async with async_session_factory() as session:
+        async with session.begin():
+            duplicate = Transaction(
+                payer_id=operator_id,
+                payee_id=None,
+                amount=Decimal("999.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("999.00"),
+                transaction_type="milestone",
+                status="pending",
+                provider="paystack",
+                provider_ref="auracles_escrow_dup_001",
+                ref_id=milestone_id,
+                ref_type="project_milestone",
+            )
+            session.add(duplicate)
+            await session.flush()
+            duplicate_id = duplicate.id
+    event = escrow_charge_event(
+        "charge.success",
+        transaction_id=duplicate_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        reference="auracles_escrow_dup_001",
+    )
+    event["data"]["amount"] = 99900
+    paystack_context["event"] = event
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        escrows = (await session.execute(select(Escrow))).scalars().all()
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "escrow_mismatch")
+        )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "escrow_mismatch"
+            )
+        )
+        duplicate_row = await session.get(Transaction, duplicate_id)
+
+    assert response.status_code != 200 or response.json()["status"] != "processed"
+    assert len(escrows) == 1
+    assert escrows[0].amount == Decimal("1500.00")
+    assert duplicate_row is not None
+    assert duplicate_row.status == "pending"
+    assert audit is not None
+    assert ledger is not None
+    assert ledger.entity_type == "escrow"
+    assert ledger.reason_code == "escrow_mismatch"
 
 
 async def test_escrow_charge_success_replay_holds_funds_once(

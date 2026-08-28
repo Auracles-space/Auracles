@@ -3425,6 +3425,20 @@ async def test_admin_resolves_dispute_release_to_contributor(
         "dispute_resolved_release",
     ]
 
+    # The release is money movement, so it must reach the append-only ledger.
+    async with async_session_factory() as session:
+        release_ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_type == "escrow",
+                FinancialEvent.entity_id == escrow.id,
+                FinancialEvent.event_type == "escrow_released",
+            )
+        )
+    assert release_ledger is not None
+    assert release_ledger.from_status == "held"
+    assert release_ledger.to_status == "released"
+    assert release_ledger.actor_id == context["admin_id"]
+
 
 async def test_admin_resolves_dispute_refund_to_operator(
     client: AsyncClient,
@@ -3634,6 +3648,19 @@ async def test_admin_resolves_dispute_refund_on_paystack_rail(
     assert ledger.provider == "paystack"
     assert ledger.provider_ref == "rf_escrow_001"
 
+    # The escrow state change itself is ledgered alongside the refund request.
+    async with async_session_factory() as session:
+        escrow_ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_type == "escrow",
+                FinancialEvent.entity_id == escrow.id,
+                FinancialEvent.event_type == "escrow_refunded",
+            )
+        )
+    assert escrow_ledger is not None
+    assert escrow_ledger.from_status == "held"
+    assert escrow_ledger.to_status == "refunded"
+
 
 async def test_admin_resolves_dispute_split_on_paystack_rail(
     client: AsyncClient,
@@ -3735,6 +3762,21 @@ async def test_admin_resolves_dispute_split_on_paystack_rail(
     assert ledger.provider == "paystack"
     assert ledger.provider_ref == "rf_escrow_split_001"
     assert ledger.entity_id == refund_row.id
+
+    # The split itself is ledgered on the escrow with both portions recorded.
+    async with async_session_factory() as session:
+        split_ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_type == "escrow",
+                FinancialEvent.entity_id == escrow.id,
+                FinancialEvent.event_type == "escrow_split",
+            )
+        )
+    assert split_ledger is not None
+    assert split_ledger.from_status == "held"
+    assert split_ledger.to_status == "released"
+    assert split_ledger.metadata_["release_amount"] == "1000.00"
+    assert split_ledger.metadata_["refund_amount"] == "500.00"
 
 
 async def _assigned_finalized_project_with_amendment(

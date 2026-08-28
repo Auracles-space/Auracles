@@ -49,9 +49,14 @@ def reconcile_pending_refunds_task(self: Any) -> ReconciliationResult:
 
 
 async def _check_platform_balance_floor() -> BalanceFloorResult:
-    """Run the balance floor check inside one database session."""
+    """Run the balance floor check inside one database transaction.
+
+    The transaction exists for the breach audit row; the check itself only
+    reads.
+    """
     async with async_session_factory() as db:
-        return await check_platform_balance_floor(db)
+        async with db.begin():
+            return await check_platform_balance_floor(db)
 
 
 @app.task(bind=True)  # type: ignore[untyped-decorator]

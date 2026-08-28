@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.core.security import hash_password
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import Escrow, Transaction
+from app.modules.financials.models import Escrow, FinancialEvent, Transaction
 from app.modules.projects.models import (
     Deliverable,
     Dispute,
@@ -54,6 +54,7 @@ def projects_beat_context() -> Iterator[sessionmaker]:
         """Delete Project rows in dependency order."""
         with session_factory() as session:
             session.execute(delete(AuditLog))
+            session.execute(delete(FinancialEvent))
             session.execute(delete(WorkspaceMessage))
             session.execute(delete(Dispute))
             session.execute(delete(Deliverable))

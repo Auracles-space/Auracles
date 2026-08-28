@@ -25,6 +25,7 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit
 from app.integrations import paystack
 from app.integrations.amounts import MoneyAmountError, to_minor_units
 from app.integrations.paystack import PaystackProviderError
@@ -112,6 +113,20 @@ async def check_platform_balance_floor(db: AsyncSession) -> BalanceFloorResult:
             "platform_balance_below_escrow_floor",
             held_minor=held_minor,
             available_minor=available_minor,
+        )
+        # Durable record: a dismissed notification and an aged-out log line
+        # must not be the only evidence the breach ever happened.
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="platform_balance_below_escrow_floor",
+            target_type="platform_balance",
+            target_id=_alert_target_id(currency),
+            metadata={
+                "currency": currency,
+                "held_minor": str(held_minor),
+                "available_minor": str(available_minor),
+            },
         )
         notify_admins_review_pending(
             domain="platform_balance",

@@ -13,12 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.database import async_session_factory
 from app.integrations import paystack, stripe
 from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.financials import commission
 from app.modules.financials.ledger import record_financial_event
-from app.modules.financials.models import Escrow, Transaction
+from app.modules.financials.models import Escrow, FinancialEvent, Transaction
 
 ESCROW_REF_TYPES = {"project_milestone", "attestation"}
 ESCROW_TRANSACTION_TYPES = {"milestone", "attestation_fee"}
@@ -65,7 +66,72 @@ def _ensure_escrow_transaction(transaction: Transaction) -> None:
         )
 
 
-def _ensure_matching_escrow(existing: Escrow, transaction: Transaction) -> None:
+async def _record_escrow_mismatch_durably(
+    db: AsyncSession,
+    *,
+    existing: Escrow,
+    transaction: Transaction,
+) -> None:
+    """Write the escrow mismatch to audit and ledger in their own commit.
+
+    The caller's transaction is about to raise and roll back, so the record
+    is committed on an independent session — a CRITICAL log line alone ages
+    out of the drain, and a data-integrity event must stay queryable.
+    Idempotent per conflicting transaction, because the provider redelivers
+    the event that triggered it until it stops erroring.
+    """
+    del db  # The caller's session is mid-transaction and about to roll back.
+    existing_escrow_id = existing.id
+    existing_transaction_id = existing.transaction_id
+    escrow_amount = _normalise_money(existing.amount)
+    escrow_currency = existing.currency
+    conflicting_transaction_id = transaction.id
+    async with async_session_factory() as record_db, record_db.begin():
+        db = record_db
+        already_recorded = await db.scalar(
+            select(FinancialEvent.id)
+            .where(
+                FinancialEvent.entity_type == "escrow",
+                FinancialEvent.entity_id == existing_escrow_id,
+                FinancialEvent.event_type == "escrow_mismatch",
+                FinancialEvent.metadata_["conflicting_transaction_id"].astext
+                == str(conflicting_transaction_id),
+            )
+            .limit(1)
+        )
+        if already_recorded is not None:
+            return
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="escrow_mismatch",
+            target_type="escrow",
+            target_id=existing_escrow_id,
+            metadata={
+                "existing_transaction_id": str(existing_transaction_id),
+                "conflicting_transaction_id": str(conflicting_transaction_id),
+            },
+        )
+        await record_financial_event(
+            db,
+            entity_type="escrow",
+            entity_id=existing_escrow_id,
+            event_type="escrow_mismatch",
+            amount=escrow_amount,
+            currency=escrow_currency,
+            reason_code="escrow_mismatch",
+            metadata={
+                "existing_transaction_id": str(existing_transaction_id),
+                "conflicting_transaction_id": str(conflicting_transaction_id),
+            },
+        )
+
+
+async def _ensure_matching_escrow(
+    db: AsyncSession,
+    existing: Escrow,
+    transaction: Transaction,
+) -> None:
     """Raise if an idempotent hold request conflicts with the existing escrow."""
     if (
         existing.transaction_id != transaction.id
@@ -73,6 +139,11 @@ def _ensure_matching_escrow(existing: Escrow, transaction: Transaction) -> None:
         or existing.currency.upper() != transaction.currency.upper()
     ):
         _log_escrow_mismatch(existing=existing, transaction=transaction)
+        await _record_escrow_mismatch_durably(
+            db,
+            existing=existing,
+            transaction=transaction,
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Escrow reference already exists with different funding data.",
@@ -103,7 +174,7 @@ async def hold(
         )
     )
     if existing is not None:
-        _ensure_matching_escrow(existing, transaction)
+        await _ensure_matching_escrow(db, existing, transaction)
         if transaction.status != "completed":
             await commission.stamp_settling_transaction(db, transaction)
         transaction.status = "completed"
@@ -137,6 +208,20 @@ async def hold(
             "ref_id": str(escrow.ref_id),
             "ref_type": escrow.ref_type,
         },
+    )
+    await record_financial_event(
+        db,
+        entity_type="escrow",
+        entity_id=escrow.id,
+        event_type="escrow_funded",
+        from_status=None,
+        to_status="held",
+        amount=escrow.amount,
+        currency=escrow.currency,
+        provider=transaction.provider,
+        provider_ref=transaction.provider_ref,
+        actor_id=transaction.payer_id,
+        metadata={"transaction_id": str(transaction.id)},
     )
     return escrow
 
@@ -220,6 +305,18 @@ async def release(
         target_id=escrow.id,
         metadata={"reason": reason.strip(), "admin_override": admin_override},
     )
+    await record_financial_event(
+        db,
+        entity_type="escrow",
+        entity_id=escrow.id,
+        event_type="escrow_released",
+        from_status="held",
+        to_status="released",
+        amount=escrow.amount,
+        currency=escrow.currency,
+        actor_id=actor_id,
+        metadata={"reason": reason.strip(), "admin_override": str(admin_override)},
+    )
     return escrow
 
 
@@ -257,6 +354,18 @@ async def refund(
         target_type="escrow",
         target_id=escrow.id,
         metadata={"reason": reason.strip(), "admin_override": admin_override},
+    )
+    await record_financial_event(
+        db,
+        entity_type="escrow",
+        entity_id=escrow.id,
+        event_type="escrow_refunded",
+        from_status="held",
+        to_status="refunded",
+        amount=escrow.amount,
+        currency=escrow.currency,
+        actor_id=actor_id,
+        metadata={"reason": reason.strip(), "admin_override": str(admin_override)},
     )
     return escrow
 
@@ -539,6 +648,23 @@ async def split(
             "release_amount": str(normalized_release),
             "refund_amount": str(normalized_refund),
             "refund_ref": refund_result_id,
+        },
+    )
+    await record_financial_event(
+        db,
+        entity_type="escrow",
+        entity_id=escrow.id,
+        event_type="escrow_split",
+        from_status="held",
+        to_status="released",
+        amount=_normalise_money(escrow.amount),
+        currency=escrow.currency,
+        provider=transaction.provider,
+        provider_ref=refund_result_id,
+        actor_id=actor_id,
+        metadata={
+            "release_amount": str(normalized_release),
+            "refund_amount": str(normalized_refund),
         },
     )
     return escrow

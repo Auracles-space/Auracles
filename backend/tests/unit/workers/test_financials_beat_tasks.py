@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
@@ -281,6 +281,21 @@ def test_balance_floor_task_alerts_when_balance_dips_below_held_escrow(
     assert result == {"currencies_checked": 1, "alerts": 1}
     assert len(alerts) == 1
     assert "USD" in alerts[0]["body"]
+
+    # The breach leaves a queryable audit row: a dismissed notification and an
+    # aged-out log line must not be the only evidence it ever happened.
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        audit = session.execute(
+            select(AuditLog).where(
+                AuditLog.action == "platform_balance_below_escrow_floor"
+            )
+        ).scalar_one_or_none()
+    sync_engine.dispose()
+    assert audit is not None
+    assert audit.metadata_["currency"] == "USD"
 
 
 def test_balance_floor_task_quiet_when_balance_covers_held_escrow(
