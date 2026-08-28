@@ -1299,12 +1299,24 @@ export type AttestationEvidenceUploadSessionResponse = {
 };
 
 /**
- * PaymentIntent data needed to fund an Attestation fee escrow.
+ * Optional request body for funding an owner-approved Attestation fee.
+ */
+export type AttestationFundingRequest = {
+    country?: (string | null);
+};
+
+/**
+ * Provider handle needed to complete paying an Attestation fee.
+ *
+ * Exactly one of the provider fields is set: Stripe returns a
+ * `client_secret` for the in-page PaymentElement, Paystack returns an
+ * `authorization_url` to redirect the browser to.
  */
 export type AttestationFundingResponse = {
-    client_secret: string;
+    authorization_url?: (string | null);
+    client_secret?: (string | null);
     id: string;
-    provider: "stripe";
+    provider: 'stripe' | 'paystack';
     transaction_id: string;
 };
 
@@ -1376,6 +1388,7 @@ export type AttestationReportSubmitRequest = {
  */
 export type AttestationRequestCreateRequest = {
     brief?: (AttestationBrief | null);
+    country?: (string | null);
     requested_jurisdictions?: Array<(string)>;
     requested_specializations?: Array<(string)>;
     review_type?: ('quality' | 'compliance' | 'expert' | 'provenance' | null);
@@ -5934,6 +5947,7 @@ export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsSt
 export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (HTTPValidationError);
 
 export type FundAttestationV1AttestationsAttestationIdFundPostData = {
+    body?: (AttestationFundingRequest | null);
     path: {
         attestation_id: string;
     };

@@ -48,6 +48,7 @@ from app.modules.attestation.schemas import (
     AttestationDisputeResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
+    AttestationFundingRequest,
     AttestationFundingResponse,
     AttestationPackageResponse,
     AttestationRatingCreate,
@@ -166,20 +167,24 @@ async def decide_owner_consent(
     status_code=status.HTTP_201_CREATED,
     summary="Fund an owner-approved attestation request",
     description=(
-        "Create the Stripe PaymentIntent for an operator-initiated attestation "
-        "after the framework owner has approved consent."
+        "Start the fee payment for an operator-initiated attestation after "
+        "the framework owner has approved consent. The optional billing "
+        "country selects the payment rail: Nigeria routes to Paystack hosted "
+        "checkout, anything else stays on Stripe."
     ),
 )
 async def fund_attestation(
     attestation_id: UUID,
     requestor: RequestorUser,
     db: DatabaseSession,
+    payload: AttestationFundingRequest | None = None,
 ) -> AttestationFundingResponse:
     """Fund an owner-approved operator-initiated attestation as the requestor."""
     return await attestation_service.fund_attestation(
         db=db,
         requestor=requestor,
         attestation_id=attestation_id,
+        country=payload.country if payload else None,
     )
 
 

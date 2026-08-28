@@ -17,7 +17,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.integrations import stripe
+from app.core.currency import platform_currency
+from app.integrations import paystack, stripe
+from app.integrations.payment_router import select_provider
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
@@ -258,6 +261,9 @@ async def request_attestation(
 ) -> AttestationFundingResponse | AttestationConsentPendingResponse:
     """Create an Attestation request; fund now or await owner consent."""
     requestor_id = requestor.id
+    # Captured before any commit: intermediate transactions expire the ORM
+    # instance, and a lazy refresh outside a greenlet context would raise.
+    requestor_email = requestor.email
 
     initiator_is_owner = await _validate_attestation_target(
         db=db,
@@ -309,7 +315,13 @@ async def request_attestation(
             status="pending_owner_consent",
         )
 
-    customer_id = await _ensure_stripe_customer(db, requestor)
+    provider = select_provider(
+        user_country=payload.country,
+        currency=platform_currency(),
+    )
+    customer_id = (
+        await _ensure_stripe_customer(db, requestor) if provider == "stripe" else None
+    )
     attestation_id = await _create_attestation(
         db=db,
         requestor_id=requestor_id,
@@ -321,9 +333,11 @@ async def request_attestation(
     return await _fund_attestation(
         db=db,
         requestor_id=requestor_id,
+        requestor_email=requestor_email,
         attestation_id=attestation_id,
         amount=amount,
         customer_id=customer_id,
+        provider=provider,
     )
 
 
@@ -401,6 +415,7 @@ async def fund_attestation(
     requestor: User,
     *,
     attestation_id: UUID,
+    country: str | None = None,
 ) -> AttestationFundingResponse:
     """Fund an owner-approved operator-initiated attestation as the requestor.
 
@@ -408,6 +423,7 @@ async def fund_attestation(
         db: Async database session.
         requestor: Authenticated user funding the attestation fee.
         attestation_id: Attestation awaiting operator payment.
+        country: Optional payer billing country selecting the payment rail.
 
     Returns:
         Funding details including the Stripe client secret for confirmation.
@@ -442,13 +458,18 @@ async def fund_attestation(
             detail="Attestation fee is already being processed.",
         )
 
-    customer_id = await _ensure_stripe_customer(db, requestor)
+    provider = select_provider(user_country=country, currency=platform_currency())
+    customer_id = (
+        await _ensure_stripe_customer(db, requestor) if provider == "stripe" else None
+    )
     return await _fund_attestation(
         db=db,
         requestor_id=requestor.id,
+        requestor_email=requestor.email,
         attestation_id=attestation_id,
         amount=attestation.fee_amount,
         customer_id=customer_id,
+        provider=provider,
     )
 
 
@@ -502,6 +523,19 @@ async def get_attestation_fee_payment(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="No pending fee payment for this attestation.",
+        )
+
+    if transaction.provider == "paystack":
+        # Paystack cannot re-serve an old hosted checkout URL, so resuming
+        # re-initializes the charge; the stored reference moves to the new
+        # attempt and the webhook settles whichever reference is current.
+        return await _start_paystack_attestation_fee(
+            db=db,
+            requestor_id=requestor.id,
+            requestor_email=requestor.email,
+            transaction_id=transaction.id,
+            attestation_id=attestation_id,
+            amount=transaction.amount,
         )
 
     try:
@@ -610,7 +644,7 @@ async def _create_attestation(
             requested_specializations=payload.requested_specializations,
             requested_jurisdictions=payload.requested_jurisdictions,
             fee_amount=amount,
-            currency="USD",
+            currency=platform_currency(),
             framework_version_id=framework_version_id,
         )
         db.add(attestation)
@@ -762,11 +796,19 @@ async def _fund_attestation(
     db: AsyncSession,
     *,
     requestor_id: UUID,
+    requestor_email: str,
     attestation_id: UUID,
     amount: Decimal,
-    customer_id: str,
+    customer_id: str | None,
+    provider: str = "stripe",
 ) -> AttestationFundingResponse:
-    """Create the fee transaction and Stripe PaymentIntent for one attestation."""
+    """Create the fee transaction and provider charge for one attestation.
+
+    Stripe bills the requestor's customer via a PaymentIntent; Paystack has no
+    customer concept, so the charge is initialized with escrow metadata and
+    the browser is redirected to the hosted page. The fee settles in the
+    platform currency on either rail.
+    """
     if db.in_transaction():
         await db.rollback()
 
@@ -777,25 +819,44 @@ async def _fund_attestation(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token.",
             )
-        if user.stripe_customer_id is None:
+        if customer_id is not None and user.stripe_customer_id is None:
             user.stripe_customer_id = customer_id
 
         transaction = Transaction(
             payer_id=requestor_id,
             payee_id=None,
             amount=amount,
-            currency="USD",
+            currency=platform_currency(),
             platform_commission=Decimal("0.00"),
             net_amount=amount,
             transaction_type="attestation_fee",
             status="pending",
-            provider="stripe",
+            provider=provider,
             ref_id=attestation_id,
             ref_type="attestation",
         )
         db.add(transaction)
         await db.flush()
         transaction_id = transaction.id
+
+    if provider == "paystack":
+        return await _start_paystack_attestation_fee(
+            db=db,
+            requestor_id=requestor_id,
+            requestor_email=requestor_email,
+            transaction_id=transaction_id,
+            attestation_id=attestation_id,
+            amount=amount,
+        )
+
+    if customer_id is None:
+        # Unreachable through the routers (the Stripe rail always resolves a
+        # customer first), kept as a hard stop so a future caller cannot
+        # create an unbillable PaymentIntent.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        )
 
     release_conditions = {
         "kind": "attestation",
@@ -806,7 +867,7 @@ async def _fund_attestation(
         payment_intent = await stripe.create_payment_intent(
             customer_id=customer_id,
             amount=amount,
-            currency="USD",
+            currency=platform_currency(),
             metadata={
                 "transaction_id": str(transaction_id),
                 "kind": "escrow",
@@ -857,6 +918,81 @@ async def _fund_attestation(
     )
 
 
+async def _start_paystack_attestation_fee(
+    db: AsyncSession,
+    *,
+    requestor_id: UUID,
+    requestor_email: str,
+    transaction_id: UUID,
+    attestation_id: UUID,
+    amount: Decimal,
+) -> AttestationFundingResponse:
+    """Initialize Paystack hosted checkout for a pending Attestation fee.
+
+    Raises:
+        HTTPException(502): Paystack could not initialize the charge. The
+            pending transaction is marked failed first so it never strands.
+    """
+    release_conditions = {
+        "kind": "attestation",
+        "attestation_id": str(attestation_id),
+        "requestor_user_id": str(requestor_id),
+    }
+    try:
+        initialized = await paystack.initialize_transaction(
+            email=requestor_email,
+            amount=amount,
+            currency=platform_currency(),
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "attestation_id": str(attestation_id),
+                "release_conditions": json.dumps(release_conditions),
+            },
+        )
+    except PaystackProviderError as exc:
+        await _mark_attestation_fee_provider_failed(
+            db=db,
+            requestor_id=requestor_id,
+            transaction_id=transaction_id,
+            attestation_id=attestation_id,
+            reason="paystack_initialize_failed",
+        )
+        logger.bind(
+            module="attestation",
+            action="fund_attestation",
+            user_id=requestor_id,
+            transaction_id=transaction_id,
+            attestation_id=attestation_id,
+        ).error("paystack_initialize_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_attestation_fee_provider_ref(
+        db=db,
+        requestor_id=requestor_id,
+        transaction_id=transaction_id,
+        attestation_id=attestation_id,
+        provider_ref=initialized.reference,
+        provider="paystack",
+    )
+    logger.bind(
+        module="attestation",
+        action="fund_attestation",
+        user_id=requestor_id,
+        transaction_id=transaction_id,
+        attestation_id=attestation_id,
+    ).info("attestation_funded")
+    return AttestationFundingResponse(
+        id=attestation_id,
+        transaction_id=transaction_id,
+        provider="paystack",
+        authorization_url=initialized.authorization_url,
+    )
+
+
 async def _mark_attestation_fee_provider_ref(
     db: AsyncSession,
     *,
@@ -864,8 +1000,9 @@ async def _mark_attestation_fee_provider_ref(
     transaction_id: UUID,
     attestation_id: UUID,
     provider_ref: str,
+    provider: str = "stripe",
 ) -> None:
-    """Persist Stripe PaymentIntent metadata for an Attestation fee transaction."""
+    """Persist the provider charge reference for an Attestation fee transaction."""
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -884,7 +1021,7 @@ async def _mark_attestation_fee_provider_ref(
             target_id=transaction.id,
             metadata={
                 "attestation_id": str(attestation_id),
-                "provider": "stripe",
+                "provider": provider,
                 "provider_ref": provider_ref[-4:],
             },
         )

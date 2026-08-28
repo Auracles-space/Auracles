@@ -3662,18 +3662,48 @@ components:
       - scan_status
       title: AttestationEvidenceUploadSessionResponse
       type: object
-    AttestationFundingResponse:
-      description: PaymentIntent data needed to fund an Attestation fee escrow.
+    AttestationFundingRequest:
+      additionalProperties: false
+      description: Optional request body for funding an owner-approved Attestation
+        fee.
       properties:
+        country:
+          anyOf:
+          - maxLength: 2
+            minLength: 2
+            type: string
+          - type: 'null'
+          title: Country
+      title: AttestationFundingRequest
+      type: object
+    AttestationFundingResponse:
+      description: 'Provider handle needed to complete paying an Attestation fee.
+
+
+        Exactly one of the provider fields is set: Stripe returns a
+
+        `client_secret` for the in-page PaymentElement, Paystack returns an
+
+        `authorization_url` to redirect the browser to.'
+      properties:
+        authorization_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization Url
         client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Client Secret
-          type: string
         id:
           format: uuid
           title: Id
           type: string
         provider:
-          const: stripe
+          enum:
+          - stripe
+          - paystack
           title: Provider
           type: string
         transaction_id:
@@ -3684,7 +3714,6 @@ components:
       - id
       - transaction_id
       - provider
-      - client_secret
       title: AttestationFundingResponse
       type: object
     AttestationPackageArtifact:
@@ -3850,6 +3879,13 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AttestationBrief'
           - type: 'null'
+        country:
+          anyOf:
+          - maxLength: 2
+            minLength: 2
+            type: string
+          - type: 'null'
+          title: Country
         requested_jurisdictions:
           items:
             type: string
@@ -17357,8 +17393,10 @@ paths:
       - Attestation
   /v1/attestations/{attestation_id}/fund:
     post:
-      description: Create the Stripe PaymentIntent for an operator-initiated attestation
-        after the framework owner has approved consent.
+      description: 'Start the fee payment for an operator-initiated attestation after
+        the framework owner has approved consent. The optional billing country selects
+        the payment rail: Nigeria routes to Paystack hosted checkout, anything else
+        stays on Stripe.'
       operationId: fund_attestation_v1_attestations__attestation_id__fund_post
       parameters:
       - in: path
@@ -17368,6 +17406,14 @@ paths:
           format: uuid
           title: Attestation Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/AttestationFundingRequest'
+              - type: 'null'
+              title: Payload
       responses:
         '201':
           content:

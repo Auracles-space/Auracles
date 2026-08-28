@@ -18,7 +18,8 @@ from sqlalchemy import create_engine, delete, select
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
-from app.integrations import stripe
+from app.integrations import paystack, stripe
+from app.integrations.paystack import PaystackInitializedTransaction
 from app.main import app
 from app.modules.attestation.models import (
     Attestation,
@@ -393,6 +394,168 @@ async def test_framework_request_persists_review_type_and_brief(
     assert audit.metadata_["review_type"] == "compliance"
     assert audit.metadata_["brief_provided"] is True
     assert audit.metadata_["initiator_is_owner"] is True
+
+
+async def test_nigerian_requestor_funds_attestation_on_paystack(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A requestor in Nigeria pays the Attestation fee via Paystack checkout.
+
+    Mirrors the milestone-funding corridor: the response carries a redirect
+    `authorization_url` and no client secret, no Stripe customer is created,
+    and the charge metadata carries the escrow kind the webhook settles on.
+    Enforces FR-FIN-006 on the Paystack rail.
+    """
+    del migrated_database, attestation_context
+    calls: dict[str, list[Any]] = {"customers": [], "paystack_transactions": []}
+
+    async def fail_create_customer(**kwargs: Any) -> FakeStripeCustomer:
+        """Fail the test if the Paystack rail touches Stripe."""
+        calls["customers"].append(kwargs)
+        raise AssertionError("Stripe customer must not be created on Paystack rail")
+
+    async def fake_initialize_transaction(
+        *,
+        email: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        callback_url: str | None = None,
+    ) -> PaystackInitializedTransaction:
+        """Record the Paystack charge initialization for the fee."""
+        calls["paystack_transactions"].append(
+            {
+                "email": email,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+                "callback_url": callback_url,
+            }
+        )
+        return PaystackInitializedTransaction(
+            reference="auracles_attestation_ref_001",
+            authorization_url="https://checkout.paystack.com/attestation_001",
+            access_code="access_attestation_001",
+        )
+
+    monkeypatch.setattr(stripe, "create_customer", fail_create_customer)
+    monkeypatch.setattr(
+        paystack,
+        "initialize_transaction",
+        fake_initialize_transaction,
+    )
+
+    contributor_id = await create_user("ngn-fee-owner@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "compliance",
+            "brief": _FRAMEWORK_BRIEF,
+            "country": "NG",
+        },
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+        requestor = await session.get(User, contributor_id)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["provider"] == "paystack"
+    assert body["authorization_url"] == (
+        "https://checkout.paystack.com/attestation_001"
+    )
+    assert body["client_secret"] is None
+    assert transaction is not None
+    assert transaction.provider == "paystack"
+    assert transaction.provider_ref == "auracles_attestation_ref_001"
+    assert transaction.status == "pending"
+    assert transaction.transaction_type == "attestation_fee"
+    assert transaction.amount == Decimal("1200.00")
+    assert requestor is not None
+    assert requestor.stripe_customer_id is None
+    assert calls["customers"] == []
+    initialized = calls["paystack_transactions"][0]
+    assert initialized["email"] == "ngn-fee-owner@auracles.space"
+    assert initialized["amount"] == Decimal("1200.00")
+    assert initialized["metadata"]["kind"] == "escrow"
+    assert initialized["metadata"]["transaction_id"] == str(transaction.id)
+    assert initialized["metadata"]["attestation_id"] == body["id"]
+
+
+async def test_paystack_fee_payment_reinitializes_hosted_checkout(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resuming a Paystack fee payment issues a fresh hosted checkout.
+
+    Paystack cannot re-serve an old authorization URL, so the payment endpoint
+    re-initializes the charge and the stored provider reference moves to the
+    new attempt — the webhook then settles whichever reference is current.
+    """
+    del migrated_database, attestation_context
+    references = iter(["auracles_attestation_ref_001", "auracles_attestation_ref_002"])
+
+    async def fake_initialize_transaction(
+        **kwargs: Any,
+    ) -> PaystackInitializedTransaction:
+        """Hand out a new reference per initialization."""
+        reference = next(references)
+        return PaystackInitializedTransaction(
+            reference=reference,
+            authorization_url=f"https://checkout.paystack.com/{reference}",
+            access_code=f"access_{reference}",
+        )
+
+    monkeypatch.setattr(
+        paystack,
+        "initialize_transaction",
+        fake_initialize_transaction,
+    )
+
+    contributor_id = await create_user("ngn-fee-resume@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    created = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "compliance",
+            "brief": _FRAMEWORK_BRIEF,
+            "country": "NG",
+        },
+    )
+    assert created.status_code == 201
+    attestation_id = created.json()["id"]
+
+    resumed = await client.get(
+        f"/v1/attestations/{attestation_id}/payment",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+
+    assert resumed.status_code == 200
+    body = resumed.json()
+    assert body["provider"] == "paystack"
+    assert body["authorization_url"] == (
+        "https://checkout.paystack.com/auracles_attestation_ref_002"
+    )
+    assert body["client_secret"] is None
+    assert transaction is not None
+    assert transaction.provider_ref == "auracles_attestation_ref_002"
 
 
 async def test_pending_fee_request_returns_resumable_payment_secret(

@@ -28,6 +28,7 @@ from app.core.security import (
     hash_payout_provider_account_id,
 )
 from app.integrations.paystack import PaystackProviderError
+from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
 from app.modules.developer.models import (
     ApiKey,
@@ -672,6 +673,148 @@ async def test_escrow_charge_for_a_stripe_transaction_is_refused(
     assert response.status_code == 500
     assert stored is not None
     assert stored.status == "pending"
+    assert escrow is None
+
+
+ATTESTATION_ESCROW_REFERENCE = "auracles_attestation_escrow_001"
+
+
+async def create_pending_paystack_attestation_fee() -> tuple[UUID, UUID, UUID]:
+    """Create a pending Paystack Attestation fee transaction."""
+    operator_id = await create_user_with_roles(
+        "paystack-attestation-operator@auracles.space",
+        ["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = Attestation(
+                target_type="operator",
+                target_id=operator_id,
+                requestor_id=operator_id,
+                status="pending_fee",
+                requested_specializations=["operations"],
+                requested_jurisdictions=["US"],
+                fee_amount=Decimal("300.00"),
+                currency="USD",
+            )
+            session.add(attestation)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=None,
+                amount=Decimal("300.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("300.00"),
+                transaction_type="attestation_fee",
+                status="pending",
+                provider="paystack",
+                provider_ref=ATTESTATION_ESCROW_REFERENCE,
+                ref_id=attestation.id,
+                ref_type="attestation",
+            )
+            session.add(transaction)
+            await session.flush()
+            return transaction.id, attestation.id, operator_id
+
+
+async def test_attestation_fee_charge_success_holds_escrow_and_starts_matching(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A Paystack Attestation fee charge.success holds escrow and starts matching.
+
+    With no eligible Attestors the request lands in `needs_admin`, matching
+    the Stripe-rail behaviour. Enforces FR-FIN-006 on the Nigerian corridor.
+    """
+    transaction_id, attestation_id, operator_id = (
+        await create_pending_paystack_attestation_fee()
+    )
+    paystack_context["event"] = {
+        "event": "charge.success",
+        "data": {
+            "id": 302988,
+            "reference": ATTESTATION_ESCROW_REFERENCE,
+            "amount": 30000,
+            "currency": "USD",
+            "status": "success",
+            "metadata": {
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "attestation_id": str(attestation_id),
+                "release_conditions": json.dumps(
+                    {
+                        "kind": "attestation",
+                        "attestation_id": str(attestation_id),
+                        "requestor_user_id": str(operator_id),
+                    }
+                ),
+            },
+        },
+    }
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        attestation = await session.get(Attestation, attestation_id)
+        escrow = await session.scalar(select(Escrow))
+        funded_audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "attestation_fee_funded")
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert escrow is not None
+    assert escrow.status == "held"
+    assert escrow.ref_id == attestation_id
+    assert escrow.ref_type == "attestation"
+    assert attestation is not None
+    assert attestation.status == "needs_admin"
+    assert attestation.escrow_id == escrow.id
+    assert funded_audit is not None
+    assert funded_audit.actor_id == operator_id
+
+
+async def test_attestation_fee_charge_failed_cancels_the_request(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A failed Paystack Attestation fee charge cancels the request."""
+    transaction_id, attestation_id, _ = (
+        await create_pending_paystack_attestation_fee()
+    )
+    paystack_context["event"] = {
+        "event": "charge.failed",
+        "data": {
+            "id": 302989,
+            "reference": ATTESTATION_ESCROW_REFERENCE,
+            "amount": 30000,
+            "currency": "USD",
+            "status": "failed",
+            "gateway_response": "Insufficient Funds",
+            "metadata": {
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "attestation_id": str(attestation_id),
+            },
+        },
+    }
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        attestation = await session.get(Attestation, attestation_id)
+        escrow = await session.scalar(select(Escrow))
+
+    assert response.status_code == 200
+    assert transaction is not None
+    assert transaction.status == "failed"
+    assert attestation is not None
+    assert attestation.status == "cancelled"
     assert escrow is None
 
 

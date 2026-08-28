@@ -369,6 +369,12 @@ class AttestationRequestCreateRequest(BaseModel):
     brief: AttestationBrief | None = None
     requested_specializations: list[str] = Field(default_factory=list, max_length=25)
     requested_jurisdictions: list[str] = Field(default_factory=list, max_length=25)
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    """ISO 3166-1 alpha-2 country of the payer, used to pick the payment rail.
+
+    Optional: an omitted value routes to the default (Stripe) rail — the same
+    shape self-serve checkout's `PurchaseRequest.country` uses.
+    """
 
     @model_validator(mode="after")
     def require_lists_for_non_framework(self) -> AttestationRequestCreateRequest:
@@ -471,13 +477,28 @@ class AttestorAssignmentsResponse(BaseModel):
     assignments: list[AttestorAssignmentResponse]
 
 
+class AttestationFundingRequest(BaseModel):
+    """Optional request body for funding an owner-approved Attestation fee."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    """ISO 3166-1 alpha-2 country of the payer, used to pick the payment rail."""
+
+
 class AttestationFundingResponse(BaseModel):
-    """PaymentIntent data needed to fund an Attestation fee escrow."""
+    """Provider handle needed to complete paying an Attestation fee.
+
+    Exactly one of the provider fields is set: Stripe returns a
+    `client_secret` for the in-page PaymentElement, Paystack returns an
+    `authorization_url` to redirect the browser to.
+    """
 
     id: UUID
     transaction_id: UUID
-    provider: Literal["stripe"]
-    client_secret: str
+    provider: Literal["stripe", "paystack"]
+    client_secret: str | None = None
+    authorization_url: str | None = None
 
 
 class AttestationConsentPendingResponse(BaseModel):

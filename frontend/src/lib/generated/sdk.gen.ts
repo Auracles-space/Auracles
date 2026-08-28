@@ -998,7 +998,7 @@ export const getAttestationEarningsStatementV1AttestationsAttestationIdEarningsS
 
 /**
  * Fund an owner-approved attestation request
- * Create the Stripe PaymentIntent for an operator-initiated attestation after the framework owner has approved consent.
+ * Start the fee payment for an operator-initiated attestation after the framework owner has approved consent. The optional billing country selects the payment rail: Nigeria routes to Paystack hosted checkout, anything else stays on Stripe.
  */
 export const fundAttestationV1AttestationsAttestationIdFundPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<FundAttestationV1AttestationsAttestationIdFundPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<FundAttestationV1AttestationsAttestationIdFundPostResponse, FundAttestationV1AttestationsAttestationIdFundPostError, ThrowOnError>({
