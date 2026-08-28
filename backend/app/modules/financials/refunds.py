@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.modules.developer.models import PartnerCommission
 from app.modules.financials.ledger import record_financial_event
-from app.modules.financials.models import Transaction
+from app.modules.financials.models import Escrow, Transaction
 from app.modules.frameworks.models import License
 
 SETTLED_EVENT = "refund_settled"
@@ -92,30 +92,101 @@ async def reverse_refund(
     as before. It is not cleared here — whether the 48-hour window has elapsed
     is the clearing task's decision, and `pending` is the state it expects.
 
+    For an escrow funding transaction (milestone or attestation fee) the same
+    logic restores the hold instead: the escrow returns to `held` and the
+    funding transaction to `completed`, so an admin can re-issue the refund.
+    A child `refund` row from an escrow split is simply marked `failed` — the
+    split's release portion already stands, so nothing else may move.
+
     Args:
         db: Async session already inside the caller's transaction.
-        transaction: The purchase whose refund was declined.
+        transaction: The transaction whose refund was declined.
         source: What learned the outcome — `webhook` or `reconciliation`.
     """
-    transaction.status = "completed"
-    licenses = list(
-        (
-            await db.execute(
-                select(License)
-                .where(
-                    License.transaction_id == transaction.id,
-                    License.status == "revoked",
+    licenses: list[License] = []
+    if transaction.transaction_type == "refund":
+        # A split's refund portion. The money never left the platform; the
+        # funding transaction and released escrow stay exactly as they are.
+        transaction.status = "failed"
+        to_status = "failed"
+    elif transaction.transaction_type in ("milestone", "attestation_fee"):
+        escrows = list(
+            (
+                await db.execute(
+                    select(Escrow)
+                    .where(
+                        Escrow.transaction_id == transaction.id,
+                        Escrow.status == "refunded",
+                    )
+                    .with_for_update()
                 )
-                .with_for_update()
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
-    for license_row in licenses:
-        license_row.status = "active"
+        if escrows:
+            # Full escrow refund declined: put the money back under hold so
+            # an admin can re-issue the refund.
+            for escrow in escrows:
+                escrow.status = "held"
+                await write_audit(
+                    db=db,
+                    actor_id=None,
+                    action="escrow_refund_reversed",
+                    target_type="escrow",
+                    target_id=escrow.id,
+                    metadata={
+                        "transaction_id": str(transaction.id),
+                        "source": source,
+                    },
+                )
+            transaction.status = "completed"
+            to_status = "completed"
+        else:
+            # Split: the escrow is released, so the funding transaction must
+            # stay refunded — flipping it back would double-count the money
+            # already credited by the release child row. Fail the split's
+            # child refund rows instead.
+            to_status = "refunded"
+            child_rows = list(
+                (
+                    await db.execute(
+                        select(Transaction)
+                        .where(
+                            Transaction.transaction_type == "refund",
+                            Transaction.ref_id == transaction.ref_id,
+                            Transaction.ref_type == transaction.ref_type,
+                            Transaction.status == "refunded",
+                        )
+                        .with_for_update()
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for child in child_rows:
+                child.status = "failed"
+    else:
+        transaction.status = "completed"
+        to_status = "completed"
+        licenses = list(
+            (
+                await db.execute(
+                    select(License)
+                    .where(
+                        License.transaction_id == transaction.id,
+                        License.status == "revoked",
+                    )
+                    .with_for_update()
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for license_row in licenses:
+            license_row.status = "active"
 
-    await _reinstate_voided_commissions(db, transaction)
+        await _reinstate_voided_commissions(db, transaction)
 
     await record_financial_event(
         db,
@@ -123,7 +194,7 @@ async def reverse_refund(
         entity_id=transaction.id,
         event_type=REVERSED_EVENT,
         from_status="refunded",
-        to_status="completed",
+        to_status=to_status,
         amount=transaction.amount,
         currency=transaction.currency,
         provider=transaction.provider,

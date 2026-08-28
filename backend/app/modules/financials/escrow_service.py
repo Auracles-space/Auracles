@@ -13,8 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.integrations import stripe
+from app.integrations import paystack, stripe
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
+from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Transaction
 
 ESCROW_REF_TYPES = {"project_milestone", "attestation"}
@@ -252,6 +254,107 @@ async def refund(
     return escrow
 
 
+async def refund_at_provider(
+    db: AsyncSession,
+    *,
+    escrow: Escrow,
+    transaction: Transaction,
+    idempotency_prefix: str,
+    actor_id: UUID | None = None,
+) -> str:
+    """Send a full escrow refund back through the rail it was funded on.
+
+    One implementation for every caller (project disputes, attestation
+    disputes, admin overrides) so the two rails cannot drift apart. Stripe
+    refunds settle synchronously; Paystack accepts the refund and reports the
+    outcome later, so the `refund_requested` ledger row written here is what
+    lets the settlement webhook and the reconciliation sweeper close it out.
+
+    Args:
+        db: Session inside the caller's transaction — the ledger row must
+            commit atomically with the local refund state the caller writes.
+        escrow: The held escrow being refunded.
+        transaction: Its funding transaction, already locked by the caller.
+        idempotency_prefix: Caller-specific prefix keeping already-shipped
+            Stripe idempotency keys stable (e.g. `escrow_dispute_refund`).
+        actor_id: User driving the refund, for the ledger row.
+
+    Returns:
+        The provider's refund id.
+
+    Raises:
+        HTTPException(409): The transaction has no provider reference, or an
+            unknown provider.
+        HTTPException(502): The provider rejected or could not be reached.
+    """
+    if transaction.provider_ref is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Escrow funding transaction is missing provider metadata.",
+        )
+
+    if transaction.provider == "stripe":
+        try:
+            stripe_refund = await stripe.create_refund(
+                payment_intent_id=transaction.provider_ref,
+                amount=transaction.amount,
+                currency=transaction.currency,
+                idempotency_key=f"{idempotency_prefix}:{escrow.id}",
+            )
+        except StripeProviderError as exc:
+            logger.bind(
+                module="financials",
+                action="refund_escrow_at_provider",
+                escrow_id=escrow.id,
+                transaction_id=transaction.id,
+            ).error("stripe_escrow_refund_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payment provider is unavailable.",
+            ) from exc
+        refund_ref = stripe_refund.id
+    elif transaction.provider == "paystack":
+        try:
+            paystack_refund = await paystack.refund_transaction(
+                transaction_reference=transaction.provider_ref,
+                amount=transaction.amount,
+                currency=transaction.currency,
+            )
+        except PaystackProviderError as exc:
+            logger.bind(
+                module="financials",
+                action="refund_escrow_at_provider",
+                escrow_id=escrow.id,
+                transaction_id=transaction.id,
+            ).error("paystack_escrow_refund_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payment provider is unavailable.",
+            ) from exc
+        refund_ref = paystack_refund.id
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Unsupported escrow payment provider.",
+        )
+
+    await record_financial_event(
+        db,
+        entity_type="transaction",
+        entity_id=transaction.id,
+        event_type="refund_requested",
+        from_status=transaction.status,
+        to_status="refunded",
+        amount=transaction.amount,
+        currency=transaction.currency,
+        provider=transaction.provider,
+        provider_ref=refund_ref,
+        actor_id=actor_id,
+        metadata={"escrow_id": str(escrow.id)},
+    )
+    return refund_ref
+
+
 async def split(
     db: AsyncSession,
     *,
@@ -294,30 +397,53 @@ async def split(
             status_code=status.HTTP_409_CONFLICT,
             detail="Escrow funding transaction is missing provider metadata.",
         )
-    if transaction.provider != "stripe":
+
+    if transaction.provider == "stripe":
+        try:
+            refund_result_id = (
+                await stripe.create_refund(
+                    payment_intent_id=transaction.provider_ref,
+                    amount=normalized_refund,
+                    currency=transaction.currency,
+                    idempotency_key=f"escrow_split_refund:{escrow_id}",
+                )
+            ).id
+        except StripeProviderError as exc:
+            logger.bind(
+                module="financials",
+                action="escrow_split",
+                escrow_id=escrow_id,
+                transaction_id=transaction.id,
+            ).error("stripe_escrow_split_refund_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payment provider is unavailable.",
+            ) from exc
+    elif transaction.provider == "paystack":
+        try:
+            refund_result_id = (
+                await paystack.refund_transaction(
+                    transaction_reference=transaction.provider_ref,
+                    amount=normalized_refund,
+                    currency=transaction.currency,
+                )
+            ).id
+        except PaystackProviderError as exc:
+            logger.bind(
+                module="financials",
+                action="escrow_split",
+                escrow_id=escrow_id,
+                transaction_id=transaction.id,
+            ).error("paystack_escrow_split_refund_failed", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Payment provider is unavailable.",
+            ) from exc
+    else:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Unsupported escrow payment provider.",
         )
-
-    try:
-        refund_result = await stripe.create_refund(
-            payment_intent_id=transaction.provider_ref,
-            amount=normalized_refund,
-            currency=transaction.currency,
-            idempotency_key=f"escrow_split_refund:{escrow_id}",
-        )
-    except StripeProviderError as exc:
-        logger.bind(
-            module="financials",
-            action="escrow_split",
-            escrow_id=escrow_id,
-            transaction_id=transaction.id,
-        ).error("stripe_escrow_split_refund_failed", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        ) from exc
 
     escrow.status = "released"
     escrow.released_at = datetime.now(UTC)
@@ -326,7 +452,7 @@ async def split(
         **(escrow.release_conditions or {}),
         "split": {
             "refund_amount": str(normalized_refund),
-            "refund_ref": refund_result.id,
+            "refund_ref": refund_result_id,
             "release_amount": str(normalized_release),
         },
     }
@@ -349,24 +475,41 @@ async def split(
             ref_type=transaction.ref_type,
         )
     )
-    db.add(
-        Transaction(
-            payer_id=transaction.payer_id,
-            payer_org_id=transaction.payer_org_id,
-            payee_id=None,
-            amount=normalized_refund,
-            currency=transaction.currency.upper(),
-            platform_commission=Decimal("0.00"),
-            net_amount=Decimal("0.00"),
-            transaction_type="refund",
-            status="refunded",
-            provider="stripe",
-            provider_ref=refund_result.id,
-            ref_id=transaction.ref_id,
-            ref_type=transaction.ref_type,
-        )
+    refund_row = Transaction(
+        payer_id=transaction.payer_id,
+        payer_org_id=transaction.payer_org_id,
+        payee_id=None,
+        amount=normalized_refund,
+        currency=transaction.currency.upper(),
+        platform_commission=Decimal("0.00"),
+        net_amount=Decimal("0.00"),
+        transaction_type="refund",
+        status="refunded",
+        provider=transaction.provider,
+        provider_ref=refund_result_id,
+        ref_id=transaction.ref_id,
+        ref_type=transaction.ref_type,
     )
+    db.add(refund_row)
     await db.flush()
+    # Keyed on the child refund row, not the funding transaction: a split's
+    # release portion already stands, so if the provider later declines the
+    # refund only the child row is failed — reversing the funding transaction
+    # would double-count the released money.
+    await record_financial_event(
+        db,
+        entity_type="transaction",
+        entity_id=refund_row.id,
+        event_type="refund_requested",
+        from_status=None,
+        to_status="refunded",
+        amount=normalized_refund,
+        currency=transaction.currency,
+        provider=transaction.provider,
+        provider_ref=refund_result_id,
+        actor_id=actor_id,
+        metadata={"escrow_id": str(escrow.id), "split": "true"},
+    )
     await write_audit(
         db=db,
         actor_id=actor_id,
@@ -378,7 +521,7 @@ async def split(
             "admin_override": admin_override,
             "release_amount": str(normalized_release),
             "refund_amount": str(normalized_refund),
-            "refund_ref": refund_result.id,
+            "refund_ref": refund_result_id,
         },
     )
     return escrow

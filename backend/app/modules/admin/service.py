@@ -23,8 +23,6 @@ from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
 from app.core.currency import platform_currency
-from app.integrations import stripe
-from app.integrations.stripe import StripeProviderError
 from app.modules.admin.models import AnalyticsDailySnapshot
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
@@ -2638,29 +2636,13 @@ async def refund_escrow_override(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Escrow funding transaction is missing provider metadata.",
             )
-        if transaction.provider != "stripe":
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Unsupported escrow payment provider.",
-            )
-        try:
-            await stripe.create_refund(
-                payment_intent_id=transaction.provider_ref,
-                amount=transaction.amount,
-                currency=transaction.currency,
-                idempotency_key=f"escrow_refund:{escrow_id}",
-            )
-        except StripeProviderError as exc:
-            logger.bind(
-                module="admin",
-                action="refund_escrow_override",
-                user_id=admin_id,
-                escrow_id=escrow_id,
-            ).error("stripe_escrow_refund_failed", error=str(exc))
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Payment provider is unavailable.",
-            ) from exc
+        await escrow_service.refund_at_provider(
+            db,
+            escrow=escrow,
+            transaction=transaction,
+            idempotency_prefix="escrow_refund",
+            actor_id=admin_id,
+        )
         escrow = await escrow_service.refund(
             db,
             escrow_id=escrow_id,

@@ -40,7 +40,13 @@ from app.modules.attestation.models import (
     Credential,
 )
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import Escrow, PlatformConfig, Transaction
+from app.modules.financials import escrow_service
+from app.modules.financials.models import (
+    Escrow,
+    FinancialEvent,
+    PlatformConfig,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework
 from app.modules.organizations.models import (
     Organization,
@@ -162,6 +168,7 @@ async def reset_matching_state() -> None:
     async with async_session_factory() as session:
         async with session.begin():
             await session.execute(delete(WebhookEvent))
+            await session.execute(delete(FinancialEvent))
             await session.execute(delete(AuditLog))
             await session.execute(delete(WorkspaceMessage))
             await session.execute(delete(AttestationUploadSession))
@@ -1495,7 +1502,7 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
         return FakeStripeRefund("re_attestation_refund_123")
 
     app.dependency_overrides[get_redis] = override_redis
-    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
     monkeypatch.setattr(
         notifications,
         "dispatch_project_notification",
@@ -1834,7 +1841,7 @@ async def test_admin_refunds_needs_admin_attestation(
         return FakeStripeRefund("re_attestation_admin_refund_123")
 
     app.dependency_overrides[get_redis] = override_redis
-    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
     requestor_id = await create_user(
         "admin-refund-requestor@auracles.space",
         ["operator"],

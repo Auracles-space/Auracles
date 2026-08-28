@@ -1432,17 +1432,17 @@ async def handle_stripe_webhook(
     return WebhookIngestResponse(received=True, status=event_status)
 
 
-async def _refunded_purchase_for_event(
+async def _refunded_transaction_for_event(
     db: AsyncSession,
     event: dict[str, Any],
 ) -> Transaction | None:
-    """Return the refunded purchase a Paystack refund event refers to.
+    """Return the refunded transaction a Paystack refund event refers to.
 
     Keyed on the charge reference, which is what `provider_ref` holds for a
-    Paystack purchase. A purchase that is not currently refunded is treated as
-    unknown: refund events for charges we never refunded, and redeliveries
-    arriving after a failure already reversed one, must both no-op rather than
-    move state a second time.
+    Paystack purchase or escrow funding transaction. A transaction that is not
+    currently refunded is treated as unknown: refund events for charges we
+    never refunded, and redeliveries arriving after a failure already reversed
+    one, must both no-op rather than move state a second time.
     """
     reference = _event_object_id(event)
     if reference is None:
@@ -1452,7 +1452,9 @@ async def _refunded_purchase_for_event(
         .where(
             Transaction.provider == "paystack",
             Transaction.provider_ref == reference,
-            Transaction.transaction_type == "purchase",
+            Transaction.transaction_type.in_(
+                ("purchase", "milestone", "attestation_fee")
+            ),
             Transaction.status == "refunded",
         )
         .with_for_update()
@@ -1471,7 +1473,7 @@ async def _handle_paystack_refund_processed(
     event only closes the loop for audit — it is the evidence that the money
     reached the buyer.
     """
-    transaction = await _refunded_purchase_for_event(db, event)
+    transaction = await _refunded_transaction_for_event(db, event)
     if transaction is None:
         return
     await settle_refund(db, transaction, source="webhook")
@@ -1488,7 +1490,7 @@ async def _handle_paystack_refund_failed(
     arrives, and two implementations of a money reversal would eventually
     disagree.
     """
-    transaction = await _refunded_purchase_for_event(db, event)
+    transaction = await _refunded_transaction_for_event(db, event)
     if transaction is None:
         return
     await reverse_refund(db, transaction, source="webhook")

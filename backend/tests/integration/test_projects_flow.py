@@ -18,11 +18,11 @@ from sqlalchemy import create_engine, delete, func, select
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
-from app.integrations.paystack import PaystackInitializedTransaction
+from app.integrations.paystack import PaystackInitializedTransaction, PaystackRefund
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import escrow_service
-from app.modules.financials.models import Escrow, Transaction
+from app.modules.financials.models import Escrow, FinancialEvent, Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.projects import dispute_service, milestone_service
 from app.modules.projects import notifications as project_notifications
@@ -3379,7 +3379,7 @@ async def test_admin_resolves_dispute_release_to_contributor(
 
     app.dependency_overrides[get_redis] = override_redis
     monkeypatch.setattr(escrow_service.stripe, "create_refund", unexpected_refund)
-    monkeypatch.setattr(dispute_service.stripe, "create_refund", unexpected_refund)
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", unexpected_refund)
     monkeypatch.setattr(
         dispute_service,
         "dispatch_project_notification",
@@ -3461,7 +3461,7 @@ async def test_admin_resolves_dispute_refund_to_operator(
         return FakeStripeRefund("re_project_refund_123")
 
     app.dependency_overrides[get_redis] = override_redis
-    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
     monkeypatch.setattr(
         dispute_service,
         "dispatch_project_notification",
@@ -3518,6 +3518,223 @@ async def test_admin_resolves_dispute_refund_to_operator(
         "dispute_resolved_refund",
         "dispute_resolved_refund",
     ]
+
+
+async def _reroute_funded_escrow_to_paystack(context: dict[str, Any]) -> UUID:
+    """Flip a disputed project's funding transaction onto the Paystack rail.
+
+    The dispute fixtures fund through the Stripe fakes; pilot-corridor tests
+    need the same money state but provider-stamped Paystack. Returns the
+    funding transaction id.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            milestone = await session.get(Milestone, UUID(context["milestone_id"]))
+            assert milestone is not None and milestone.escrow_id is not None
+            escrow = await session.get(Escrow, milestone.escrow_id)
+            assert escrow is not None
+            transaction = await session.get(Transaction, escrow.transaction_id)
+            assert transaction is not None
+            transaction.provider = "paystack"
+            transaction.provider_ref = "auracles_deliverable_ref_001"
+            return transaction.id
+
+
+async def test_admin_resolves_dispute_refund_on_paystack_rail(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refund resolution on a Paystack-funded escrow refunds on that rail.
+
+    The provider refund goes out through Paystack, never Stripe, and a
+    `refund_requested` ledger row carries the refund id so the settlement
+    webhook and the reconciliation sweeper can close it out later.
+    """
+    del migrated_database, project_context
+    refund_calls: list[dict[str, Any]] = []
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def fail_stripe_refund(**kwargs: Any) -> Any:
+        """Fail the test if the Paystack rail touches Stripe."""
+        raise AssertionError("Stripe refund must not run for a Paystack escrow")
+
+    async def fake_paystack_refund(
+        *,
+        transaction_reference: str,
+        amount: Decimal,
+        currency: str,
+    ) -> PaystackRefund:
+        """Record the Paystack full refund request."""
+        refund_calls.append(
+            {
+                "transaction_reference": transaction_reference,
+                "amount": amount,
+                "currency": currency,
+            }
+        )
+        return PaystackRefund(id="rf_escrow_001", status="pending")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fail_stripe_refund)
+    monkeypatch.setattr(
+        escrow_service.paystack,
+        "refund_transaction",
+        fake_paystack_refund,
+    )
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+    context = await create_disputed_funded_project(client, name="ngn-refund-dispute")
+    transaction_id = await _reroute_funded_escrow_to_paystack(context)
+
+    resolved = await client.post(
+        f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
+        headers=context["admin_headers"],
+        json={
+            "resolution_type": "refund",
+            "resolution_notes": "Operator refund approved after admin review.",
+            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        milestone = await session.get(Milestone, UUID(context["milestone_id"]))
+        escrow = await session.get(Escrow, milestone.escrow_id) if milestone else None
+        transaction = await session.get(Transaction, transaction_id)
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.entity_id == transaction_id,
+                FinancialEvent.event_type == "refund_requested",
+            )
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert resolved.status_code == 200
+    assert escrow is not None
+    assert escrow.status == "refunded"
+    assert transaction is not None
+    assert transaction.status == "refunded"
+    assert refund_calls == [
+        {
+            "transaction_reference": "auracles_deliverable_ref_001",
+            "amount": Decimal("1500.00"),
+            "currency": "USD",
+        }
+    ]
+    assert ledger is not None
+    assert ledger.provider == "paystack"
+    assert ledger.provider_ref == "rf_escrow_001"
+
+
+async def test_admin_resolves_dispute_split_on_paystack_rail(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Split resolution on a Paystack-funded escrow part-refunds on that rail.
+
+    The refund portion goes out through a Paystack partial refund; the child
+    refund transaction records that rail and refund id, and a
+    `refund_requested` ledger row keyed on the child row lets settlement and
+    reconciliation close the partial refund out later.
+    """
+    del migrated_database, project_context
+    refund_calls: list[dict[str, Any]] = []
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return Redis test double for admin TOTP verification."""
+        return fake_redis
+
+    async def fake_paystack_refund(
+        *,
+        transaction_reference: str,
+        amount: Decimal,
+        currency: str,
+    ) -> PaystackRefund:
+        """Record the Paystack partial refund request."""
+        refund_calls.append(
+            {
+                "transaction_reference": transaction_reference,
+                "amount": amount,
+                "currency": currency,
+            }
+        )
+        return PaystackRefund(id="rf_escrow_split_001", status="pending")
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        escrow_service.paystack,
+        "refund_transaction",
+        fake_paystack_refund,
+    )
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+    context = await create_disputed_funded_project(client, name="ngn-split-dispute")
+    transaction_id = await _reroute_funded_escrow_to_paystack(context)
+
+    resolved = await client.post(
+        f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
+        headers=context["admin_headers"],
+        json={
+            "resolution_type": "split",
+            "release_amount": "1000.00",
+            "refund_amount": "500.00",
+            "resolution_notes": "Partial delivery accepted after admin review.",
+            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
+        },
+    )
+
+    async with async_session_factory() as session:
+        milestone = await session.get(Milestone, UUID(context["milestone_id"]))
+        escrow = await session.get(Escrow, milestone.escrow_id) if milestone else None
+        funding = await session.get(Transaction, transaction_id)
+        refund_row = await session.scalar(
+            select(Transaction).where(
+                Transaction.transaction_type == "refund",
+                Transaction.provider == "paystack",
+            )
+        )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "refund_requested",
+            )
+        )
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert resolved.status_code == 200
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert funding is not None
+    assert funding.status == "refunded"
+    assert refund_calls == [
+        {
+            "transaction_reference": "auracles_deliverable_ref_001",
+            "amount": Decimal("500.00"),
+            "currency": "USD",
+        }
+    ]
+    assert refund_row is not None
+    assert refund_row.provider_ref == "rf_escrow_split_001"
+    assert refund_row.amount == Decimal("500.00")
+    assert ledger is not None
+    assert ledger.provider == "paystack"
+    assert ledger.provider_ref == "rf_escrow_split_001"
+    assert ledger.entity_id == refund_row.id
 
 
 async def _assigned_finalized_project_with_amendment(
@@ -3586,7 +3803,7 @@ async def test_admin_resolve_rejects_split_over_held_escrow(
 
     app.dependency_overrides[get_redis] = override_redis
     monkeypatch.setattr(escrow_service.stripe, "create_refund", unexpected_refund)
-    monkeypatch.setattr(dispute_service.stripe, "create_refund", unexpected_refund)
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", unexpected_refund)
     monkeypatch.setattr(
         dispute_service,
         "dispatch_project_notification",
@@ -3685,7 +3902,7 @@ async def test_admin_dispute_queue_excludes_resolved_by_default(
 
     app.dependency_overrides[get_redis] = override_redis
     monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
-    monkeypatch.setattr(dispute_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
     monkeypatch.setattr(
         dispute_service,
         "dispatch_project_notification",

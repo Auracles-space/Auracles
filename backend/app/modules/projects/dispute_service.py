@@ -13,15 +13,12 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.audit import write_audit
-from app.integrations import stripe
-from app.integrations.stripe import StripeProviderError
 from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
@@ -740,41 +737,26 @@ def _validate_resolution_amounts(
     return None, None
 
 
-async def _refund_escrow_to_stripe(
+async def _refund_escrow_at_provider(
     *,
+    db: AsyncSession,
     escrow: Escrow,
     transaction: Transaction,
-    reason: str,
+    actor_id: UUID,
 ) -> None:
-    """Refund a full escrow amount through Stripe before local refund state."""
-    if transaction.provider_ref is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Escrow funding transaction is missing provider metadata.",
-        )
-    if transaction.provider != "stripe":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Unsupported escrow payment provider.",
-        )
-    try:
-        await stripe.create_refund(
-            payment_intent_id=transaction.provider_ref,
-            amount=transaction.amount,
-            currency=transaction.currency,
-            idempotency_key=f"escrow_dispute_refund:{escrow.id}",
-        )
-    except StripeProviderError as exc:
-        logger.bind(
-            module="projects",
-            action="resolve_dispute",
-            escrow_id=escrow.id,
-            transaction_id=transaction.id,
-        ).error("stripe_dispute_refund_failed", error=str(exc), reason=reason)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        ) from exc
+    """Refund a full escrow amount on its funding rail before local state.
+
+    Delegates to the shared escrow refund leg so Stripe and Paystack cannot
+    drift apart; the existing `escrow_dispute_refund` idempotency prefix keeps
+    already-issued Stripe refunds stable.
+    """
+    await escrow_service.refund_at_provider(
+        db,
+        escrow=escrow,
+        transaction=transaction,
+        idempotency_prefix="escrow_dispute_refund",
+        actor_id=actor_id,
+    )
 
 
 async def resolve_dispute(
@@ -876,10 +858,11 @@ async def resolve_dispute(
                 now=now,
             )
         elif resolution_type == "refund":
-            await _refund_escrow_to_stripe(
+            await _refund_escrow_at_provider(
+                db=db,
                 escrow=escrow,
                 transaction=transaction,
-                reason=resolution_notes,
+                actor_id=admin_id,
             )
             await escrow_service.refund(
                 db,

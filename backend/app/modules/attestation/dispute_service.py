@@ -17,8 +17,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.integrations import stripe
-from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import badge_service, matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
@@ -234,10 +232,11 @@ async def resolve_dispute(
             escrow = await _load_attestation_escrow(db=db, attestation=attestation)
             escrow_id_value = str(escrow.id)
             transaction = await _load_escrow_transaction(db=db, escrow=escrow)
-            await _refund_escrow_to_stripe(
+            await _refund_escrow_at_provider(
+                db=db,
                 escrow=escrow,
                 transaction=transaction,
-                reason=notes,
+                actor_id=admin_id,
             )
             await escrow_service.refund(
                 db,
@@ -444,10 +443,11 @@ async def refund_needs_admin_attestation(
             )
         escrow = await _load_attestation_escrow(db=db, attestation=attestation)
         transaction = await _load_escrow_transaction(db=db, escrow=escrow)
-        await _refund_escrow_to_stripe(
+        await _refund_escrow_at_provider(
+            db=db,
             escrow=escrow,
             transaction=transaction,
-            reason=reason,
+            actor_id=admin_id,
             idempotency_prefix="attestation_needs_admin_refund",
         )
         await escrow_service.refund(
@@ -815,43 +815,24 @@ async def _load_escrow_transaction(
     return transaction
 
 
-async def _refund_escrow_to_stripe(
+async def _refund_escrow_at_provider(
     *,
+    db: AsyncSession,
     escrow: Escrow,
     transaction: Transaction,
-    reason: str,
+    actor_id: UUID,
     idempotency_prefix: str = "attestation_dispute_refund",
 ) -> None:
-    """Refund a full Attestation escrow through Stripe before local state changes."""
-    if transaction.provider_ref is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Escrow funding transaction is missing provider metadata.",
-        )
-    if transaction.provider != "stripe":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Unsupported escrow payment provider.",
-        )
-    try:
-        await stripe.create_refund(
-            payment_intent_id=transaction.provider_ref,
-            amount=transaction.amount,
-            currency=transaction.currency,
-            idempotency_key=f"{idempotency_prefix}:{escrow.id}",
-        )
-    except StripeProviderError as exc:
-        logger.bind(
-            module="attestation",
-            action="resolve_dispute",
-            escrow_id=escrow.id,
-            transaction_id=transaction.id,
-        ).error(
-            "stripe_attestation_dispute_refund_failed",
-            error=str(exc),
-            reason=reason,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        ) from exc
+    """Refund a full Attestation escrow on its funding rail before local state.
+
+    Delegates to the shared escrow refund leg so Stripe and Paystack cannot
+    drift apart; the caller-specific idempotency prefixes keep already-issued
+    Stripe refunds stable.
+    """
+    await escrow_service.refund_at_provider(
+        db,
+        escrow=escrow,
+        transaction=transaction,
+        idempotency_prefix=idempotency_prefix,
+        actor_id=actor_id,
+    )

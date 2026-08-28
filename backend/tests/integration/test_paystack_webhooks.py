@@ -676,6 +676,108 @@ async def test_escrow_charge_for_a_stripe_transaction_is_refused(
     assert escrow is None
 
 
+async def mark_escrow_refund_accepted(transaction_id: UUID) -> UUID:
+    """Flip a funded escrow to the accepted-refund state a dispute writes.
+
+    Returns the escrow id.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = await session.get(Transaction, transaction_id)
+            assert transaction is not None
+            escrow = await session.scalar(
+                select(Escrow).where(Escrow.transaction_id == transaction_id)
+            )
+            assert escrow is not None
+            transaction.status = "refunded"
+            escrow.status = "refunded"
+            return escrow.id
+
+
+async def test_escrow_refund_processed_settles_the_refund(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A confirmed escrow refund settles without moving any state."""
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    paystack_context["event"] = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+    await post_webhook(client)
+    escrow_id = await mark_escrow_refund_accepted(transaction_id)
+    paystack_context["event"] = refund_event(
+        "refund.processed",
+        reference=ESCROW_REFERENCE,
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.get(Escrow, escrow_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "refund_settled")
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+    assert transaction is not None
+    assert transaction.status == "refunded"
+    assert escrow is not None
+    assert escrow.status == "refunded"
+    assert audit is not None
+    assert audit.target_id == transaction_id
+
+
+async def test_escrow_refund_failed_restores_the_hold(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A declined escrow refund puts the money back under hold.
+
+    The refund was applied optimistically; when Paystack declines it the
+    Operator was never repaid, so the escrow returns to `held` and the funding
+    transaction to `completed` — an admin can then re-issue the refund.
+    """
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    paystack_context["event"] = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+    await post_webhook(client)
+    escrow_id = await mark_escrow_refund_accepted(transaction_id)
+    paystack_context["event"] = refund_event(
+        "refund.failed",
+        reference=ESCROW_REFERENCE,
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.get(Escrow, escrow_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "refund_failed")
+        )
+
+    assert response.status_code == 200
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert escrow is not None
+    assert escrow.status == "held"
+    assert audit is not None
+    assert audit.target_id == transaction_id
+
+
 ATTESTATION_ESCROW_REFERENCE = "auracles_attestation_escrow_001"
 
 

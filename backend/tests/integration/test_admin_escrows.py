@@ -19,8 +19,8 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret
 from app.main import app
-from app.modules.admin import service as admin_service
 from app.modules.auth.models import User, UserRole
+from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
 from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_async
@@ -129,7 +129,7 @@ async def admin_escrow_context() -> AsyncIterator[dict[str, Any]]:
 
     app.dependency_overrides[get_redis] = override_redis
     monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(admin_service.stripe, "create_refund", fake_create_refund)
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
     try:
         yield {"redis": fake_redis, "refund_calls": refund_calls}
     finally:
