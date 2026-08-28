@@ -7558,6 +7558,12 @@ export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvo
         org_id: string;
         transaction_id: string;
     };
+    query?: {
+        /**
+         * Access token via query parameter for download links
+         */
+        token?: (string | null);
+    };
 };
 
 export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetResponse = (unknown);

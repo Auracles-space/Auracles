@@ -289,6 +289,32 @@ async def test_org_purchase_invoice_prefers_billing_email_when_set(
     assert invoice.buyer_email == "billing@org-invoice.example"
 
 
+async def test_org_purchase_invoice_accepts_query_token_for_browser_navigation(
+    client: AsyncClient,
+    migrated_database: None,
+    org_invoice_context: dict[str, Any],
+) -> None:
+    """The invoice route authenticates via ?token= for browser navigation.
+
+    The frontend downloads the PDF by navigating the browser to this route,
+    which cannot set an Authorization header — the same download-token shape
+    the individual purchase invoice route already supports.
+    """
+    del migrated_database, org_invoice_context
+    owner_id = await _create_user("org-invoice-token-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "org-invoice-token")
+    transaction_id, _ = await _seed_settled_org_purchase(UUID(str(org["id"])))
+
+    response = await client.get(
+        f"/v1/orgs/{org['id']}/financials/purchases/{transaction_id}/invoice",
+        params={"token": owner_token},
+    )
+
+    # 202 (generating) proves auth succeeded without an Authorization header.
+    assert response.status_code == 202
+
+
 async def test_org_purchase_invoice_forbids_non_admin_member(
     client: AsyncClient,
     migrated_database: None,

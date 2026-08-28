@@ -47,6 +47,7 @@ from app.modules.financials.models import (
     Transaction,
 )
 from app.modules.frameworks.models import Framework, License
+from app.modules.invoicing.models import Invoice
 from app.modules.projects.models import Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
@@ -725,6 +726,15 @@ async def test_stripe_payment_intent_success_creates_license_once(
     assert audit.target_id == transaction_id
     invoice_task: FakeInvoiceTask = webhook_context["invoice_task"]
     assert invoice_task.dispatched == [str(transaction_id)]
+    # Settlement issues the invoice row itself, so the queued PDF render has
+    # something to render — previously the row only existed after the buyer's
+    # first invoice request and the settlement-time render always failed.
+    async with async_session_factory() as session:
+        invoice = await session.scalar(
+            select(Invoice).where(Invoice.source_ref_id == transaction_id)
+        )
+    assert invoice is not None
+    assert invoice.buyer_email == "webhook-operator@auracles.space"
 
 
 async def test_stripe_collection_purchase_success_mints_missing_license_and_allocation(

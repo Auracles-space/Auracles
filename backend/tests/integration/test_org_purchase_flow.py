@@ -28,6 +28,7 @@ from app.modules.auth.models import User
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework, License, LicenseGrant
+from app.modules.invoicing.models import Invoice
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
@@ -335,10 +336,21 @@ async def test_org_purchase_happy_path_and_webhook_grants_org_library_access(
     assert license_row is not None
     assert license_row.licensee_org_id == UUID(org["id"])
     assert license_row.operator_id is None
-    # Org purchases have no personal buyer, and no org purchase-invoice is issued
-    # (unspecced). The invoice PDF worker keys on payer_id and would fail forever
-    # for a NULL-payer org row, so the org branch must not dispatch it.
-    assert org_purchase_context["invoice_task"].dispatched == []
+
+    # Settlement issues the invoice under the org's own buyer identity and
+    # queues its PDF, so the billing section lists it without anyone having
+    # to request it first (FR-FIN-003 covers org purchases too).
+    async with async_session_factory() as session:
+        invoice = await session.scalar(
+            select(Invoice).where(Invoice.source_ref_id == transaction_id)
+        )
+        owner = await session.get(User, owner_id)
+    assert invoice is not None
+    assert invoice.buyer_name == org["name"]
+    assert owner is not None
+    # No billing_email configured, so the buyer email falls back to the owner.
+    assert invoice.buyer_email == owner.email
+    assert org_purchase_context["invoice_task"].dispatched == [str(transaction_id)]
 
     grant_response = await client.post(
         f"/v1/orgs/{org['id']}/licenses/{license_row.id}/grants",

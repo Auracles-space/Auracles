@@ -22964,6 +22964,16 @@ paths:
           format: uuid
           title: Transaction Id
           type: string
+      - description: Access token via query parameter for download links
+        in: query
+        name: token
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Access token via query parameter for download links
+          title: Token
       responses:
         '200':
           content:

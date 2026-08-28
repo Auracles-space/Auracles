@@ -148,6 +148,10 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
+# Query-token auth is reserved for browser-navigated redirect downloads.
+OrgAdminDownload = Annotated[
+    OrgContext, Depends(require_org_role("admin", allow_query_token=True))
+]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
 
 NDA_SIGN_RATE_LIMITER = RateLimiter(namespace="org_nda_sign", limit=5, window=3600)
@@ -1907,7 +1911,7 @@ async def list_org_invoices(
 async def get_org_purchase_invoice(
     org_id: UUID,
     transaction_id: UUID,
-    context: OrgAdmin,
+    context: OrgAdminDownload,
     db: DatabaseSession,
 ) -> Response:
     """Redirect to the org purchase invoice PDF or queue its generation."""

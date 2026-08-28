@@ -45,6 +45,7 @@ from app.modules.developer.models import (
     PartnerPurchaseAttribution,
 )
 from app.modules.financials import commission, escrow_service
+from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.financials.refunds import reverse_refund, settle_refund
@@ -565,12 +566,24 @@ async def _handle_purchase_succeeded(
         transaction=transaction,
         framework_id=framework.id,
     )
-    # Only individual purchases queue an invoice PDF: the invoice worker keys on
-    # ``payer_id`` and no org purchase-invoice is issued (unspecced), so an org
-    # (NULL-payer) row would fail the worker permanently. Skip its dispatch.
-    invoice_transaction_id = (
-        None if transaction.payer_org_id is not None else transaction.id
-    )
+    # Issue the invoice at settlement — individual and org buyers alike — so
+    # the queued PDF render has a row to render and the billing views list the
+    # invoice without anyone requesting it first (FR-FIN-003). Issuance must
+    # never block money settlement: on failure the lazy invoice endpoints
+    # remain the fallback and the PDF is simply not pre-generated.
+    invoice_transaction_id: UUID | None = None
+    try:
+        await financials_invoices.issue_purchase_invoice_for_transaction(
+            db,
+            transaction=transaction,
+        )
+        invoice_transaction_id = transaction.id
+    except ValueError as exc:
+        logger.bind(
+            module="webhooks",
+            action="issue_purchase_invoice",
+            transaction_id=str(transaction.id),
+        ).error("purchase_invoice_issue_failed", error=str(exc))
     return invoice_transaction_id, after_commit_work
 
 

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   configureBrowserClient,
   describeGeneratedError,
+  getAccessToken,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { getStripeClient } from "@/lib/financials/stripe-client";
@@ -73,6 +74,22 @@ export function OrgBillingSection() {
 
     void load();
   }, [orgId]);
+
+  /**
+   * Navigate the browser to the org purchase-invoice route.
+   *
+   * The route lazily issues and 302s to a presigned PDF URL; navigation
+   * cannot set headers, so the access token rides the download-only
+   * `?token=` query parameter the endpoint accepts for exactly this case.
+   */
+  function downloadPurchaseInvoice(invoice: OrgInvoiceListItem) {
+    const token = getAccessToken();
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    window.location.assign(
+      `${base}/v1/orgs/${orgId}/financials/purchases/${invoice.source_ref_id}` +
+        `/invoice?token=${encodeURIComponent(token ?? "")}`,
+    );
+  }
 
   async function handleStartSetup() {
     setError(null);
@@ -239,13 +256,26 @@ export function OrgBillingSection() {
                     {new Date(invoice.issue_date).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-semibold text-foreground">
-                    {invoice.currency.toUpperCase()}
-                  </p>
-                  <p className="text-xs text-foreground-muted capitalize">
-                    {invoice.doc_type}
-                  </p>
+                <div className="flex items-center justify-end gap-4">
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-foreground">
+                      {invoice.currency.toUpperCase()}
+                    </p>
+                    <p className="text-xs text-foreground-muted capitalize">
+                      {invoice.doc_type}
+                    </p>
+                  </div>
+                  {invoice.direction === "purchase" &&
+                  invoice.source_ref_type === "transaction" ? (
+                    <button
+                      aria-label={`Download invoice ${invoice.invoice_number}`}
+                      className="inline-flex min-h-11 items-center rounded-control border border-border-strong bg-surface-1 px-4 text-xs font-semibold text-foreground transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+                      onClick={() => downloadPurchaseInvoice(invoice)}
+                      type="button"
+                    >
+                      Download
+                    </button>
+                  ) : null}
                 </div>
               </article>
             ))

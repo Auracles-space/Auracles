@@ -70,7 +70,6 @@ from app.modules.financials.schemas import (
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import ArtifactDownload
 from app.modules.frameworks.pricing import resolve_license_price
-from app.modules.invoicing import service as invoicing_service
 from app.modules.invoicing.models import Invoice
 from app.modules.organizations.models import (
     Organization,
@@ -640,20 +639,10 @@ async def get_framework_purchase_invoice(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Framework not found.",
         )
-    invoice = await invoicing_service.issue_invoice(
+    del framework
+    invoice = await financials_invoices.issue_purchase_invoice_for_transaction(
         db,
-        doc_type=invoicing_service.DOC_SALES_INVOICE,
-        series=invoicing_service.SERIES_SALES,
-        source_ref_type="transaction",
-        source_ref_id=transaction_id,
-        currency=transaction.currency,
-        subtotal=transaction.amount,
-        seller=await financials_invoices.framework_invoice_seller_identity(
-            db,
-            framework=framework,
-        ),
-        buyer_name=operator.display_name,
-        buyer_email=operator.email,
+        transaction=transaction,
     )
     await db.commit()
 
@@ -704,19 +693,6 @@ async def _load_org_purchase(
             detail="Purchase not found.",
         )
     return transaction
-
-
-async def _resolve_org_billing_email(db: AsyncSession, org: Organization) -> str:
-    """Resolve the invoice buyer email for an org, falling back to its owner."""
-    if org.billing_email:
-        return org.billing_email
-    owner = await db.get(User, org.created_by)
-    if owner is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Organization has no billing contact.",
-        )
-    return owner.email
 
 
 async def get_org_framework_purchase_invoice(
@@ -771,21 +747,17 @@ async def get_org_framework_purchase_invoice(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Framework not found.",
         )
-    invoice = await invoicing_service.issue_invoice(
-        db,
-        doc_type=invoicing_service.DOC_SALES_INVOICE,
-        series=invoicing_service.SERIES_SALES,
-        source_ref_type="transaction",
-        source_ref_id=transaction_id,
-        currency=transaction.currency,
-        subtotal=transaction.amount,
-        seller=await financials_invoices.framework_invoice_seller_identity(
+    del org, framework
+    try:
+        invoice = await financials_invoices.issue_purchase_invoice_for_transaction(
             db,
-            framework=framework,
-        ),
-        buyer_name=org.name,
-        buyer_email=await _resolve_org_billing_email(db, org),
-    )
+            transaction=transaction,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     await db.commit()
 
     key = invoice.s3_key
