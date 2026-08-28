@@ -608,6 +608,65 @@ def collection_payment_intent_event(
     }
 
 
+async def test_stripe_amount_mismatch_is_recorded_not_settled(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A Stripe success whose received amount disagrees must not settle.
+
+    Real Stripe events carry `amount_received` in minor units; when it does
+    not match the local transaction the event is acknowledged, nothing
+    settles, and a CRITICAL `amount_mismatch` record carries both amounts.
+    """
+    transaction_id, framework_id, _, _ = await create_pending_purchase()
+    event = payment_intent_event(
+        "evt_purchase_amount_mismatch",
+        "payment_intent.succeeded",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+    event["data"]["object"]["amount_received"] = 9900
+    event["data"]["object"]["currency"] = "usd"
+    webhook_context["event"] = event
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        licenses = (
+            (
+                await session.execute(
+                    select(License).where(License.framework_id == framework_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "amount_mismatch")
+        )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "amount_mismatch"
+            )
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
+    assert transaction is not None
+    assert transaction.status == "pending"
+    assert licenses == []
+    assert audit is not None
+    assert audit.target_id == transaction_id
+    assert ledger is not None
+    assert ledger.metadata_["received_minor"] == 9900
+    assert ledger.metadata_["expected_minor"] == 14900
+
+
 async def test_stripe_payment_intent_success_creates_license_once(
     client: AsyncClient,
     webhook_context: dict[str, Any],

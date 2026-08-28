@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.security import hash_payout_provider_account_id
 from app.integrations import paystack, persona, stripe
+from app.integrations.amounts import MoneyAmountError, to_minor_units
 from app.integrations.payment_failures import (
     normalize_paystack_failure,
     normalize_stripe_failure,
@@ -144,6 +145,118 @@ def _event_object_id(event: dict[str, Any]) -> str | None:
     """Return the provider object id carried by a Stripe event."""
     object_id = _event_object(event).get("id")
     return object_id if isinstance(object_id, str) else None
+
+
+def _event_amount_minor(event: dict[str, Any]) -> int | None:
+    """Return the paid amount in minor units carried by a settlement event.
+
+    Stripe reports `amount_received` on a succeeded PaymentIntent; Paystack
+    charges carry `amount`. Absent on some synthetic events, in which case
+    amount verification is skipped rather than refused.
+    """
+    event_object = _event_object(event)
+    for key in ("amount_received", "amount"):
+        value = event_object.get(key)
+        if isinstance(value, int):
+            return value
+    return None
+
+
+def _event_currency(event: dict[str, Any]) -> str | None:
+    """Return the uppercase currency code carried by a settlement event."""
+    value = _event_object(event).get("currency")
+    return value.upper() if isinstance(value, str) else None
+
+
+def _settlement_amount_mismatch(
+    transaction: Transaction,
+    event: dict[str, Any],
+) -> tuple[int, int] | None:
+    """Compare the event's paid amount against the local transaction.
+
+    Returns:
+        `(expected_minor, received_minor)` when the amounts or currencies
+        disagree, None when they match or the event carries no amount.
+    """
+    received_minor = _event_amount_minor(event)
+    if received_minor is None:
+        return None
+    try:
+        expected_minor = to_minor_units(transaction.amount, transaction.currency)
+    except MoneyAmountError:
+        logger.bind(
+            module="webhooks",
+            action="verify_settlement_amount",
+            transaction_id=str(transaction.id),
+        ).warning("settlement_amount_unverifiable", currency=transaction.currency)
+        return None
+    received_currency = _event_currency(event)
+    if (
+        received_currency is not None
+        and received_currency != transaction.currency.upper()
+    ):
+        return expected_minor, received_minor
+    if received_minor != expected_minor:
+        return expected_minor, received_minor
+    return None
+
+
+async def _record_settlement_anomaly(
+    db: AsyncSession,
+    *,
+    transaction: Transaction,
+    kind: str,
+    event: dict[str, Any],
+    expected_minor: int | None = None,
+    received_minor: int | None = None,
+) -> None:
+    """Durably record a settlement event that must not move money.
+
+    Written for `amount_mismatch` (paid amount disagrees with the local
+    transaction) and `double_charge_detected` (a success for a reference we
+    did not initiate — typically a buyer paying an abandoned checkout). The
+    money genuinely moved at the provider, so the record — CRITICAL log,
+    audit row, ledger event — is what points an admin at the orphan charge;
+    the caller acknowledges the event without settling anything.
+    """
+    reference = _event_object_id(event)
+    metadata: dict[str, Any] = {"event_reference": reference}
+    if expected_minor is not None:
+        metadata["expected_minor"] = expected_minor
+    if received_minor is not None:
+        metadata["received_minor"] = received_minor
+    received_currency = _event_currency(event)
+    if received_currency is not None:
+        metadata["received_currency"] = received_currency
+
+    await write_audit(
+        db=db,
+        actor_id=transaction.payer_id,
+        action=kind,
+        target_type="transaction",
+        target_id=transaction.id,
+        metadata={key: str(value) for key, value in metadata.items()},
+    )
+    await record_financial_event(
+        db,
+        entity_type="transaction",
+        entity_id=transaction.id,
+        event_type=kind,
+        from_status=transaction.status,
+        to_status=transaction.status,
+        amount=transaction.amount,
+        currency=transaction.currency,
+        provider=transaction.provider,
+        provider_ref=reference,
+        reason_code=kind,
+        metadata=metadata,
+    )
+    logger.bind(
+        module="webhooks",
+        action=kind,
+        transaction_id=str(transaction.id),
+        provider=transaction.provider,
+    ).critical(kind, event_reference=reference)
 
 
 def _required_event_field(event: dict[str, Any], field: str) -> str:
@@ -298,7 +411,24 @@ async def _handle_purchase_succeeded(
     if transaction.provider != provider:
         raise WebhookProcessingError("transaction provider mismatch")
     if transaction.provider_ref and transaction.provider_ref != charge_ref:
-        raise WebhookProcessingError("provider charge reference mismatch")
+        await _record_settlement_anomaly(
+            db,
+            transaction=transaction,
+            kind="double_charge_detected",
+            event=event,
+        )
+        return None, []
+    mismatch = _settlement_amount_mismatch(transaction, event)
+    if mismatch is not None:
+        await _record_settlement_anomaly(
+            db,
+            transaction=transaction,
+            kind="amount_mismatch",
+            event=event,
+            expected_minor=mismatch[0],
+            received_minor=mismatch[1],
+        )
+        return None, []
     if transaction.ref_id is None:
         raise WebhookProcessingError("purchase transaction missing framework ref")
 
@@ -700,7 +830,24 @@ async def _handle_escrow_succeeded(
     if transaction.provider != provider:
         raise WebhookProcessingError("escrow transaction provider mismatch")
     if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
-        raise WebhookProcessingError("provider reference mismatch")
+        await _record_settlement_anomaly(
+            db,
+            transaction=transaction,
+            kind="double_charge_detected",
+            event=event,
+        )
+        return []
+    mismatch = _settlement_amount_mismatch(transaction, event)
+    if mismatch is not None:
+        await _record_settlement_anomaly(
+            db,
+            transaction=transaction,
+            kind="amount_mismatch",
+            event=event,
+            expected_minor=mismatch[0],
+            received_minor=mismatch[1],
+        )
+        return []
     escrow = await escrow_service.hold(
         db,
         transaction_id=transaction_id,

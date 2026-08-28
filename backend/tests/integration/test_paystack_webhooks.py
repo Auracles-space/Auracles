@@ -399,11 +399,19 @@ async def test_charge_for_a_stripe_transaction_is_refused(
     assert event_row.error is not None
 
 
-async def test_reference_mismatch_is_refused(
+async def test_reference_mismatch_records_a_double_charge(
     client: AsyncClient,
     paystack_context: dict[str, Any],
 ) -> None:
-    """A charge whose reference is not the one we initiated must not settle."""
+    """A success for a reference we did not initiate is recorded, never settled.
+
+    The signature already verified, so the money genuinely moved at the
+    provider — most likely a buyer paying an abandoned checkout whose
+    reference was since replaced. Erroring would only make the provider
+    retry forever; instead the event is acknowledged, nothing settles, and a
+    CRITICAL `double_charge_detected` record points an admin at the orphan
+    charge to refund.
+    """
     transaction_id, framework_id, _ = await create_pending_paystack_purchase()
     paystack_context["event"] = charge_event(
         "charge.success",
@@ -416,10 +424,107 @@ async def test_reference_mismatch_is_refused(
 
     async with async_session_factory() as session:
         transaction = await session.get(Transaction, transaction_id)
+        license_row = await session.scalar(select(License))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "double_charge_detected")
+        )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "double_charge_detected"
+            )
+        )
 
-    assert response.status_code == 500
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
     assert transaction is not None
     assert transaction.status == "pending"
+    assert license_row is None
+    assert audit is not None
+    assert audit.target_id == transaction_id
+    assert ledger is not None
+    assert ledger.entity_id == transaction_id
+    assert ledger.metadata_["event_reference"] == "someone_elses_reference"
+
+
+async def test_amount_mismatch_is_recorded_not_settled(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A success whose paid amount disagrees with the transaction never settles.
+
+    A partial payment (or any provider-side amount drift) must not grant a
+    full License. The event is acknowledged, nothing settles, and a CRITICAL
+    `amount_mismatch` record carries both amounts for investigation.
+    """
+    transaction_id, framework_id, _ = await create_pending_paystack_purchase()
+    event = charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+    event["data"]["amount"] = 9900
+    paystack_context["event"] = event
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        license_row = await session.scalar(select(License))
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "amount_mismatch")
+        )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "amount_mismatch"
+            )
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
+    assert transaction is not None
+    assert transaction.status == "pending"
+    assert license_row is None
+    assert audit is not None
+    assert audit.target_id == transaction_id
+    assert ledger is not None
+    assert ledger.metadata_["received_minor"] == 9900
+    assert ledger.metadata_["expected_minor"] == 14900
+
+
+async def test_escrow_amount_mismatch_holds_nothing(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """An escrow success with the wrong paid amount must not hold escrow."""
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    event = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+    event["data"]["amount"] = 100000
+    paystack_context["event"] = event
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.scalar(select(Escrow))
+        milestone = await session.get(Milestone, milestone_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "amount_mismatch")
+        )
+
+    assert response.status_code == 200
+    assert transaction is not None
+    assert transaction.status == "pending"
+    assert escrow is None
+    assert milestone is not None
+    assert milestone.status == "pending"
+    assert audit is not None
 
 
 ESCROW_REFERENCE = "auracles_escrow_ref_001"
