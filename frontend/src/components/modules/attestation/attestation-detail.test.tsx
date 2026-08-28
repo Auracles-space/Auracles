@@ -131,4 +131,47 @@ describe("AttestationDetail", () => {
       expect.objectContaining({ path: { attestation_id: "att-1" } }),
     );
   });
+
+  it("redirects to Paystack hosted checkout when resuming a Paystack fee", async () => {
+    // The stored transaction's rail decides: a Paystack fee resumes as a
+    // fresh hosted checkout, so the browser navigates instead of opening the
+    // in-page Stripe panel.
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { assign: vi.fn(), origin: "http://localhost:3000" },
+    });
+    try {
+      vi.mocked(getAttestation).mockResolvedValue({
+        response: { ok: true },
+        data: pendingFeeAttestation(),
+      } as never);
+      vi.mocked(getAttestationFeePayment).mockResolvedValue({
+        response: { ok: true },
+        data: {
+          id: "att-1",
+          transaction_id: "txn-1",
+          provider: "paystack",
+          client_secret: null,
+          authorization_url: "https://checkout.paystack.com/attestation_resume",
+        },
+      } as never);
+
+      render(<AttestationDetail attestationId="att-1" />);
+      const payButton = await screen.findByRole("button", { name: /Pay fee/i });
+      fireEvent.click(payButton);
+
+      await waitFor(() => {
+        expect(window.location.assign).toHaveBeenCalledWith(
+          "https://checkout.paystack.com/attestation_resume",
+        );
+      });
+      expect(screen.queryByTestId("funding-panel")).toBeNull();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
 });

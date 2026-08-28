@@ -5,6 +5,7 @@ import { ProjectWorkspace } from "@/components/modules/projects/project-workspac
 import { clearAuthToken } from "@/lib/auth/token-store";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
 import {
+  fundMilestone,
   getOrgProject,
   getProject,
   listDisputes,
@@ -437,5 +438,114 @@ describe("ProjectWorkspace", () => {
     expect(
       screen.queryByRole("button", { name: /fund milestone/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("redirects to Paystack hosted checkout when funding on the Nigerian rail", async () => {
+    // Paystack has no in-page payment panel: the funding response carries a
+    // hosted checkout URL and the browser must navigate there. The billing
+    // country the Operator picked rides along so the backend routes the rail.
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { assign: vi.fn(), origin: "http://localhost:3000" },
+    });
+    try {
+      vi.mocked(loadCurrentUserSession).mockResolvedValue({
+        avatar_url: null,
+        deactivated_at: null,
+        display_name: "Operator User",
+        email: "operator@example.com",
+        email_verified: true,
+        id: "operator-1",
+        kyc_status: "verified",
+        pending_roles: [],
+        roles: ["operator"],
+      });
+      vi.mocked(getProject).mockResolvedValue({
+        data: { ...projectResponse(), milestone_plan_status: "finalized" },
+        error: undefined,
+        response: okResponse,
+      });
+      vi.mocked(listProjectProposals).mockResolvedValue({
+        data: { proposals: [] },
+        error: undefined,
+        response: okResponse,
+      });
+      vi.mocked(listMyProjectProposals).mockResolvedValue({
+        data: undefined,
+        error: { detail: "Forbidden" },
+        response: forbiddenResponse,
+      });
+      vi.mocked(listMilestones).mockResolvedValue({
+        data: {
+          milestones: [
+            {
+              approved_at: null,
+              budget: "1500.00",
+              created_at: "2026-06-20T11:00:00Z",
+              currency: "USD",
+              description: "Build the model.",
+              due_date: null,
+              escrow_id: null,
+              funded_at: null,
+              id: "milestone-1",
+              name: "Implementation",
+              project_id: "project-1",
+              sequence: 1,
+              status: "pending",
+              submitted_at: null,
+            },
+          ],
+        },
+        error: undefined,
+        response: okResponse,
+      });
+      vi.mocked(listWorkspaceMessages).mockResolvedValue({
+        data: { messages: [] },
+        error: undefined,
+        response: okResponse,
+      });
+      vi.mocked(listDisputes).mockResolvedValue({
+        data: { disputes: [] },
+        error: undefined,
+        response: okResponse,
+      });
+      vi.mocked(fundMilestone).mockResolvedValue({
+        data: {
+          authorization_url: "https://checkout.paystack.com/milestone_001",
+          client_secret: null,
+          provider: "paystack",
+          transaction_id: "txn-9",
+        },
+        error: undefined,
+        response: okResponse,
+      } as never);
+
+      render(<ProjectWorkspace projectId="project-1" />);
+
+      const fundButton = await screen.findByRole("button", {
+        name: /fund milestone/i,
+      });
+      fireEvent.change(screen.getByLabelText(/billing country/i), {
+        target: { value: "NG" },
+      });
+      fireEvent.click(fundButton);
+
+      await waitFor(() => {
+        expect(window.location.assign).toHaveBeenCalledWith(
+          "https://checkout.paystack.com/milestone_001",
+        );
+      });
+      expect(fundMilestone).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ country: "NG" }),
+        }),
+      );
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
   });
 });

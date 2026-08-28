@@ -10,6 +10,10 @@ import {
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
+import {
+  CHECKOUT_COUNTRIES,
+  defaultBillingCountry,
+} from "@/lib/marketplace/countries";
 import { JURISDICTION_OPTIONS } from "@/lib/marketplace/taxonomy";
 import {
   acceptAttestationReport,
@@ -46,6 +50,9 @@ export function RequestorPanel() {
   const [focusAreas, setFocusAreas] = useState("");
   const [desiredOutcome, setDesiredOutcome] = useState("");
   const [isRequesting, setIsRequesting] = useState(false);
+  // Billing country drives the payment rail (Nigeria pays the fee through
+  // Paystack hosted checkout), so it is shown and editable, never inferred.
+  const [country, setCountry] = useState(defaultBillingCountry);
   const [fundingSession, setFundingSession] = useState<{
     attestationId: string;
     clientSecret: string;
@@ -132,6 +139,7 @@ export function RequestorPanel() {
   async function handleRequestAttestation() {
     setError(null);
     setIsRequesting(true);
+    let redirecting = false;
     try {
       configureBrowserClient();
       const result = await requestAttestation({
@@ -146,11 +154,25 @@ export function RequestorPanel() {
             focus_areas: focusAreas,
             desired_outcome: desiredOutcome,
           },
+          country,
         },
         headers: getAccessTokenHeaders(),
       });
       if (!result.response.ok || !result.data) {
         setError(describeGeneratedError(result.error));
+        return;
+      }
+      const data = result.data;
+      // Paystack owns the next screen: navigate to its hosted checkout and
+      // keep the requesting state through navigation so the button cannot be
+      // pressed twice into two charges.
+      if (
+        "authorization_url" in data &&
+        data.provider === "paystack" &&
+        data.authorization_url
+      ) {
+        redirecting = true;
+        window.location.assign(data.authorization_url);
         return;
       }
       setTargetId("");
@@ -160,7 +182,6 @@ export function RequestorPanel() {
       setJurisdiction("");
       setFocusAreas("");
       setDesiredOutcome("");
-      const data = result.data;
       // A requestor funding their own framework gets a PaymentIntent secret
       // back; surface the inline fee payment. A non-owner request instead
       // awaits owner consent and has no secret yet.
@@ -172,7 +193,11 @@ export function RequestorPanel() {
       }
       await loadRequestorAttestations();
     } finally {
-      setIsRequesting(false);
+      // Stay in the requesting state through a Paystack navigation so the
+      // button cannot be pressed twice into two charges.
+      if (!redirecting) {
+        setIsRequesting(false);
+      }
     }
   }
 
@@ -330,6 +355,23 @@ export function RequestorPanel() {
               placeholder="What a successful attestation looks like for you."
               value={desiredOutcome}
             />
+          </label>
+          <label className="grid gap-2 text-sm font-semibold text-foreground">
+            <span>Billing country</span>
+            <Select
+              disabled={isRequesting}
+              onChange={(event) => setCountry(event.target.value)}
+              value={country}
+            >
+              {CHECKOUT_COUNTRIES.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.name}
+                </option>
+              ))}
+            </Select>
+            <span className="text-xs font-normal leading-5 text-foreground-muted">
+              Determines how your fee payment is processed.
+            </span>
           </label>
         </div>
         <button

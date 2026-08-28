@@ -50,6 +50,10 @@ import type {
   WorkspaceMessageResponse,
 } from "@/lib/generated/types.gen";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
+import {
+  CHECKOUT_COUNTRIES,
+  defaultBillingCountry,
+} from "@/lib/marketplace/countries";
 import { formatMoney } from "@/lib/marketplace/format";
 import { useProjectRealtime } from "@/lib/projects/realtime";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
@@ -147,6 +151,9 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     clientSecret: string;
     transactionId: string;
   } | null>(null);
+  // Billing country drives the payment rail (Nigeria funds through Paystack
+  // hosted checkout), so it is shown and editable rather than inferred.
+  const [fundingCountry, setFundingCountry] = useState(defaultBillingCountry);
   // True while polling for the escrow webhook to fund a Milestone after the
   // Stripe redirect back to this page.
   const [confirmingFunding, setConfirmingFunding] = useState(false);
@@ -585,10 +592,29 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
   async function fundProjectMilestone(milestoneId: string) {
     setError(null);
     setFundingMilestoneId(milestoneId);
-    const result = await projectApi(mode).fundMilestone(projectId, milestoneId, {});
-    setFundingMilestoneId(null);
+    // Org funding is Stripe-only for now, so the billing country only rides
+    // along on the individual path where the backend routes rails by it.
+    const body = modeKind === "org" ? {} : { country: fundingCountry };
+    const result = await projectApi(mode).fundMilestone(projectId, milestoneId, body);
     if (!result.response.ok || !result.data) {
+      setFundingMilestoneId(null);
       setError(describeGeneratedError(result.error));
+      return;
+    }
+    if (result.data.provider === "paystack") {
+      if (!result.data.authorization_url) {
+        setFundingMilestoneId(null);
+        setError("Funding could not be started.");
+        return;
+      }
+      // Paystack owns the next screen. Stay in the preparing state through
+      // navigation so the button cannot be pressed twice into two charges.
+      window.location.assign(result.data.authorization_url);
+      return;
+    }
+    setFundingMilestoneId(null);
+    if (!result.data.client_secret) {
+      setError("Funding could not be started.");
       return;
     }
     // Open the Stripe payment panel with the returned PaymentIntent secret;
@@ -1142,6 +1168,32 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                         ) : null}
                       </>
                     )}
+                    {isProjectOwner &&
+                    modeKind !== "org" &&
+                    milestone.status === "pending" &&
+                    project?.milestone_plan_status === "finalized" &&
+                    fundingSession?.milestoneId !== milestone.id ? (
+                      <label className="mt-3 grid max-w-xs gap-2 text-sm font-semibold text-foreground">
+                        Billing country
+                        <select
+                          className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+                          disabled={fundingMilestoneId !== null}
+                          onChange={(event) =>
+                            setFundingCountry(event.target.value)
+                          }
+                          value={fundingCountry}
+                        >
+                          {CHECKOUT_COUNTRIES.map((option) => (
+                            <option key={option.code} value={option.code}>
+                              {option.name}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="text-xs font-normal leading-5 text-foreground-muted">
+                          Determines how your payment is processed.
+                        </span>
+                      </label>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
                       {isProjectOwner &&
                       milestone.status === "pending" &&

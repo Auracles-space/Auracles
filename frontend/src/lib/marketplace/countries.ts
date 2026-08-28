@@ -101,3 +101,18 @@ export const PAYOUT_COUNTRIES: readonly CountryOption[] = [
 
 /** Countries whose payout accounts settle on the Paystack rail. */
 export const PAYSTACK_PAYOUT_COUNTRIES: readonly string[] = ["NG"];
+
+/**
+ * Best initial guess at the payer's billing country, from the browser locale.
+ *
+ * Only a default — the payer can always change it, and the value is what picks
+ * the payment rail, so every surface renders it visibly rather than inferring
+ * it silently. Shared by checkout and the escrow funding surfaces.
+ */
+export function defaultBillingCountry(): string {
+  if (typeof navigator === "undefined") {
+    return "US";
+  }
+  const region = new Intl.Locale(navigator.language).maximize().region;
+  return CHECKOUT_COUNTRIES.some((c) => c.code === region) ? (region ?? "US") : "US";
+}

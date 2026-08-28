@@ -31,7 +31,7 @@ import type {
   ExploreFrameworkDetail,
   PurchaseRequest,
 } from "@/lib/generated/types.gen";
-import { CHECKOUT_COUNTRIES } from "@/lib/marketplace/countries";
+import { CHECKOUT_COUNTRIES, defaultBillingCountry } from "@/lib/marketplace/countries";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 import {
   type BuyerOption,
@@ -63,20 +63,7 @@ const licenseDescriptions: Record<PurchaseRequest["license_type"], string> = {
   team: "For a delivery team coordinating implementation together.",
 };
 
-/**
- * Best initial guess at the buyer's billing country, from the browser locale.
- *
- * Only a default — the buyer can always change it, and the value is what picks
- * the payment rail, so it must be visible and editable rather than inferred
- * silently.
- */
-const defaultCheckoutCountry = (() => {
-  if (typeof navigator === "undefined") {
-    return "US";
-  }
-  const region = new Intl.Locale(navigator.language).maximize().region;
-  return CHECKOUT_COUNTRIES.some((c) => c.code === region) ? (region ?? "US") : "US";
-})();
+const defaultCheckoutCountry = defaultBillingCountry();
 
 /**
  * Render an Operator checkout flow for one published Framework.

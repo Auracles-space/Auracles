@@ -199,6 +199,56 @@ describe("RequestorPanel framework request", () => {
     );
   });
 
+  it("redirects to Paystack hosted checkout when the request returns a URL", async () => {
+    // A Nigerian requestor pays on Paystack's own page: no in-page fee panel,
+    // the browser navigates to the hosted checkout with the fee attached, and
+    // the billing country the requestor picked rides along in the request.
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { assign: vi.fn(), origin: "http://localhost:3000" },
+    });
+    try {
+      vi.mocked(requestAttestation).mockResolvedValueOnce({
+        response: { ok: true },
+        data: {
+          id: "att-3",
+          transaction_id: "txn-3",
+          provider: "paystack",
+          client_secret: null,
+          authorization_url: "https://checkout.paystack.com/attestation_001",
+        },
+      } as never);
+
+      render(<RequestorPanel />);
+      await screen.findByText("Request Attestation");
+      await fillFrameworkRequest();
+      fireEvent.change(screen.getByLabelText(/billing country/i), {
+        target: { value: "NG" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: /Request attestation/i }),
+      );
+
+      await waitFor(() => {
+        expect(window.location.assign).toHaveBeenCalledWith(
+          "https://checkout.paystack.com/attestation_001",
+        );
+      });
+      expect(requestAttestation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({ country: "NG" }),
+        }),
+      );
+      expect(screen.queryByTestId("funding-panel")).toBeNull();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
   it("does not open the fee panel when the request awaits owner consent", async () => {
     vi.mocked(requestAttestation).mockResolvedValueOnce({
       response: { ok: true },

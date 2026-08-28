@@ -99,10 +99,11 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
     setLoading(false);
   }
 
-  /** Fetch the PaymentIntent secret to resume an unpaid fee, then show Stripe. */
+  /** Resume an unpaid fee on its rail: in-page Stripe, or Paystack redirect. */
   async function handleStartPayment() {
     setError(null);
     setActing(true);
+    let redirecting = false;
     try {
       configureBrowserClient();
       const result = await getAttestationFeePayment({
@@ -113,9 +114,23 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
         setError(describeGeneratedError(result.error));
         return;
       }
+      if (result.data.provider === "paystack") {
+        if (!result.data.authorization_url) {
+          setError("Payment could not be started.");
+          return;
+        }
+        // Paystack re-issues a hosted checkout; the browser navigates there.
+        redirecting = true;
+        window.location.assign(result.data.authorization_url);
+        return;
+      }
       setClientSecret(result.data.client_secret);
     } finally {
-      setActing(false);
+      // Stay in the acting state through a Paystack navigation so the button
+      // cannot be pressed twice into two charges.
+      if (!redirecting) {
+        setActing(false);
+      }
     }
   }
 
