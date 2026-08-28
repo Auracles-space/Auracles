@@ -147,8 +147,9 @@ async def _seed_contributor_org_financial_rows(
                 payee_org_id=org_id,
                 amount=Decimal("1000.00"),
                 currency="USD",
-                platform_commission=Decimal("0.00"),
-                net_amount=Decimal("1000.00"),
+                # Stamped at the 15% marketplace rate, as settlement writes it.
+                platform_commission=Decimal("150.00"),
+                net_amount=Decimal("850.00"),
                 transaction_type="purchase",
                 status="completed",
                 provider="stripe",

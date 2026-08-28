@@ -275,8 +275,11 @@ async def _org_attestation_report_submitted(
                 payee_org_id=None,
                 amount=fee,
                 currency="USD",
-                platform_commission=Decimal("0.00"),
-                net_amount=fee,
+                # Stamped at the 10% attestation rate, as settlement writes it.
+                platform_commission=(fee * Decimal("0.10")).quantize(
+                    Decimal("0.01")
+                ),
+                net_amount=fee - (fee * Decimal("0.10")).quantize(Decimal("0.01")),
                 transaction_type="attestation_fee",
                 status="completed",
                 provider="stripe",

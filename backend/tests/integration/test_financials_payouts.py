@@ -26,7 +26,13 @@ from app.core.security import (
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
+from app.modules.financials.models import (
+    Escrow,
+    Payout,
+    PayoutAccount,
+    PlatformConfig,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework, License
 from app.modules.projects.models import (
     Deliverable,
@@ -192,8 +198,10 @@ async def create_sale(
     amount: Decimal,
     created_at: datetime,
     status: str = "completed",
+    commission_rate: Decimal = Decimal("0.15"),
 ) -> UUID:
-    """Create a framework purchase transaction payable to the contributor."""
+    """Create a framework purchase stamped with its sale-time commission."""
+    commission = (amount * commission_rate).quantize(Decimal("0.01"))
     operator_id, _ = await create_user_with_roles(
         f"operator-{uuid4()}@auracles.space",
         ["operator"],
@@ -206,8 +214,8 @@ async def create_sale(
                 payee_id=contributor_id,
                 amount=amount,
                 currency="USD",
-                platform_commission=Decimal("0.00"),
-                net_amount=amount,
+                platform_commission=commission,
+                net_amount=amount - commission,
                 transaction_type="purchase",
                 status=status,
                 provider="stripe",
@@ -227,8 +235,10 @@ async def create_released_milestone_earning(
     amount: Decimal,
     created_at: datetime,
     escrow_status: str = "released",
+    commission_rate: Decimal = Decimal("0.15"),
 ) -> UUID:
-    """Create a Project Milestone transaction with its escrow release state."""
+    """Create a Milestone transaction stamped with its sale-time commission."""
+    commission = (amount * commission_rate).quantize(Decimal("0.01"))
     operator_id, _ = await create_user_with_roles(
         f"milestone-operator-{uuid4()}@auracles.space",
         ["operator"],
@@ -241,8 +251,8 @@ async def create_released_milestone_earning(
                 payee_id=contributor_id,
                 amount=amount,
                 currency="USD",
-                platform_commission=Decimal("0.00"),
-                net_amount=amount,
+                platform_commission=commission,
+                net_amount=amount - commission,
                 transaction_type="milestone",
                 status="completed",
                 provider="stripe",
@@ -278,8 +288,10 @@ async def create_released_attestation_fee_earning(
     amount: Decimal,
     created_at: datetime,
     escrow_status: str = "released",
+    commission_rate: Decimal = Decimal("0.10"),
 ) -> UUID:
-    """Create an Attestation fee transaction with its escrow release state."""
+    """Create an Attestation fee stamped with its sale-time commission."""
+    commission = (amount * commission_rate).quantize(Decimal("0.01"))
     operator_id, _ = await create_user_with_roles(
         f"attestation-operator-{uuid4()}@auracles.space",
         ["operator"],
@@ -292,8 +304,8 @@ async def create_released_attestation_fee_earning(
                 payee_id=contributor_id,
                 amount=amount,
                 currency="USD",
-                platform_commission=Decimal("0.00"),
-                net_amount=amount,
+                platform_commission=commission,
+                net_amount=amount - commission,
                 transaction_type="attestation_fee",
                 status="completed",
                 provider="stripe",
@@ -423,6 +435,61 @@ async def test_contributor_earnings_are_refund_window_and_payout_aware(
         "commission_rate": "0.15",
         "minimum_payout": "50.00",
     }
+
+
+async def test_rate_change_does_not_reprice_settled_sales(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """An admin commission-rate change must not touch already-settled earnings.
+
+    The rate is stamped onto each transaction at settlement (BR-FIN-001 with
+    a sale-time snapshot); balances read the stamped values, so raising the
+    configured rate afterwards leaves cleared earnings exactly as they were.
+    """
+    del migrated_database, payout_context
+    contributor_id, _ = await create_user_with_roles(
+        "snapshot-contributor@auracles.space",
+        ["contributor"],
+    )
+    await create_sale(
+        contributor_id,
+        amount=Decimal("100.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+    original_rate: str | None = None
+    async with async_session_factory() as session:
+        async with session.begin():
+            row = await session.get(PlatformConfig, "commission_rate")
+            if row is None:
+                session.add(PlatformConfig(key="commission_rate", value="0.30"))
+            else:
+                original_rate = row.value
+                row.value = "0.30"
+
+    try:
+        response = await client.get(
+            "/v1/financials/earnings",
+            headers=auth_headers(contributor_id, ["contributor"]),
+        )
+    finally:
+        # The config row outlives this suite's reset fixture; restore it so
+        # later settlement tests stamp at the expected rate.
+        async with async_session_factory() as session:
+            async with session.begin():
+                row = await session.get(PlatformConfig, "commission_rate")
+                if row is not None:
+                    if original_rate is None:
+                        await session.delete(row)
+                    else:
+                        row.value = original_rate
+
+    assert response.status_code == 200
+    body = response.json()
+    # Settled at 15%: the later 30% rate must not shrink this balance.
+    assert body["available_balance"] == "85.00"
+    assert body["commission_rate"] == "0.15"
 
 
 async def test_released_project_milestones_are_withdrawable_earnings(

@@ -18,6 +18,7 @@ from app.modules.collections.models import (
     CollectionEarningAllocation,
     CollectionPurchaseSnapshot,
 )
+from app.modules.financials import commission
 from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework, License
 
@@ -258,6 +259,10 @@ async def confirm_collection_purchase(
                 )
             )
 
+    if transaction.status != "completed":
+        # Lock the sale-time commission rate before completion; replays skip
+        # so a later rate change cannot restamp the record.
+        await commission.stamp_settling_transaction(db, transaction)
     transaction.status = "completed"
     await write_audit(
         db=db,

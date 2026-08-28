@@ -44,7 +44,7 @@ from app.modules.developer.models import (
     PartnerCommission,
     PartnerPurchaseAttribution,
 )
-from app.modules.financials import escrow_service
+from app.modules.financials import commission, escrow_service
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.financials.refunds import reverse_refund, settle_refund
@@ -477,6 +477,10 @@ async def _handle_purchase_succeeded(
                 "framework already licensed by a different transaction"
             )
 
+        if previous_status != "completed":
+            # Lock the sale-time commission rate before completion; replays
+            # skip so a later rate change cannot restamp the record.
+            await commission.stamp_settling_transaction(db, transaction)
         transaction.status = "completed"
         # The initiating org admin is already audited at purchase_initiated;
         # this completion event has no individual actor.
@@ -528,6 +532,10 @@ async def _handle_purchase_succeeded(
                 "framework already licensed by a different transaction"
             )
 
+        if previous_status != "completed":
+            # Lock the sale-time commission rate before completion; replays
+            # skip so a later rate change cannot restamp the record.
+            await commission.stamp_settling_transaction(db, transaction)
         transaction.status = "completed"
         await write_audit(
             db=db,

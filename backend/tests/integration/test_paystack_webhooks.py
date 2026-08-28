@@ -250,6 +250,37 @@ async def test_charge_success_completes_purchase_and_grants_license(
     assert licenses[0].license_type == "team"
 
 
+async def test_charge_success_stamps_the_commission_snapshot(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Settlement stamps the sale-time commission onto the transaction.
+
+    BR-FIN-001 deducts commission at payout, but the *rate* is locked at the
+    moment of sale: `platform_commission` and `net_amount` are written when
+    the charge settles, so a later admin rate change cannot reprice earnings
+    a Contributor has already made.
+    """
+    transaction_id, framework_id, _ = await create_pending_paystack_purchase()
+    paystack_context["event"] = charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+
+    assert response.status_code == 200
+    assert transaction is not None
+    assert transaction.status == "completed"
+    # 149.00 at the 15% marketplace rate.
+    assert transaction.platform_commission == Decimal("22.35")
+    assert transaction.net_amount == Decimal("126.65")
+
+
 async def test_charge_success_replay_is_a_duplicate(
     client: AsyncClient,
     paystack_context: dict[str, Any],
@@ -685,6 +716,74 @@ async def test_escrow_charge_success_funds_the_milestone(
     assert project is not None
     assert project.status == "in_progress"
     assert audit is not None
+
+
+async def test_escrow_charge_success_stamps_the_commission_snapshot(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Milestone escrow funding stamps the marketplace commission at hold."""
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    paystack_context["event"] = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+
+    await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+
+    assert transaction is not None
+    # 1500.00 at the 15% marketplace rate.
+    assert transaction.platform_commission == Decimal("225.00")
+    assert transaction.net_amount == Decimal("1275.00")
+
+
+async def test_attestation_fee_stamps_the_attestation_commission(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Attestation fee funding stamps the attestation rate, not marketplace."""
+    transaction_id, attestation_id, operator_id = (
+        await create_pending_paystack_attestation_fee()
+    )
+    paystack_context["event"] = {
+        "event": "charge.success",
+        "data": {
+            "id": 302990,
+            "reference": ATTESTATION_ESCROW_REFERENCE,
+            "amount": 30000,
+            "currency": "USD",
+            "status": "success",
+            "metadata": {
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "attestation_id": str(attestation_id),
+                "release_conditions": json.dumps(
+                    {
+                        "kind": "attestation",
+                        "attestation_id": str(attestation_id),
+                        "requestor_user_id": str(operator_id),
+                    }
+                ),
+            },
+        },
+    }
+
+    await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+
+    assert transaction is not None
+    # 300.00 at the 10% attestation rate.
+    assert transaction.platform_commission == Decimal("30.00")
+    assert transaction.net_amount == Decimal("270.00")
 
 
 async def test_escrow_charge_success_replay_holds_funds_once(

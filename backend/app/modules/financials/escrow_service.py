@@ -16,6 +16,7 @@ from app.core.audit import write_audit
 from app.integrations import paystack, stripe
 from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
+from app.modules.financials import commission
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Transaction
 
@@ -103,10 +104,16 @@ async def hold(
     )
     if existing is not None:
         _ensure_matching_escrow(existing, transaction)
+        if transaction.status != "completed":
+            await commission.stamp_settling_transaction(db, transaction)
         transaction.status = "completed"
         await db.flush()
         return existing
 
+    if transaction.status != "completed":
+        # Lock the sale-time commission rate as the funds go under hold;
+        # replays skip so a later rate change cannot restamp the record.
+        await commission.stamp_settling_transaction(db, transaction)
     transaction.status = "completed"
     escrow = Escrow(
         ref_id=transaction.ref_id,
@@ -457,6 +464,16 @@ async def split(
         },
     }
     transaction.status = "refunded"
+    # The release child inherits the funding transaction's stamped rate
+    # proportionally, so a split never reprices the sale-time commission.
+    release_commission = (
+        _normalise_money(
+            transaction.platform_commission
+            * (normalized_release / _normalise_money(transaction.amount))
+        )
+        if transaction.platform_commission > 0
+        else Decimal("0.00")
+    )
     db.add(
         Transaction(
             payer_id=transaction.payer_id,
@@ -465,8 +482,8 @@ async def split(
             payee_org_id=transaction.payee_org_id,
             amount=normalized_release,
             currency=transaction.currency.upper(),
-            platform_commission=Decimal("0.00"),
-            net_amount=normalized_release,
+            platform_commission=release_commission,
+            net_amount=_normalise_money(normalized_release - release_commission),
             transaction_type=transaction.transaction_type,
             status="completed",
             provider=transaction.provider,

@@ -31,6 +31,7 @@ from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.collections.models import CollectionEarningAllocation
 from app.modules.developer.models import PartnerCommission
+from app.modules.financials import commission
 from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import (
@@ -181,12 +182,12 @@ async def _platform_decimal_config(
 
 
 async def _commission_rate(db: AsyncSession) -> Decimal:
-    """Return the configured platform commission rate."""
-    return await _platform_decimal_config(
-        db,
-        key="commission_rate",
-        default=Decimal("0.15"),
-    )
+    """Return the configured platform commission rate.
+
+    Consulted only at settlement time (via `financials.commission`) and for
+    display defaults — settled earnings carry their own stamped rate.
+    """
+    return await commission.marketplace_commission_rate(db)
 
 
 async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
@@ -195,11 +196,7 @@ async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
     Attestation earnings settle at a lower platform commission than the
     framework marketplace (10% vs 15%); see Module 6a design §4.1.
     """
-    return await _platform_decimal_config(
-        db,
-        key="attestation_commission_rate",
-        default=Decimal("0.10"),
-    )
+    return await commission.attestation_commission_rate(db)
 
 
 # Fallback payout floors, used only if `min_payout_<ccy>` is missing from
@@ -231,13 +228,16 @@ async def _sum_transactions(
     earning_class: str,
     before: datetime | None = None,
     after_or_at: datetime | None = None,
+    net: bool = False,
 ) -> Decimal:
-    """Return gross completed earnings for one earning class.
+    """Return completed earnings for one earning class, gross or net.
 
     ``earning_class`` selects which transaction types count:
     ``_MARKETPLACE_EARNING_CLASS`` covers framework purchases and released
     project milestones; ``_ATTESTATION_EARNING_CLASS`` covers released
-    attestation fees.
+    attestation fees. ``net`` sums the sale-time-stamped ``net_amount``
+    instead of the gross ``amount``, so a later commission-rate change never
+    reprices settled earnings.
     """
     released_escrow_exists = exists(
         select(Escrow.id).where(
@@ -271,8 +271,9 @@ async def _sum_transactions(
         filters.append(Transaction.created_at < before)
     if after_or_at is not None:
         filters.append(Transaction.created_at >= after_or_at)
+    column = Transaction.net_amount if net else Transaction.amount
     value = await db.scalar(
-        select(func.coalesce(func.sum(Transaction.amount), 0)).where(*filters)
+        select(func.coalesce(func.sum(column), 0)).where(*filters)
     )
     return _normalise_money(Decimal(value or "0"))
 
@@ -318,14 +319,13 @@ async def _available_payout_balance(
     """Return gross, pending, available, claimed, and blended-commission balances.
 
     Marketplace earnings (framework purchases, released project milestones)
-    clear after the refund window at the marketplace commission rate.
-    Attestation earnings clear immediately on release at the attestation
-    commission rate. The returned commission rate is the effective blended
-    rate across all cleared earnings (Module 6a design §5, §6).
+    clear after the refund window; attestation earnings clear immediately on
+    release. Net values sum each sale's stamped `net_amount`, so the rate in
+    force when a sale settled — not today's configured rate — is what the
+    Contributor withdraws at. The returned commission rate is the effective
+    blended rate across all cleared earnings (Module 6a design §5, §6).
     """
     refund_window_hours = await _refund_window_hours(db)
-    marketplace_rate = await _commission_rate(db)
-    attestation_rate = await _attestation_commission_rate(db)
     cutoff = datetime.now(UTC) - timedelta(hours=refund_window_hours)
     marketplace_gross = await _sum_transactions(
         db,
@@ -347,22 +347,31 @@ async def _available_payout_balance(
         earning_class=_MARKETPLACE_EARNING_CLASS,
         before=cutoff,
     )
+    marketplace_cleared_net = await _sum_transactions(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
+        before=cutoff,
+        net=True,
+    )
     attestation_gross = await _sum_transactions(
         db,
         contributor_id=contributor_id,
         currency=currency,
         earning_class=_ATTESTATION_EARNING_CLASS,
     )
+    attestation_cleared_net = await _sum_transactions(
+        db,
+        contributor_id=contributor_id,
+        currency=currency,
+        earning_class=_ATTESTATION_EARNING_CLASS,
+        net=True,
+    )
     claimed = await _claimed_payouts(
         db,
         contributor_id=contributor_id,
         currency=currency,
-    )
-    marketplace_cleared_net = _normalise_money(
-        marketplace_cleared_gross * (Decimal("1") - marketplace_rate)
-    )
-    attestation_cleared_net = _normalise_money(
-        attestation_gross * (Decimal("1") - attestation_rate)
     )
     total_cleared_gross = marketplace_cleared_gross + attestation_gross
     total_cleared_net = marketplace_cleared_net + attestation_cleared_net
@@ -2095,8 +2104,9 @@ async def _sum_org_transactions(
     earning_class: str,
     before: datetime | None = None,
     after_or_at: datetime | None = None,
+    net: bool = False,
 ) -> Decimal:
-    """Return gross completed org earnings for one earning class."""
+    """Return completed org earnings for one earning class, gross or net."""
     released_escrow_exists = exists(
         select(Escrow.id).where(
             Escrow.ref_id == Transaction.ref_id,
@@ -2129,8 +2139,9 @@ async def _sum_org_transactions(
         filters.append(Transaction.created_at < before)
     if after_or_at is not None:
         filters.append(Transaction.created_at >= after_or_at)
+    column = Transaction.net_amount if net else Transaction.amount
     value = await db.scalar(
-        select(func.coalesce(func.sum(Transaction.amount), 0)).where(*filters)
+        select(func.coalesce(func.sum(column), 0)).where(*filters)
     )
     return _normalise_money(Decimal(value or "0"))
 
@@ -2158,10 +2169,13 @@ async def _available_org_payout_balance(
     org_id: UUID,
     currency: str,
 ) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
-    """Return gross, pending, available, claimed, and commission for an org."""
+    """Return gross, pending, available, claimed, and commission for an org.
+
+    Net values sum each sale's stamped `net_amount`, mirroring the individual
+    balance: the rate in force when a sale settled is what the org withdraws
+    at, and a later configured-rate change reprices nothing.
+    """
     refund_window_hours = await _refund_window_hours(db)
-    marketplace_rate = await _commission_rate(db)
-    attestation_rate = await _attestation_commission_rate(db)
     cutoff = datetime.now(UTC) - timedelta(hours=refund_window_hours)
     marketplace_gross = await _sum_org_transactions(
         db,
@@ -2189,13 +2203,22 @@ async def _available_org_payout_balance(
         currency=currency,
         earning_class=_ATTESTATION_EARNING_CLASS,
     )
+    marketplace_cleared_net = await _sum_org_transactions(
+        db,
+        org_id=org_id,
+        currency=currency,
+        earning_class=_MARKETPLACE_EARNING_CLASS,
+        before=cutoff,
+        net=True,
+    )
+    attestation_cleared_net = await _sum_org_transactions(
+        db,
+        org_id=org_id,
+        currency=currency,
+        earning_class=_ATTESTATION_EARNING_CLASS,
+        net=True,
+    )
     claimed = await _claimed_org_payouts(db, org_id=org_id, currency=currency)
-    marketplace_cleared_net = _normalise_money(
-        marketplace_cleared_gross * (Decimal("1") - marketplace_rate)
-    )
-    attestation_cleared_net = _normalise_money(
-        attestation_gross * (Decimal("1") - attestation_rate)
-    )
     total_cleared_gross = marketplace_cleared_gross + attestation_gross
     total_cleared_net = marketplace_cleared_net + attestation_cleared_net
     available = max(_normalise_money(total_cleared_net - claimed), Decimal("0.00"))
