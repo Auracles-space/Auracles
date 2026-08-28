@@ -33,6 +33,7 @@ from app.modules.projects.schemas import (
     DisputesResponse,
     FrameworkPrefillResponse,
     MilestoneCreateRequest,
+    MilestoneFundingRequest,
     MilestoneFundingResponse,
     MilestoneResponse,
     MilestonesResponse,
@@ -741,13 +742,19 @@ async def fund_milestone(
     milestone_id: UUID,
     operator: OperatorUser,
     db: DatabaseSession,
+    payload: MilestoneFundingRequest | None = None,
 ) -> MilestoneFundingResponse:
-    """Start Stripe escrow funding for a finalized Project Milestone."""
+    """Start escrow funding for a finalized Project Milestone.
+
+    The optional billing country selects the payment rail: Nigeria routes to
+    Paystack hosted checkout, anything else stays on Stripe.
+    """
     return await milestone_service.fund_milestone(
         db=db,
         operator=operator,
         project_id=project_id,
         milestone_id=milestone_id,
+        country=payload.country if payload else None,
     )
 
 

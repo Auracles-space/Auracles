@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.currency import platform_currency
-from app.integrations import s3, stripe
+from app.integrations import paystack, s3, stripe
+from app.integrations.payment_router import select_provider
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
@@ -483,11 +485,17 @@ async def _create_pending_milestone_transaction(
     *,
     db: AsyncSession,
     operator_id: UUID,
-    customer_id: str,
+    customer_id: str | None,
     project_id: UUID,
     milestone_id: UUID,
-) -> tuple[UUID, UUID | None, Decimal, str]:
-    """Create the pending local transaction for a Milestone funding intent."""
+    provider: str = "stripe",
+) -> tuple[UUID, UUID | None, Decimal, str, str]:
+    """Create the pending local transaction for a Milestone funding attempt.
+
+    On resume of an abandoned attempt the stored transaction's provider wins
+    over the requested one: switching rails mid-funding would strand a
+    provider-side charge the webhook could still settle.
+    """
     if db.in_transaction():
         await db.rollback()
 
@@ -513,18 +521,23 @@ async def _create_pending_milestone_transaction(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Milestone is already funded.",
                 )
-            # A pending PaymentIntent from an abandoned attempt is resumable:
-            # reusing its id keeps the Stripe idempotency key stable, so the
-            # caller gets back the same intent and client secret to complete.
+            # A pending attempt is resumable: reusing its id keeps the Stripe
+            # idempotency key stable (same intent and client secret back), and
+            # on Paystack lets a fresh reference replace the abandoned one.
             return (
                 existing.id,
                 proposal.contributor_id,
                 _normalise_money(milestone.budget),
                 milestone.currency,
+                existing.provider or "stripe",
             )
 
         operator = await db.get(User, operator_id, with_for_update=True)
-        if operator is not None and operator.stripe_customer_id is None:
+        if (
+            operator is not None
+            and customer_id is not None
+            and operator.stripe_customer_id is None
+        ):
             operator.stripe_customer_id = customer_id
 
         amount = _normalise_money(milestone.budget)
@@ -537,7 +550,7 @@ async def _create_pending_milestone_transaction(
             net_amount=amount,
             transaction_type="milestone",
             status="pending",
-            provider="stripe",
+            provider=provider,
             ref_id=milestone.id,
             ref_type="project_milestone",
         )
@@ -554,7 +567,13 @@ async def _create_pending_milestone_transaction(
                 "milestone_id": str(milestone.id),
             },
         )
-        return transaction.id, proposal.contributor_id, amount, milestone.currency
+        return (
+            transaction.id,
+            proposal.contributor_id,
+            amount,
+            milestone.currency,
+            provider,
+        )
 
 
 async def _create_pending_org_milestone_transaction(
@@ -651,8 +670,9 @@ async def _mark_milestone_funding_provider_ref(
     provider_ref: str,
     project_id: UUID,
     milestone_id: UUID,
+    provider: str = "stripe",
 ) -> None:
-    """Persist the Stripe PaymentIntent reference for a funding transaction."""
+    """Persist the provider charge reference for a funding transaction."""
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -672,7 +692,7 @@ async def _mark_milestone_funding_provider_ref(
             metadata={
                 "project_id": str(project_id),
                 "milestone_id": str(milestone_id),
-                "provider": "stripe",
+                "provider": provider,
                 "provider_ref": provider_ref[-4:],
             },
         )
@@ -685,6 +705,7 @@ async def _mark_milestone_funding_failed(
     transaction_id: UUID,
     project_id: UUID,
     milestone_id: UUID,
+    provider: str = "stripe",
 ) -> None:
     """Mark a local Milestone funding transaction failed after provider failure."""
     if db.in_transaction():
@@ -706,9 +727,95 @@ async def _mark_milestone_funding_failed(
             metadata={
                 "project_id": str(project_id),
                 "milestone_id": str(milestone_id),
-                "provider": "stripe",
+                "provider": provider,
             },
         )
+
+
+async def _start_paystack_milestone_funding(
+    *,
+    db: AsyncSession,
+    operator_id: UUID,
+    operator_email: str,
+    transaction_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+    amount: Decimal,
+    currency: str,
+) -> MilestoneFundingResponse:
+    """Initialize Paystack hosted checkout for a pending Milestone funding.
+
+    Paystack has no PaymentIntent equivalent: the charge is initialized with
+    escrow metadata the webhook needs to hold funds, and the browser is sent
+    to Paystack's own page. Mirrors `_start_paystack_purchase` in financials.
+
+    Raises:
+        HTTPException(502): Paystack could not initialize the charge. The
+            pending transaction is marked failed first so it never strands.
+    """
+    release_conditions = {
+        "kind": "project_milestone",
+        "milestone_id": str(milestone_id),
+        "project_id": str(project_id),
+        "approver_user_id": str(operator_id),
+    }
+    try:
+        initialized = await paystack.initialize_transaction(
+            email=operator_email,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "escrow",
+                "project_id": str(project_id),
+                "milestone_id": str(milestone_id),
+                "release_conditions": json.dumps(release_conditions),
+            },
+        )
+    except PaystackProviderError as exc:
+        await _mark_milestone_funding_failed(
+            db=db,
+            operator_id=operator_id,
+            transaction_id=transaction_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            provider="paystack",
+        )
+        logger.bind(
+            module="projects",
+            action="fund_milestone",
+            user_id=operator_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            transaction_id=transaction_id,
+        ).error("paystack_initialize_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_milestone_funding_provider_ref(
+        db=db,
+        operator_id=operator_id,
+        transaction_id=transaction_id,
+        provider_ref=initialized.reference,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        provider="paystack",
+    )
+    logger.bind(
+        module="projects",
+        action="fund_milestone",
+        user_id=operator_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        transaction_id=transaction_id,
+    ).info("milestone_funding_initiated")
+    return MilestoneFundingResponse(
+        transaction_id=transaction_id,
+        provider="paystack",
+        authorization_url=initialized.authorization_url,
+    )
 
 
 async def _ensure_within_proposal_budget(
@@ -1110,14 +1217,55 @@ async def reopen_milestone_plan(
     return project
 
 
+async def _create_stripe_funding_customer(
+    *,
+    operator_id: UUID,
+    operator_email: str,
+    operator_display_name: str | None,
+    project_id: UUID,
+    milestone_id: UUID,
+) -> str:
+    """Create the Stripe Customer a Milestone funding intent is billed to.
+
+    Raises:
+        HTTPException(502): Stripe could not create the customer.
+    """
+    try:
+        customer = await stripe.create_customer(
+            email=operator_email,
+            name=operator_display_name,
+            idempotency_key=f"stripe_customer:{operator_id}",
+        )
+    except StripeProviderError as exc:
+        logger.bind(
+            module="projects",
+            action="fund_milestone",
+            user_id=operator_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+        ).error("stripe_customer_create_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+    return customer.id
+
+
 async def fund_milestone(
     *,
     db: AsyncSession,
     operator: User,
     project_id: UUID,
     milestone_id: UUID,
+    country: str | None = None,
 ) -> MilestoneFundingResponse:
-    """Create a pending Stripe PaymentIntent to fund a finalized Milestone."""
+    """Start escrow funding for a finalized Milestone on the payer's rail.
+
+    The optional billing country picks the payment rail exactly as self-serve
+    checkout does: Nigeria routes to Paystack hosted checkout, everything else
+    (and an omitted country) stays on Stripe PaymentIntents. Enforces
+    FR-FIN-005 on both corridors.
+    """
     operator_id = operator.id
     operator_email = operator.email
     operator_display_name = operator.display_name
@@ -1141,34 +1289,49 @@ async def fund_milestone(
             detail=f"Only {platform_currency()} Milestone funding is supported.",
         )
 
-    try:
-        if customer_id is None:
-            customer = await stripe.create_customer(
-                email=operator_email,
-                name=operator_display_name,
-                idempotency_key=f"stripe_customer:{operator_id}",
-            )
-            customer_id = customer.id
-    except StripeProviderError as exc:
-        logger.bind(
-            module="projects",
-            action="fund_milestone",
-            user_id=operator_id,
+    requested_provider = select_provider(user_country=country, currency=currency)
+    if requested_provider == "stripe" and customer_id is None:
+        customer_id = await _create_stripe_funding_customer(
+            operator_id=operator_id,
+            operator_email=operator_email,
+            operator_display_name=operator_display_name,
             project_id=project_id,
             milestone_id=milestone_id,
-        ).error("stripe_customer_create_failed", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Payment provider is unavailable.",
-        ) from exc
+        )
 
-    transaction_id, _, amount, currency = await _create_pending_milestone_transaction(
-        db=db,
-        operator_id=operator_id,
-        customer_id=customer_id,
-        project_id=project_id,
-        milestone_id=milestone_id,
+    transaction_id, _, amount, currency, provider = (
+        await _create_pending_milestone_transaction(
+            db=db,
+            operator_id=operator_id,
+            customer_id=customer_id if requested_provider == "stripe" else None,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            provider=requested_provider,
+        )
     )
+
+    if provider == "paystack":
+        return await _start_paystack_milestone_funding(
+            db=db,
+            operator_id=operator_id,
+            operator_email=operator_email,
+            transaction_id=transaction_id,
+            project_id=project_id,
+            milestone_id=milestone_id,
+            amount=amount,
+            currency=currency,
+        )
+
+    # A Stripe-initiated attempt resumed under a Paystack-routed request lands
+    # here with no customer created yet; the stored rail wins, so make one now.
+    if customer_id is None:
+        customer_id = await _create_stripe_funding_customer(
+            operator_id=operator_id,
+            operator_email=operator_email,
+            operator_display_name=operator_display_name,
+            project_id=project_id,
+            milestone_id=milestone_id,
+        )
     release_conditions = {
         "kind": "project_milestone",
         "milestone_id": str(milestone_id),

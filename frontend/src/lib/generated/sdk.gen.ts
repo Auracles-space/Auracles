@@ -4071,7 +4071,10 @@ export const requestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdD
 
 /**
  * Fund Milestone
- * Start Stripe escrow funding for a finalized Project Milestone.
+ * Start escrow funding for a finalized Project Milestone.
+ *
+ * The optional billing country selects the payment rail: Nigeria routes to
+ * Paystack hosted checkout, anything else stays on Stripe.
  */
 export const fundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostResponse, FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostError, ThrowOnError>({

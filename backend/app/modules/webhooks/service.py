@@ -580,6 +580,8 @@ async def _handle_purchase_failed(
 async def _handle_escrow_failed(
     db: AsyncSession,
     event: dict[str, Any],
+    *,
+    provider: str = "stripe",
 ) -> None:
     """Mark an escrow funding transaction failed after provider failure/cancel."""
     transaction_id = _purchase_transaction_id(event)
@@ -588,10 +590,10 @@ async def _handle_escrow_failed(
     transaction = await db.get(Transaction, transaction_id)
     if transaction is None:
         raise WebhookProcessingError("escrow transaction not found")
-    if transaction.provider != "stripe":
+    if transaction.provider != provider:
         raise WebhookProcessingError("escrow transaction provider mismatch")
     if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
-        raise WebhookProcessingError("payment intent id mismatch")
+        raise WebhookProcessingError("provider reference mismatch")
 
     if transaction.ref_type == "attestation":
         await _mark_attestation_fee_failed(
@@ -599,6 +601,7 @@ async def _handle_escrow_failed(
             transaction=transaction,
             reason=event_type,
             failure_object=_event_object(event),
+            provider=provider,
         )
         return
 
@@ -610,7 +613,7 @@ async def _handle_escrow_failed(
         action="escrow_funding_failed",
         target_type="transaction",
         target_id=transaction.id,
-        metadata={"provider": "stripe", "reason": event_type},
+        metadata={"provider": provider, "reason": event_type},
     )
     await _record_transaction_transition(
         db,
@@ -627,13 +630,14 @@ async def _mark_attestation_fee_failed(
     transaction: Transaction,
     reason: str,
     failure_object: dict[str, Any] | None = None,
+    provider: str = "stripe",
 ) -> None:
     """Cancel an Attestation when fee escrow funding fails before hold.
 
     Args:
         db: Session inside the webhook's transaction.
         transaction: The attestation-fee transaction being failed.
-        reason: Stripe event type that triggered the failure.
+        reason: Provider event type that triggered the failure.
         failure_object: Stripe `data.object`, whose error fields are normalized
             into the ledger's provider-neutral reason.
     """
@@ -661,7 +665,7 @@ async def _mark_attestation_fee_failed(
         target_type="attestation",
         target_id=attestation.id,
         metadata={
-            "provider": "stripe",
+            "provider": provider,
             "reason": reason,
             "transaction_id": str(transaction.id),
         },
@@ -678,17 +682,25 @@ async def _mark_attestation_fee_failed(
 async def _handle_escrow_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
+    *,
+    provider: str = "stripe",
 ) -> list[Callable[[], None]]:
-    """Mark an escrow funding transaction complete and hold its funds."""
+    """Mark an escrow funding transaction complete and hold its funds.
+
+    Provider-shared: Stripe calls in with a PaymentIntent envelope, Paystack
+    with a normalized charge envelope whose object id is the charge reference.
+    The provider check keeps one rail's event from settling the other rail's
+    transaction.
+    """
     transaction_id = _purchase_transaction_id(event)
     payment_intent_id = _event_object_id(event)
     transaction = await db.get(Transaction, transaction_id)
     if transaction is None:
         raise WebhookProcessingError("escrow transaction not found")
-    if transaction.provider != "stripe":
+    if transaction.provider != provider:
         raise WebhookProcessingError("escrow transaction provider mismatch")
     if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
-        raise WebhookProcessingError("payment intent id mismatch")
+        raise WebhookProcessingError("provider reference mismatch")
     escrow = await escrow_service.hold(
         db,
         transaction_id=transaction_id,
@@ -1559,6 +1571,23 @@ async def _dispatch_paystack_event(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
         return "processed", invoice_transaction_id, []
+    if event_type == "charge.success" and metadata.get("kind") == "escrow":
+        after_commit_notifications = await _handle_escrow_succeeded(
+            db, envelope, provider="paystack"
+        )
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", None, after_commit_notifications
+    if (
+        event_type in {"charge.failed", "charge.abandoned"}
+        and metadata.get("kind") == "escrow"
+    ):
+        await _handle_escrow_failed(db, envelope, provider="paystack")
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", None, []
     if event_type in {"charge.failed", "charge.abandoned"}:
         await _handle_purchase_failed(
             db, envelope, provider="paystack", reason=event_type

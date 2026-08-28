@@ -215,12 +215,31 @@ class MilestonesResponse(BaseModel):
     milestones: list[MilestoneResponse]
 
 
+class MilestoneFundingRequest(BaseModel):
+    """Optional request body for starting Milestone escrow funding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    country: str | None = Field(default=None, min_length=2, max_length=2)
+    """ISO 3166-1 alpha-2 country of the payer, used to pick the payment rail.
+
+    Optional: an omitted value routes to the default (Stripe) rail — the same
+    shape self-serve checkout's `PurchaseRequest.country` uses.
+    """
+
+
 class MilestoneFundingResponse(BaseModel):
-    """Stripe PaymentIntent data needed to fund a Project Milestone."""
+    """Provider handle needed to complete funding a Project Milestone.
+
+    Exactly one of the provider fields is set: Stripe funding returns a
+    `client_secret` for the in-page PaymentElement, Paystack funding returns
+    an `authorization_url` to redirect the browser to.
+    """
 
     transaction_id: UUID
-    provider: Literal["stripe"]
-    client_secret: str
+    provider: Literal["stripe", "paystack"]
+    client_secret: str | None = None
+    authorization_url: str | None = None
 
 
 class DeliverableSubmitRequest(BaseModel):

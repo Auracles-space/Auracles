@@ -8486,14 +8486,43 @@ components:
       - budget
       title: MilestoneCreateRequest
       type: object
-    MilestoneFundingResponse:
-      description: Stripe PaymentIntent data needed to fund a Project Milestone.
+    MilestoneFundingRequest:
+      additionalProperties: false
+      description: Optional request body for starting Milestone escrow funding.
       properties:
+        country:
+          anyOf:
+          - maxLength: 2
+            minLength: 2
+            type: string
+          - type: 'null'
+          title: Country
+      title: MilestoneFundingRequest
+      type: object
+    MilestoneFundingResponse:
+      description: 'Provider handle needed to complete funding a Project Milestone.
+
+
+        Exactly one of the provider fields is set: Stripe funding returns a
+
+        `client_secret` for the in-page PaymentElement, Paystack funding returns
+
+        an `authorization_url` to redirect the browser to.'
+      properties:
+        authorization_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization Url
         client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Client Secret
-          type: string
         provider:
-          const: stripe
+          enum:
+          - stripe
+          - paystack
           title: Provider
           type: string
         transaction_id:
@@ -8503,7 +8532,6 @@ components:
       required:
       - transaction_id
       - provider
-      - client_secret
       title: MilestoneFundingResponse
       type: object
     MilestoneResponse:
@@ -27048,7 +27076,12 @@ paths:
       - Projects
   /v1/projects/{project_id}/milestones/{milestone_id}/fund:
     post:
-      description: Start Stripe escrow funding for a finalized Project Milestone.
+      description: 'Start escrow funding for a finalized Project Milestone.
+
+
+        The optional billing country selects the payment rail: Nigeria routes to
+
+        Paystack hosted checkout, anything else stays on Stripe.'
       operationId: fund_milestone_v1_projects__project_id__milestones__milestone_id__fund_post
       parameters:
       - in: path
@@ -27065,6 +27098,14 @@ paths:
           format: uuid
           title: Milestone Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/MilestoneFundingRequest'
+              - type: 'null'
+              title: Payload
       responses:
         '200':
           content:

@@ -2868,11 +2868,23 @@ export type MilestoneCreateRequest = {
 };
 
 /**
- * Stripe PaymentIntent data needed to fund a Project Milestone.
+ * Optional request body for starting Milestone escrow funding.
+ */
+export type MilestoneFundingRequest = {
+    country?: (string | null);
+};
+
+/**
+ * Provider handle needed to complete funding a Project Milestone.
+ *
+ * Exactly one of the provider fields is set: Stripe funding returns a
+ * `client_secret` for the in-page PaymentElement, Paystack funding returns
+ * an `authorization_url` to redirect the browser to.
  */
 export type MilestoneFundingResponse = {
-    client_secret: string;
-    provider: "stripe";
+    authorization_url?: (string | null);
+    client_secret?: (string | null);
+    provider: 'stripe' | 'paystack';
     transaction_id: string;
 };
 
@@ -8735,6 +8747,7 @@ export type RequestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDe
 export type RequestDeliverableRevisionV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdRequestRevisionPostError = (HTTPValidationError);
 
 export type FundMilestoneV1ProjectsProjectIdMilestonesMilestoneIdFundPostData = {
+    body?: (MilestoneFundingRequest | null);
     path: {
         milestone_id: string;
         project_id: string;

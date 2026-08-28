@@ -11,6 +11,7 @@ Maps to: FR-FIN-* (Nigerian corridor checkout).
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -35,12 +36,14 @@ from app.modules.developer.models import (
     PartnerCommission,
 )
 from app.modules.financials.models import (
+    Escrow,
     FinancialEvent,
     Payout,
     PayoutAccount,
     Transaction,
 )
 from app.modules.frameworks.models import Framework, License
+from app.modules.projects.models import Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
@@ -416,6 +419,260 @@ async def test_reference_mismatch_is_refused(
     assert response.status_code == 500
     assert transaction is not None
     assert transaction.status == "pending"
+
+
+ESCROW_REFERENCE = "auracles_escrow_ref_001"
+
+
+async def create_pending_paystack_milestone_escrow() -> tuple[UUID, UUID, UUID, UUID]:
+    """Create a finalized Milestone with a pending Paystack funding transaction."""
+    operator_id = await create_user_with_roles(
+        "paystack-escrow-operator@auracles.space",
+        ["operator"],
+    )
+    contributor_id = await create_user_with_roles(
+        "paystack-escrow-contributor@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            project = Project(
+                operator_id=operator_id,
+                title="Paystack Funded Project",
+                description="Project used by Paystack escrow webhook tests.",
+                category="operations",
+                required_deliverables=[
+                    {"name": "Playbook", "description": "Implementation playbook"}
+                ],
+                budget_min=Decimal("1500.00"),
+                budget_max=Decimal("1500.00"),
+                currency="USD",
+                status="assigned",
+                milestone_plan_status="finalized",
+                expires_at=datetime.now(UTC),
+            )
+            session.add(project)
+            await session.flush()
+            proposal = Proposal(
+                project_id=project.id,
+                contributor_id=contributor_id,
+                scope="I will deliver the project implementation.",
+                budget=Decimal("1500.00"),
+                currency="USD",
+                timeline_days=21,
+                deliverables=[{"name": "Playbook", "description": "Playbook"}],
+                status="accepted",
+                accepted_at=datetime.now(UTC),
+            )
+            session.add(proposal)
+            await session.flush()
+            project.accepted_proposal_id = proposal.id
+            milestone = Milestone(
+                project_id=project.id,
+                sequence=1,
+                name="Implementation",
+                description="Build the project deliverable.",
+                budget=Decimal("1500.00"),
+                currency="USD",
+                status="pending",
+            )
+            session.add(milestone)
+            await session.flush()
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("1500.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("1500.00"),
+                transaction_type="milestone",
+                status="pending",
+                provider="paystack",
+                provider_ref=ESCROW_REFERENCE,
+                ref_id=milestone.id,
+                ref_type="project_milestone",
+            )
+            session.add(transaction)
+            await session.flush()
+            return transaction.id, project.id, milestone.id, operator_id
+
+
+def escrow_charge_event(
+    event_name: str,
+    *,
+    transaction_id: UUID,
+    project_id: UUID,
+    milestone_id: UUID,
+    reference: str = ESCROW_REFERENCE,
+    gateway_response: str | None = None,
+) -> dict[str, Any]:
+    """Build a Paystack charge event carrying escrow funding metadata."""
+    data: dict[str, Any] = {
+        "id": 302977,
+        "reference": reference,
+        "amount": 150000,
+        "currency": "USD",
+        "status": "success" if event_name == "charge.success" else "failed",
+        "metadata": {
+            "transaction_id": str(transaction_id),
+            "kind": "escrow",
+            "project_id": str(project_id),
+            "milestone_id": str(milestone_id),
+            "release_conditions": json.dumps(
+                {
+                    "kind": "project_milestone",
+                    "milestone_id": str(milestone_id),
+                    "project_id": str(project_id),
+                }
+            ),
+        },
+    }
+    if gateway_response is not None:
+        data["gateway_response"] = gateway_response
+    return {"event": event_name, "data": data}
+
+
+async def test_escrow_charge_success_funds_the_milestone(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A verified escrow charge.success holds funds and marks the Milestone funded.
+
+    Mirrors the Stripe escrow path on the Nigerian corridor: the transaction
+    completes, an Escrow row is held against the Milestone, and the parent
+    Project moves into progress. Enforces FR-FIN-005 on the Paystack rail.
+    """
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    paystack_context["event"] = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.scalar(select(Escrow))
+        milestone = await session.get(Milestone, milestone_id)
+        project = await session.get(Project, project_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "escrow_funded")
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True, "status": "processed"}
+    assert transaction is not None
+    assert transaction.status == "completed"
+    assert escrow is not None
+    assert escrow.status == "held"
+    assert escrow.amount == Decimal("1500.00")
+    assert escrow.ref_id == milestone_id
+    assert escrow.ref_type == "project_milestone"
+    assert escrow.transaction_id == transaction_id
+    assert milestone is not None
+    assert milestone.status == "funded"
+    assert milestone.escrow_id == escrow.id
+    assert project is not None
+    assert project.status == "in_progress"
+    assert audit is not None
+
+
+async def test_escrow_charge_success_replay_holds_funds_once(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Redelivered escrow charge.success must not hold a second Escrow."""
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    paystack_context["event"] = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+
+    first = await post_webhook(client)
+    replay = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        escrows = (await session.execute(select(Escrow))).scalars().all()
+
+    assert first.json() == {"received": True, "status": "processed"}
+    assert replay.json() == {"received": True, "status": "duplicate"}
+    assert len(escrows) == 1
+
+
+async def test_escrow_charge_failed_marks_funding_failed(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A failed escrow charge fails the transaction; the Milestone stays fundable."""
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    paystack_context["event"] = escrow_charge_event(
+        "charge.failed",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+        gateway_response="Insufficient Funds",
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.scalar(select(Escrow))
+        milestone = await session.get(Milestone, milestone_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "escrow_funding_failed")
+        )
+
+    assert response.status_code == 200
+    assert transaction is not None
+    assert transaction.status == "failed"
+    assert escrow is None
+    assert milestone is not None
+    assert milestone.status == "pending"
+    assert audit is not None
+
+
+async def test_escrow_charge_for_a_stripe_transaction_is_refused(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A Paystack escrow event must never settle a Stripe-funded transaction."""
+    transaction_id, project_id, milestone_id, _ = (
+        await create_pending_paystack_milestone_escrow()
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            transaction = await session.get(Transaction, transaction_id)
+            assert transaction is not None
+            transaction.provider = "stripe"
+            transaction.provider_ref = "pi_cross_rail_123"
+    paystack_context["event"] = escrow_charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        project_id=project_id,
+        milestone_id=milestone_id,
+    )
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        stored = await session.get(Transaction, transaction_id)
+        escrow = await session.scalar(select(Escrow))
+
+    assert response.status_code == 500
+    assert stored is not None
+    assert stored.status == "pending"
+    assert escrow is None
 
 
 async def test_unknown_event_type_is_stored_without_dispatch(

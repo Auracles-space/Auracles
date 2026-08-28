@@ -18,6 +18,7 @@ from sqlalchemy import create_engine, delete, func, select
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
+from app.integrations.paystack import PaystackInitializedTransaction
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import escrow_service
@@ -2272,6 +2273,223 @@ async def test_operator_funds_finalized_pending_milestone_with_stripe_intent(
     assert payment_intent["metadata"]["transaction_id"] == str(transaction.id)
     assert payment_intent["metadata"]["project_id"] == project_id
     assert payment_intent["metadata"]["milestone_id"] == milestone_id
+
+
+async def test_nigerian_operator_funds_milestone_on_paystack(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A payer in Nigeria funds a Milestone through Paystack hosted checkout.
+
+    Paystack has no PaymentIntent equivalent: the response carries a redirect
+    `authorization_url` and no client secret, and no Stripe customer is created
+    as a side effect. Enforces the Nigerian-corridor escrow rail (FR-FIN-005).
+    """
+    calls: dict[str, list[Any]] = {"customers": [], "paystack_transactions": []}
+
+    async def fail_create_customer(**kwargs: Any) -> FakeStripeCustomer:
+        """Fail the test if the Paystack rail touches Stripe."""
+        calls["customers"].append(kwargs)
+        raise AssertionError("Stripe customer must not be created on Paystack rail")
+
+    async def fake_initialize_transaction(
+        *,
+        email: str,
+        amount: Decimal,
+        currency: str,
+        metadata: Mapping[str, str],
+        callback_url: str | None = None,
+    ) -> PaystackInitializedTransaction:
+        """Record the Paystack charge initialization for milestone funding."""
+        calls["paystack_transactions"].append(
+            {
+                "email": email,
+                "amount": amount,
+                "currency": currency,
+                "metadata": dict(metadata),
+                "callback_url": callback_url,
+            }
+        )
+        return PaystackInitializedTransaction(
+            reference="auracles_milestone_ref_001",
+            authorization_url="https://checkout.paystack.com/milestone_001",
+            access_code="access_milestone_001",
+        )
+
+    monkeypatch.setattr(
+        milestone_service.stripe,
+        "create_customer",
+        fail_create_customer,
+    )
+    monkeypatch.setattr(
+        milestone_service.paystack,
+        "initialize_transaction",
+        fake_initialize_transaction,
+    )
+
+    operator_id = await create_user("ngn-fund-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "ngn-fund-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    milestone = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Implementation",
+            "description": "Build the approved procurement model.",
+            "budget": "1500.00",
+            "currency": "USD",
+        },
+    )
+    milestone_id = milestone.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+
+    funded = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/fund",
+        headers=operator_headers,
+        json={"country": "NG"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+        operator = await session.get(User, operator_id)
+
+    body = funded.json()
+    assert funded.status_code == 200
+    assert body["provider"] == "paystack"
+    assert body["authorization_url"] == "https://checkout.paystack.com/milestone_001"
+    assert body["client_secret"] is None
+    assert transaction is not None
+    assert transaction.provider == "paystack"
+    assert transaction.provider_ref == "auracles_milestone_ref_001"
+    assert transaction.status == "pending"
+    assert transaction.amount == Decimal("1500.00")
+    assert transaction.transaction_type == "milestone"
+    assert transaction.ref_id == UUID(milestone_id)
+    assert transaction.ref_type == "project_milestone"
+    # The Paystack rail stores nothing on the customer: no Stripe customer is
+    # created, so an NG Operator never acquires one as a funding side effect.
+    assert operator is not None
+    assert operator.stripe_customer_id is None
+    assert calls["customers"] == []
+    initialized = calls["paystack_transactions"][0]
+    assert initialized["email"] == "ngn-fund-operator@auracles.space"
+    assert initialized["amount"] == Decimal("1500.00")
+    assert initialized["metadata"]["kind"] == "escrow"
+    assert initialized["metadata"]["transaction_id"] == str(transaction.id)
+    assert initialized["metadata"]["project_id"] == project_id
+    assert initialized["metadata"]["milestone_id"] == milestone_id
+
+
+async def test_fund_milestone_omitted_country_keeps_stripe_rail(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Funding without a country still uses the default Stripe rail.
+
+    Pins backward compatibility for the existing body-less call shape while
+    the funding endpoint learns the optional billing-country selector.
+    """
+
+    async def fake_create_customer(**kwargs: Any) -> FakeStripeCustomer:
+        """Return a stable Stripe customer for the default rail."""
+        return FakeStripeCustomer("cus_default_rail_123")
+
+    async def fake_create_payment_intent(**kwargs: Any) -> FakeStripePaymentIntent:
+        """Return a stable PaymentIntent for the default rail."""
+        return FakeStripePaymentIntent("pi_default_rail_123", "pi_default_secret")
+
+    monkeypatch.setattr(
+        milestone_service.stripe,
+        "create_customer",
+        fake_create_customer,
+    )
+    monkeypatch.setattr(
+        milestone_service.stripe,
+        "create_payment_intent",
+        fake_create_payment_intent,
+    )
+
+    operator_id = await create_user(
+        "default-fund-operator@auracles.space",
+        ["operator"],
+    )
+    contributor_id = await create_user(
+        "default-fund-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+    created = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json=project_payload(),
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    proposal_id = proposed.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposal_id}/accept",
+        headers=operator_headers,
+    )
+    milestone = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Implementation",
+            "description": "Build the approved procurement model.",
+            "budget": "1500.00",
+            "currency": "USD",
+        },
+    )
+    milestone_id = milestone.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+
+    funded = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/fund",
+        headers=operator_headers,
+    )
+
+    body = funded.json()
+    assert funded.status_code == 200
+    assert body["provider"] == "stripe"
+    assert body["client_secret"] == "pi_default_secret"
+    assert body["authorization_url"] is None
 
 
 async def test_fund_milestone_resumes_existing_pending_payment(
