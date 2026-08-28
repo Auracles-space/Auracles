@@ -24,7 +24,8 @@ from app.core.security import hash_password
 from app.integrations import paystack
 from app.integrations.paystack import PaystackRefund
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import FinancialEvent, Transaction
+from app.modules.financials import balance_floor
+from app.modules.financials.models import Escrow, FinancialEvent, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
 from app.workers.beat_schedule import BEAT_SCHEDULE
@@ -64,6 +65,7 @@ def _reset() -> None:
         session.execute(delete(AuditLog))
         session.execute(delete(FinancialEvent))
         session.execute(delete(License))
+        session.execute(delete(Escrow))
         session.execute(delete(Transaction))
         session.execute(delete(Framework))
         session.execute(delete(UserRole))
@@ -196,5 +198,123 @@ def test_reconciliation_is_registered_on_the_beat_schedule() -> None:
 
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.reconcile_pending_refunds_task"
+    )
+    assert entry["schedule"] == 3600.0
+
+
+def _seed_held_paystack_escrow(amount: Decimal) -> UUID:
+    """Create a held Paystack-funded escrow and return its transaction id."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        operator = User(
+            email=f"floor-operator-{uuid4()}@auracles.space",
+            password_hash=hash_password("password"),
+            display_name="Floor Operator",
+            email_verified=True,
+        )
+        session.add(operator)
+        session.flush()
+        transaction = Transaction(
+            payer_id=operator.id,
+            payee_id=None,
+            amount=amount,
+            currency="USD",
+            platform_commission=Decimal("0.00"),
+            net_amount=amount,
+            transaction_type="milestone",
+            status="completed",
+            provider="paystack",
+            provider_ref=f"floor_ref_{uuid4().hex}",
+            ref_id=uuid4(),
+            ref_type="project_milestone",
+        )
+        session.add(transaction)
+        session.flush()
+        session.add(
+            Escrow(
+                ref_id=transaction.ref_id,
+                ref_type="project_milestone",
+                amount=amount,
+                currency="USD",
+                status="held",
+                release_conditions={"kind": "project_milestone"},
+                transaction_id=transaction.id,
+            )
+        )
+        transaction_id = transaction.id
+        session.commit()
+    sync_engine.dispose()
+    return transaction_id
+
+
+def test_balance_floor_task_alerts_when_balance_dips_below_held_escrow(
+    migrated_database: None,
+    reconciliation_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A platform balance below the held-escrow total must page an admin.
+
+    Escrow on the Paystack rail lives in the shared platform balance, which
+    payouts also draw from — if the balance dips under the held total, a
+    future release could not be honored, so the dip is CRITICAL and an admin
+    is notified immediately.
+    """
+    del migrated_database, reconciliation_context
+    _seed_held_paystack_escrow(Decimal("1500.00"))
+    alerts: list[dict[str, Any]] = []
+
+    async def fake_fetch_balance() -> dict[str, int]:
+        """Report a balance short of the held total (minor units)."""
+        return {"USD": 100000}
+
+    monkeypatch.setattr(paystack, "fetch_balance", fake_fetch_balance)
+    monkeypatch.setattr(
+        balance_floor,
+        "notify_admins_review_pending",
+        lambda **kwargs: alerts.append(kwargs),
+    )
+
+    result = financials_beat.check_platform_balance_floor_task.apply().get()
+
+    assert result == {"currencies_checked": 1, "alerts": 1}
+    assert len(alerts) == 1
+    assert "USD" in alerts[0]["body"]
+
+
+def test_balance_floor_task_quiet_when_balance_covers_held_escrow(
+    migrated_database: None,
+    reconciliation_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A balance covering every held escrow raises no alert."""
+    del migrated_database, reconciliation_context
+    _seed_held_paystack_escrow(Decimal("1500.00"))
+    alerts: list[dict[str, Any]] = []
+
+    async def fake_fetch_balance() -> dict[str, int]:
+        """Report a balance comfortably above the held total."""
+        return {"USD": 500000}
+
+    monkeypatch.setattr(paystack, "fetch_balance", fake_fetch_balance)
+    monkeypatch.setattr(
+        balance_floor,
+        "notify_admins_review_pending",
+        lambda **kwargs: alerts.append(kwargs),
+    )
+
+    result = financials_beat.check_platform_balance_floor_task.apply().get()
+
+    assert result == {"currencies_checked": 1, "alerts": 0}
+    assert alerts == []
+
+
+def test_balance_floor_is_registered_on_the_beat_schedule() -> None:
+    """The floor check must be scheduled, or the commingling risk goes unwatched."""
+    entry = BEAT_SCHEDULE["check-platform-balance-floor-hourly"]
+
+    assert entry["task"] == (
+        "app.workers.tasks.financials_beat.check_platform_balance_floor_task"
     )
     assert entry["schedule"] == 3600.0

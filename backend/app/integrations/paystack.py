@@ -472,6 +472,34 @@ async def list_banks(
     return banks
 
 
+async def fetch_balance(
+    *,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, int]:
+    """Return the platform's available Paystack balance per currency.
+
+    Balances are reported in integer minor units, matching how every charge
+    and transfer is denominated on this rail.
+
+    Raises:
+        PaystackProviderError: On transport failure, a non-2xx status, or a
+            malformed balance payload.
+    """
+    data = await _get_json("/balance", {}, settings=settings, client=client)
+    if not isinstance(data, list):
+        raise PaystackProviderError("Paystack balance response malformed.")
+    balances: dict[str, int] = {}
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        currency = entry.get("currency")
+        balance = entry.get("balance")
+        if isinstance(currency, str) and isinstance(balance, int):
+            balances[currency.upper()] = balance
+    return balances
+
+
 async def initiate_transfer(
     *,
     amount: Decimal,

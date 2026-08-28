@@ -117,4 +117,11 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.financials_beat.reconcile_pending_refunds_task",
         "schedule": 3600.0,
     },
+    # Escrow on the Paystack rail is commingled with the payout balance, so a
+    # breach of the held-escrow floor must surface within the hour, not at
+    # month-end reconciliation.
+    "check-platform-balance-floor-hourly": {
+        "task": "app.workers.tasks.financials_beat.check_platform_balance_floor_task",
+        "schedule": 3600.0,
+    },
 }
