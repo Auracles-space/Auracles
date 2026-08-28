@@ -6,9 +6,11 @@ left in an unresolved state.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from loguru import logger
+from sqlalchemy import delete
 
 from app.core.database import async_session_factory
 from app.modules.financials.balance_floor import (
@@ -23,6 +25,7 @@ from app.modules.financials.reconciliation import (
     ReconciliationResult,
     reconcile_pending_refunds,
 )
+from app.modules.webhooks.models import WebhookEvent
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 from app.workers.tasks.payouts import process_payout
@@ -78,6 +81,37 @@ def check_platform_balance_floor_task(self: Any) -> BalanceFloorResult:
     )
     log.info("task_started")
     result = run_async(_check_platform_balance_floor())
+    log.info("task_completed", result=result)
+    return result
+
+
+# Providers stop retrying deliveries within days; rows past this window only
+# grow the dedupe table. The durable money record lives in audit_logs and the
+# financial_events ledger, never here.
+WEBHOOK_EVENT_RETENTION = timedelta(days=90)
+
+
+async def _prune_webhook_events() -> dict[str, int]:
+    """Delete webhook event rows past the retention window."""
+    cutoff = datetime.now(UTC) - WEBHOOK_EVENT_RETENTION
+    async with async_session_factory() as db:
+        async with db.begin():
+            result = await db.execute(
+                delete(WebhookEvent).where(WebhookEvent.received_at < cutoff)
+            )
+    return {"pruned": int(getattr(result, "rowcount", 0) or 0)}
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def prune_webhook_events_task(self: Any) -> dict[str, int]:
+    """Celery wrapper for daily webhook-event pruning."""
+    log = logger.bind(
+        module="financials",
+        action="prune_webhook_events",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    result = run_async(_prune_webhook_events())
     log.info("task_completed", result=result)
     return result
 

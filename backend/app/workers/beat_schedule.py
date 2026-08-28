@@ -131,4 +131,11 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.financials_beat.requeue_stranded_payouts_task",
         "schedule": 3600.0,
     },
+    # Webhook rows exist for replay dedupe and short-term forensics; the
+    # durable money record lives in audit_logs and the ledger, so rows past
+    # retention only grow the table.
+    "prune-webhook-events-daily": {
+        "task": "app.workers.tasks.financials_beat.prune_webhook_events_task",
+        "schedule": 86400.0,
+    },
 }

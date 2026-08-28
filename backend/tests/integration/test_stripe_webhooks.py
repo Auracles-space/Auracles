@@ -2213,6 +2213,7 @@ def connected_payout_event(
     payout_id: str,
     created: datetime,
     failure_code: str | None = None,
+    amount_minor: int | None = None,
 ) -> dict[str, Any]:
     """Build a Stripe connected-account payout webhook event payload."""
     payout_object: dict[str, Any] = {
@@ -2221,6 +2222,9 @@ def connected_payout_event(
     }
     if failure_code is not None:
         payout_object["failure_code"] = failure_code
+    if amount_minor is not None:
+        payout_object["amount"] = amount_minor
+        payout_object["currency"] = "usd"
     return {
         "id": event_id,
         "type": event_type,
@@ -2281,6 +2285,92 @@ async def test_connected_payout_paid_completes_in_flight_payouts(
     assert ledger_event.from_status == "processing"
     assert ledger_event.to_status == "completed"
     assert ledger_event.provider_ref == "po_paid_1"
+
+
+async def test_connected_payout_paid_completes_when_amount_covers_the_payouts(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A bank payout carrying at least the candidates' net total settles them."""
+    payout_id, _ = await create_connected_payout_with_in_flight_payout(
+        "acct_connected_covered",
+        initiated_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    webhook_context["event"] = connected_payout_event(
+        "evt_connected_payout_covered",
+        "payout.paid",
+        account_id="acct_connected_covered",
+        payout_id="po_covered_1",
+        created=datetime.now(UTC),
+        amount_minor=8500,
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.get(Payout, payout_id)
+
+    assert response.status_code == 200
+    assert payout is not None
+    assert payout.status == "completed"
+
+
+async def test_connected_payout_paid_amount_shortfall_settles_nothing(
+    client: AsyncClient,
+    webhook_context: dict[str, Any],
+) -> None:
+    """A bank payout smaller than the candidates' net total must not settle them.
+
+    The attribution is heuristic (Stripe names the account, not our rows), so
+    when the money that actually moved cannot cover every candidate, marking
+    them all paid would tell at least one Contributor they were paid when they
+    were not. Nothing settles, and a CRITICAL record points an admin at it.
+    """
+    payout_id, _ = await create_connected_payout_with_in_flight_payout(
+        "acct_connected_short",
+        initiated_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    webhook_context["event"] = connected_payout_event(
+        "evt_connected_payout_short",
+        "payout.paid",
+        account_id="acct_connected_short",
+        payout_id="po_short_1",
+        created=datetime.now(UTC),
+        amount_minor=5000,
+    )
+
+    response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.get(Payout, payout_id)
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "payout_settlement_mismatch"
+            )
+        )
+        ledger = await session.scalar(
+            select(FinancialEvent).where(
+                FinancialEvent.event_type == "payout_settlement_mismatch"
+            )
+        )
+
+    assert response.status_code == 200
+    assert payout is not None
+    assert payout.status == "processing"
+    assert payout.completed_at is None
+    assert audit is not None
+    assert ledger is not None
+    assert ledger.entity_type == "payout_account"
+    assert ledger.metadata_["expected_minor"] == 8500
+    assert ledger.metadata_["received_minor"] == 5000
 
 
 async def test_connected_payout_paid_skips_payouts_initiated_after_it(

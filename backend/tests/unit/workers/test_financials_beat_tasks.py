@@ -37,6 +37,7 @@ from app.modules.financials.models import (
     Transaction,
 )
 from app.modules.frameworks.models import Framework, License
+from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 from app.workers.beat_schedule import BEAT_SCHEDULE
 from app.workers.tasks import financials_beat
@@ -72,6 +73,7 @@ def _reset() -> None:
     sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     session_factory = sessionmaker(bind=sync_engine)
     with session_factory() as session:
+        session.execute(delete(WebhookEvent))
         session.execute(delete(AuditLog))
         session.execute(delete(FinancialEvent))
         session.execute(delete(License))
@@ -437,6 +439,68 @@ def test_stranded_payout_sweeper_is_registered_on_the_beat_schedule() -> None:
         "app.workers.tasks.financials_beat.requeue_stranded_payouts_task"
     )
     assert entry["schedule"] == 3600.0
+
+
+def _seed_webhook_event(*, received_at: datetime) -> UUID:
+    """Insert one processed webhook event row with the given receipt time."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        event = WebhookEvent(
+            provider="stripe",
+            provider_event_id=f"evt_prune_{uuid4().hex}",
+            event_type="payment_intent.succeeded",
+            status="processed",
+            payload_hash="0" * 64,
+            received_at=received_at,
+        )
+        session.add(event)
+        session.commit()
+        event_id = event.id
+    sync_engine.dispose()
+    return event_id
+
+
+def test_webhook_event_pruning_removes_only_aged_rows(
+    migrated_database: None,
+    reconciliation_context: None,
+) -> None:
+    """Pruning drops events past retention and keeps everything younger.
+
+    The rows exist for replay dedupe and short-term forensics; providers stop
+    retrying within days, so rows older than the retention window only grow
+    the table. The durable money record lives in audit_logs and the ledger.
+    """
+    del migrated_database, reconciliation_context
+    old_id = _seed_webhook_event(
+        received_at=datetime.now(UTC) - timedelta(days=120)
+    )
+    fresh_id = _seed_webhook_event(received_at=datetime.now(UTC) - timedelta(days=5))
+
+    result = financials_beat.prune_webhook_events_task.apply().get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        old_row = session.get(WebhookEvent, old_id)
+        fresh_row = session.get(WebhookEvent, fresh_id)
+    sync_engine.dispose()
+
+    assert result == {"pruned": 1}
+    assert old_row is None
+    assert fresh_row is not None
+
+
+def test_webhook_event_pruning_is_registered_on_the_beat_schedule() -> None:
+    """The pruning task must be scheduled, or the table grows without bound."""
+    entry = BEAT_SCHEDULE["prune-webhook-events-daily"]
+
+    assert entry["task"] == (
+        "app.workers.tasks.financials_beat.prune_webhook_events_task"
+    )
+    assert entry["schedule"] == 86400.0
 
 
 def test_balance_floor_is_registered_on_the_beat_schedule() -> None:

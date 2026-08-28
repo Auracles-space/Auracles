@@ -1115,6 +1115,59 @@ async def _handle_connected_payout_paid(
         )
     ).all()
     bank_payout_ref = _event_object_id(event)
+
+    # The attribution is heuristic (Stripe names the account, not our rows).
+    # When the event reports how much money actually reached the bank, refuse
+    # to settle candidates it cannot cover: marking them all paid would tell
+    # at least one Contributor they were paid when they were not.
+    received_minor = _event_amount_minor(event)
+    if received_minor is not None and payouts:
+        try:
+            expected_minor = sum(
+                to_minor_units(payout.net_amount, payout.currency)
+                for payout in payouts
+            )
+        except MoneyAmountError:
+            expected_minor = None
+        if expected_minor is not None and received_minor < expected_minor:
+            logger.bind(
+                module="webhooks",
+                action="payout_settlement_mismatch",
+                payout_account_id=str(payout_account.id),
+            ).critical(
+                "payout_settlement_mismatch",
+                expected_minor=expected_minor,
+                received_minor=received_minor,
+                candidate_count=len(payouts),
+            )
+            await write_audit(
+                db=db,
+                actor_id=None,
+                action="payout_settlement_mismatch",
+                target_type="payout_account",
+                target_id=payout_account.id,
+                metadata={
+                    "expected_minor": str(expected_minor),
+                    "received_minor": str(received_minor),
+                    "bank_payout_ref": str(bank_payout_ref),
+                    "candidate_count": str(len(payouts)),
+                },
+            )
+            await record_financial_event(
+                db,
+                entity_type="payout_account",
+                entity_id=payout_account.id,
+                event_type="payout_settlement_mismatch",
+                provider="stripe",
+                provider_ref=bank_payout_ref,
+                reason_code="payout_settlement_mismatch",
+                metadata={
+                    "expected_minor": expected_minor,
+                    "received_minor": received_minor,
+                    "candidate_payout_ids": [str(p.id) for p in payouts],
+                },
+            )
+            return
     completed_at = datetime.now(UTC)
     for payout in payouts:
         payout.status = "completed"
