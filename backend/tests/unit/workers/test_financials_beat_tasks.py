@@ -20,12 +20,22 @@ from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
-from app.core.security import hash_password
+from app.core.security import (
+    encrypt_payout_provider_account_id,
+    hash_password,
+    hash_payout_provider_account_id,
+)
 from app.integrations import paystack
 from app.integrations.paystack import PaystackRefund
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import balance_floor
-from app.modules.financials.models import Escrow, FinancialEvent, Transaction
+from app.modules.financials.models import (
+    Escrow,
+    FinancialEvent,
+    Payout,
+    PayoutAccount,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
 from app.workers.beat_schedule import BEAT_SCHEDULE
@@ -65,6 +75,8 @@ def _reset() -> None:
         session.execute(delete(AuditLog))
         session.execute(delete(FinancialEvent))
         session.execute(delete(License))
+        session.execute(delete(Payout))
+        session.execute(delete(PayoutAccount))
         session.execute(delete(Escrow))
         session.execute(delete(Transaction))
         session.execute(delete(Framework))
@@ -323,6 +335,108 @@ def test_balance_floor_task_quiet_when_balance_covers_held_escrow(
 
     assert result == {"currencies_checked": 1, "alerts": 0}
     assert alerts == []
+
+
+def _seed_payout(
+    *,
+    status: str,
+    initiated_at: datetime,
+    provider_ref: str | None = None,
+) -> UUID:
+    """Create one payout row with its contributor and payout account."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        contributor = User(
+            email=f"sweep-contributor-{uuid4()}@auracles.space",
+            password_hash=hash_password("password"),
+            display_name="Sweep Contributor",
+            email_verified=True,
+        )
+        session.add(contributor)
+        session.flush()
+        account = PayoutAccount(
+            user_id=contributor.id,
+            provider="stripe",
+            provider_account_id=encrypt_payout_provider_account_id(
+                f"acct_{uuid4().hex[:10]}"
+            ),
+            provider_account_lookup_hash=hash_payout_provider_account_id(
+                f"acct_{uuid4().hex[:10]}"
+            ),
+            account_type="express",
+            is_default=True,
+            verified_at=datetime.now(UTC),
+        )
+        session.add(account)
+        session.flush()
+        payout = Payout(
+            contributor_id=contributor.id,
+            payout_account_id=account.id,
+            amount=Decimal("100.00"),
+            currency="USD",
+            commission_deducted=Decimal("15.00"),
+            net_amount=Decimal("85.00"),
+            status=status,
+            provider_ref=provider_ref,
+            initiated_at=initiated_at,
+        )
+        session.add(payout)
+        session.commit()
+        payout_id = payout.id
+    sync_engine.dispose()
+    return payout_id
+
+
+def test_stranded_payout_sweeper_requeues_old_pending_payouts(
+    migrated_database: None,
+    reconciliation_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pending payout past the grace window is re-enqueued for processing.
+
+    A payout stays `pending` only if its Celery dispatch failed or the worker
+    died before reaching the provider; the processing worker is idempotent,
+    so re-enqueueing is always safe and leaving it stranded never is.
+    """
+    del migrated_database, reconciliation_context
+    stranded_id = _seed_payout(
+        status="pending",
+        initiated_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    fresh_id = _seed_payout(status="pending", initiated_at=datetime.now(UTC))
+    _seed_payout(
+        status="processing",
+        initiated_at=datetime.now(UTC) - timedelta(hours=2),
+        provider_ref="tr_in_flight",
+    )
+    dispatched: list[str] = []
+
+    class FakePayoutTask:
+        """Task double recording re-enqueued payout ids."""
+
+        def delay(self, payout_id: str) -> None:
+            """Record the payout id that would be sent to Celery."""
+            dispatched.append(payout_id)
+
+    monkeypatch.setattr(financials_beat, "process_payout", FakePayoutTask())
+
+    result = financials_beat.requeue_stranded_payouts_task.apply().get()
+
+    assert result == {"checked": 1, "requeued": 1}
+    assert dispatched == [str(stranded_id)]
+    assert str(fresh_id) not in dispatched
+
+
+def test_stranded_payout_sweeper_is_registered_on_the_beat_schedule() -> None:
+    """The sweeper must be scheduled, or dispatch failures strand money forever."""
+    entry = BEAT_SCHEDULE["requeue-stranded-payouts-hourly"]
+
+    assert entry["task"] == (
+        "app.workers.tasks.financials_beat.requeue_stranded_payouts_task"
+    )
+    assert entry["schedule"] == 3600.0
 
 
 def test_balance_floor_is_registered_on_the_beat_schedule() -> None:

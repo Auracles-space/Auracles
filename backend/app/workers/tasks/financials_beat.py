@@ -15,12 +15,17 @@ from app.modules.financials.balance_floor import (
     BalanceFloorResult,
     check_platform_balance_floor,
 )
+from app.modules.financials.payout_sweeper import (
+    PayoutSweepResult,
+    requeue_stranded_payouts,
+)
 from app.modules.financials.reconciliation import (
     ReconciliationResult,
     reconcile_pending_refunds,
 )
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
+from app.workers.tasks.payouts import process_payout
 
 
 async def _reconcile_pending_refunds() -> ReconciliationResult:
@@ -73,5 +78,33 @@ def check_platform_balance_floor_task(self: Any) -> BalanceFloorResult:
     )
     log.info("task_started")
     result = run_async(_check_platform_balance_floor())
+    log.info("task_completed", result=result)
+    return result
+
+
+async def _requeue_stranded_payouts() -> PayoutSweepResult:
+    """Run the stranded-payout sweep inside one database session."""
+    async with async_session_factory() as db:
+        return await requeue_stranded_payouts(
+            db,
+            enqueue=lambda payout_id: process_payout.delay(payout_id),
+        )
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def requeue_stranded_payouts_task(self: Any) -> PayoutSweepResult:
+    """Celery wrapper for the hourly stranded-payout sweep.
+
+    Idempotent: the processing worker returns untouched any payout that is
+    no longer pending or already carries a provider reference, so a payout
+    re-enqueued while merely slow is a no-op.
+    """
+    log = logger.bind(
+        module="financials",
+        action="requeue_stranded_payouts",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    result = run_async(_requeue_stranded_payouts())
     log.info("task_completed", result=result)
     return result

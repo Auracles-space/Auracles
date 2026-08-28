@@ -124,4 +124,11 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.financials_beat.check_platform_balance_floor_task",
         "schedule": 3600.0,
     },
+    # A payout whose Celery dispatch failed sits pending forever with the
+    # money already claimed against the Contributor's balance; the sweep
+    # re-enqueues it (the processing worker is idempotent).
+    "requeue-stranded-payouts-hourly": {
+        "task": "app.workers.tasks.financials_beat.requeue_stranded_payouts_task",
+        "schedule": 3600.0,
+    },
 }
