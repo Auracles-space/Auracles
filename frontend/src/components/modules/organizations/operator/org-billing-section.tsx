@@ -11,13 +11,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   configureBrowserClient,
   describeGeneratedError,
-  getAccessToken,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { getStripeClient } from "@/lib/financials/stripe-client";
 import {
   createOrgPaymentMethodSetup,
   deleteOrgPaymentMethod,
+  getOrgPurchaseInvoice,
   listOrgInvoices,
   listOrgPaymentMethods,
 } from "@/lib/generated/sdk.gen";
@@ -76,19 +76,32 @@ export function OrgBillingSection() {
   }, [orgId]);
 
   /**
-   * Navigate the browser to the org purchase-invoice route.
+   * Fetch the org purchase invoice URL, then navigate the browser to it.
    *
-   * The route lazily issues and 302s to a presigned PDF URL; navigation
-   * cannot set headers, so the access token rides the download-only
-   * `?token=` query parameter the endpoint accepts for exactly this case.
+   * The route lazily issues the PDF and returns a short-lived presigned S3
+   * URL. Fetching it with the Authorization header and navigating to the
+   * result keeps the access token out of the address bar.
+   *
+   * @param invoice - The invoice row whose source purchase to bill against.
    */
-  function downloadPurchaseInvoice(invoice: OrgInvoiceListItem) {
-    const token = getAccessToken();
-    const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-    window.location.assign(
-      `${base}/v1/orgs/${orgId}/financials/purchases/${invoice.source_ref_id}` +
-        `/invoice?token=${encodeURIComponent(token ?? "")}`,
-    );
+  async function downloadPurchaseInvoice(invoice: OrgInvoiceListItem) {
+    setError(null);
+    configureBrowserClient();
+    const result = await getOrgPurchaseInvoice({
+      headers: getAccessTokenHeaders(),
+      path: { org_id: orgId, transaction_id: invoice.source_ref_id },
+    });
+
+    if (!result.response.ok) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    if (result.data?.download_url) {
+      window.location.assign(result.data.download_url);
+      return;
+    }
+    // 202: the PDF is still rendering.
+    setError("The invoice is being prepared. Try again shortly.");
   }
 
   async function handleStartSetup() {

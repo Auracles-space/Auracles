@@ -86,16 +86,16 @@ describe("PurchaseHistoryTable", () => {
     ).toBeInTheDocument();
   });
 
-  it("redirects to the backend invoice download URL when invoice is ready", async () => {
+  it("navigates to the presigned invoice URL when the invoice is ready", async () => {
     vi.mocked(getFrameworkPurchaseInvoice).mockResolvedValue({
-      data: undefined,
+      data: { download_url: "https://s3.test/invoice.pdf?expires=900" },
       error: undefined,
       request: new Request("http://testserver"),
       response: {
         ok: true,
-        redirected: true,
+        redirected: false,
         status: 200,
-        url: "https://s3.test/invoice.pdf",
+        url: "http://testserver",
       } as Response,
     });
     vi.stubGlobal("location", {
@@ -112,12 +112,12 @@ describe("PurchaseHistoryTable", () => {
       expect(getFrameworkPurchaseInvoice).toHaveBeenCalledWith(
         expect.objectContaining({
           path: { transaction_id: purchase.transaction_id },
-          redirect: "manual",
         }),
       );
     });
+    // Straight to S3 -- no credential in the URL.
     expect(location.assign).toHaveBeenCalledWith(
-      `http://localhost:8000/v1/financials/purchases/${purchase.transaction_id}/invoice?token=test-token`,
+      "https://s3.test/invoice.pdf?expires=900",
     );
   });
 });

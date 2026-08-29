@@ -40,9 +40,6 @@ DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 OperatorUser = Annotated[User, Depends(require_role("operator"))]
 # Query-token auth is reserved for browser-navigated redirect downloads.
-OperatorDownloadUser = Annotated[
-    User, Depends(require_role("operator", allow_query_token=True))
-]
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
 KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 
@@ -164,10 +161,10 @@ async def refund_framework_purchase(
 @router.get("/purchases/{transaction_id}/invoice")
 async def get_framework_purchase_invoice(
     transaction_id: UUID,
-    operator: OperatorDownloadUser,
+    operator: OperatorUser,
     db: DatabaseSession,
 ) -> Response:
-    """Redirect to a generated invoice PDF or queue invoice generation."""
+    """Return a presigned invoice PDF URL, or queue invoice generation."""
     return await service.get_framework_purchase_invoice(
         db=db,
         operator=operator,

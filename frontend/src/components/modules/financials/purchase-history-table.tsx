@@ -11,7 +11,6 @@ import { useEffect, useState } from "react";
 import {
   configureBrowserClient,
   describeGeneratedError,
-  getAccessToken,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import {
@@ -82,20 +81,12 @@ export function PurchaseHistoryTable() {
             "Expires": "0",
           },
           path: { transaction_id: transactionId },
-          redirect: "manual",
         });
 
-        if (
-          result.response.status === 0 ||
-          result.response.status === 302 ||
-          result.response.type === "opaqueredirect" ||
-          result.response.redirected
-        ) {
-          const token = getAccessToken();
-          const invoiceUrl = `${
-            process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-          }/v1/financials/purchases/${transactionId}/invoice?token=${encodeURIComponent(token ?? "")}`;
-          window.location.assign(invoiceUrl);
+        // A ready invoice comes back as a short-lived presigned S3 URL, so the
+        // browser navigates to storage while the token stays in the header.
+        if (result.response.ok && result.data?.download_url) {
+          window.location.assign(result.data.download_url);
           isDone = true;
           setInvoiceMessage(null);
           setGeneratingInvoiceId(null);

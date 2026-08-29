@@ -6104,6 +6104,19 @@ components:
       - disputes
       title: DisputesResponse
       type: object
+    DownloadUrlResponse:
+      description: "A short-lived presigned URL for one private object.\n\nAttributes:\n\
+        \    download_url: Presigned S3 URL the caller should navigate to. Expires\n\
+        \        on its own schedule, so it is a capability rather than a session\n\
+        \        credential and cannot be replayed against the wider API."
+      properties:
+        download_url:
+          title: Download Url
+          type: string
+      required:
+      - download_url
+      title: DownloadUrlResponse
+      type: object
     EarningsResponse:
       description: Contributor earnings summary in a single settlement currency.
       properties:
@@ -20271,7 +20284,7 @@ paths:
       - Financials
   /v1/financials/purchases/{transaction_id}/invoice:
     get:
-      description: Redirect to a generated invoice PDF or queue invoice generation.
+      description: Return a presigned invoice PDF URL, or queue invoice generation.
       operationId: get_framework_purchase_invoice_v1_financials_purchases__transaction_id__invoice_get
       parameters:
       - in: path
@@ -20281,16 +20294,6 @@ paths:
           format: uuid
           title: Transaction Id
           type: string
-      - description: Access token via query parameter for download links
-        in: query
-        name: token
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for download links
-          title: Token
       responses:
         '200':
           content:
@@ -21531,8 +21534,8 @@ paths:
       - GDPR
   /v1/gdpr/exports/{export_request_id}/download:
     get:
-      description: Redirect the current user to a short-lived private S3 download
-        URL for a ready GDPR export bundle.
+      description: Return a short-lived private S3 download URL for a ready GDPR export
+        bundle. The caller navigates to the URL directly.
       operationId: download_data_export_v1_gdpr_exports__export_request_id__download_get
       parameters:
       - in: path
@@ -21542,19 +21545,13 @@ paths:
           format: uuid
           title: Export Request Id
           type: string
-      - description: Access token via query parameter for download links
-        in: query
-        name: token
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for download links
-          title: Token
       responses:
-        '302':
-          description: Private presigned download URL.
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+          description: Successful Response
         '404':
           description: Data export request not found.
         '409':
@@ -23077,8 +23074,8 @@ paths:
   /v1/orgs/{org_id}/financials/purchases/{transaction_id}/invoice:
     get:
       description: Issue (lazily) and return the invoice for a Framework the organization
-        purchased, addressed to the organization as buyer. Redirects to a presigned
-        PDF URL once generated, otherwise queues generation. A billing record, available
+        purchased, addressed to the organization as buyer. Returns a presigned PDF
+        URL once generated, otherwise queues generation. A billing record, available
         to owner/admins regardless of operator capability state.
       operationId: get_org_purchase_invoice_v1_orgs__org_id__financials_purchases__transaction_id__invoice_get
       parameters:
@@ -23096,16 +23093,6 @@ paths:
           format: uuid
           title: Transaction Id
           type: string
-      - description: Access token via query parameter for download links
-        in: query
-        name: token
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          description: Access token via query parameter for download links
-          title: Token
       responses:
         '200':
           content:

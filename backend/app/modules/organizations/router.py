@@ -148,10 +148,6 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
-# Query-token auth is reserved for browser-navigated redirect downloads.
-OrgAdminDownload = Annotated[
-    OrgContext, Depends(require_org_role("admin", allow_query_token=True))
-]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
 
 NDA_SIGN_RATE_LIMITER = RateLimiter(namespace="org_nda_sign", limit=5, window=3600)
@@ -515,9 +511,7 @@ async def activate_operator_capability(
     response_model=OrgLicenseGrantResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Add an organization license grant",
-    description=(
-        "Allocate one org-owned License to exactly one team or one member."
-    ),
+    description=("Allocate one org-owned License to exactly one team or one member."),
 )
 async def add_org_license_grant(
     org_id: UUID,
@@ -1128,9 +1122,7 @@ async def submit_attestor_application(
     redis: RedisClient,
 ) -> OrgAttestorApplicationResponse:
     """Submit the org's attestor application for review."""
-    await ORG_ATTESTOR_APPLY_RATE_LIMITER.check(
-        cast(RedisCounter, redis), str(org_id)
-    )
+    await ORG_ATTESTOR_APPLY_RATE_LIMITER.check(cast(RedisCounter, redis), str(org_id))
     await attestor_application_service.submit_application(
         db, org_id=org_id, actor_id=context.user.id
     )
@@ -1352,9 +1344,7 @@ async def list_org_attestation_offers(
     titles: dict[UUID, str] = {}
     if framework_ids:
         title_rows = await db.execute(
-            select(Framework.id, Framework.title).where(
-                Framework.id.in_(framework_ids)
-            )
+            select(Framework.id, Framework.title).where(Framework.id.in_(framework_ids))
         )
         titles = {fid: title for fid, title in title_rows.all()}
     return OrgAttestationOffersResponse(
@@ -1376,8 +1366,7 @@ async def list_org_attestation_offers(
     response_model=OrgAttestationItem,
     summary="Accept and staff an offer",
     description=(
-        "Accept a cohort offer and staff it with a reviewing member. "
-        "Owner/admin only."
+        "Accept a cohort offer and staff it with a reviewing member. Owner/admin only."
     ),
 )
 async def accept_org_attestation_offer(
@@ -1473,15 +1462,11 @@ async def list_org_attestations(
     )
     # Resolve friendly labels so the queue shows a framework title and reviewer
     # name instead of raw UUIDs.
-    framework_ids = {
-        row.target_id for row in rows if row.target_type == "framework"
-    }
+    framework_ids = {row.target_id for row in rows if row.target_type == "framework"}
     titles: dict[UUID, str] = {}
     if framework_ids:
         title_rows = await db.execute(
-            select(Framework.id, Framework.title).where(
-                Framework.id.in_(framework_ids)
-            )
+            select(Framework.id, Framework.title).where(Framework.id.in_(framework_ids))
         )
         titles = {fid: title for fid, title in title_rows.all()}
     member_ids = {row.reviewing_member_id for row in rows if row.reviewing_member_id}
@@ -1902,7 +1887,7 @@ async def list_org_invoices(
     summary="Organization purchase invoice",
     description=(
         "Issue (lazily) and return the invoice for a Framework the organization "
-        "purchased, addressed to the organization as buyer. Redirects to a "
+        "purchased, addressed to the organization as buyer. Returns a "
         "presigned PDF URL once generated, otherwise queues generation. A "
         "billing record, available to owner/admins regardless of operator "
         "capability state."
@@ -1911,7 +1896,7 @@ async def list_org_invoices(
 async def get_org_purchase_invoice(
     org_id: UUID,
     transaction_id: UUID,
-    context: OrgAdminDownload,
+    context: OrgAdmin,
     db: DatabaseSession,
 ) -> Response:
     """Redirect to the org purchase invoice PDF or queue its generation."""
@@ -2296,10 +2281,8 @@ async def admin_verify_kyb(
     await attestor_application_service.admin_verify_kyb(
         db, application_id=application_id, admin_id=admin.id
     )
-    application, checklist = (
-        await attestor_application_service.get_application_by_id(
-            db, application_id=application_id
-        )
+    application, checklist = await attestor_application_service.get_application_by_id(
+        db, application_id=application_id
     )
     return _admin_application_response(application, checklist)
 
@@ -2323,10 +2306,8 @@ async def admin_needs_info(
         admin_id=admin.id,
         feedback=payload.feedback,
     )
-    application, checklist = (
-        await attestor_application_service.get_application_by_id(
-            db, application_id=application_id
-        )
+    application, checklist = await attestor_application_service.get_application_by_id(
+        db, application_id=application_id
     )
     return _admin_application_response(application, checklist)
 
@@ -2350,10 +2331,8 @@ async def admin_start_trial(
         admin_id=admin.id,
         framework_id=payload.framework_id,
     )
-    application, checklist = (
-        await attestor_application_service.get_application_by_id(
-            db, application_id=application_id
-        )
+    application, checklist = await attestor_application_service.get_application_by_id(
+        db, application_id=application_id
     )
     return _admin_application_response(application, checklist)
 
@@ -2579,10 +2558,8 @@ async def admin_approve(
     await attestor_application_service.admin_approve(
         db, application_id=application_id, admin_id=admin.id
     )
-    application, checklist = (
-        await attestor_application_service.get_application_by_id(
-            db, application_id=application_id
-        )
+    application, checklist = await attestor_application_service.get_application_by_id(
+        db, application_id=application_id
     )
     return _admin_application_response(application, checklist)
 
@@ -2606,9 +2583,7 @@ async def admin_reject(
         admin_id=admin.id,
         feedback=payload.feedback,
     )
-    application, checklist = (
-        await attestor_application_service.get_application_by_id(
-            db, application_id=application_id
-        )
+    application, checklist = await attestor_application_service.get_application_by_id(
+        db, application_id=application_id
     )
     return _admin_application_response(application, checklist)

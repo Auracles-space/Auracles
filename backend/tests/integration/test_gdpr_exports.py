@@ -397,9 +397,7 @@ async def test_export_bundle_includes_organization_memberships(
     del migrated_database, export_test_context
     fake_s3 = FakeS3Storage()
     monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
-    user_id = await create_verified_user(
-        f"export-org-{uuid4().hex[:8]}@auracles.space"
-    )
+    user_id = await create_verified_user(f"export-org-{uuid4().hex[:8]}@auracles.space")
     org_slug = f"export-org-{uuid4().hex[:6]}"
     async with async_session_factory() as session:
         async with session.begin():
@@ -504,9 +502,7 @@ async def test_export_bundle_includes_org_contributor_activity_without_org_earni
                 title="Org Delivery Project",
                 description="Export delivery history project.",
                 category="framework_customization",
-                required_deliverables=[
-                    {"name": "Memo", "description": "Custom memo"}
-                ],
+                required_deliverables=[{"name": "Memo", "description": "Custom memo"}],
                 budget_min=Decimal("1000.00"),
                 budget_max=Decimal("1500.00"),
                 currency="USD",
@@ -593,10 +589,7 @@ async def test_export_bundle_includes_org_contributor_activity_without_org_earni
     )
     assert org_activity["deliverable_submissions"][0]["submitted_at"]
     assert bundle["financial"]["transactions"] == []
-    assert all(
-        item.get("id") != str(framework.id)
-        for item in bundle["frameworks"]
-    )
+    assert all(item.get("id") != str(framework.id) for item in bundle["frameworks"])
 
 
 async def test_export_bundle_includes_org_operator_activity_without_org_billing(
@@ -740,9 +733,7 @@ async def test_export_bundle_includes_nda_and_reviewing_assignments(
     del migrated_database, export_test_context
     fake_s3 = FakeS3Storage()
     monkeypatch.setattr(gdpr_beat.s3, "storage", fake_s3)
-    user_id = await create_verified_user(
-        f"export-nda-{uuid4().hex[:8]}@auracles.space"
-    )
+    user_id = await create_verified_user(f"export-nda-{uuid4().hex[:8]}@auracles.space")
     requestor_id = await create_verified_user(
         f"export-req-{uuid4().hex[:8]}@auracles.space"
     )
@@ -756,14 +747,10 @@ async def test_export_bundle_includes_nda_and_reviewing_assignments(
             )
             session.add(organization)
             await session.flush()
-            member = OrgMember(
-                org_id=organization.id, user_id=user_id, role="member"
-            )
+            member = OrgMember(org_id=organization.id, user_id=user_id, role="member")
             session.add(member)
             await session.flush()
-            session.add(
-                OrgMemberNda(member_id=member.id, nda_version="v1")
-            )
+            session.add(OrgMemberNda(member_id=member.id, nda_version="v1"))
             attestation = Attestation(
                 target_type="contributor",
                 target_id=requestor_id,
@@ -801,7 +788,7 @@ async def test_export_bundle_includes_nda_and_reviewing_assignments(
     assert "org_application" not in bundle
 
 
-async def test_ready_export_download_redirects_to_private_presigned_url(
+async def test_ready_export_download_returns_private_presigned_url(
     client: AsyncClient,
     migrated_database: None,
     export_test_context: dict[str, Any],
@@ -831,7 +818,7 @@ async def test_ready_export_download_redirects_to_private_presigned_url(
         follow_redirects=False,
     )
 
-    assert response.status_code == 302
+    assert response.status_code == 200
     assert fake_s3.presigned_get_requests == [
         {
             "bucket": app.state.settings.s3_reports_bucket,
@@ -840,7 +827,7 @@ async def test_ready_export_download_redirects_to_private_presigned_url(
             "download_name": "auracles-data-export.json",
         }
     ]
-    assert response.headers["location"] == (
+    assert response.json()["download_url"] == (
         f"https://s3.test/{app.state.settings.s3_reports_bucket}/"
         "gdpr-exports/test/export.json"
         "?expires=600&download_name=auracles-data-export.json"
@@ -931,7 +918,7 @@ async def test_export_download_is_rate_limited_per_user(
             headers=auth_headers(user_id),
             follow_redirects=False,
         )
-        assert response.status_code == 302
+        assert response.status_code == 200
 
     limited = await client.get(
         f"/v1/gdpr/exports/{request_id}/download",

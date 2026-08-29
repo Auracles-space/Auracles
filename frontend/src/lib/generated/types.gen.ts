@@ -2200,6 +2200,18 @@ export type DisputesResponse = {
 };
 
 /**
+ * A short-lived presigned URL for one private object.
+ *
+ * Attributes:
+ * download_url: Presigned S3 URL the caller should navigate to. Expires
+ * on its own schedule, so it is a capability rather than a session
+ * credential and cannot be replayed against the wider API.
+ */
+export type DownloadUrlResponse = {
+    download_url: string;
+};
+
+/**
  * Contributor earnings summary in a single settlement currency.
  */
 export type EarningsResponse = {
@@ -6758,12 +6770,6 @@ export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoice
     path: {
         transaction_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for download links
-         */
-        token?: (string | null);
-    };
 };
 
 export type GetFrameworkPurchaseInvoiceV1FinancialsPurchasesTransactionIdInvoiceGetResponse = (unknown);
@@ -7140,13 +7146,11 @@ export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetData = {
     path: {
         export_request_id: string;
     };
-    query?: {
-        /**
-         * Access token via query parameter for download links
-         */
-        token?: (string | null);
-    };
 };
+
+export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetResponse = (DownloadUrlResponse);
+
+export type DownloadDataExportV1GdprExportsExportRequestIdDownloadGetError = (unknown | HTTPValidationError);
 
 export type GetHealthV1HealthGetResponse = (HealthResponse);
 
@@ -7602,12 +7606,6 @@ export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvo
     path: {
         org_id: string;
         transaction_id: string;
-    };
-    query?: {
-        /**
-         * Access token via query parameter for download links
-         */
-        token?: (string | null);
     };
 };
 

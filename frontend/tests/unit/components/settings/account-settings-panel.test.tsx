@@ -267,13 +267,13 @@ describe("AccountSettingsPanel", () => {
     vi.mocked(
       downloadDataExportV1GdprExportsExportRequestIdDownloadGet,
     ).mockResolvedValue({
-      data: undefined,
+      data: { download_url: "https://s3.test/gdpr/export-1.json?expires=600" },
       error: undefined,
       response: {
         ok: true,
-        redirected: true,
+        redirected: false,
         status: 200,
-        url: "https://s3.test/gdpr/export-1.json",
+        url: "http://testserver",
       } as Response,
     });
 
@@ -295,11 +295,11 @@ describe("AccountSettingsPanel", () => {
       ).toHaveBeenCalledWith({
         headers: { Authorization: "Bearer access-token" },
         path: { export_request_id: "export-1" },
-        redirect: "manual",
       });
     });
+    // Straight to S3 -- the personal-data archive URL carries no credential.
     expect(location.assign).toHaveBeenCalledWith(
-      "http://localhost:8000/v1/gdpr/exports/export-1/download?token=access-token",
+      "https://s3.test/gdpr/export-1.json?expires=600",
     );
   });
 

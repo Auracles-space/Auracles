@@ -8,7 +8,7 @@ from uuid import UUID
 
 from cryptography.fernet import InvalidToken
 from fastapi import HTTPException, status
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, Response
 from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import exists, func, or_, select, text
@@ -79,6 +79,7 @@ from app.modules.organizations.models import (
     OrgMember,
 )
 from app.modules.organizations.operator_service import operator_capability_active
+from app.shared.schemas.download import DownloadUrlResponse
 from app.workers.tasks.financials import generate_invoice_pdf
 from app.workers.tasks.payouts import process_payout
 
@@ -271,9 +272,7 @@ async def _sum_transactions(
     if after_or_at is not None:
         filters.append(Transaction.created_at >= after_or_at)
     column = Transaction.net_amount if net else Transaction.amount
-    value = await db.scalar(
-        select(func.coalesce(func.sum(column), 0)).where(*filters)
-    )
+    value = await db.scalar(select(func.coalesce(func.sum(column), 0)).where(*filters))
     return _normalise_money(Decimal(value or "0"))
 
 
@@ -654,7 +653,20 @@ async def get_framework_purchase_invoice(
             key,
             INVOICE_URL_TTL_SECONDS,
         )
-        return RedirectResponse(url=invoice_url, status_code=status.HTTP_302_FOUND)
+        # Handed back as data, not as a redirect: the caller authenticates with
+        # the Authorization header and navigates to S3 itself, so no credential
+        # ever rides in a URL.
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+            content=DownloadUrlResponse(download_url=invoice_url).model_dump(
+                mode="json"
+            ),
+        )
 
     generate_invoice_pdf.delay(str(transaction_id))
     return JSONResponse(
@@ -716,8 +728,8 @@ async def get_org_framework_purchase_invoice(
         transaction_id: UUID of the org-payer purchase transaction.
 
     Returns:
-        A 302 redirect to a presigned invoice URL when the PDF exists, else a
-        202 response after queueing generation.
+        A 200 response carrying a presigned invoice URL when the PDF exists,
+        else a 202 response after queueing generation.
 
     Raises:
         HTTPException(404): Purchase, organization, or framework not found.
@@ -768,7 +780,20 @@ async def get_org_framework_purchase_invoice(
             key,
             INVOICE_URL_TTL_SECONDS,
         )
-        return RedirectResponse(url=invoice_url, status_code=status.HTTP_302_FOUND)
+        # Handed back as data, not as a redirect: the caller authenticates with
+        # the Authorization header and navigates to S3 itself, so no credential
+        # ever rides in a URL.
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+            content=DownloadUrlResponse(download_url=invoice_url).model_dump(
+                mode="json"
+            ),
+        )
 
     generate_invoice_pdf.delay(str(transaction_id))
     return JSONResponse(
@@ -2252,9 +2277,7 @@ async def _sum_org_transactions(
     if after_or_at is not None:
         filters.append(Transaction.created_at >= after_or_at)
     column = Transaction.net_amount if net else Transaction.amount
-    value = await db.scalar(
-        select(func.coalesce(func.sum(column), 0)).where(*filters)
-    )
+    value = await db.scalar(select(func.coalesce(func.sum(column), 0)).where(*filters))
     return _normalise_money(Decimal(value or "0"))
 
 

@@ -1,9 +1,11 @@
-"""Integration tests scoping query-parameter token auth to download endpoints.
+"""Integration tests proving no endpoint authenticates via a query parameter.
 
-The `?token=` fallback exists only so browser-navigated redirect downloads
-(GDPR export bundle, purchase invoice PDF) can authenticate without headers.
-Every other endpoint must require the Authorization header, so a leaked URL
-never carries a usable credential for general API access.
+The `?token=` fallback used to exist so browser-navigated redirect downloads
+(GDPR export bundle, purchase invoice PDF) could authenticate without headers,
+but the value it accepted was the ordinary access token: a leaked URL in
+browser history, a Referer, or a proxy log carried a full-privilege credential
+for its remaining TTL. The downloads now return the presigned URL as JSON to a
+normal header-authenticated call, so the query fallback is gone everywhere.
 """
 
 from __future__ import annotations
@@ -170,13 +172,18 @@ async def test_role_gated_endpoint_rejects_query_param_token(
     assert response.status_code == 401
 
 
-async def test_gdpr_export_download_accepts_query_param_token(
+async def test_gdpr_export_download_rejects_query_param_token(
     client: AsyncClient,
     migrated_database: None,
     clean_state: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The GDPR export download keeps accepting ?token= for browser navigation."""
+    """The GDPR export download must not authenticate from a URL query parameter.
+
+    This is the worst surface for a leaked URL: the bundle is the user's entire
+    personal-data archive, and the token the query parameter used to accept was
+    the ordinary session credential.
+    """
     del migrated_database, clean_state
     monkeypatch.setattr(gdpr_beat.s3, "storage", FakeS3Storage())
     user_id = await create_user("query-scope-gdpr", "operator")
@@ -194,24 +201,33 @@ async def test_gdpr_export_download_accepts_query_param_token(
             await session.flush()
             request_id = request.id
 
-    response = await client.get(
+    query_response = await client.get(
         f"/v1/gdpr/exports/{request_id}/download",
         params={"token": token},
         follow_redirects=False,
     )
+    header_response = await client.get(
+        f"/v1/gdpr/exports/{request_id}/download",
+        headers={"Authorization": f"Bearer {token}"},
+        follow_redirects=False,
+    )
 
-    assert response.status_code == 302
+    assert query_response.status_code == 401
+    # The header-authenticated call hands back the presigned URL as data, so
+    # the browser navigates to S3 itself and no credential rides in a URL.
+    assert header_response.status_code == 200
+    assert header_response.json()["download_url"].startswith("https://s3.test/")
 
 
-async def test_purchase_invoice_accepts_query_param_token(
+async def test_purchase_invoice_rejects_query_param_token(
     client: AsyncClient,
     migrated_database: None,
     clean_state: None,
 ) -> None:
-    """The purchase invoice download keeps accepting ?token= for navigation.
+    """The purchase invoice download must not authenticate from a query parameter.
 
-    An unknown transaction id must reach the service (404), proving the query
-    token authenticated and passed the operator role gate rather than 401ing.
+    A 401 rather than the service's 404 for an unknown transaction proves the
+    query value never reached authentication at all.
     """
     del migrated_database, clean_state
     user_id = await create_user("query-scope-invoice", "operator")
@@ -223,4 +239,4 @@ async def test_purchase_invoice_accepts_query_param_token(
         follow_redirects=False,
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 401

@@ -4,12 +4,12 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_current_user_allow_query
+from app.core.dependencies import get_current_user
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.gdpr import consent_service, deletion_service, export_service
@@ -20,13 +20,12 @@ from app.modules.gdpr.schemas import (
     ConsentHistoryResponse,
     DataExportRequestResponse,
 )
+from app.shared.schemas.download import DownloadUrlResponse
 
 router = APIRouter(prefix="/gdpr", tags=["GDPR"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
-# Query-token auth is reserved for browser-navigated redirect downloads.
-DownloadUser = Annotated[User, Depends(get_current_user_allow_query)]
 
 
 def _client_ip(request: Request) -> str | None:
@@ -111,15 +110,13 @@ async def get_data_export_status(
 
 @router.get(
     "/exports/{export_request_id}/download",
-    status_code=status.HTTP_302_FOUND,
-    response_class=RedirectResponse,
+    response_model=DownloadUrlResponse,
     summary="Download GDPR export",
     description=(
-        "Redirect the current user to a short-lived private S3 download URL for "
-        "a ready GDPR export bundle."
+        "Return a short-lived private S3 download URL for a ready GDPR export "
+        "bundle. The caller navigates to the URL directly."
     ),
     responses={
-        status.HTTP_302_FOUND: {"description": "Private presigned download URL."},
         status.HTTP_404_NOT_FOUND: {"description": "Data export request not found."},
         status.HTTP_409_CONFLICT: {
             "description": "Data export is not ready for download."
@@ -132,7 +129,7 @@ async def get_data_export_status(
 )
 async def download_data_export(
     export_request_id: UUID,
-    current_user: DownloadUser,
+    current_user: CurrentUser,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> Response:

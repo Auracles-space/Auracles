@@ -12,7 +12,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, Response
 from redis.asyncio import Redis
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -58,6 +58,7 @@ from app.modules.projects.models import (
 )
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
+from app.shared.schemas.download import DownloadUrlResponse
 from app.workers.tasks import gdpr_beat
 
 ACTIVE_EXPORT_STATUSES = {"pending", "processing"}
@@ -551,45 +552,36 @@ async def _collect_org_contributor_activity(
     personal export.
     """
     authored_frameworks = (
-        (
-            await db.execute(
-                select(Framework, OrgMember.org_id)
-                .join(OrgMember, OrgMember.id == Framework.authoring_member_id)
-                .where(OrgMember.user_id == user_id)
-                .order_by(Framework.updated_at)
-            )
+        await db.execute(
+            select(Framework, OrgMember.org_id)
+            .join(OrgMember, OrgMember.id == Framework.authoring_member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(Framework.updated_at)
         )
-        .all()
-    )
+    ).all()
     staffed_proposals = (
-        (
-            await db.execute(
-                select(Proposal, OrgMember.org_id)
-                .join(OrgMember, OrgMember.id == Proposal.delivering_member_id)
-                .where(OrgMember.user_id == user_id)
-                .order_by(Proposal.created_at)
-            )
+        await db.execute(
+            select(Proposal, OrgMember.org_id)
+            .join(OrgMember, OrgMember.id == Proposal.delivering_member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(Proposal.created_at)
         )
-        .all()
-    )
+    ).all()
     staffed_deliverables = (
-        (
-            await db.execute(
-                select(
-                    Deliverable,
-                    Proposal.project_id,
-                    OrgMember.org_id,
-                )
-                .join(Milestone, Milestone.id == Deliverable.milestone_id)
-                .join(Project, Project.id == Milestone.project_id)
-                .join(Proposal, Proposal.id == Project.accepted_proposal_id)
-                .join(OrgMember, OrgMember.id == Proposal.delivering_member_id)
-                .where(OrgMember.user_id == user_id)
-                .order_by(Deliverable.created_at)
+        await db.execute(
+            select(
+                Deliverable,
+                Proposal.project_id,
+                OrgMember.org_id,
             )
+            .join(Milestone, Milestone.id == Deliverable.milestone_id)
+            .join(Project, Project.id == Milestone.project_id)
+            .join(Proposal, Proposal.id == Project.accepted_proposal_id)
+            .join(OrgMember, OrgMember.id == Proposal.delivering_member_id)
+            .where(OrgMember.user_id == user_id)
+            .order_by(Deliverable.created_at)
         )
-        .all()
-    )
+    ).all()
     return {
         "framework_authoring": [
             {
@@ -1072,7 +1064,19 @@ async def download_data_export(
         DATA_EXPORT_DOWNLOAD_URL_TTL_SECONDS,
         download_name=DATA_EXPORT_DOWNLOAD_FILENAME,
     )
-    return RedirectResponse(url=download_url, status_code=status.HTTP_302_FOUND)
+    # Handed back as data, not as a redirect: the caller authenticates with the
+    # Authorization header and navigates to S3 itself. This bundle is the
+    # user's entire personal-data archive, so a credential must never ride in a
+    # URL that lands in browser history or a proxy log.
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+        content=DownloadUrlResponse(download_url=download_url).model_dump(mode="json"),
+    )
 
 
 async def build_data_export_bundle(
@@ -1103,7 +1107,5 @@ async def build_data_export_bundle(
         "organization_memberships": await export_user_org_memberships(
             db, user_id=user_id
         ),
-        "connected_integrations": await export_user_connections(
-            db, user_id=user_id
-        ),
+        "connected_integrations": await export_user_connections(db, user_id=user_id),
     }

@@ -241,7 +241,7 @@ async def test_operator_purchase_history_is_paginated_and_scoped(
     assert second_body["items"][0]["framework_id"] == str(older_framework_id)
 
 
-async def test_purchase_invoice_redirects_when_pdf_exists(
+async def test_purchase_invoice_returns_presigned_url_when_pdf_exists(
     client: AsyncClient,
     purchase_history_context: dict[str, Any],
 ) -> None:
@@ -275,8 +275,8 @@ async def test_purchase_invoice_redirects_when_pdf_exists(
         headers=auth_headers(operator_id, ["operator"]),
     )
 
-    assert response.status_code == 302
-    assert response.headers["location"] == (
+    assert response.status_code == 200
+    assert response.json()["download_url"] == (
         f"https://s3.test/auracles-reports-dev/{invoice.s3_key}?expires=900"
     )
     assert storage.presigned_get_requests == [

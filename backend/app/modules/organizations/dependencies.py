@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, get_current_user_allow_query
+from app.core.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.organizations.models import (
     Organization,
@@ -91,22 +91,13 @@ async def _deny(
     )
 
 
-def require_org_role(
-    minimum_role: str,
-    *,
-    allow_query_token: bool = False,
-) -> Callable[..., object]:
+def require_org_role(minimum_role: str) -> Callable[..., object]:
     """Build a dependency enforcing the caller's minimum organization role.
 
     Args:
         minimum_role: Lowest allowed role: ``member``, ``admin``, or ``owner``.
-        allow_query_token: Accept the access token via ``?token=`` as well as
-            the Authorization header. Reserved for browser-navigated redirect
-            downloads (invoice PDFs) that cannot set headers.
     """
-    user_dependency = (
-        get_current_user_allow_query if allow_query_token else get_current_user
-    )
+    user_dependency = get_current_user
 
     # Depends lives in the default, not the annotation: postponed annotations
     # stringify `user_dependency`, which resolves against module globals and

@@ -186,7 +186,7 @@ async def org_invoice_context(
         await engine.dispose()
 
 
-async def test_org_purchase_invoice_issues_under_org_identity_then_redirects(
+async def test_org_purchase_invoice_issues_under_org_identity_then_returns_url(
     client: AsyncClient,
     migrated_database: None,
     org_invoice_context: dict[str, Any],
@@ -224,8 +224,8 @@ async def test_org_purchase_invoice_issues_under_org_identity_then_redirects(
         headers=auth(owner_token),
         follow_redirects=False,
     )
-    assert rendered.status_code == 302
-    assert invoice.s3_key in rendered.headers["location"]
+    assert rendered.status_code == 200
+    assert invoice.s3_key in rendered.json()["download_url"]
 
 
 async def test_org_invoices_list_includes_issued_purchase_invoice(
@@ -289,16 +289,17 @@ async def test_org_purchase_invoice_prefers_billing_email_when_set(
     assert invoice.buyer_email == "billing@org-invoice.example"
 
 
-async def test_org_purchase_invoice_accepts_query_token_for_browser_navigation(
+async def test_org_purchase_invoice_rejects_query_token(
     client: AsyncClient,
     migrated_database: None,
     org_invoice_context: dict[str, Any],
 ) -> None:
-    """The invoice route authenticates via ?token= for browser navigation.
+    """The invoice route must not authenticate from a URL query parameter.
 
-    The frontend downloads the PDF by navigating the browser to this route,
-    which cannot set an Authorization header — the same download-token shape
-    the individual purchase invoice route already supports.
+    The route used to accept ``?token=`` so the browser could navigate to it
+    directly, but the value it took was the full session credential. The
+    frontend now fetches the presigned URL with a header and navigates to
+    storage itself, so a 401 here is the point.
     """
     del migrated_database, org_invoice_context
     owner_id = await _create_user("org-invoice-token-owner")
@@ -311,8 +312,7 @@ async def test_org_purchase_invoice_accepts_query_token_for_browser_navigation(
         params={"token": owner_token},
     )
 
-    # 202 (generating) proves auth succeeded without an Authorization header.
-    assert response.status_code == 202
+    assert response.status_code == 401
 
 
 async def test_org_purchase_invoice_forbids_non_admin_member(

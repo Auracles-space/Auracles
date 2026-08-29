@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError  # type: ignore[import-untyped]
 from pydantic import ValidationError
@@ -29,29 +29,6 @@ async def get_token_string(credentials: BearerCredentials) -> str:
     """Extract the raw token string from the Authorization header."""
     if credentials is not None:
         return credentials.credentials
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Missing access token.",
-    )
-
-
-async def get_token_string_allow_query(
-    credentials: BearerCredentials,
-    token: str | None = Query(
-        None, description="Access token via query parameter for download links"
-    ),
-) -> str:
-    """Extract the raw token from the Authorization header or query parameter.
-
-    Query-parameter tokens exist only so browser-navigated redirect downloads
-    (which cannot set headers) can authenticate. Wire this dependency solely
-    to endpoints that 302 to a short-lived presigned URL — never to general
-    API endpoints, so a leaked URL cannot be replayed against the wider API.
-    """
-    if credentials is not None:
-        return credentials.credentials
-    if token is not None:
-        return token
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Missing access token.",
@@ -106,18 +83,6 @@ async def get_current_user(
     return await _load_user_from_token(db, token)
 
 
-async def get_current_user_allow_query(
-    db: DatabaseSession,
-    token: Annotated[str, Depends(get_token_string_allow_query)],
-) -> User:
-    """Load the authenticated user, additionally accepting a query token.
-
-    For browser-navigated redirect-download endpoints only; see
-    `get_token_string_allow_query`.
-    """
-    return await _load_user_from_token(db, token)
-
-
 def _decode_token_payload(token: str) -> TokenPayload:
     """Decode bearer token claims without loading the user."""
     try:
@@ -136,42 +101,17 @@ async def get_current_token_payload(
     return _decode_token_payload(token)
 
 
-async def get_current_token_payload_allow_query(
-    token: Annotated[str, Depends(get_token_string_allow_query)],
-) -> TokenPayload:
-    """Decode token claims, additionally accepting a query token.
-
-    For browser-navigated redirect-download endpoints only; see
-    `get_token_string_allow_query`.
-    """
-    return _decode_token_payload(token)
-
-
-def require_role(
-    *allowed_roles: str,
-    allow_query_token: bool = False,
-) -> Callable[..., object]:
+def require_role(*allowed_roles: str) -> Callable[..., object]:
     """Build a dependency that enforces token role claims before route logic.
 
     Args:
         *allowed_roles: Role claims that grant access.
-        allow_query_token: Accept the access token via ``?token=`` as well as
-            the Authorization header. Reserve for redirect-download endpoints;
-            see `get_token_string_allow_query`.
     """
-    user_dependency = (
-        get_current_user_allow_query if allow_query_token else get_current_user
-    )
-    payload_dependency = (
-        get_current_token_payload_allow_query
-        if allow_query_token
-        else get_current_token_payload
-    )
 
     async def checker(
         db: DatabaseSession,
-        user: Annotated[User, Depends(user_dependency)],
-        payload: Annotated[TokenPayload, Depends(payload_dependency)],
+        user: Annotated[User, Depends(get_current_user)],
+        payload: Annotated[TokenPayload, Depends(get_current_token_payload)],
     ) -> User:
         """Return the current user when one of the allowed roles is present."""
         if not set(payload.roles).intersection(allowed_roles):
