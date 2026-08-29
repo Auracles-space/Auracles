@@ -110,11 +110,27 @@ All secrets in **AWS Secrets Manager**, injected via task-definition `secrets` (
 
 Secret keys (from `app/core/config.py`): `DATABASE_URL`, `REDIS_URL`, `SECRET_KEY`, `TOTP_ENCRYPTION_KEY`, `PAYOUT_ACCOUNT_ENCRYPTION_KEY`, `PARTNER_WEBHOOK_ENCRYPTION_KEY`, `CONNECTOR_TOKEN_ENCRYPTION_KEY`, `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `PAYSTACK_SECRET_KEY`, `PAYSTACK_WEBHOOK_SECRET`, `PERSONA_API_KEY`, `PERSONA_WEBHOOK_SECRET`, `GOOGLE_CLIENT_SECRET`, `BRAVE_SEARCH_API_KEY`.
 
-Plain env vars on the task definition: `ENVIRONMENT=production`, `LOG_FORMAT=json`, `CORS_ALLOWED_ORIGINS=https://auracles.space`, `AWS_DEFAULT_REGION`, the four `S3_*_BUCKET` names, `CLAMAV_HOST=localhost`, `CLAMAV_PORT=3310`, Persona/Google IDs and redirect URIs, `PLATFORM_CURRENCY`, invoice seller fields.
+Plain env vars on the task definition: `ENVIRONMENT=production`, `LOG_FORMAT=json`, `CORS_ALLOWED_ORIGINS=https://auracles.space`, `AWS_DEFAULT_REGION`, the four `S3_*_BUCKET` names, `CLAMAV_HOST=localhost`, `CLAMAV_PORT=3310`, Persona/Google IDs and redirect URIs, `PLATFORM_CURRENCY`, invoice seller fields, **`TRUST_PROXY_HEADERS=true`**.
+
+`TRUST_PROXY_HEADERS` defaults to **off** and must be turned on here. Behind the ALB the TCP peer is the load balancer, so with it off every per-IP auth rate limiter keys on one address and the whole internet shares a single bucket — the limiter still "works" and protects nothing. `client_ip` (`app/core/network.py`) reads the **right-most** `X-Forwarded-For` entry, because an ALB *appends* the peer it saw rather than replacing the header: everything to the left is caller-supplied and forgeable. That is correct for **exactly one** trusted hop. Putting CloudFront or any CDN in front of the ALB adds a hop and moves the real client one position left — change the function, not the edge config, if that ever happens.
 
 **IAM instead of keys:** on Fargate, drop `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` entirely — the **task role** grants S3 access (boto3 picks up the role automatically; `Settings` fields are `None`-defaulted so nothing breaks). One fewer long-lived credential in existence.
 
 Amplify env vars: `NEXT_PUBLIC_API_URL=https://api.auracles.space`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_PLATFORM_CURRENCY`, `NEXT_PUBLIC_WAITLIST_MODE`.
+
+### Runtime limits to set before first deploy
+
+Two application-level limits are unset today and only bite once the service is reachable. Neither is a Terraform concern, but both belong to this cutover because the values depend on decisions made here.
+
+**Connection pool.** `app/core/database.py` calls `create_async_engine(url, pool_pre_ping=True)` with no `pool_size`/`max_overflow`, so it takes SQLAlchemy's defaults of 5 + 10 overflow **per process**. Across api + worker + beat that is up to 45 connections against Neon, which caps connections per tier. Set explicit sizes when wiring `DATABASE_URL`, and point it at Neon's **pooled** endpoint rather than the direct one — the driver pool and the Neon pooler are different layers and both matter. Suggested starting point, to revisit under real load:
+
+| Service | pool_size | max_overflow | Rationale |
+| --- | --- | --- | --- |
+| api | 5 | 5 | Request-scoped sessions, short-lived |
+| worker | 3 | 2 | Few concurrent tasks at `desired_count=1` |
+| beat | 1 | 1 | Dispatches only; does almost no querying |
+
+**WebSocket caps.** `app/modules/realtime/gateway.py` has no per-socket rate limit and no per-user connection cap, and opens a DB session per message against that same pool. A reconnect loop — a bug or a malicious client — can therefore exhaust the pool and take the HTTP API down with it, which makes this an availability risk rather than a tidiness one. Cap connections per user and messages per socket **before** the ALB makes the endpoint publicly reachable (step 4 of the cutover), not after.
 
 ---
 
@@ -180,14 +196,15 @@ Cheapest lever if burn must drop: fold worker to 0.5 vCPU / 3 GB (~$31) and acce
 1. **Human:** create/verify AWS account, enable MFA on root, create the Terraform state bucket + DynamoDB table (one-time, manual by design), apply for Activate credits.
 2. Terraform bootstrap: networking, ECR, secrets (values entered by human, never committed), IAM/OIDC.
 3. Build + push backend image to ECR manually once; stand up ECS cluster + services with `desired_count=0→1`; confirm `/health` green through the ALB.
-4. Point **api.auracles.space** DNS at the ALB (ACM cert validated first). Old Render URL keeps working in parallel — this is the rollback path.
-5. Update webhook endpoints at Stripe, Paystack, Persona to the new API host. (Paystack: single URL per mode — swap test URL first, verify, then live.)
-6. Amplify app connected to the GitHub repo (`appRoot=frontend`), env vars set, deploy, attach **auracles.space** domain.
-7. Rewrite `deploy.yml` (ECR + ECS via OIDC), delete Render hook secrets. One full push-to-main → auto-deploy verified.
-8. Run one ephemeral-staging cycle end-to-end to prove the QA workflow.
-9. Decommission Render services; delete `render.yaml` in a follow-up PR; update CLAUDE.md tech-stack table.
+4. Land the runtime limits from §4 — explicit DB pool sizes, WebSocket connection cap and per-socket rate limit, `TRUST_PROXY_HEADERS=true`. These go in **before** the next step makes the API reachable, because each one is only exploitable once it is.
+5. Point **api.auracles.space** DNS at the ALB (ACM cert validated first). Old Render URL keeps working in parallel — this is the rollback path.
+6. Update webhook endpoints at Stripe, Paystack, Persona to the new API host. (Paystack: single URL per mode — swap test URL first, verify, then live.)
+7. Amplify app connected to the GitHub repo (`appRoot=frontend`), env vars set, deploy, attach **auracles.space** domain.
+8. Rewrite `deploy.yml` (ECR + ECS via OIDC), delete Render hook secrets. One full push-to-main → auto-deploy verified.
+9. Run one ephemeral-staging cycle end-to-end to prove the QA workflow.
+10. Decommission Render services; delete `render.yaml` in a follow-up PR; update CLAUDE.md tech-stack table.
 
-Rollback at any step ≤ 7: DNS back to Render, webhooks back to old URLs. Nothing is destroyed until step 9.
+Rollback at any step ≤ 8: DNS back to Render, webhooks back to old URLs. Nothing is destroyed until step 10.
 
 ---
 
@@ -202,3 +219,8 @@ Rollback at any step ≤ 7: DNS back to Render, webhooks back to old URLs. Nothi
 | Migration race if api scales >1 | Locked in §3: move migrations to `ecs run-task` before any scale-out. |
 | Beat double-run during deploy | min-healthy 0 / max 100 deployment config (§3). |
 | Ephemeral staging drift (“works on prod modules only”) | Staging uses identical modules — only tfvars differ; CI runs `terraform fmt`/`validate` on every infra PR. |
+| Default DB pool (5+10 × 3 services) exhausts Neon's connection cap | Explicit `pool_size`/`max_overflow` per service and Neon's pooled endpoint, set when `DATABASE_URL` is wired (§4). |
+| Unbounded WebSocket sockets exhaust the DB pool and take the API down with them | Per-user connection cap + per-socket rate limit landed before step 4 exposes the ALB (§4). |
+| `TRUST_PROXY_HEADERS` left off silently collapses every per-IP rate limit into one bucket | Set it on the task definition (§4); the limiter keys on the ALB address otherwise and protects nothing. |
+| No error tracking or metrics — production failures surface via users | Accepted for the pilot. Sentry (or equivalent) is the first addition once traffic is real; CloudWatch logs alone will not surface a 500 spike. |
+| Neon restore has never been exercised | Run one PITR restore against the `develop` branch during an ephemeral-staging cycle (§6). An untested restore is not a backup. |
