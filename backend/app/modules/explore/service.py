@@ -164,11 +164,22 @@ async def _collection_members(
     db: AsyncSession,
     collection_id: UUID,
 ) -> list[Framework]:
-    """Return member Frameworks for a public Collection card."""
+    """Return publicly visible member Frameworks for a public Collection card.
+
+    Membership is validated once at publish time and never re-checked, so a
+    member can silently leave published state afterwards — cutting a new
+    version returns a Framework to draft while its title and price stay
+    editable. These are anonymous endpoints, so the visibility rules of the
+    main catalog have to be reapplied here rather than assumed.
+    """
     rows = await db.execute(
         select(Framework)
         .join(CollectionFramework, CollectionFramework.framework_id == Framework.id)
-        .where(CollectionFramework.collection_id == collection_id)
+        .where(
+            CollectionFramework.collection_id == collection_id,
+            Framework.status == "published",
+            Framework.is_calibration.is_(False),
+        )
         .order_by(Framework.title.asc(), Framework.id.asc())
     )
     return list(rows.scalars().all())

@@ -46,6 +46,18 @@ class AdminFrameworkSuspendRequest(BaseModel):
     """Request body for post-publish Framework suspension."""
 
     reason: str = Field(min_length=1)
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
+class AdminFrameworkReinstateRequest(BaseModel):
+    """Request body for reversing a Framework takedown.
+
+    Carries only the step-up factor: reinstatement takes no other input, but
+    returning a suspended Framework to the public catalog is a trust decision
+    and is gated like its sibling takedown.
+    """
+
+    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminFrameworkStatusResponse(BaseModel):
@@ -140,6 +152,7 @@ class AdminRarityBlockOverrideRequest(BaseModel):
     """Request body for overriding a near-duplicate rarity hard block."""
 
     reason: str = Field(min_length=5, max_length=1000)
+    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminLicenseGrantRequest(BaseModel):
@@ -150,6 +163,7 @@ class AdminLicenseGrantRequest(BaseModel):
     type: Literal["single_user", "team", "organizational", "enterprise"]
     expires_at: datetime | None = None
     seats_total: int | None = Field(default=None, ge=1)
+    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminLicenseGrantResponse(BaseModel):

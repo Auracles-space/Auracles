@@ -68,6 +68,10 @@ describe("AdminSuspendedFrameworksPanel", () => {
 
     render(<AdminSuspendedFrameworksPanel />);
     const reinstate = await screen.findByRole("button", { name: /reinstate/i });
+    // Reinstatement is step-up gated; the button stays disabled without a code.
+    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
 
     fireEvent.click(reinstate);
 
@@ -92,7 +96,11 @@ describe("AdminSuspendedFrameworksPanel", () => {
     });
 
     render(<AdminSuspendedFrameworksPanel />);
-    fireEvent.click(await screen.findByRole("button", { name: /reinstate/i }));
+    await screen.findByRole("button", { name: /reinstate/i });
+    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /reinstate/i }));
 
     expect(
       await screen.findByText("The request could not be completed."),

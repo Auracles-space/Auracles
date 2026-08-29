@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from "react";
 
+import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
@@ -56,6 +57,7 @@ export function AdminFrameworkDirectoryPanel() {
     null,
   );
   const [reason, setReason] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [delisting, setDelisting] = useState(false);
 
   useEffect(() => {
@@ -93,7 +95,7 @@ export function AdminFrameworkDirectoryPanel() {
     setError(null);
     configureBrowserClient();
     const result = await suspendFrameworkV1AdminFrameworksFrameworkIdSuspendPost({
-      body: { reason: reason.trim() },
+      body: { reason: reason.trim(), totp_code: totpCode.trim() },
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
@@ -116,6 +118,8 @@ export function AdminFrameworkDirectoryPanel() {
         : current,
     );
     setReason("");
+    // Each step-up code is single-use; clear it so the next delist prompts.
+    setTotpCode("");
     setSelectedFrameworkId(null);
   }
 
@@ -236,9 +240,14 @@ export function AdminFrameworkDirectoryPanel() {
                         value={reason}
                       />
                     </label>
+                    <TotpInput onChange={setTotpCode} value={totpCode} />
                     <div className="flex flex-wrap gap-3">
                       <Button
-                        disabled={delisting || reason.trim().length === 0}
+                        disabled={
+                          delisting ||
+                          reason.trim().length === 0 ||
+                          totpCode.trim().length < 6
+                        }
                         onClick={() => void handleDelist(item.framework_id)}
                         variant="destructive"
                       >
@@ -247,6 +256,7 @@ export function AdminFrameworkDirectoryPanel() {
                       <Button
                         onClick={() => {
                           setReason("");
+                          setTotpCode("");
                           setSelectedFrameworkId(null);
                         }}
                         variant="secondary"

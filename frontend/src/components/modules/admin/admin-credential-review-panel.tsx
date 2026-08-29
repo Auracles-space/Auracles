@@ -19,6 +19,7 @@ import {
 } from "@/lib/auth/form-client";
 import { CredentialStatusBadge } from "@/components/modules/attestation/credential-status-badge";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
+import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import {
   downloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGet,
@@ -88,6 +89,7 @@ export function AdminCredentialReviewPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectOpenId, setRejectOpenId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [downloadBusyKey, setDownloadBusyKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -138,6 +140,7 @@ export function AdminCredentialReviewPanel() {
     setBusyId(credentialId);
     configureBrowserClient();
     const result = await verifyCredentialV1AdminCredentialsCredentialIdVerifyPost({
+      body: { totp_code: totpCode.trim() },
       headers: getAccessTokenHeaders(),
       path: { credential_id: credentialId },
     });
@@ -146,6 +149,8 @@ export function AdminCredentialReviewPanel() {
       setError(describeGeneratedError(result.error));
       return;
     }
+    // Step-up codes are single-use; clear so the next decision prompts afresh.
+    setTotpCode("");
     applyUpdate(result.data);
   }
 
@@ -163,7 +168,7 @@ export function AdminCredentialReviewPanel() {
     setBusyId(credentialId);
     configureBrowserClient();
     const result = await rejectCredentialV1AdminCredentialsCredentialIdRejectPost({
-      body: { reason: rejectReason.trim() },
+      body: { reason: rejectReason.trim(), totp_code: totpCode.trim() },
       headers: getAccessTokenHeaders(),
       path: { credential_id: credentialId },
     });
@@ -174,6 +179,7 @@ export function AdminCredentialReviewPanel() {
     }
     setRejectOpenId(null);
     setRejectReason("");
+    setTotpCode("");
     applyUpdate(result.data);
   }
 
@@ -380,9 +386,10 @@ export function AdminCredentialReviewPanel() {
 
                 {isPending ? (
                   <div className="mt-4 border-t border-border-default/45 pt-4 grid gap-3">
+                    <TotpInput onChange={setTotpCode} value={totpCode} />
                     <div className="flex flex-wrap gap-3">
                       <Button
-                        disabled={isBusy}
+                        disabled={isBusy || totpCode.trim().length < 6}
                         onClick={() => handleVerify(credential.id)}
                       >
                         Verify
@@ -415,7 +422,11 @@ export function AdminCredentialReviewPanel() {
                           />
                         </label>
                         <Button
-                          disabled={isBusy || !rejectReason.trim()}
+                          disabled={
+                            isBusy ||
+                            !rejectReason.trim() ||
+                            totpCode.trim().length < 6
+                          }
                           onClick={() => handleReject(credential.id)}
                           variant="destructive"
                         >

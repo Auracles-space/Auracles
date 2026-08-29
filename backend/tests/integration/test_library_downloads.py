@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -16,7 +17,11 @@ from sqlalchemy import create_engine, delete, func, select, update
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password
+from app.core.security import (
+    create_access_token,
+    encrypt_totp_secret,
+    hash_password,
+)
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.collections.models import CollectionFramework, FrameworkCollection
@@ -157,6 +162,22 @@ async def library_test_context() -> AsyncIterator[dict[str, Any]]:
         app.dependency_overrides.pop(get_redis, None)
         await cleanup()
         await engine.dispose()
+
+
+async def enable_admin_totp(user_id: UUID) -> str:
+    """Enable TOTP on a user and return the raw secret for code generation.
+
+    Admin licence grants are step-up gated, so the test admin needs a real
+    authenticator secret rather than a bare role row.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            secret = pyotp.random_base32()
+            user.totp_secret = encrypt_totp_secret(secret)
+            user.totp_enabled = True
+    return secret
 
 
 async def create_user(
@@ -364,6 +385,7 @@ async def test_admin_can_grant_team_license_and_operator_library_lists_it(
     contributor_id = await create_user("licensor@auracles.space", ["contributor"])
     operator_id = await create_user("operator-library@auracles.space", ["operator"])
     admin_id = await create_user("admin-license@auracles.space", ["admin"])
+    admin_totp = await enable_admin_totp(admin_id)
     framework_id, _ = await create_published_framework_version(contributor_id)
 
     grant = await client.post(
@@ -372,6 +394,7 @@ async def test_admin_can_grant_team_license_and_operator_library_lists_it(
             "framework_id": str(framework_id),
             "operator_id": str(operator_id),
             "type": "team",
+            "totp_code": pyotp.TOTP(admin_totp).now(),
         },
         headers=auth_headers(admin_id, ["admin"]),
     )
@@ -435,21 +458,26 @@ async def test_admin_duplicate_license_grant_returns_409(
     )
     operator_id = await create_user("duplicate-operator@auracles.space", ["operator"])
     admin_id = await create_user("duplicate-admin@auracles.space", ["admin"])
+    admin_totp = await enable_admin_totp(admin_id)
     framework_id, _ = await create_published_framework_version(contributor_id)
     payload = {
         "framework_id": str(framework_id),
         "operator_id": str(operator_id),
         "type": "single_user",
     }
+    # Step-up codes are single-use, so the retry needs a different one. The
+    # previous step is still inside the accepted +/-1 window.
+    totp = pyotp.TOTP(admin_totp)
+    now = datetime.now(UTC)
 
     first = await client.post(
         "/v1/admin/licenses",
-        json=payload,
+        json={**payload, "totp_code": totp.at(now)},
         headers=auth_headers(admin_id, ["admin"]),
     )
     duplicate = await client.post(
         "/v1/admin/licenses",
-        json=payload,
+        json={**payload, "totp_code": totp.at(now - timedelta(seconds=30))},
         headers=auth_headers(admin_id, ["admin"]),
     )
 

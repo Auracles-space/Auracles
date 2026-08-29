@@ -704,8 +704,14 @@ components:
           minLength: 1
           title: Reason
           type: string
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
       required:
       - reason
+      - totp_code
       title: AdminCredentialRejectRequest
       type: object
     AdminCredentialResponse:
@@ -814,6 +820,25 @@ components:
       - created_at
       - updated_at
       title: AdminCredentialResponse
+      type: object
+    AdminCredentialVerifyRequest:
+      description: 'Admin request body for verifying a pending Credential.
+
+
+        Carries only the step-up factor: verification takes no other input, but it
+
+        is a trust decision that feeds attestor eligibility, so it is gated like
+
+        the sibling rejection.'
+      properties:
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
+      required:
+      - totp_code
+      title: AdminCredentialVerifyRequest
       type: object
     AdminCredentialsResponse:
       description: Paginated admin credential review queue.
@@ -1510,6 +1535,25 @@ components:
       - items
       title: AdminFrameworkDirectoryResponse
       type: object
+    AdminFrameworkReinstateRequest:
+      description: 'Request body for reversing a Framework takedown.
+
+
+        Carries only the step-up factor: reinstatement takes no other input, but
+
+        returning a suspended Framework to the public catalog is a trust decision
+
+        and is gated like its sibling takedown.'
+      properties:
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
+      required:
+      - totp_code
+      title: AdminFrameworkReinstateRequest
+      type: object
     AdminFrameworkStatusResponse:
       description: Response body for admin Framework state changes.
       properties:
@@ -1537,8 +1581,14 @@ components:
           minLength: 1
           title: Reason
           type: string
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
       required:
       - reason
+      - totp_code
       title: AdminFrameworkSuspendRequest
       type: object
     AdminInvoiceItem:
@@ -1701,6 +1751,11 @@ components:
             type: integer
           - type: 'null'
           title: Seats Total
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
         type:
           enum:
           - single_user
@@ -1713,6 +1768,7 @@ components:
       - framework_id
       - operator_id
       - type
+      - totp_code
       title: AdminLicenseGrantRequest
       type: object
     AdminLicenseGrantResponse:
@@ -2070,8 +2126,14 @@ components:
           minLength: 5
           title: Reason
           type: string
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
       required:
       - reason
+      - totp_code
       title: AdminRarityBlockOverrideRequest
       type: object
     AdminReputationRecomputeRequest:
@@ -14618,7 +14680,8 @@ paths:
       - Admin
   /v1/admin/credentials/{credential_id}/reject:
     post:
-      description: Reject a pending Credential with a reason.
+      description: Reject a pending Credential with a reason. Requires an admin step-up
+        code.
       operationId: reject_credential_v1_admin_credentials__credential_id__reject_post
       parameters:
       - in: path
@@ -14654,7 +14717,7 @@ paths:
       - Admin
   /v1/admin/credentials/{credential_id}/verify:
     post:
-      description: Mark a pending Credential verified.
+      description: Mark a pending Credential verified. Requires an admin step-up code.
       operationId: verify_credential_v1_admin_credentials__credential_id__verify_post
       parameters:
       - in: path
@@ -14664,6 +14727,12 @@ paths:
           format: uuid
           title: Credential Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminCredentialVerifyRequest'
+        required: true
       responses:
         '200':
           content:
@@ -15007,7 +15076,8 @@ paths:
       - Admin
   /v1/admin/frameworks/{framework_id}/rarity-block/override:
     post:
-      description: Override a near-duplicate rarity hard block after admin review.
+      description: Override a near-duplicate rarity hard block. Requires a step-up
+        code.
       operationId: override_rarity_block_v1_admin_frameworks__framework_id__rarity_block_override_post
       parameters:
       - in: path
@@ -15043,7 +15113,10 @@ paths:
       - Admin
   /v1/admin/frameworks/{framework_id}/reinstate:
     post:
-      description: Reverse a takedown, returning a suspended Framework to the marketplace.
+      description: 'Reverse a takedown, returning a Framework to the marketplace.
+
+
+        Requires an admin step-up code.'
       operationId: reinstate_framework_v1_admin_frameworks__framework_id__reinstate_post
       parameters:
       - in: path
@@ -15053,6 +15126,12 @@ paths:
           format: uuid
           title: Framework Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminFrameworkReinstateRequest'
+        required: true
       responses:
         '200':
           content:
@@ -15073,7 +15152,8 @@ paths:
       - Admin
   /v1/admin/frameworks/{framework_id}/suspend:
     post:
-      description: Suspend a published Framework from marketplace discovery.
+      description: Suspend a published Framework from discovery. Requires a step-up
+        code.
       operationId: suspend_framework_v1_admin_frameworks__framework_id__suspend_post
       parameters:
       - in: path
@@ -15259,7 +15339,7 @@ paths:
       - Admin
   /v1/admin/licenses:
     post:
-      description: Grant a Framework license to an Operator during Phase 2.
+      description: Grant a Framework license to an Operator. Requires a step-up code.
       operationId: grant_license_v1_admin_licenses_post
       requestBody:
         content:

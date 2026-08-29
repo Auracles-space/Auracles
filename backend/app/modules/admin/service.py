@@ -1865,11 +1865,25 @@ async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
 
 async def suspend_framework(
     db: AsyncSession,
+    redis: Redis,
     admin: User,
     framework_id: UUID,
     reason: str,
+    totp_code: str,
 ) -> Framework:
-    """Suspend a published Framework after admin moderation review."""
+    """Suspend a published Framework after admin moderation review.
+
+    Step-up verified before anything is read or written, matching the other
+    admin trust actions: removing a Framework from the catalog cuts off a
+    contributor's income and must not be reachable from a stolen session
+    alone.
+    """
+    await _verify_admin_2fa(
+        db=db,
+        redis=redis,
+        admin_id=admin.id,
+        totp_code=totp_code,
+    )
     framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
     if framework is None:
         raise HTTPException(
@@ -1909,8 +1923,10 @@ async def suspend_framework(
 
 async def reinstate_framework(
     db: AsyncSession,
+    redis: Redis,
     admin: User,
     framework_id: UUID,
+    totp_code: str,
 ) -> Framework:
     """Reverse an admin takedown, returning a suspended Framework to the catalog.
 
@@ -1922,17 +1938,26 @@ async def reinstate_framework(
 
     Args:
         db: Async database session.
+        redis: Redis client used by the step-up factor check.
         admin: Acting admin user (RBAC enforced at the router).
         framework_id: UUID of the suspended Framework to reinstate.
+        totp_code: Admin TOTP or backup code authorising the change.
 
     Returns:
         The reinstated Framework with status ``published``.
 
     Raises:
+        HTTPException(401): If the step-up factor is missing or invalid.
         HTTPException(404): If the Framework does not exist.
         HTTPException(409): If the Framework is not suspended, or an Artifact
             now fails a trust gate.
     """
+    await _verify_admin_2fa(
+        db=db,
+        redis=redis,
+        admin_id=admin.id,
+        totp_code=totp_code,
+    )
     framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
     if framework is None:
         raise HTTPException(
@@ -1980,15 +2005,28 @@ async def reinstate_framework(
 
 async def override_rarity_block(
     db: AsyncSession,
+    redis: Redis,
     admin: User,
     framework_id: UUID,
     reason: str,
+    totp_code: str,
 ) -> Framework:
-    """Override near-duplicate rarity hard blocks for one Framework."""
+    """Override near-duplicate rarity hard blocks for one Framework.
+
+    Step-up verified inside the transaction, before the Framework is read:
+    overriding the duplicate block publishes work the pipeline flagged as
+    near-identical to existing material.
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
         framework = await db.scalar(
             select(Framework).where(Framework.id == framework_id)
         )
@@ -2237,18 +2275,31 @@ async def unsuspend_user(
 
 async def grant_license(
     db: AsyncSession,
+    redis: Redis,
     admin: User,
     framework_id: UUID,
     operator_id: UUID,
     license_type: str,
     expires_at: datetime | None,
     seats_total: int | None,
+    totp_code: str,
 ) -> License:
-    """Grant an Operator license to a Framework for Phase 2 admin flows."""
+    """Grant an Operator license to a Framework for Phase 2 admin flows.
+
+    Step-up verified inside the transaction, before anything is read: minting
+    a licence hands out paid access for free and is the money-adjacent sibling
+    of the escrow overrides, which are already gated.
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
+        await _verify_admin_2fa(
+            db=db,
+            redis=redis,
+            admin_id=admin_id,
+            totp_code=totp_code,
+        )
         framework = await db.scalar(
             select(Framework).where(Framework.id == framework_id)
         )

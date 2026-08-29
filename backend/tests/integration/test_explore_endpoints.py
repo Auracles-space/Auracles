@@ -521,6 +521,60 @@ async def test_public_collection_list_and_detail_show_members_and_savings(
     assert detail_body["members"][0]["framework_id"] == str(second_id)
 
 
+async def test_public_collection_hides_unpublished_member_frameworks(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """A member Framework that leaves published state drops out of the Collection.
+
+    Membership is validated once at publish time and never re-checked, so a
+    contributor who cuts a new version — which returns the Framework to draft
+    while leaving title and price editable — would otherwise expose in-progress
+    metadata to anonymous visitors through the Collection endpoints.
+    """
+    del migrated_database, explore_test_context
+    contributor_id = await create_user(
+        "collection-draft-member@auracles.space",
+        ["contributor"],
+        display_name="Draft Member Seller",
+    )
+    published_member_id, _ = await create_framework(
+        contributor_id,
+        title="Published Member Kit",
+        price=Decimal("500.00"),
+    )
+    draft_member_id, _ = await create_framework(
+        contributor_id,
+        title="Unreleased Rewrite Kit",
+        price=Decimal("700.00"),
+        status="draft",
+    )
+    collection_id = await create_collection(
+        contributor_id,
+        title="Partially Drafted Bundle",
+        framework_ids=[published_member_id, draft_member_id],
+        bundle_price=Decimal("900.00"),
+    )
+
+    list_response = await client.get("/v1/explore/collections")
+    detail_response = await client.get(f"/v1/explore/collections/{collection_id}")
+
+    assert list_response.status_code == 200
+    item = list_response.json()["items"][0]
+    member_titles = [member["title"] for member in item["members"]]
+    assert member_titles == ["Published Member Kit"]
+    assert item["member_count"] == 1
+    assert "Unreleased Rewrite Kit" not in str(list_response.json())
+
+    assert detail_response.status_code == 200
+    detail_body = detail_response.json()
+    assert [member["framework_id"] for member in detail_body["members"]] == [
+        str(published_member_id)
+    ]
+    assert str(draft_member_id) not in str(detail_body)
+
+
 async def test_mixed_catalog_returns_framework_and_collection_items(
     client: AsyncClient,
     migrated_database: None,

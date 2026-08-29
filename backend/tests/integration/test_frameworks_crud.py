@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -22,7 +23,11 @@ from sqlalchemy import create_engine, delete, func, select, update
 from app.core.currency import platform_currency
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password
+from app.core.security import (
+    create_access_token,
+    encrypt_totp_secret,
+    hash_password,
+)
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
@@ -244,6 +249,22 @@ async def create_user_with_roles(
                     )
                 )
         return user.id
+
+
+async def enable_admin_totp(user_id: UUID) -> str:
+    """Enable TOTP on a user and return the raw secret for code generation.
+
+    Admin moderation writes are step-up gated, so their test admins need a
+    real authenticator secret rather than a bare role row.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            secret = pyotp.random_base32()
+            user.totp_secret = encrypt_totp_secret(secret)
+            user.totp_enabled = True
+    return secret
 
 
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
@@ -2600,6 +2621,7 @@ async def test_admin_override_unblocks_near_duplicate_hard_band(
         "rarity-admin@auracles.space",
         ["admin"],
     )
+    admin_totp = await enable_admin_totp(admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     artifact_id = await create_artifact_for_framework(
         client,
@@ -2627,7 +2649,10 @@ async def test_admin_override_unblocks_near_duplicate_hard_band(
     )
     override = await client.post(
         f"/v1/admin/frameworks/{framework_id}/rarity-block/override",
-        json={"reason": "Contributor supplied reuse license evidence."},
+        json={
+            "reason": "Contributor supplied reuse license evidence.",
+            "totp_code": pyotp.TOTP(admin_totp).now(),
+        },
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -2829,6 +2854,7 @@ async def test_admin_can_suspend_published_framework(
         ["contributor"],
     )
     admin_id = await create_user_with_roles("suspend-admin@auracles.space", ["admin"])
+    admin_totp = await enable_admin_totp(admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -2838,7 +2864,10 @@ async def test_admin_can_suspend_published_framework(
 
     response = await client.post(
         f"/v1/admin/frameworks/{framework_id}/suspend",
-        json={"reason": "Post-publish moderation hit."},
+        json={
+            "reason": "Post-publish moderation hit.",
+            "totp_code": pyotp.TOTP(admin_totp).now(),
+        },
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -2871,6 +2900,7 @@ async def test_admin_suspended_frameworks_list_surfaces_takedowns(
     admin_id = await create_user_with_roles(
         "suspended-list-admin@auracles.space", ["admin"]
     )
+    admin_totp = await enable_admin_totp(admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -2879,7 +2909,10 @@ async def test_admin_suspended_frameworks_list_surfaces_takedowns(
         await session.commit()
     await client.post(
         f"/v1/admin/frameworks/{framework_id}/suspend",
-        json={"reason": "Listed for review."},
+        json={
+            "reason": "Listed for review.",
+            "totp_code": pyotp.TOTP(admin_totp).now(),
+        },
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -3038,6 +3071,7 @@ async def test_admin_can_reinstate_suspended_framework(
         ["contributor"],
     )
     admin_id = await create_user_with_roles("reinstate-admin@auracles.space", ["admin"])
+    admin_totp = await enable_admin_totp(admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -3048,6 +3082,7 @@ async def test_admin_can_reinstate_suspended_framework(
 
     response = await client.post(
         f"/v1/admin/frameworks/{framework_id}/reinstate",
+        json={"totp_code": pyotp.TOTP(admin_totp).now()},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -3059,6 +3094,63 @@ async def test_admin_can_reinstate_suspended_framework(
         # Reinstatement clears the takedown reason and republishes.
         assert framework.status == "published"
         assert framework.rejection_reason is None
+
+
+async def test_admin_moderation_writes_require_step_up_code(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Suspend, reinstate, and rarity override each demand a valid admin code.
+
+    These sit alongside user suspension and the escrow overrides, which were
+    already gated. A stolen admin session must not be able to pull a
+    contributor's published work from the catalog on its own.
+    """
+    contributor_id = await create_user_with_roles(
+        "stepup-owner@auracles.space",
+        ["contributor"],
+    )
+    admin_id = await create_user_with_roles("stepup-admin@auracles.space", ["admin"])
+    await enable_admin_totp(admin_id)
+    framework_id = await create_draft_framework(client, contributor_id)
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "published"
+        await session.commit()
+
+    headers = auth_headers(admin_id, ["admin"])
+    suspend_without_code = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/suspend",
+        json={"reason": "No step-up supplied."},
+        headers=headers,
+    )
+    suspend_wrong_code = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/suspend",
+        json={"reason": "Wrong step-up supplied.", "totp_code": "000000"},
+        headers=headers,
+    )
+    reinstate_without_code = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/reinstate",
+        json={},
+        headers=headers,
+    )
+    override_without_code = await client.post(
+        f"/v1/admin/frameworks/{framework_id}/rarity-block/override",
+        json={"reason": "No step-up supplied for override."},
+        headers=headers,
+    )
+
+    assert suspend_without_code.status_code == 422
+    assert suspend_wrong_code.status_code == 422
+    assert reinstate_without_code.status_code == 422
+    assert override_without_code.status_code == 422
+    async with async_session_factory() as session:
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        # The rejected takedown must not have moved the Framework.
+        assert framework.status == "published"
 
 
 async def test_admin_reinstate_rejects_non_suspended_framework(
@@ -3074,6 +3166,7 @@ async def test_admin_reinstate_rejects_non_suspended_framework(
     admin_id = await create_user_with_roles(
         "reinstate-noop-admin@auracles.space", ["admin"]
     )
+    admin_totp = await enable_admin_totp(admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -3083,6 +3176,7 @@ async def test_admin_reinstate_rejects_non_suspended_framework(
 
     response = await client.post(
         f"/v1/admin/frameworks/{framework_id}/reinstate",
+        json={"totp_code": pyotp.TOTP(admin_totp).now()},
         headers=auth_headers(admin_id, ["admin"]),
     )
 

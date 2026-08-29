@@ -90,7 +90,13 @@ describe("AdminCredentialReviewPanel", () => {
     ).mockResolvedValue(ok({ ...credential, verification_status: "verified" }));
 
     render(<AdminCredentialReviewPanel />);
-    fireEvent.click(await screen.findByRole("button", { name: "Verify" }));
+    await screen.findByRole("button", { name: "Verify" });
+    // Credential decisions are step-up gated; without a code both buttons
+    // stay disabled.
+    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
 
     await waitFor(() => {
       expect(
@@ -113,7 +119,11 @@ describe("AdminCredentialReviewPanel", () => {
     );
 
     render(<AdminCredentialReviewPanel />);
-    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
+    await screen.findByRole("button", { name: "Reject" });
+    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
 
     // Confirming with an empty reason must not call the reject endpoint.
     fireEvent.click(
@@ -133,7 +143,7 @@ describe("AdminCredentialReviewPanel", () => {
         rejectCredentialV1AdminCredentialsCredentialIdRejectPost,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: { reason: "Insufficient evidence" },
+          body: { reason: "Insufficient evidence", totp_code: "123456" },
           path: { credential_id: credential.id },
         }),
       );

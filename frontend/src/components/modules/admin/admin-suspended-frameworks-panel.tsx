@@ -12,6 +12,7 @@
  */
 import { useEffect, useState } from "react";
 
+import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
@@ -52,6 +53,9 @@ export function AdminSuspendedFrameworksPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+
+  const canAct = totpCode.trim().length >= 6;
 
   useEffect(() => {
     let mounted = true;
@@ -84,6 +88,7 @@ export function AdminSuspendedFrameworksPanel() {
     setError(null);
     configureBrowserClient();
     const result = await reinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePost({
+      body: { totp_code: totpCode.trim() },
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
@@ -92,6 +97,9 @@ export function AdminSuspendedFrameworksPanel() {
       setError(describeGeneratedError(result.error));
       return;
     }
+    // Each code is single-use, so clear it rather than leave a stale value
+    // that would silently fail the next reinstatement.
+    setTotpCode("");
     // Drop the reinstated Framework from the suspended list.
     setItems((current) =>
       current.filter((item) => item.framework_id !== frameworkId),
@@ -125,7 +133,14 @@ export function AdminSuspendedFrameworksPanel() {
           No frameworks are currently suspended.
         </p>
       ) : (
-        <ul className="mt-5 grid gap-3">
+        <>
+          <div className="mt-5 rounded-xl border border-border-default bg-surface-2 p-4">
+            <TotpInput onChange={setTotpCode} value={totpCode} />
+            <p className="mt-2 text-xs leading-5 text-foreground-muted">
+              Returning a Framework to the public catalog needs a current code.
+            </p>
+          </div>
+          <ul className="mt-3 grid gap-3">
           {items.map((item) => (
             <li
               key={item.framework_id}
@@ -149,14 +164,15 @@ export function AdminSuspendedFrameworksPanel() {
                 variant="secondary"
                 className="w-full md:w-auto"
                 loading={busyId === item.framework_id}
-                disabled={busyId !== null}
+                disabled={busyId !== null || !canAct}
                 onClick={() => void handleReinstate(item.framework_id)}
               >
                 Reinstate
               </Button>
             </li>
           ))}
-        </ul>
+          </ul>
+        </>
       )}
     </section>
   );

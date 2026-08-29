@@ -274,6 +274,7 @@ export type AdminConnectorsResponse = {
  */
 export type AdminCredentialRejectRequest = {
     reason: string;
+    totp_code: string;
 };
 
 /**
@@ -305,6 +306,17 @@ export type AdminCredentialResponse = {
  */
 export type AdminCredentialsResponse = {
     credentials: Array<AdminCredentialResponse>;
+};
+
+/**
+ * Admin request body for verifying a pending Credential.
+ *
+ * Carries only the step-up factor: verification takes no other input, but it
+ * is a trust decision that feeds attestor eligibility, so it is gated like
+ * the sibling rejection.
+ */
+export type AdminCredentialVerifyRequest = {
+    totp_code: string;
 };
 
 /**
@@ -523,6 +535,17 @@ export type AdminFrameworkDirectoryResponse = {
 };
 
 /**
+ * Request body for reversing a Framework takedown.
+ *
+ * Carries only the step-up factor: reinstatement takes no other input, but
+ * returning a suspended Framework to the public catalog is a trust decision
+ * and is gated like its sibling takedown.
+ */
+export type AdminFrameworkReinstateRequest = {
+    totp_code: string;
+};
+
+/**
  * Response body for admin Framework state changes.
  */
 export type AdminFrameworkStatusResponse = {
@@ -536,6 +559,7 @@ export type AdminFrameworkStatusResponse = {
  */
 export type AdminFrameworkSuspendRequest = {
     reason: string;
+    totp_code: string;
 };
 
 /**
@@ -598,6 +622,7 @@ export type AdminLicenseGrantRequest = {
     framework_id: string;
     operator_id: string;
     seats_total?: (number | null);
+    totp_code: string;
     type: 'single_user' | 'team' | 'organizational' | 'enterprise';
 };
 
@@ -731,6 +756,7 @@ export type status5 = 'pending' | 'processing' | 'completed' | 'failed';
  */
 export type AdminRarityBlockOverrideRequest = {
     reason: string;
+    totp_code: string;
 };
 
 /**
@@ -5148,6 +5174,7 @@ export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostResponse = (
 export type RejectCredentialV1AdminCredentialsCredentialIdRejectPostError = (HTTPValidationError);
 
 export type VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostData = {
+    body: AdminCredentialVerifyRequest;
     path: {
         credential_id: string;
     };
@@ -5253,6 +5280,7 @@ export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePo
 export type OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostError = (HTTPValidationError);
 
 export type ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostData = {
+    body: AdminFrameworkReinstateRequest;
     path: {
         framework_id: string;
     };

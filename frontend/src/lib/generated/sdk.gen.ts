@@ -151,7 +151,7 @@ export const downloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGet
 
 /**
  * Reject Credential
- * Reject a pending Credential with a reason.
+ * Reject a pending Credential with a reason. Requires an admin step-up code.
  */
 export const rejectCredentialV1AdminCredentialsCredentialIdRejectPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<RejectCredentialV1AdminCredentialsCredentialIdRejectPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<RejectCredentialV1AdminCredentialsCredentialIdRejectPostResponse, RejectCredentialV1AdminCredentialsCredentialIdRejectPostError, ThrowOnError>({
@@ -162,7 +162,7 @@ export const rejectCredentialV1AdminCredentialsCredentialIdRejectPost = <ThrowOn
 
 /**
  * Verify Credential
- * Mark a pending Credential verified.
+ * Mark a pending Credential verified. Requires an admin step-up code.
  */
 export const verifyCredentialV1AdminCredentialsCredentialIdVerifyPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostResponse, VerifyCredentialV1AdminCredentialsCredentialIdVerifyPostError, ThrowOnError>({
@@ -261,7 +261,7 @@ export const listSuspendedFrameworksV1AdminFrameworksSuspendedGet = <ThrowOnErro
 
 /**
  * Override Rarity Block
- * Override a near-duplicate rarity hard block after admin review.
+ * Override a near-duplicate rarity hard block. Requires a step-up code.
  */
 export const overrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostData, ThrowOnError>) => {
     return (options?.client ?? client).post<OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostResponse, OverrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePostError, ThrowOnError>({
@@ -272,7 +272,9 @@ export const overrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverrideP
 
 /**
  * Reinstate Framework
- * Reverse a takedown, returning a suspended Framework to the marketplace.
+ * Reverse a takedown, returning a Framework to the marketplace.
+ *
+ * Requires an admin step-up code.
  */
 export const reinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostData, ThrowOnError>) => {
     return (options?.client ?? client).post<ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostResponse, ReinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePostError, ThrowOnError>({
@@ -283,7 +285,7 @@ export const reinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePost = <Thro
 
 /**
  * Suspend Framework
- * Suspend a published Framework from marketplace discovery.
+ * Suspend a published Framework from discovery. Requires a step-up code.
  */
 export const suspendFrameworkV1AdminFrameworksFrameworkIdSuspendPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostResponse, SuspendFrameworkV1AdminFrameworksFrameworkIdSuspendPostError, ThrowOnError>({
@@ -327,7 +329,7 @@ export const listAdminInvoicesV1AdminInvoicesGet = <ThrowOnError extends boolean
 
 /**
  * Grant License
- * Grant a Framework license to an Operator during Phase 2.
+ * Grant a Framework license to an Operator. Requires a step-up code.
  */
 export const grantLicenseV1AdminLicensesPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<GrantLicenseV1AdminLicensesPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<GrantLicenseV1AdminLicensesPostResponse, GrantLicenseV1AdminLicensesPostError, ThrowOnError>({

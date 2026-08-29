@@ -28,6 +28,7 @@ from app.modules.admin.schemas import (
     AdminExportRequestsResponse,
     AdminFinancialEventsResponse,
     AdminFrameworkDirectoryResponse,
+    AdminFrameworkReinstateRequest,
     AdminFrameworkStatusResponse,
     AdminFrameworkSuspendRequest,
     AdminInvoicesResponse,
@@ -57,6 +58,7 @@ from app.modules.attestation.schemas import (
     AdminCredentialRejectRequest,
     AdminCredentialResponse,
     AdminCredentialsResponse,
+    AdminCredentialVerifyRequest,
     CredentialEvidenceDownloadResponse,
 )
 from app.modules.auth.models import User
@@ -585,12 +587,18 @@ async def list_credential_review_queue(
 )
 async def verify_credential(
     credential_id: UUID,
+    payload: AdminCredentialVerifyRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminCredentialResponse:
-    """Mark a pending Credential verified."""
+    """Mark a pending Credential verified. Requires an admin step-up code."""
     credential = await credential_service.verify_credential(
-        db=db, admin_id=admin.id, credential_id=credential_id
+        db=db,
+        redis=redis,
+        admin_id=admin.id,
+        credential_id=credential_id,
+        totp_code=payload.totp_code,
     )
     return AdminCredentialResponse.model_validate(credential)
 
@@ -604,13 +612,16 @@ async def reject_credential(
     payload: AdminCredentialRejectRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminCredentialResponse:
-    """Reject a pending Credential with a reason."""
+    """Reject a pending Credential with a reason. Requires an admin step-up code."""
     credential = await credential_service.reject_credential(
         db=db,
+        redis=redis,
         admin_id=admin.id,
         credential_id=credential_id,
         reason=payload.reason,
+        totp_code=payload.totp_code,
     )
     return AdminCredentialResponse.model_validate(credential)
 
@@ -680,13 +691,16 @@ async def suspend_framework(
     payload: AdminFrameworkSuspendRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminFrameworkStatusResponse:
-    """Suspend a published Framework from marketplace discovery."""
+    """Suspend a published Framework from discovery. Requires a step-up code."""
     framework = await service.suspend_framework(
         db=db,
+        redis=redis,
         admin=admin,
         framework_id=framework_id,
         reason=payload.reason,
+        totp_code=payload.totp_code,
     )
     return AdminFrameworkStatusResponse(
         framework_id=framework.id,
@@ -701,14 +715,21 @@ async def suspend_framework(
 )
 async def reinstate_framework(
     framework_id: UUID,
+    payload: AdminFrameworkReinstateRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminFrameworkStatusResponse:
-    """Reverse a takedown, returning a suspended Framework to the marketplace."""
+    """Reverse a takedown, returning a Framework to the marketplace.
+
+    Requires an admin step-up code.
+    """
     framework = await service.reinstate_framework(
         db=db,
+        redis=redis,
         admin=admin,
         framework_id=framework_id,
+        totp_code=payload.totp_code,
     )
     return AdminFrameworkStatusResponse(
         framework_id=framework.id,
@@ -726,13 +747,16 @@ async def override_rarity_block(
     payload: AdminRarityBlockOverrideRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminFrameworkStatusResponse:
-    """Override a near-duplicate rarity hard block after admin review."""
+    """Override a near-duplicate rarity hard block. Requires a step-up code."""
     framework = await service.override_rarity_block(
         db=db,
+        redis=redis,
         admin=admin,
         framework_id=framework_id,
         reason=payload.reason,
+        totp_code=payload.totp_code,
     )
     return AdminFrameworkStatusResponse(
         framework_id=framework.id,
@@ -750,16 +774,19 @@ async def grant_license(
     payload: AdminLicenseGrantRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminLicenseGrantResponse:
-    """Grant a Framework license to an Operator during Phase 2."""
+    """Grant a Framework license to an Operator. Requires a step-up code."""
     license_row = await service.grant_license(
         db=db,
+        redis=redis,
         admin=admin,
         framework_id=payload.framework_id,
         operator_id=payload.operator_id,
         license_type=payload.type,
         expires_at=payload.expires_at,
         seats_total=payload.seats_total,
+        totp_code=payload.totp_code,
     )
     return AdminLicenseGrantResponse(
         license_id=license_row.id,

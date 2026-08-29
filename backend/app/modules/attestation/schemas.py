@@ -514,10 +514,22 @@ class AttestationConsentRequest(BaseModel):
     decision: Literal["approve", "decline"]
 
 
+class AdminCredentialVerifyRequest(BaseModel):
+    """Admin request body for verifying a pending Credential.
+
+    Carries only the step-up factor: verification takes no other input, but it
+    is a trust decision that feeds attestor eligibility, so it is gated like
+    the sibling rejection.
+    """
+
+    totp_code: str = Field(min_length=6, max_length=16)
+
+
 class AdminCredentialRejectRequest(BaseModel):
     """Admin request body for rejecting a pending Credential."""
 
     reason: str = Field(min_length=1, max_length=4000)
+    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminCredentialResponse(BaseModel):

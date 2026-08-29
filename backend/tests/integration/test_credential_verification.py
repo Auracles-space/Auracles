@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
+import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -15,7 +16,11 @@ from sqlalchemy import create_engine, delete, inspect, select  # noqa: F401
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password
+from app.core.security import (
+    create_access_token,
+    encrypt_totp_secret,
+    hash_password,
+)
 from app.main import app
 from app.modules.attestation import credential_service
 from app.modules.attestation.models import AttestationUploadSession, Credential
@@ -24,7 +29,75 @@ from app.shared.models.audit_log import AuditLog
 
 
 class FakeRedis:
-    """Redis test double for routes that do not use Redis directly."""
+    """Redis test double backing the admin step-up factor on credential reviews.
+
+    Credential verify/reject are TOTP-gated, so the double has to carry the
+    lockout counters and the single-use code claim the auth service writes.
+    """
+
+    def __init__(self) -> None:
+        """Create empty in-memory Redis state."""
+        self.values: dict[str, str] = {}
+        self.ttls: dict[str, int] = {}
+        self.counters: dict[str, int] = {}
+
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL (test double ignores expiry)."""
+        del seconds
+        self.values[key] = value
+
+    async def get(self, key: str) -> str | None:
+        """Return a stored value or counter value."""
+        if key in self.values:
+            return self.values[key]
+        if key in self.counters:
+            return str(self.counters[key])
+        return None
+
+    async def incr(self, key: str) -> int:
+        """Increment and return a counter."""
+        self.counters[key] = int(await self.get(key) or "0") + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        """Record a TTL for a key."""
+        self.ttls[key] = seconds
+
+    async def ttl(self, key: str) -> int:
+        """Return a recorded TTL, or -1 when none was set."""
+        return self.ttls.get(key, -1)
+
+    async def delete(self, *keys: str) -> int:
+        """Delete stored values and counters."""
+        removed = 0
+        for key in keys:
+            removed += int(key in self.values or key in self.counters)
+            self.values.pop(key, None)
+            self.counters.pop(key, None)
+            self.ttls.pop(key, None)
+        return removed
+
+
+async def enable_admin_totp(user_id: UUID) -> str:
+    """Enable TOTP on a user and return the raw secret for code generation."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            secret = pyotp.random_base32()
+            user.totp_secret = encrypt_totp_secret(secret)
+            user.totp_enabled = True
+    return secret
 
 
 @pytest.fixture
@@ -184,15 +257,20 @@ async def test_verify_only_from_pending(
     migrated_database: None, credential_context: FakeRedis
 ) -> None:
     """verify_credential promotes pending -> verified and stamps reviewer."""
-    del migrated_database, credential_context
+    del migrated_database
     admin_id = await create_user("verify-admin@auracles.space", ["admin"])
+    secret = await enable_admin_totp(admin_id)
     owner_id = await create_user("verify-owner@auracles.space", ["contributor"])
     credential_id = await _seed_credential(
         owner_id, reference_number="PMP-1", verification_status="pending"
     )
     async with async_session_factory() as session:
         result = await credential_service.verify_credential(
-            db=session, admin_id=admin_id, credential_id=credential_id
+            db=session,
+            redis=credential_context,
+            admin_id=admin_id,
+            credential_id=credential_id,
+            totp_code=pyotp.TOTP(secret).now(),
         )
     assert result.verification_status == "verified"
     assert result.verified_at is not None
@@ -203,14 +281,19 @@ async def test_verify_rejects_non_pending(
     migrated_database: None, credential_context: FakeRedis
 ) -> None:
     """Verifying a non-pending credential raises 422."""
-    del migrated_database, credential_context
+    del migrated_database
     admin_id = await create_user("verify-admin2@auracles.space", ["admin"])
+    secret = await enable_admin_totp(admin_id)
     owner_id = await create_user("verify-owner2@auracles.space", ["contributor"])
     credential_id = await _seed_credential(owner_id, reference_number="PMP-1")
     async with async_session_factory() as session:
         with pytest.raises(HTTPException) as exc:
             await credential_service.verify_credential(
-                db=session, admin_id=admin_id, credential_id=credential_id
+                db=session,
+                redis=credential_context,
+                admin_id=admin_id,
+                credential_id=credential_id,
+                totp_code=pyotp.TOTP(secret).now(),
             )
     assert exc.value.status_code == 422
 
@@ -219,8 +302,9 @@ async def test_reject_requires_pending_and_sets_reason(
     migrated_database: None, credential_context: FakeRedis
 ) -> None:
     """reject_credential moves pending -> rejected and stores the reason."""
-    del migrated_database, credential_context
+    del migrated_database
     admin_id = await create_user("reject-admin@auracles.space", ["admin"])
+    secret = await enable_admin_totp(admin_id)
     owner_id = await create_user("reject-owner@auracles.space", ["contributor"])
     credential_id = await _seed_credential(
         owner_id, reference_number="PMP-1", verification_status="pending"
@@ -228,9 +312,11 @@ async def test_reject_requires_pending_and_sets_reason(
     async with async_session_factory() as session:
         result = await credential_service.reject_credential(
             db=session,
+            redis=credential_context,
             admin_id=admin_id,
             credential_id=credential_id,
             reason="Issuer could not confirm.",
+            totp_code=pyotp.TOTP(secret).now(),
         )
     assert result.verification_status == "rejected"
     assert result.rejection_reason == "Issuer could not confirm."
@@ -316,6 +402,7 @@ async def test_admin_queue_and_decisions(
     """Admin lists pending queue and verifies; non-admin is forbidden."""
     del migrated_database, credential_context
     admin_id = await create_user("queue-admin@auracles.space", ["admin"])
+    secret = await enable_admin_totp(admin_id)
     owner_id = await create_user("queue-owner@auracles.space", ["contributor"])
     credential_id = str(
         await _seed_credential(
@@ -334,6 +421,7 @@ async def test_admin_queue_and_decisions(
     verified = await client.post(
         f"/v1/admin/credentials/{credential_id}/verify",
         headers=auth_headers(admin_id, ["admin"]),
+        json={"totp_code": pyotp.TOTP(secret).now()},
     )
 
     assert forbidden.status_code == 403
@@ -349,6 +437,7 @@ async def test_admin_reject_requires_reason(
     """Admin reject with empty reason is a 422; with reason it succeeds."""
     del migrated_database, credential_context
     admin_id = await create_user("rej-admin@auracles.space", ["admin"])
+    secret = await enable_admin_totp(admin_id)
     owner_id = await create_user("rej-owner@auracles.space", ["contributor"])
     credential_id = str(
         await _seed_credential(
@@ -356,15 +445,20 @@ async def test_admin_reject_requires_reason(
         )
     )
 
+    # Schema validation rejects the empty reason before the service runs, so
+    # this attempt never reaches — and never consumes — the step-up code.
     empty = await client.post(
         f"/v1/admin/credentials/{credential_id}/reject",
         headers=auth_headers(admin_id, ["admin"]),
-        json={"reason": ""},
+        json={"reason": "", "totp_code": pyotp.TOTP(secret).now()},
     )
     ok = await client.post(
         f"/v1/admin/credentials/{credential_id}/reject",
         headers=auth_headers(admin_id, ["admin"]),
-        json={"reason": "Issuer registry shows no match."},
+        json={
+            "reason": "Issuer registry shows no match.",
+            "totp_code": pyotp.TOTP(secret).now(),
+        },
     )
     assert empty.status_code == 422
     assert ok.status_code == 200
@@ -375,17 +469,22 @@ async def test_verify_blocks_admin_self_review(
     migrated_database: None, credential_context: FakeRedis
 ) -> None:
     """An admin who owns a credential cannot self-verify it (403)."""
-    del migrated_database, credential_context
+    del migrated_database
     admin_id = await create_user(
         "self-verify-admin@auracles.space", ["admin", "contributor"]
     )
+    secret = await enable_admin_totp(admin_id)
     credential_id = await _seed_credential(
         admin_id, reference_number="PMP-1", verification_status="pending"
     )
     async with async_session_factory() as session:
         with pytest.raises(HTTPException) as exc:
             await credential_service.verify_credential(
-                db=session, admin_id=admin_id, credential_id=credential_id
+                db=session,
+                redis=credential_context,
+                admin_id=admin_id,
+                credential_id=credential_id,
+                totp_code=pyotp.TOTP(secret).now(),
             )
     assert exc.value.status_code == 403
 
@@ -394,10 +493,11 @@ async def test_reject_blocks_admin_self_review(
     migrated_database: None, credential_context: FakeRedis
 ) -> None:
     """An admin who owns a credential cannot self-reject it (403)."""
-    del migrated_database, credential_context
+    del migrated_database
     admin_id = await create_user(
         "self-reject-admin@auracles.space", ["admin", "contributor"]
     )
+    secret = await enable_admin_totp(admin_id)
     credential_id = await _seed_credential(
         admin_id, reference_number="PMP-1", verification_status="pending"
     )
@@ -405,9 +505,11 @@ async def test_reject_blocks_admin_self_review(
         with pytest.raises(HTTPException) as exc:
             await credential_service.reject_credential(
                 db=session,
+                redis=credential_context,
                 admin_id=admin_id,
                 credential_id=credential_id,
                 reason="should not be allowed",
+                totp_code=pyotp.TOTP(secret).now(),
             )
     assert exc.value.status_code == 403
 

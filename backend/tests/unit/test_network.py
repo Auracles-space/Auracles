@@ -35,13 +35,40 @@ def test_client_ip_ignores_forwarded_header_when_untrusted() -> None:
     assert client_ip(request, _settings(trust=False)) == "10.0.0.1"
 
 
-def test_client_ip_uses_first_forwarded_hop_when_trusted() -> None:
-    """The left-most forwarded hop is the client when a trusted proxy is set."""
+def test_client_ip_uses_last_forwarded_hop_when_trusted() -> None:
+    """The right-most forwarded hop is the address our own edge appended.
+
+    Load balancers append the peer they observed rather than replacing the
+    header, so only the final entry is written by infrastructure we control.
+    """
     request = _FakeRequest(
-        headers={"x-forwarded-for": "1.2.3.4, 10.0.0.2, 10.0.0.1"},
+        headers={"x-forwarded-for": "10.0.0.2, 10.0.0.1, 203.0.113.9"},
         client_host="10.0.0.1",
     )
-    assert client_ip(request, _settings(trust=True)) == "1.2.3.4"
+    assert client_ip(request, _settings(trust=True)) == "203.0.113.9"
+
+
+def test_client_ip_ignores_caller_supplied_forwarded_prefix() -> None:
+    """A caller-forged X-Forwarded-For prefix must not become the rate-limit key.
+
+    An ALB appends the real peer to whatever the caller sent, so trusting the
+    left-most entry would let anyone rotate a forged address per request and
+    walk straight through every per-IP auth limiter.
+    """
+    request = _FakeRequest(
+        headers={"x-forwarded-for": "9.9.9.9, 203.0.113.9"},
+        client_host="10.0.0.1",
+    )
+    assert client_ip(request, _settings(trust=True)) == "203.0.113.9"
+
+
+def test_client_ip_falls_back_to_peer_on_trailing_separator() -> None:
+    """A malformed trailing comma must fall back rather than key on an empty string."""
+    request = _FakeRequest(
+        headers={"x-forwarded-for": "9.9.9.9, "},
+        client_host="10.0.0.1",
+    )
+    assert client_ip(request, _settings(trust=True)) == "10.0.0.1"
 
 
 def test_client_ip_falls_back_to_peer_without_forwarded_header() -> None:
