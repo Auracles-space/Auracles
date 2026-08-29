@@ -120,17 +120,17 @@ Amplify env vars: `NEXT_PUBLIC_API_URL=https://api.auracles.space`, `NEXT_PUBLIC
 
 ### Runtime limits to set before first deploy
 
-Two application-level limits are unset today and only bite once the service is reachable. Neither is a Terraform concern, but both belong to this cutover because the values depend on decisions made here.
+Both limits below are now enforced in code with conservative defaults, so an unconfigured deploy is already safe. What remains here is per-service tuning: each service runs its own process with its own pool, so the values differ by service and are set as environment variables in the task definitions.
 
-**Connection pool.** `app/core/database.py` calls `create_async_engine(url, pool_pre_ping=True)` with no `pool_size`/`max_overflow`, so it takes SQLAlchemy's defaults of 5 + 10 overflow **per process**. Across api + worker + beat that is up to 45 connections against Neon, which caps connections per tier. Set explicit sizes when wiring `DATABASE_URL`, and point it at Neon's **pooled** endpoint rather than the direct one — the driver pool and the Neon pooler are different layers and both matter. Suggested starting point, to revisit under real load:
+**Connection pool.** Bounded by `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` (`app/core/database.py::create_database_engine`, and `app/workers/schedules.py::create_beat_engine` for Beat's separate sync engine). Defaults are 5 + 5. Left implicit, as they were until these helpers existed, SQLAlchemy allows 5 + 10 **per process**, up to 45 across api + worker + beat against a Neon tier that caps connections. Also point `DATABASE_URL` at Neon's **pooled** endpoint rather than the direct one: the driver pool and the Neon pooler are different layers and both need sizing. Per-service starting point, to revisit under real load:
 
-| Service | pool_size | max_overflow | Rationale |
+| Service | `DB_POOL_SIZE` | `DB_MAX_OVERFLOW` | Rationale |
 | --- | --- | --- | --- |
 | api | 5 | 5 | Request-scoped sessions, short-lived |
 | worker | 3 | 2 | Few concurrent tasks at `desired_count=1` |
 | beat | 1 | 1 | Dispatches only; does almost no querying |
 
-**WebSocket caps.** `app/modules/realtime/gateway.py` has no per-socket rate limit and no per-user connection cap, and opens a DB session per message against that same pool. A reconnect loop — a bug or a malicious client — can therefore exhaust the pool and take the HTTP API down with it, which makes this an availability risk rather than a tidiness one. Cap connections per user and messages per socket **before** the ALB makes the endpoint publicly reachable (step 4 of the cutover), not after.
+**WebSocket caps.** Bounded by `WS_MAX_CONNECTIONS_PER_USER` (5), `WS_MAX_MESSAGES_PER_SECOND` (10), and `WS_MAX_SUBSCRIPTIONS_PER_SOCKET` (50), landed in commit `70f35505`. The gateway opens a DB session per inbound message against the pool above, so before the caps existed a reconnect loop — a bug or a malicious client — could exhaust the pool and take the HTTP API down with it. All three are counted **per API process**, which is the scope that matters because the pool being defended is itself per process; running more than one api task therefore multiplies the effective per-user ceiling, which is bounded but worth knowing when sizing `desired_count`. Defaults are safe as shipped; override only if real usage shows false positives.
 
 ---
 
@@ -196,7 +196,7 @@ Cheapest lever if burn must drop: fold worker to 0.5 vCPU / 3 GB (~$31) and acce
 1. **Human:** create/verify AWS account, enable MFA on root, create the Terraform state bucket + DynamoDB table (one-time, manual by design), apply for Activate credits.
 2. Terraform bootstrap: networking, ECR, secrets (values entered by human, never committed), IAM/OIDC.
 3. Build + push backend image to ECR manually once; stand up ECS cluster + services with `desired_count=0→1`; confirm `/health` green through the ALB.
-4. Land the runtime limits from §4 — explicit DB pool sizes, WebSocket connection cap and per-socket rate limit, `TRUST_PROXY_HEADERS=true`. These go in **before** the next step makes the API reachable, because each one is only exploitable once it is.
+4. Set the runtime limits from §4 in each task definition — per-service `DB_POOL_SIZE`/`DB_MAX_OVERFLOW`, the `WS_MAX_*` caps, `TRUST_PROXY_HEADERS=true`. The caps are enforced in code with safe defaults, so this step is tuning rather than a gate; `TRUST_PROXY_HEADERS` is not, and must be set **before** the next step makes the API reachable.
 5. Point **api.auracles.space** DNS at the ALB (ACM cert validated first). Old Render URL keeps working in parallel — this is the rollback path.
 6. Update webhook endpoints at Stripe, Paystack, Persona to the new API host. (Paystack: single URL per mode — swap test URL first, verify, then live.)
 7. Amplify app connected to the GitHub repo (`appRoot=frontend`), env vars set, deploy, attach **auracles.space** domain.

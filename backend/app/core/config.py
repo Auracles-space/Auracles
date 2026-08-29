@@ -151,6 +151,13 @@ class Settings(BaseSettings):
     artifact_orphan_sweep_minutes: int = Field(
         default=60, alias="ARTIFACT_ORPHAN_SWEEP_MINUTES"
     )
+    # Connection pool bounds, applied per process. Every service shares this
+    # code and differs only by env, so api, worker, and Beat can each be sized
+    # for their own workload against a provider that caps total connections.
+    # Defaults are deliberately conservative: the failure being guarded against
+    # is an unconfigured deploy, so they must be safe with nothing set.
+    db_pool_size: int = Field(default=5, alias="DB_POOL_SIZE")
+    db_max_overflow: int = Field(default=5, alias="DB_MAX_OVERFLOW")
     # Realtime WebSocket resource caps. Counted per API process, which is the
     # scope that matters: the resources being protected — this worker's DB
     # connection pool and memory — are themselves per process.

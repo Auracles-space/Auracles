@@ -16,8 +16,29 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.modules.financials.models import PlatformConfig
+
+
+def create_beat_engine(app_settings: Settings) -> Engine:
+    """Build Beat's sync engine with the same explicit pool bounds as the API.
+
+    Beat runs as its own process with its own pool, so an unsized engine here
+    reserves as many connections as the API while doing almost no querying —
+    it reads one config row per schedule check and otherwise dispatches.
+
+    Args:
+        app_settings: Settings carrying the database URL and pool bounds.
+
+    Returns:
+        A sync engine bounded to the configured pool size and overflow.
+    """
+    return create_engine(
+        app_settings.sync_database_url,
+        pool_pre_ping=True,
+        pool_size=app_settings.db_pool_size,
+        max_overflow=app_settings.db_max_overflow,
+    )
 
 
 def _rebuild_platform_config_schedule(
@@ -80,10 +101,7 @@ class PlatformConfigHoursSchedule(schedule):  # type: ignore[misc]  # celery's `
     def _get_engine(self) -> Engine:
         """Return a lazily-created sync engine for Beat's sync process."""
         if self._engine is None:
-            self._engine = create_engine(
-                get_settings().sync_database_url,
-                pool_pre_ping=True,
-            )
+            self._engine = create_beat_engine(get_settings())
         return self._engine
 
     def _hours_from_config(self) -> int:
