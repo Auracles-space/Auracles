@@ -144,11 +144,16 @@ def configure_error_tracking(settings: Settings) -> bool:
     Returns:
         True when the SDK was initialised, False when it stayed inert.
     """
-    if settings.sentry_dsn is None:
+    # Blank counts as absent. `SENTRY_DSN=` in an env file parses to
+    # SecretStr('') rather than None, and deploy tooling that writes empty
+    # values for unset variables would otherwise initialise the SDK against an
+    # empty DSN — failing in a deployed environment but never locally.
+    dsn = settings.sentry_dsn.get_secret_value().strip() if settings.sentry_dsn else ""
+    if not dsn:
         return False
 
     sentry_sdk.init(
-        dsn=settings.sentry_dsn.get_secret_value(),
+        dsn=dsn,
         environment=settings.environment,
         # See the module docstring: each of these three is a leaky default.
         send_default_pii=False,

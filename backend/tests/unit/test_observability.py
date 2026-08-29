@@ -57,6 +57,31 @@ def test_error_tracking_stays_inert_without_a_dsn(
     assert calls == []
 
 
+@pytest.mark.parametrize("blank_dsn", ["", "   "])
+def test_error_tracking_treats_a_blank_dsn_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    blank_dsn: str,
+) -> None:
+    """An empty or whitespace DSN is the same as no DSN.
+
+    ``SENTRY_DSN=`` in an env file parses to ``SecretStr('')`` rather than
+    None, so a bare `is None` check would sail past and initialise the SDK
+    against an empty DSN. Deploy tooling that sets empty values for unset
+    variables would hit this in production, not locally.
+    """
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        observability.sentry_sdk,
+        "init",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    enabled = observability.configure_error_tracking(_settings(SENTRY_DSN=blank_dsn))
+
+    assert enabled is False
+    assert calls == []
+
+
 def test_error_tracking_disables_every_default_that_would_leak_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
