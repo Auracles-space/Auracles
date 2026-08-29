@@ -18,7 +18,7 @@ from app.core.security import hash_password
 from app.modules.attestation import release_service
 from app.modules.attestation.models import Attestation, AttestationBadge
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import Escrow, Transaction
+from app.modules.financials.models import Escrow, FinancialEvent, Transaction
 from app.modules.frameworks.models import Framework, FrameworkVersion
 from app.modules.organizations.models import (
     Organization,
@@ -34,6 +34,7 @@ async def _reset_state() -> None:
     """Remove badge-publish wiring rows in foreign-key-safe order."""
     async with async_session_factory() as session:
         async with session.begin():
+            await session.execute(delete(FinancialEvent))
             await session.execute(delete(AttestationBadge))
             await session.execute(delete(Attestation))
             await session.execute(delete(Escrow))

@@ -48,6 +48,22 @@ from app.shared.models.audit_log import AuditLog
 class FakeRedis:
     """Redis test double for TOTP-sensitive payout routes."""
 
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        store = self.__dict__.setdefault("values", {})
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL (test double ignores expiry)."""
+        del seconds
+        self.__dict__.setdefault("values", {})[key] = value
+
     def __init__(self) -> None:
         """Create empty in-memory Redis state."""
         self.values: dict[str, str] = {}

@@ -50,7 +50,13 @@ from app.modules.attestation.models import (
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
+from app.modules.financials.models import (
+    Escrow,
+    FinancialEvent,
+    Payout,
+    PayoutAccount,
+    Transaction,
+)
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
 from app.modules.organizations.models import (
@@ -120,6 +126,7 @@ async def clean_state(migrated_database: None) -> AsyncIterator[FakeRedis]:
         async with async_session_factory() as session:
             async with session.begin():
                 await session.execute(delete(AuditLog))
+                await session.execute(delete(FinancialEvent))
                 await session.execute(delete(Payout))
                 await session.execute(delete(AttestationRubricScore))
                 await session.execute(delete(AttestationAnnotation))
@@ -347,8 +354,9 @@ async def _seed_funded_offer(org_id: UUID) -> tuple[UUID, UUID, UUID]:
                 payee_org_id=None,
                 amount=Decimal("500.00"),
                 currency="USD",
-                platform_commission=Decimal("0.00"),
-                net_amount=Decimal("500.00"),
+                # Stamped at the 10% attestation rate, as settlement writes it.
+                platform_commission=Decimal("50.00"),
+                net_amount=Decimal("450.00"),
                 transaction_type="attestation_fee",
                 status="completed",
                 provider="stripe",
@@ -621,7 +629,10 @@ async def test_org_attestor_full_lifecycle(
             "amount": "100.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": pyotp.TOTP(owner_secret).now(),
+            # Fresh code from the next step (TOTP is single-use now, M4).
+            "totp_code": pyotp.TOTP(owner_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            ),
         },
         headers=_auth(owner_id),
     )

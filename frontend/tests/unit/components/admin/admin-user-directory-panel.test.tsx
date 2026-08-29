@@ -115,11 +115,20 @@ describe("AdminUserDirectoryPanel", () => {
     fireEvent.change(within(userCard).getByLabelText(/notes/i), {
       target: { value: "Docs verified" },
     });
+    // The override unlocks payouts, so it is TOTP-gated: the action stays
+    // disabled until a code is entered.
+    fireEvent.change(within(userCard).getByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
     fireEvent.click(within(userCard).getByRole("button", { name: /approve kyc/i }));
 
     await waitFor(() => {
       expect(reviewKycV1AdminUsersUserIdKycPatch).toHaveBeenCalledWith({
-        body: { status: "verified", notes: "Docs verified" },
+        body: {
+          status: "verified",
+          notes: "Docs verified",
+          totp_code: "123456",
+        },
         headers: { Authorization: "Bearer admin-token" },
         path: { user_id: "user-1" },
       });

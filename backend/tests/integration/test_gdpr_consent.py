@@ -27,15 +27,58 @@ from app.shared.models.audit_log import AuditLog
 class FakeRedis:
     """Redis test double for registration verification-token writes."""
 
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        store = self.__dict__.setdefault("values", {})
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
     def __init__(self) -> None:
         """Create empty string storage."""
         self.values: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
+        self.counters: dict[str, int] = {}
 
     async def setex(self, key: str, seconds: int, value: str) -> None:
         """Store a string value with a TTL."""
         self.values[key] = value
         self.ttls[key] = seconds
+
+    async def get(self, key: str) -> str | None:
+        """Return a stored string or counter value."""
+        if key in self.values:
+            return self.values[key]
+        if key in self.counters:
+            return str(self.counters[key])
+        return None
+
+    async def incr(self, key: str) -> int:
+        """Increment and return a rate-limit counter."""
+        self.counters[key] = self.counters.get(key, 0) + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        """Record a TTL for a key."""
+        self.ttls[key] = seconds
+
+    async def ttl(self, key: str) -> int:
+        """Return a recorded TTL or Redis' no-expiry sentinel."""
+        return self.ttls.get(key, -1)
+
+    async def delete(self, *keys: str) -> int:
+        """Delete string and counter keys."""
+        removed = 0
+        for key in keys:
+            removed += int(key in self.values or key in self.counters)
+            self.values.pop(key, None)
+            self.counters.pop(key, None)
+            self.ttls.pop(key, None)
+        return removed
 
 
 class SentEmails:

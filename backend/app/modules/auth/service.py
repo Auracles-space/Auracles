@@ -7,8 +7,10 @@ account deactivation, suspension, and access-token revocation cutoffs.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import ipaddress
 import json
+import time
 from base64 import b64encode
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -63,7 +65,21 @@ RESEND_VERIFICATION_LIMITER = RateLimiter(
     limit=3,
     window=3_600,
 )
+# TOTP time-step and the ± window of steps `verify` accepts. A matched step is
+# claimed single-use in Redis for the full window so a code cannot be replayed.
+TOTP_STEP_SECONDS = 30
+TOTP_VALID_WINDOW = 1
+
 LOGIN_IP_LIMITER = RateLimiter(namespace="login_ip", limit=20, window=60)
+# Registration dispatches a verification email to the caller-supplied address,
+# so an unlimited endpoint is an email-bombing and account-spam vector (M3).
+# Mirrors the forgot-password caps: coarse per-IP, tight per-email.
+REGISTER_IP_LIMITER = RateLimiter(namespace="register_ip", limit=10, window=3_600)
+REGISTER_EMAIL_LIMITER = RateLimiter(
+    namespace="register_email",
+    limit=3,
+    window=3_600,
+)
 FORGOT_PASSWORD_IP_LIMITER = RateLimiter(
     namespace="forgot_password_ip",
     limit=10,
@@ -426,6 +442,8 @@ async def register_user(
 ) -> None:
     """Register a user and dispatch an email verification token."""
     email = normalize_email(str(request.email))
+    await REGISTER_IP_LIMITER.check(cast(RedisCounter, redis), ip or "unknown")
+    await REGISTER_EMAIL_LIMITER.check(cast(RedisCounter, redis), email)
     log = logger.bind(module="auth", action="register_user")
 
     user = User(
@@ -1256,16 +1274,45 @@ async def _consume_backup_code(
     return True
 
 
+async def _claim_totp_counter(redis: Redis, user_id: UUID, counter: int) -> bool:
+    """Atomically claim one TOTP time-step for a user, once (M4 replay guard).
+
+    Returns True on first use of the step, False if it was already consumed —
+    so a code observed or phished within its ~90s validity window authorizes
+    at most one action. The TTL spans the accepted window so the key self-
+    expires once the code is no longer valid anyway.
+    """
+    claimed = await redis.set(
+        f"totp_used:{user_id}:{counter}",
+        "1",
+        ex=TOTP_STEP_SECONDS * (2 * TOTP_VALID_WINDOW + 1),
+        nx=True,
+    )
+    return bool(claimed)
+
+
 async def _verify_totp_or_backup_code(
     db: AsyncSession,
+    redis: Redis,
     user: User,
     code: str,
 ) -> bool:
-    """Accept either a current TOTP code or an unused backup code."""
+    """Accept a current, unused TOTP code or an unused backup code.
+
+    A matched TOTP time-step is claimed single-use in Redis so the same code
+    cannot be replayed within its validity window; backup codes are already
+    one-time via `_consume_backup_code`.
+    """
     if user.totp_secret is not None:
         secret = decrypt_totp_secret(user.totp_secret)
-        if pyotp.TOTP(secret).verify(code, valid_window=1):
-            return True
+        totp = pyotp.TOTP(secret)
+        now = int(time.time())
+        base_counter = now // TOTP_STEP_SECONDS
+        for offset in range(-TOTP_VALID_WINDOW, TOTP_VALID_WINDOW + 1):
+            counter = base_counter + offset
+            if hmac.compare_digest(totp.at(counter * TOTP_STEP_SECONDS), code):
+                # The code matches exactly one step; claim it or reject replay.
+                return await _claim_totp_counter(redis, user.id, counter)
     return await _consume_backup_code(db, user, code)
 
 
@@ -1288,7 +1335,7 @@ async def verify_totp_for_sensitive_action(
         )
 
     await _ensure_totp_not_locked(redis, user.id)
-    if not await _verify_totp_or_backup_code(db, user, code):
+    if not await _verify_totp_or_backup_code(db, redis, user, code):
         await _record_totp_failure(redis, user.id)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1310,7 +1357,7 @@ async def disable_totp(
             detail="2FA is not enabled.",
         )
     await _ensure_totp_not_locked(redis, user.id)
-    if not await _verify_totp_or_backup_code(db, user, code):
+    if not await _verify_totp_or_backup_code(db, redis, user, code):
         await _record_totp_failure(redis, user.id)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1389,7 +1436,7 @@ async def regenerate_backup_codes(
             detail="2FA is not enabled.",
         )
     await _ensure_totp_not_locked(redis, user.id)
-    if not await _verify_totp_or_backup_code(db, user, code):
+    if not await _verify_totp_or_backup_code(db, redis, user, code):
         await _record_totp_failure(redis, user.id)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1458,7 +1505,7 @@ async def verify_totp_login(
         )
 
     await _ensure_totp_not_locked(redis, user.id)
-    if not await _verify_totp_or_backup_code(db, user, code):
+    if not await _verify_totp_or_backup_code(db, redis, user, code):
         await _record_totp_failure(redis, user.id)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

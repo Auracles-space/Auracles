@@ -51,6 +51,57 @@ from app.workers.tasks import saved_searches_beat
 class FakeRedis:
     """Minimal Redis dependency override for authenticated routes."""
 
+    def __init__(self) -> None:
+        """Create empty in-memory Redis-like state."""
+        self.values: dict[str, str] = {}
+        self.counters: dict[str, int] = {}
+
+    async def get(self, key: str) -> str | None:
+        """Return a stored string or counter value."""
+        if key in self.values:
+            return self.values[key]
+        if key in self.counters:
+            return str(self.counters[key])
+        return None
+
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL (test double ignores expiry)."""
+        del seconds
+        self.values[key] = value
+
+    async def incr(self, key: str) -> int:
+        """Increment and return a counter value."""
+        self.counters[key] = int(await self.get(key) or "0") + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        """No-op TTL assignment for the test double."""
+        del key, seconds
+
+    async def delete(self, *keys: str) -> int:
+        """Delete string and counter keys."""
+        removed = 0
+        for key in keys:
+            removed += int(key in self.values or key in self.counters)
+            self.values.pop(key, None)
+            self.counters.pop(key, None)
+        return removed
+
+    async def ttl(self, key: str) -> int:
+        """Return the no-expiry sentinel."""
+        del key
+        return -1
+
 
 class FakeArtifactStorage:
     """S3 storage double for Framework artifact upload and publish checks."""

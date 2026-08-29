@@ -28,7 +28,13 @@ from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials import invoices as financials_invoices
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
+from app.modules.financials.models import (
+    Escrow,
+    FinancialEvent,
+    Payout,
+    PayoutAccount,
+    Transaction,
+)
 from app.modules.financials.schemas import PayoutRequest, PurchaseRequest
 from app.modules.frameworks.models import Framework, License
 from app.modules.organizations import legal_profile_service
@@ -73,6 +79,7 @@ async def settlement_state() -> AsyncIterator[None]:
         """Delete settlement rows before shared identity cleanup."""
         async with async_session_factory() as session:
             await session.execute(delete(AuditLog))
+            await session.execute(delete(FinancialEvent))
             await session.execute(delete(License))
             await session.execute(delete(Payout))
             await session.execute(delete(PayoutAccount))
@@ -295,6 +302,26 @@ class _FakeRedis:
         if key in self.counters:
             return str(self.counters[key])
         return None
+
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        if ex is not None:
+            self.ttls[key] = ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL."""
+        self.values[key] = value
+        self.ttls[key] = seconds
+
+    async def ttl(self, key: str) -> int:
+        """Return a recorded TTL or Redis' no-expiry sentinel."""
+        return self.ttls.get(key, -1)
 
     async def incr(self, key: str) -> int:
         self.counters[key] = int(await self.get(key) or "0") + 1

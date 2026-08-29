@@ -35,6 +35,17 @@ class FakeRedis:
         self.values[key] = value
         self.ttls[key] = seconds
 
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        if ex is not None:
+            self.ttls[key] = ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
     async def get(self, key: str) -> str | None:
         """Return a stored string value if present."""
         if key in self.values:

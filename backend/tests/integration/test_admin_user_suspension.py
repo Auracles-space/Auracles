@@ -8,7 +8,7 @@ user is blocked or restored.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -17,7 +17,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
@@ -260,7 +260,13 @@ async def test_admin_can_suspend_and_unsuspend_user_and_force_fresh_login(
     unsuspend = await client.post(
         f"/v1/admin/users/{user_id}/unsuspend",
         headers=_auth_headers(admin_id, ["admin"]),
-        json={"totp_code": pyotp.TOTP(admin_totp_secret).now()},
+        # A fresh code from the next time step: the suspend already consumed
+        # the current step, and codes are now single-use (M4).
+        json={
+            "totp_code": pyotp.TOTP(admin_totp_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            )
+        },
     )
 
     assert unsuspend.status_code == 200
@@ -381,3 +387,248 @@ async def test_super_admin_cannot_be_suspended(
         },
     )
     assert blocked.status_code == 403
+
+
+async def test_non_superadmin_cannot_assign_admin_role_even_with_2fa(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_user_suspension_context: FakeRedis,
+) -> None:
+    """Minting a new admin is reserved for the super-admin (H1).
+
+    A plain admin with a valid TOTP must not be able to promote an account to
+    admin — otherwise a single compromised admin could seed replacements and
+    revoking them would be futile.
+    """
+    del migrated_database
+    admin_id, admin_totp = await _create_user(
+        email=f"plain-admin-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+        is_superadmin=False,
+    )
+    target_id, _ = await _create_user(
+        email=f"target-{uuid4()}@auracles.space",
+        roles=["operator"],
+    )
+    assert admin_totp is not None
+
+    response = await client.patch(
+        f"/v1/admin/users/{target_id}/roles",
+        headers=_auth_headers(admin_id, ["admin"]),
+        json={"role": "admin", "totp_code": pyotp.TOTP(admin_totp).now()},
+    )
+
+    assert response.status_code == 403
+    async with async_session_factory() as session:
+        roles = (
+            (
+                await session.execute(
+                    select(UserRole.role).where(UserRole.user_id == target_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert "admin" not in roles
+
+
+async def test_superadmin_can_assign_admin_role_with_2fa(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_user_suspension_context: FakeRedis,
+) -> None:
+    """The super-admin may promote an account to admin with a valid TOTP."""
+    del migrated_database
+    super_id, super_totp = await _create_user(
+        email=f"super-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+        is_superadmin=True,
+    )
+    target_id, _ = await _create_user(
+        email=f"promote-{uuid4()}@auracles.space",
+        roles=["operator"],
+    )
+    assert super_totp is not None
+
+    response = await client.patch(
+        f"/v1/admin/users/{target_id}/roles",
+        headers=_auth_headers(super_id, ["admin"]),
+        json={"role": "admin", "totp_code": pyotp.TOTP(super_totp).now()},
+    )
+
+    assert response.status_code == 200
+    async with async_session_factory() as session:
+        roles = (
+            (
+                await session.execute(
+                    select(UserRole.role).where(UserRole.user_id == target_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert "admin" in roles
+
+
+async def test_role_assignment_requires_admin_2fa(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_user_suspension_context: FakeRedis,
+) -> None:
+    """Assigning any role is a sensitive write and needs a valid TOTP (M2)."""
+    del migrated_database
+    admin_id, _ = await _create_user(
+        email=f"admin-no2fa-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+    )
+    target_id, _ = await _create_user(
+        email=f"target-no2fa-{uuid4()}@auracles.space",
+        roles=["operator"],
+    )
+
+    response = await client.patch(
+        f"/v1/admin/users/{target_id}/roles",
+        headers=_auth_headers(admin_id, ["admin"]),
+        json={"role": "attestor", "totp_code": "000000"},
+    )
+
+    assert response.status_code in (401, 403, 422)
+    async with async_session_factory() as session:
+        approved = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == target_id, UserRole.role == "attestor"
+            )
+        )
+    assert approved is None
+
+
+async def test_kyc_override_requires_admin_2fa(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_user_suspension_context: FakeRedis,
+) -> None:
+    """Marking an account KYC-verified unlocks payouts, so it needs 2FA (M2)."""
+    del migrated_database
+    admin_id, admin_totp = await _create_user(
+        email=f"kyc-admin-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+    )
+    target_id, _ = await _create_user(
+        email=f"kyc-target-{uuid4()}@auracles.space",
+        roles=["contributor"],
+    )
+    assert admin_totp is not None
+    async with async_session_factory() as session:
+        async with session.begin():
+            target = await session.get(User, target_id)
+            assert target is not None
+            target.kyc_status = "pending"
+
+    rejected = await client.patch(
+        f"/v1/admin/users/{target_id}/kyc",
+        headers=_auth_headers(admin_id, ["admin"]),
+        json={"status": "verified", "totp_code": "000000"},
+    )
+    assert rejected.status_code in (401, 403, 422)
+
+    accepted = await client.patch(
+        f"/v1/admin/users/{target_id}/kyc",
+        headers=_auth_headers(admin_id, ["admin"]),
+        json={"status": "verified", "totp_code": pyotp.TOTP(admin_totp).now()},
+    )
+    assert accepted.status_code == 200
+    async with async_session_factory() as session:
+        target = await session.get(User, target_id)
+        assert target is not None
+        assert target.kyc_status == "verified"
+
+
+async def test_totp_code_cannot_be_replayed_across_sensitive_actions(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_user_suspension_context: FakeRedis,
+) -> None:
+    """A single TOTP code authorizes at most one sensitive action (M4).
+
+    Without single-use enforcement a code stays valid for its ~90s window, so
+    one observed/phished code could authorize several sensitive writes. The
+    second use of the same code must be rejected.
+    """
+    del migrated_database
+    admin_id, admin_totp = await _create_user(
+        email=f"replay-admin-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+    )
+    user_a, _ = await _create_user(
+        email=f"replay-a-{uuid4()}@auracles.space", roles=["operator"]
+    )
+    user_b, _ = await _create_user(
+        email=f"replay-b-{uuid4()}@auracles.space", roles=["operator"]
+    )
+    assert admin_totp is not None
+    code = pyotp.TOTP(admin_totp).now()
+
+    first = await client.post(
+        f"/v1/admin/users/{user_a}/suspend",
+        headers=_auth_headers(admin_id, ["admin"]),
+        json={"reason": "First action.", "totp_code": code},
+    )
+    assert first.status_code == 200
+
+    replay = await client.post(
+        f"/v1/admin/users/{user_b}/suspend",
+        headers=_auth_headers(admin_id, ["admin"]),
+        json={"reason": "Replayed code.", "totp_code": code},
+    )
+    assert replay.status_code == 422
+
+    async with async_session_factory() as session:
+        target_b = await session.get(User, user_b)
+        assert target_b is not None
+        assert target_b.suspended_at is None
+
+
+async def test_role_assignment_revokes_targets_existing_tokens(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_user_suspension_context: FakeRedis,
+) -> None:
+    """A role change forces the target to refresh so it takes effect now (L5).
+
+    Access tokens carry role claims; without a revocation bump a role change
+    would not apply until the target's existing token expired (≤15 min).
+    """
+    del migrated_database
+    super_id, super_totp = await _create_user(
+        email=f"l5-super-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+        is_superadmin=True,
+    )
+    target_id, _ = await _create_user(
+        email=f"l5-target-{uuid4()}@auracles.space",
+        roles=["operator"],
+    )
+    assert super_totp is not None
+    stale_headers = _auth_headers(target_id, ["operator"])
+
+    # The target's token works before the role change.
+    before = await client.get("/v1/auth/me", headers=stale_headers)
+    assert before.status_code == 200
+
+    assigned = await client.patch(
+        f"/v1/admin/users/{target_id}/roles",
+        headers=_auth_headers(super_id, ["admin"]),
+        json={"role": "admin", "totp_code": pyotp.TOTP(super_totp).now()},
+    )
+    assert assigned.status_code == 200
+
+    # The pre-change token is now rejected, forcing a refresh that re-derives
+    # roles from the database.
+    after = await client.get("/v1/auth/me", headers=stale_headers)
+    assert after.status_code == 401

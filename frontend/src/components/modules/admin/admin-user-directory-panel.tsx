@@ -209,7 +209,13 @@ export function AdminUserDirectoryPanel() {
     setError(null);
     configureBrowserClient();
     const result = await reviewKycV1AdminUsersUserIdKycPatch({
-      body: { status: decision, notes: kycNotes.trim() || null },
+      body: {
+        status: decision,
+        notes: kycNotes.trim() || null,
+        // Marking an account verified unlocks payouts, so the override is a
+        // TOTP-gated sensitive admin action.
+        totp_code: totpCode.trim(),
+      },
       headers: getAccessTokenHeaders(),
       path: { user_id: userId },
     });
@@ -434,9 +440,13 @@ export function AdminUserDirectoryPanel() {
                       value={kycNotes}
                     />
                   </label>
+                  <label className="grid gap-2 text-sm font-semibold text-foreground">
+                    Authenticator code
+                    <TotpInput onChange={setTotpCode} value={totpCode} />
+                  </label>
                   <div className="flex flex-wrap gap-3">
                     <Button
-                      disabled={kycBusy}
+                      disabled={kycBusy || totpCode.trim().length < 6}
                       onClick={() =>
                         void handleKycReview(item.user_id, "verified")
                       }
@@ -444,7 +454,7 @@ export function AdminUserDirectoryPanel() {
                       Approve KYC
                     </Button>
                     <Button
-                      disabled={kycBusy}
+                      disabled={kycBusy || totpCode.trim().length < 6}
                       onClick={() =>
                         void handleKycReview(item.user_id, "rejected")
                       }

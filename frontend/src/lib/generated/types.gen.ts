@@ -577,6 +577,7 @@ export type AdminInvoicesResponse = {
 export type AdminKycReviewRequest = {
     notes?: (string | null);
     status: 'verified' | 'rejected';
+    totp_code: string;
 };
 
 export type status4 = 'verified' | 'rejected';
@@ -758,6 +759,7 @@ export type AdminReputationRecomputeResponse = {
  */
 export type AdminRoleAssignmentRequest = {
     role: 'contributor' | 'operator' | 'attestor' | 'admin';
+    totp_code: string;
 };
 
 export type role2 = 'contributor' | 'operator' | 'attestor' | 'admin';

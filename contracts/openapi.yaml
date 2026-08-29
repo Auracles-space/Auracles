@@ -1653,8 +1653,14 @@ components:
           - rejected
           title: Status
           type: string
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
       required:
       - status
+      - totp_code
       title: AdminKycReviewRequest
       type: object
     AdminKycReviewResponse:
@@ -2130,8 +2136,14 @@ components:
           - admin
           title: Role
           type: string
+        totp_code:
+          maxLength: 16
+          minLength: 6
+          title: Totp Code
+          type: string
       required:
       - role
+      - totp_code
       title: AdminRoleAssignmentRequest
       type: object
     AdminRoleAssignmentResponse:
@@ -16531,7 +16543,10 @@ paths:
       - Admin
   /v1/admin/users/{user_id}/kyc:
     patch:
-      description: Manually override a user's identity-verification status.
+      description: 'Manually override a user''s identity-verification status.
+
+
+        Requires a valid admin TOTP: the verified status unlocks payouts.'
       operationId: review_kyc_v1_admin_users__user_id__kyc_patch
       parameters:
       - in: path
@@ -16567,7 +16582,10 @@ paths:
       - Admin
   /v1/admin/users/{user_id}/roles:
     patch:
-      description: Assign or approve a user role.
+      description: 'Assign or approve a user role.
+
+
+        Requires a valid admin TOTP; granting the admin role is super-admin only.'
       operationId: assign_role_v1_admin_users__user_id__roles_patch
       parameters:
       - in: path

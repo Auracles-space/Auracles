@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -191,7 +192,11 @@ async def test_create_org_payment_method_setup_creates_customer_once_and_reuses_
     assert stored_org.stripe_customer_id == "cus_org_test_123"
     assert first.setup_intent_id == "seti_org_123"
 
-    second_code = pyotp.TOTP(totp_secret).now()
+    # A fresh code from the next time step: the first setup consumed the
+    # current one, and TOTP codes are single-use now (M4).
+    second_code = pyotp.TOTP(totp_secret).at(
+        datetime.now(UTC) + timedelta(seconds=30)
+    )
     async with async_session_factory() as session:
         second = await billing_service.create_org_payment_method_setup(
             session,

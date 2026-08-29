@@ -71,6 +71,21 @@ class FakeRedis:
         self.ttls: dict[str, int] = {}
         self.counters: dict[str, int] = {}
 
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL (test double ignores expiry)."""
+        del seconds
+        self.values[key] = value
+
     async def get(self, key: str) -> str | None:
         """Return a stored value or counter value."""
         if key in self.values:
@@ -1433,13 +1448,17 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
             "is_complex": True,
         },
     )
+    # Fresh code from the next step (TOTP is single-use now, M4); the duplicate
+    # resolution is blocked by the dispute state, not by the reused code.
     double_resolve = await client.post(
         f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
         headers=auth_headers(admin_id, ["admin"]),
         json={
             "outcome": "rejected",
             "resolution_notes": "Duplicate resolution should be blocked.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "totp_code": pyotp.TOTP(totp_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            ),
         },
     )
 

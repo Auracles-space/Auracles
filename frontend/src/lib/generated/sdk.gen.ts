@@ -746,6 +746,8 @@ export const listAdminUsersV1AdminUsersGet = <ThrowOnError extends boolean = fal
 /**
  * Review Kyc
  * Manually override a user's identity-verification status.
+ *
+ * Requires a valid admin TOTP: the verified status unlocks payouts.
  */
 export const reviewKycV1AdminUsersUserIdKycPatch = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<ReviewKycV1AdminUsersUserIdKycPatchData, ThrowOnError>) => {
     return (options?.client ?? client).patch<ReviewKycV1AdminUsersUserIdKycPatchResponse, ReviewKycV1AdminUsersUserIdKycPatchError, ThrowOnError>({
@@ -757,6 +759,8 @@ export const reviewKycV1AdminUsersUserIdKycPatch = <ThrowOnError extends boolean
 /**
  * Assign Role
  * Assign or approve a user role.
+ *
+ * Requires a valid admin TOTP; granting the admin role is super-admin only.
  */
 export const assignRoleV1AdminUsersUserIdRolesPatch = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<AssignRoleV1AdminUsersUserIdRolesPatchData, ThrowOnError>) => {
     return (options?.client ?? client).patch<AssignRoleV1AdminUsersUserIdRolesPatchResponse, AssignRoleV1AdminUsersUserIdRolesPatchError, ThrowOnError>({

@@ -1611,11 +1611,34 @@ async def list_admin_waitlist(
 
 async def assign_user_role(
     db: AsyncSession,
+    redis: Redis,
     admin: User,
     target_user_id: UUID,
     role: str,
+    totp_code: str,
 ) -> UserRole:
-    """Assign a user role, approving Attestor when an admin performs it."""
+    """Assign a user role, approving Attestor when an admin performs it.
+
+    Role assignment is a sensitive admin write and requires a valid TOTP
+    (M2). Granting the ``admin`` role is privilege escalation reserved for the
+    bootstrap super-admin (H1): a plain admin cannot mint new admins, so a
+    single compromised admin cannot seed replacements.
+    """
+    await _verify_admin_2fa(db, redis, admin.id, totp_code)
+    if role == "admin" and not admin.is_superadmin:
+        await write_audit(
+            db=db,
+            actor_id=admin.id,
+            action="access_denied",
+            target_type="user",
+            target_id=target_user_id,
+            metadata={"required": "superadmin", "attempted_role": "admin"},
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error_code": "superadmin_required"},
+        )
     target = await db.scalar(select(User).where(User.id == target_user_id))
     if target is None:
         raise HTTPException(
@@ -1640,6 +1663,10 @@ async def assign_user_role(
 
     existing.approved_at = datetime.now(UTC)
     existing.approved_by = admin.id
+    # Force the target to refresh so the new role set takes effect immediately
+    # (L5): access tokens carry role claims, and refresh re-derives roles from
+    # the DB. Without this a role change lags until the token expires.
+    target.access_revoked_before = datetime.now(UTC)
     action = "attestor_approved" if role == "attestor" else "role_assigned"
     await write_audit(
         db=db,
@@ -1655,10 +1682,12 @@ async def assign_user_role(
 
 async def review_user_kyc(
     db: AsyncSession,
+    redis: Redis,
     admin: User,
     target_user_id: UUID,
     review_status: str,
     notes: str | None,
+    totp_code: str,
 ) -> User:
     """Manually override a user's identity-verification status.
 
@@ -1678,8 +1707,12 @@ async def review_user_kyc(
         The updated User.
 
     Raises:
+        HTTPException(401/403): If the admin TOTP is missing or invalid.
         HTTPException(404): If the target user does not exist.
     """
+    # Marking an account KYC-verified unlocks payout eligibility, so the
+    # override is a sensitive write and requires a valid admin TOTP (M2).
+    await _verify_admin_2fa(db, redis, admin.id, totp_code)
     target = await db.scalar(select(User).where(User.id == target_user_id))
     if target is None:
         raise HTTPException(

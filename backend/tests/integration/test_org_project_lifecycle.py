@@ -11,7 +11,7 @@ Maps to: Task 7 in docs/superpowers/specs/2026-07-10-org-operator-design.md.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -183,6 +183,33 @@ async def _create_org_operated_project(
     }
 
 
+
+async def _seed_workspace_upload(
+    *,
+    project_id: str,
+    user_id,
+    s3_key: str,
+) -> None:
+    """Register one workspace upload session so a Deliverable may cite its key.
+
+    Deliverable submission rejects keys without a matching session (they would
+    otherwise let a Contributor presign any object in the artifacts bucket).
+    """
+    from uuid import UUID as _UUID
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                WorkspaceUploadSession(
+                    project_id=_UUID(str(project_id)),
+                    user_id=user_id,
+                    s3_key=s3_key,
+                    content_type="application/pdf",
+                    size_limit=10_000_000,
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                )
+            )
+
 async def _finalize_org_milestone_plan(
     client: AsyncClient,
     *,
@@ -347,6 +374,11 @@ async def test_org_project_lifecycle_accept_fund_approve_releases_escrow(
 
     await _complete_org_funding(project_id=project_id, milestone_id=milestone_id)
 
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=ctx["contributor_id"],
+        s3_key="workspace/project/final.pdf",
+    )
     submitted = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
         headers=contributor_headers,
@@ -633,6 +665,11 @@ async def test_org_approve_endpoint_auth_and_rbac(
         headers=auth(ctx["admin_token"]),
     )
     await _complete_org_funding(project_id=project_id, milestone_id=milestone_id)
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=ctx["contributor_id"],
+        s3_key="workspace/project/final.pdf",
+    )
     submitted = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
         headers=contributor_headers,

@@ -9,7 +9,7 @@ mocked; application state changes run through the shipped HTTP routes.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -647,6 +647,19 @@ async def test_org_operator_lifecycle_covers_library_and_project_money_path(
 
     await _complete_org_funding(project_id=project_id, milestone_id=milestone_id)
 
+    # Deliverable keys must come from this project's workspace uploads.
+    async with async_session_factory() as _session:
+        async with _session.begin():
+            _session.add(
+                WorkspaceUploadSession(
+                    project_id=UUID(str(project_id)),
+                    user_id=contributor_id,
+                    s3_key="workspace/project/final.pdf",
+                    content_type="application/pdf",
+                    size_limit=10_000_000,
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                )
+            )
     submitted = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
         headers=auth(contributor_token),

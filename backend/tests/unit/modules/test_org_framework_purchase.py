@@ -477,11 +477,10 @@ async def test_webhook_org_branch_grants_org_license_and_completes_transaction(
                 await webhooks_service._handle_purchase_succeeded(session, event)
             )
 
-    # The first return value is the transaction to queue an invoice PDF for, not
-    # the purchase transaction id. Org purchases still mint a License and complete
-    # the transaction, but never queue an invoice (the worker keys on payer_id and
-    # org invoices are unspecced), so this must be None for the org branch.
-    assert invoice_transaction_id is None
+    # The first return value is the transaction whose invoice PDF is queued.
+    # Settlement issues the invoice for org buyers too (billed to the org's
+    # identity), so the org branch returns its transaction id like any other.
+    assert invoice_transaction_id == transaction_id
     assert after_commit_work == []
     async with async_session_factory() as session:
         stored_transaction = await session.get(Transaction, transaction_id)

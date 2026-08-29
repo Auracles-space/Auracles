@@ -22,6 +22,17 @@ from app.shared.models.audit_log import AuditLog
 class FakeRedis:
     """Redis test double for auth token and rate-limit flows."""
 
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        store = self.__dict__.setdefault("values", {})
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
     def __init__(self) -> None:
         """Create empty in-memory Redis storage."""
         self.values: dict[str, str] = {}
@@ -156,7 +167,9 @@ async def test_register_creates_user_roles_verification_token_and_audit(
         {"email": "newuser@auracles.space", "token": sent_emails.calls[0]["token"]}
     ]
     assert sent_emails.calls[0]["token"].startswith("ev_")
-    assert set(fake_redis.ttls.values()) == {86_400}
+    # The verification token carries the 24h TTL; rate-limiter counters add
+    # their own window TTLs, so assert the token TTL is present, not exclusive.
+    assert 86_400 in set(fake_redis.ttls.values())
     assert audit_log is not None
 
 
@@ -398,3 +411,29 @@ async def test_register_rejects_weak_password_and_missing_roles(
     assert weak_password_response.status_code == 422
     assert missing_roles_response.status_code == 422
     assert auth_test_context["sent_emails"].calls == []
+
+
+async def test_register_rate_limits_per_email(
+    client: AsyncClient,
+    migrated_database: None,
+    auth_test_context: dict[str, Any],
+) -> None:
+    """Registration is capped per email so it cannot be used to email-bomb (M3).
+
+    Each call dispatches a verification email to the caller-supplied address;
+    unbounded, that is an email-bombing and account-spam vector. Three hourly
+    attempts are allowed and the fourth is rejected.
+    """
+    del auth_test_context
+    payload = {
+        "email": "bomb-target@auracles.space",
+        "password": "CorrectHorse9",
+        "display_name": "Bomb Target",
+        "roles": ["operator"],
+    }
+    for _attempt in range(3):
+        allowed = await client.post("/v1/auth/register", json=payload)
+        assert allowed.status_code == 200
+
+    limited = await client.post("/v1/auth/register", json=payload)
+    assert limited.status_code == 429

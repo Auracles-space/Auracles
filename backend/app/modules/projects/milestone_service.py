@@ -49,7 +49,7 @@ from app.modules.projects.schemas import (
     MilestoneUpdateRequest,
 )
 from app.modules.projects.workspace import workspace_contributor_user_id
-from app.modules.workspace.models import WorkspaceMessage
+from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.workers.tasks.deliverable_scan import scan_deliverable_upload
 
 
@@ -1679,6 +1679,52 @@ async def fund_org_milestone(
     )
 
 
+async def _ensure_workspace_file_keys(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    file_keys: list[str],
+) -> None:
+    """Reject Deliverable file keys not uploaded to this project's workspace.
+
+    The download endpoint presigns whatever keys a submission carried, and
+    Framework artifacts live in the same bucket as workspace uploads. Without
+    this check a Contributor could submit
+    ``frameworks/<id>/artifacts/<id>.pdf`` — both ids are public on Explore —
+    and pull any licensed artifact through their own Project, bypassing the
+    licence gate. Keys are therefore matched against the upload sessions this
+    project actually issued.
+
+    Raises:
+        HTTPException(422): Any key has no matching workspace upload session.
+    """
+    if not file_keys:
+        return
+    known = set(
+        (
+            await db.execute(
+                select(WorkspaceUploadSession.s3_key).where(
+                    WorkspaceUploadSession.project_id == project_id,
+                    WorkspaceUploadSession.s3_key.in_(file_keys),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    unknown = [key for key in file_keys if key not in known]
+    if unknown:
+        logger.bind(
+            module="projects",
+            action="submit_deliverable",
+            project_id=project_id,
+        ).warning("deliverable_file_key_outside_workspace", rejected=len(unknown))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Deliverable files must be uploaded to this Project workspace.",
+        )
+
+
 async def submit_deliverable(
     *,
     db: AsyncSession,
@@ -1715,6 +1761,11 @@ async def submit_deliverable(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Deliverables can only be submitted for funded Milestones.",
             )
+        await _ensure_workspace_file_keys(
+            db,
+            project_id=project.id,
+            file_keys=payload.file_keys,
+        )
         deliverable = Deliverable(
             milestone_id=milestone.id,
             contributor_id=deliverable_contributor_id,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -29,6 +29,7 @@ from app.modules.projects.schemas import (
     DeliverableSubmitRequest,
     MilestoneCreateRequest,
 )
+from app.modules.workspace.models import WorkspaceUploadSession
 from tests.support.db_cleanup import clear_identity_state_async
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
@@ -663,6 +664,20 @@ async def test_delivering_member_can_submit_org_deliverable(
             project_row.status = "in_progress"
             milestone_row.status = "funded"
             milestone_row.funded_at = datetime.now(UTC)
+
+    # Deliverable keys must come from this project's workspace uploads.
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                WorkspaceUploadSession(
+                    project_id=project.id,
+                    user_id=staffed_user.id,
+                    s3_key="workspace/file.txt",
+                    content_type="text/plain",
+                    size_limit=10_000_000,
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                )
+            )
 
     async with async_session_factory() as session:
         deliverable = await milestone_service.submit_deliverable(

@@ -60,6 +60,22 @@ class FakeStripePaymentIntent:
 class FakeRedis:
     """Redis test double for TOTP-sensitive Project admin routes."""
 
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        store = self.__dict__.setdefault("values", {})
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL (test double ignores expiry)."""
+        del seconds
+        self.__dict__.setdefault("values", {})[key] = value
+
     def __init__(self) -> None:
         """Create empty in-memory Redis state."""
         self.values: dict[str, str] = {}
@@ -92,6 +108,10 @@ class FakeRedis:
             self.counters.pop(key, None)
             self.ttls.pop(key, None)
         return removed
+
+    async def ttl(self, key: str) -> int:
+        """Return a recorded TTL or Redis' no-expiry sentinel."""
+        return self.ttls.get(key, -1)
 
 
 class FakeStripeRefund:
@@ -220,6 +240,31 @@ def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
     """Create bearer auth headers for a test user."""
     token = create_access_token(user_id=user_id, roles=roles)
     return {"Authorization": f"Bearer {token}"}
+
+
+async def _seed_workspace_upload(
+    *,
+    project_id: str | UUID,
+    user_id: UUID,
+    s3_key: str,
+) -> None:
+    """Register one workspace upload session so a Deliverable may cite its key.
+
+    Production issues these through the workspace upload endpoint; submission
+    now rejects any key without a matching session, so tests seed one directly.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                WorkspaceUploadSession(
+                    project_id=UUID(str(project_id)),
+                    user_id=user_id,
+                    s3_key=s3_key,
+                    content_type="application/pdf",
+                    size_limit=10_000_000,
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                )
+            )
 
 
 def project_deadline() -> date:
@@ -655,6 +700,11 @@ async def test_deliverable_submission_notifies_operator(
         contributor_id=contributor_id,
     )
 
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/final.pdf",
+    )
     submitted = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
         headers=contributor_headers,
@@ -701,6 +751,11 @@ async def test_deliverable_revision_request_notifies_contributor(
         contributor_headers=contributor_headers,
         operator_id=operator_id,
         contributor_id=contributor_id,
+    )
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/draft.pdf",
     )
     deliverable_id = (
         await client.post(
@@ -757,6 +812,11 @@ async def test_deliverable_approval_notifies_contributor(
         contributor_headers=contributor_headers,
         operator_id=operator_id,
         contributor_id=contributor_id,
+    )
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/final.pdf",
     )
     deliverable_id = (
         await client.post(
@@ -2590,6 +2650,11 @@ async def test_deliverable_scan_gate_blocks_approval_until_visible(
         contributor_id=contributor_id,
     )
 
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/final.pdf",
+    )
     submitted = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
         headers=contributor_headers,
@@ -2641,6 +2706,11 @@ async def test_operator_reviews_and_downloads_deliverable(
         contributor_headers=contributor_headers,
         operator_id=operator_id,
         contributor_id=contributor_id,
+    )
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/final.pdf",
     )
     deliverable_id = (
         await client.post(
@@ -2832,6 +2902,11 @@ async def test_deliverable_revision_approval_and_manual_project_close(
         contributor_id=contributor_id,
     )
 
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/draft.pdf",
+    )
     first_submission = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
         headers=contributor_headers,
@@ -2847,6 +2922,11 @@ async def test_deliverable_revision_approval_and_manual_project_close(
         f"{first_deliverable_id}/request-revision",
         headers=operator_headers,
         json={"revision_notes": "Add rollout risks and KPI ownership."},
+    )
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/final.pdf",
     )
     second_submission = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
@@ -2928,6 +3008,11 @@ async def test_approved_deliverable_prefills_framework_draft(
         contributor_headers=contributor_headers,
         operator_id=operator_id,
         contributor_id=contributor_id,
+    )
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/procurement-playbook.pdf",
     )
     submitted = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
@@ -3018,6 +3103,11 @@ async def test_operator_cannot_build_framework_prefill_from_contributor_delivera
         contributor_headers=contributor_headers,
         operator_id=operator_id,
         contributor_id=contributor_id,
+    )
+    await _seed_workspace_upload(
+        project_id=project_id,
+        user_id=contributor_id,
+        s3_key="workspace/project/private-pack.pdf",
     )
     submitted = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
@@ -3265,7 +3355,9 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
             "release_amount": "900.00",
             "refund_amount": "600.00",
             "resolution_notes": "Partial delivery accepted by support.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "totp_code": pyotp.TOTP(totp_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            ),
         },
     )
     double_resolve = await client.post(
@@ -3276,7 +3368,9 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
             "release_amount": "900.00",
             "refund_amount": "600.00",
             "resolution_notes": "Duplicate resolution should be blocked.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
+            "totp_code": pyotp.TOTP(totp_secret).at(
+                datetime.now(UTC) - timedelta(seconds=30)
+            ),
         },
     )
 
@@ -4182,3 +4276,101 @@ async def test_proposer_withdraws_amendment_and_counterparty_cannot(
     assert counterparty_withdraw.status_code == 403
     assert proposer_withdraw.status_code == 200
     assert proposer_withdraw.json()["status"] == "withdrawn"
+
+
+async def test_deliverable_rejects_file_keys_outside_the_project_workspace(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Submitted file keys must come from this project's own uploads.
+
+    The deliverable download endpoint presigns whatever keys the submission
+    carried, and Framework artifacts share the artifacts bucket. Without this
+    check a Contributor could submit a key like
+    ``frameworks/<id>/artifacts/<id>.pdf`` — both ids are public on Explore —
+    and read any licensed artifact through their own project, bypassing the
+    licence gate entirely.
+    """
+    del project_context
+
+    async def fake_create_customer(**kwargs: Any) -> FakeStripeCustomer:
+        """Return a stable Stripe customer for milestone funding."""
+        return FakeStripeCustomer("cus_pathcheck_123")
+
+    async def fake_create_payment_intent(**kwargs: Any) -> FakeStripePaymentIntent:
+        """Return a stable PaymentIntent for milestone funding."""
+        return FakeStripePaymentIntent("pi_pathcheck_123", "pi_pathcheck_secret")
+
+    monkeypatch.setattr(
+        milestone_service.stripe, "create_customer", fake_create_customer
+    )
+    monkeypatch.setattr(
+        milestone_service.stripe, "create_payment_intent", fake_create_payment_intent
+    )
+
+    operator_id = await create_user("pathcheck-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "pathcheck-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    created = await client.post(
+        "/v1/projects", headers=operator_headers, json=project_payload()
+    )
+    project_id = created.json()["id"]
+    proposed = await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=contributor_headers,
+        json=proposal_payload(),
+    )
+    await client.post(
+        f"/v1/projects/{project_id}/proposals/{proposed.json()['id']}/accept",
+        headers=operator_headers,
+    )
+    milestone = await client.post(
+        f"/v1/projects/{project_id}/milestones",
+        headers=contributor_headers,
+        json={
+            "sequence": 1,
+            "name": "Implementation",
+            "description": "Build the approved procurement model.",
+            "budget": "1500.00",
+            "currency": "USD",
+        },
+    )
+    milestone_id = milestone.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/finalize",
+        headers=contributor_headers,
+    )
+    await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/fund",
+        headers=operator_headers,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            stored = await session.get(Milestone, UUID(milestone_id))
+            assert stored is not None
+            stored.status = "funded"
+
+    foreign_key = (
+        "frameworks/11111111-1111-4111-8111-111111111111"
+        "/artifacts/22222222-2222-4222-8222-222222222222.pdf"
+    )
+    submitted = await client.post(
+        f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
+        headers=contributor_headers,
+        json={
+            "name": "Exfiltration attempt",
+            "description": "Points at a Framework artifact in the shared bucket.",
+            "file_keys": [foreign_key],
+        },
+    )
+
+    assert submitted.status_code == 422
+    async with async_session_factory() as session:
+        deliverable = await session.scalar(select(Deliverable))
+    assert deliverable is None

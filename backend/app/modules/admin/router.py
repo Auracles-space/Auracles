@@ -231,13 +231,19 @@ async def assign_role(
     payload: AdminRoleAssignmentRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminRoleAssignmentResponse:
-    """Assign or approve a user role."""
+    """Assign or approve a user role.
+
+    Requires a valid admin TOTP; granting the admin role is super-admin only.
+    """
     assigned_role = await service.assign_user_role(
         db=db,
+        redis=redis,
         admin=admin,
         target_user_id=user_id,
         role=payload.role,
+        totp_code=payload.totp_code,
     )
     return AdminRoleAssignmentResponse(
         user_id=user_id,
@@ -530,14 +536,20 @@ async def review_kyc(
     payload: AdminKycReviewRequest,
     admin: AdminUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> AdminKycReviewResponse:
-    """Manually override a user's identity-verification status."""
+    """Manually override a user's identity-verification status.
+
+    Requires a valid admin TOTP: the verified status unlocks payouts.
+    """
     user = await service.review_user_kyc(
         db=db,
+        redis=redis,
         admin=admin,
         target_user_id=user_id,
         review_status=payload.status,
         notes=payload.notes,
+        totp_code=payload.totp_code,
     )
     return AdminKycReviewResponse(
         user_id=user_id,

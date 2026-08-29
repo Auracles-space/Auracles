@@ -57,7 +57,7 @@ from app.modules.projects import milestone_service
 from app.modules.projects.models import Deliverable, Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
-from app.modules.workspace.models import WorkspaceMessage
+from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_organizations_endpoints import add_member, auth, create_org
 from tests.support.db_cleanup import clear_identity_state_async
@@ -182,6 +182,7 @@ async def lifecycle_context(migrated_database: None) -> AsyncIterator[dict[str, 
             await session.execute(delete(Payout))
             await session.execute(delete(PayoutAccount))
             await session.execute(delete(WorkspaceMessage))
+            await session.execute(delete(WorkspaceUploadSession))
             await session.execute(delete(Review))
             await session.execute(delete(ArtifactDownload))
             await session.execute(delete(License))
@@ -748,7 +749,11 @@ async def test_org_contributor_full_lifecycle(
             "amount": "100.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": pyotp.TOTP(owner_secret).now(),
+            # Fresh code from the next step: the legal-profile update already
+            # consumed the current one, and codes are single-use now (M4).
+            "totp_code": pyotp.TOTP(owner_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            ),
         },
     )
     assert payout.status_code == 200
@@ -869,6 +874,19 @@ async def test_org_contributor_full_lifecycle(
     )
     assert escrow_webhook.status_code == 200
 
+    # Deliverable keys must come from this project's workspace uploads.
+    async with async_session_factory() as _session:
+        async with _session.begin():
+            _session.add(
+                WorkspaceUploadSession(
+                    project_id=UUID(str(project_id)),
+                    user_id=member_id,
+                    s3_key="workspace/project/final-playbook.pdf",
+                    content_type="application/pdf",
+                    size_limit=10_000_000,
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
+                )
+            )
     deliverable = await client.post(
         f"/v1/projects/{project_id}/milestones/{milestone_id}/deliverables",
         headers=member_contributor_headers,

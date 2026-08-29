@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -281,7 +282,13 @@ async def test_org_payment_method_list_and_delete_routes_enforce_org_scope(
         "DELETE",
         f"/v1/orgs/{org['id']}/financials/payment-methods/pm_org_test_123",
         headers=_auth_headers(owner_id),
-        json={"totp_code": pyotp.TOTP(owner_totp_secret).now()},
+        # Fresh code from the next step: the prior delete consumed the current
+        # one, and TOTP codes are single-use now (M4).
+        json={
+            "totp_code": pyotp.TOTP(owner_totp_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            )
+        },
     )
     forbidden_delete = await client.request(
         "DELETE",

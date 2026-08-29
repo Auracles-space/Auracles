@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -15,7 +16,11 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password
+from app.core.security import (
+    create_access_token,
+    encrypt_totp_secret,
+    hash_password,
+)
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PlatformConfig
@@ -24,7 +29,84 @@ from app.shared.models.audit_log import AuditLog
 
 
 class FakeRedis:
-    """Minimal Redis override for routes that do not touch Redis."""
+    """In-memory Redis double supporting TOTP counters and lockout sets."""
+
+    def __init__(self) -> None:
+        """Create empty in-memory Redis-like state."""
+        self.values: dict[str, str] = {}
+        self.counters: dict[str, int] = {}
+
+    async def get(self, key: str) -> str | None:
+        """Return a stored string or counter value."""
+        if key in self.values:
+            return self.values[key]
+        if key in self.counters:
+            return str(self.counters[key])
+        return None
+
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL."""
+        del seconds
+        self.values[key] = value
+
+    async def delete(self, *keys: str) -> int:
+        """Delete string and counter keys."""
+        removed = 0
+        for key in keys:
+            removed += int(key in self.values or key in self.counters)
+            self.values.pop(key, None)
+            self.counters.pop(key, None)
+        return removed
+
+    async def incr(self, key: str) -> int:
+        """Increment and return a counter value."""
+        self.counters[key] = int(await self.get(key) or "0") + 1
+        return self.counters[key]
+
+    async def expire(self, key: str, seconds: int) -> None:
+        """No-op TTL assignment for the test double."""
+        del key, seconds
+
+    async def ttl(self, key: str) -> int:
+        """Return the no-expiry sentinel."""
+        del key
+        return -1
+
+
+async def _create_admin_with_totp(
+    email: str,
+    *,
+    is_superadmin: bool = False,
+) -> tuple[UUID, str]:
+    """Create a verified admin with TOTP enabled; return its id and secret."""
+    secret = pyotp.random_base32()
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email=email,
+                password_hash=hash_password("CorrectHorse9"),
+                display_name=email.split("@")[0],
+                email_verified=True,
+                totp_enabled=True,
+                is_superadmin=is_superadmin,
+                totp_secret=encrypt_totp_secret(secret),
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(user_id=user.id, role="admin", approved_at=datetime.now(UTC))
+            )
+        return user.id, secret
 
 
 @pytest.fixture
@@ -203,12 +285,12 @@ async def test_admin_can_approve_attestor_role(
     role_test_context: dict[str, Any],
 ) -> None:
     """Admins can assign and approve the Attestor role for another user."""
-    admin_id = await create_user_with_roles("admin@auracles.space", ["admin"])
+    admin_id, admin_totp = await _create_admin_with_totp("admin@auracles.space")
     target_id = await create_user_with_roles("target@auracles.space", ["operator"])
 
     response = await client.patch(
         f"/v1/admin/users/{target_id}/roles",
-        json={"role": "attestor"},
+        json={"role": "attestor", "totp_code": pyotp.TOTP(admin_totp).now()},
         headers=auth_headers(admin_id, ["admin"]),
     )
 

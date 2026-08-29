@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -28,6 +28,22 @@ from tests.support.db_cleanup import clear_identity_state_async
 
 class FakeRedis:
     """Redis test double for TOTP-sensitive admin routes."""
+
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        store = self.__dict__.setdefault("values", {})
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
+    async def setex(self, key: str, seconds: int, value: str) -> None:
+        """Store a string value with a TTL (test double ignores expiry)."""
+        del seconds
+        self.__dict__.setdefault("values", {})[key] = value
 
     def __init__(self) -> None:
         """Create empty in-memory Redis state."""
@@ -227,10 +243,18 @@ async def test_admin_releases_held_escrow_with_totp_reason_and_idempotency(
             "totp_code": code,
         },
     )
+    # A genuine retry re-reads the authenticator: TOTP codes are single-use
+    # now (M4), so the repeat uses a fresh code from the next time step. The
+    # escrow is already released, so this still exercises idempotency.
     second = await client.post(
         f"/v1/admin/escrows/{escrow_id}/release",
         headers=auth_headers(admin_id),
-        json={"reason": "Repeated support action.", "totp_code": code},
+        json={
+            "reason": "Repeated support action.",
+            "totp_code": pyotp.TOTP(totp_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            ),
+        },
     )
 
     async with async_session_factory() as session:

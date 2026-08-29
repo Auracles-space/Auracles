@@ -65,6 +65,17 @@ from app.workers.tasks import gdpr_beat
 class FakeRedis:
     """Redis test double for GDPR account-deletion security checks."""
 
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        del ex
+        store = self.__dict__.setdefault("values", {})
+        if nx and key in store:
+            return False
+        store[key] = value
+        return True
+
     def __init__(self) -> None:
         """Create empty string, set, and counter state."""
         self.values: dict[str, str] = {}

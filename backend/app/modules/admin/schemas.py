@@ -16,6 +16,7 @@ class AdminRoleAssignmentRequest(BaseModel):
     """Request body for assigning or approving a user role."""
 
     role: Literal["contributor", "operator", "attestor", "admin"]
+    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminRoleAssignmentResponse(BaseModel):
@@ -31,6 +32,7 @@ class AdminKycReviewRequest(BaseModel):
 
     status: Literal["verified", "rejected"]
     notes: str | None = None
+    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminKycReviewResponse(BaseModel):

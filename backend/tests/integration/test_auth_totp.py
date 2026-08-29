@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID
@@ -37,6 +37,17 @@ class FakeRedis:
         """Store a string value with a TTL."""
         self.values[key] = value
         self.ttls[key] = seconds
+
+    async def set(
+        self, key: str, value: str, ex: int | None = None, nx: bool = False
+    ) -> bool:
+        """Store a string value, optionally respecting NX semantics."""
+        if ex is not None:
+            self.ttls[key] = ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
 
     async def get(self, key: str) -> str | None:
         """Return a stored string or counter value."""
@@ -281,7 +292,11 @@ async def test_remember_me_carries_through_2fa_challenge(
             "remember_me": True,
         },
     )
-    code = pyotp.TOTP(secret_from_uri(setup_body["provisioning_uri"])).now()
+    # A fresh code from the next step: enabling TOTP already consumed the
+    # current step, and codes are single-use now (M4).
+    code = pyotp.TOTP(secret_from_uri(setup_body["provisioning_uri"])).at(
+        datetime.now(UTC) + timedelta(seconds=30)
+    )
     remembered = await client.post(
         "/v1/auth/2fa/verify-login",
         json={"challenge_token": login.json()["challenge_token"], "code": code},
