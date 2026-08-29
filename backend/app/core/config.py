@@ -446,11 +446,14 @@ class Settings(BaseSettings):
     def cache_redis_url(self) -> str:
         """Use Redis database 0 for application cache, sessions, and rate limiting.
 
-        Upstash serverless Redis supports only DB 0, so app traffic shares the
-        Celery database. App keys are namespaced by domain prefixes (``refresh:``,
-        ``rate_limit:``, ``email_verify:`` ...) and never collide with Celery's
-        ``celery-task-meta-*``/``_kombu.*`` keyspace. Reuses the TLS-aware builder
-        so ``rediss://`` (Upstash) carries ``ssl_cert_reqs``.
+        Sharing one database with Celery began as an Upstash constraint — its
+        serverless Redis exposes only DB 0. Redis moved to ElastiCache on
+        2026-08-29, which does support numbered databases, but the arrangement
+        is kept: app keys are namespaced by domain prefixes (``refresh:``,
+        ``rate_limit:``, ``email_verify:`` ...) and cannot collide with Celery's
+        ``celery-task-meta-*``/``_kombu.*`` keyspace, so splitting them would be
+        churn without a benefit. Reuses the TLS-aware builder so ``rediss://``
+        carries ``ssl_cert_reqs`` when encryption in transit is enabled.
         """
         return _celery_redis_url(self.redis_url, 0)
 

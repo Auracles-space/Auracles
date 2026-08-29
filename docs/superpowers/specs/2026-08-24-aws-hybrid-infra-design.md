@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-24
 **Status:** Approved (human decision, 2026-08-24)
-**Supersedes:** `2026-06-07-pre-scale-infra-design.md` (Render hosting) — Neon/Upstash/Resend sections still apply.
+**Supersedes:** `2026-06-07-pre-scale-infra-design.md` (Render hosting) — its Neon and Resend sections still apply. Its Upstash section does **not**: Redis moved to ElastiCache on 2026-08-29 (§1).
 **Relation to TDD:** Overrides TDD Section 3 (infrastructure) until the Phase 2 upgrade triggers below fire.
 
 ---
@@ -16,13 +16,15 @@ Vercel and Render are being abandoned. Full TDD Phase 2 (ECS + RDS + ElastiCache
 | Backend hosting | ECS Fargate (api, worker, beat, clamav) | Single EC2 + compose (throwaway); full Phase 2 now (burns budget) |
 | Frontend hosting | AWS Amplify Hosting | Fargate container (+$18/mo, manual scaling); OpenNext/Lambda (tooling risk) |
 | Database | **Neon stays** | RDS (+$14/mo + forces NAT) |
-| Redis | **Upstash stays** | ElastiCache (+$12/mo + forces NAT) |
+| Redis | **ElastiCache** (revised 2026-08-29 — Upstash free tier exhausted) | Upstash paid (per-command billing against an always-connected Celery broker); self-hosted on ECS (owns persistence/failover for a queue holding payouts) |
 | Email | **Resend stays** | SES (no reason to move yet) |
 | NAT Gateway | **None** — tasks in public subnets with public IPs, locked security groups | NAT (+$35/mo fixed) |
+
+**Correction to this table's earlier reasoning (2026-08-29).** The rejected-alternatives column previously claimed ElastiCache and RDS each "force NAT". That is wrong, and it overstated the cost of the option now chosen. NAT exists to give *outbound internet* to instances without public IPs. Reaching an in-VPC service is a different path entirely: an ElastiCache node has a private address inside the VPC CIDR, which matches the VPC's `local` route, so a Fargate task talks to it directly regardless of which subnet either sits in. Tasks keep their public IPs and their IGW route for Stripe, Paystack, Persona, and Resend exactly as before. The only requirement is a security group rule. ElastiCache therefore costs ~$12–15/mo, not ~$47/mo. NAT would only become necessary if tasks were *moved into private subnets*, which is a separate choice this design is not making.
 | Staging | **Ephemeral** — `terraform apply` before a release QA pass, `terraform destroy` after | Always-on parity (~2× cost) |
 | Savings Plan | **No commitment** until load is known | 1-yr Compute SP (~20% off Fargate only; doesn't touch ALB) |
 
-Phase 2 upgrade trigger (unchanged in spirit from the pre-scale doc): sustained load that Neon/Upstash free/low tiers can't hold, or AWS Activate credits landing — then RDS + ElastiCache + private subnets slot in as new Terraform modules and env-var swaps. No code changes.
+Phase 2 upgrade trigger (unchanged in spirit from the pre-scale doc): sustained load Neon's low tier cannot hold, or AWS Activate credits landing — then RDS and private subnets for the tasks slot in as new Terraform modules and env-var swaps. No code changes. ElastiCache is no longer part of that upgrade, having been pulled forward to Phase 1.
 
 **Environment parity rule adaptation:** staging uses the *same Terraform modules* as production with smaller sizes, but exists only during release testing. Parity of architecture is kept; parity of uptime is deliberately dropped for budget.
 
@@ -47,7 +49,7 @@ Phase 2 upgrade trigger (unchanged in spirit from the pre-scale doc): sustained 
         │  beat     0.25 vCPU / 0.5GB desired=1  (singleton)        │
         └───────────┬───────────────────┬───────────────────────────┘
                     │                   │
-          Neon (Postgres)      Upstash (Redis broker+cache)
+          Neon (Postgres)      ElastiCache (Redis broker+cache, in-VPC)
           Resend (email)       S3 (artifacts/avatars/reports/thumbnails)
           Stripe / Paystack / Persona (webhooks → ALB → api)
 ```
@@ -89,10 +91,17 @@ Security groups (deny by default):
 | --- | --- | --- |
 | `alb` | 443 from 0.0.0.0/0 (+ 80 → 301 redirect) | Public edge |
 | `api-task` | 8000 from `alb` SG only | Public IP exists but nothing can reach it directly |
-| `worker-task` | none | Outbound only (Neon, Upstash, S3, providers); clamd is localhost |
+| `worker-task` | none | Outbound only (Neon, S3, providers); clamd is localhost |
 | `beat-task` | none | Outbound only |
+| `redis` | 6379 from `api-task`, `worker-task`, `beat-task` SGs only | ElastiCache. Never from a CIDR — Redis has no authentication worth the name, so the SG *is* the access control |
 
-No NAT means tasks get public IPs for outbound internet (Neon/Upstash/Stripe). All inbound is blocked by SGs except ALB→api. Add an S3 **gateway VPC endpoint** (free) so artifact traffic to S3 never leaves AWS.
+No NAT means tasks get public IPs for outbound internet (Neon/Stripe/Paystack/Persona/Resend). All inbound is blocked by SGs except ALB→api. Redis traffic never touches that path: ElastiCache holds a private address inside the VPC CIDR, so it is reached over the VPC `local` route and never leaves AWS. Add an S3 **gateway VPC endpoint** (free) so artifact traffic to S3 doesn't either.
+
+ElastiCache needs a subnet group. Put it in **private** subnets — it requires no outbound internet, so private subnets with no NAT cost nothing and keep the node off the public internet entirely.
+
+Enable **encryption in transit** on the cluster and set `REDIS_URL` to `rediss://`. The application already handles that scheme (`app/core/config.py::cache_redis_url` passes `ssl_cert_reqs` through), so it costs nothing in code. Without it, refresh tokens and rate-limit state cross the VPC in clear text.
+
+No code change is otherwise required by this move. The app shares one Redis database between Celery and application keys, which began as an Upstash constraint; ElastiCache supports numbered databases but the arrangement is kept, since the key prefixes already make collision impossible.
 
 ### Beat singleton guarantee
 
@@ -164,7 +173,7 @@ make staging-seed    # alembic upgrade + seed script against the Neon `develop` 
 make staging-down    # terraform destroy — idle cost returns to ~$0
 ```
 
-- Staging DB = Neon `develop` branch (already exists per pre-scale doc); staging Redis = separate Upstash db or free instance. Neither is created/destroyed by Terraform — only AWS resources are ephemeral.
+- Staging DB = Neon `develop` branch (already exists per pre-scale doc) and is **not** created or destroyed by Terraform. Staging Redis now *is* a Terraform resource, since ElastiCache is in-VPC — it comes up and goes down with the rest of the ephemeral stack. That is an improvement on the Upstash arrangement: staging starts with an empty broker every cycle instead of inheriting whatever a previous run left in a shared instance.
 - ACM certs + Route 53 zone live in a tiny **persistent** shared stack (cert validation takes too long to recreate each time); staging apply only attaches to them.
 - Fargate Spot for all staging services (~70% off the already-small window).
 
@@ -182,8 +191,9 @@ make staging-down    # terraform destroy — idle cost returns to ~$0
 | Secrets Manager (1 JSON secret) + KMS default | | 1 |
 | CloudWatch logs + ECR + data transfer | | 8–12 |
 | Route 53 hosted zone | | 0.50 |
-| Neon / Upstash / Resend | current tiers | 0–20 |
-| **Total** | | **≈ 100–130** |
+| ElastiCache Redis | `cache.t4g.micro`, single node | 12–15 |
+| Neon / Resend | current tiers | 0–20 |
+| **Total** | | **≈ 112–145** |
 
 Honest correction vs. the earlier estimate ($75–90): the ClamAV daemon's 2 GB requirement was not priced in. It is now. Budget survives ~2.5–3 months at this burn; **AWS Activate Founders ($1,000 credits) should be applied for immediately** — it roughly doubles runway or funds the Phase 2 upgrade.
 
