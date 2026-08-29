@@ -34,6 +34,12 @@ dependencies = [
   "redis>=5.2.0",
   "resend>=2.30.1",
   "scikit-learn>=1.9.0",
+  # Error tracking. Replaces nothing — there is no incumbent; production
+  # failures currently surface only when a user reports them. Chosen over
+  # alternatives because it covers FastAPI, Celery, and Next.js on one release
+  # concept, and the Celery half matters most: a task that exhausts its retries
+  # writes one stdout line today and pages nobody. Inert without SENTRY_DSN.
+  "sentry-sdk[fastapi,celery]>=2.0.0",
   "spacy>=3.8.14",
   # Transitive floors held for security advisories, not direct imports:
   # starlette < 1.3.1 mis-reconstructs request.url from an unvalidated path

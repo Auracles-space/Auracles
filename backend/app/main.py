@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.database import engine
 from app.core.logging import RequestLoggingMiddleware, configure_logging
+from app.core.observability import configure_error_tracking
 from app.core.redis import close_redis
 from app.integrations.s3 import verify_object_storage
 from app.modules.admin.router import router as admin_router
@@ -70,6 +71,8 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
     configure_logging(settings.log_format)
+    # After logging, because the CRITICAL forwarding sink attaches to loguru.
+    configure_error_tracking(settings)
 
     application = FastAPI(
         title="Auracles API",

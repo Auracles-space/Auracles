@@ -9,8 +9,10 @@ Section 3.1 (worker + beat services).
 """
 
 from celery import Celery
+from celery.signals import beat_init, celeryd_init
 
 from app.core.config import Settings, get_settings
+from app.core.observability import configure_error_tracking
 from app.workers.beat_schedule import BEAT_SCHEDULE
 
 
@@ -69,6 +71,28 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         enable_utc=True,
     )
     return celery_app
+
+
+@celeryd_init.connect  # type: ignore[untyped-decorator]  # celery signal.connect is untyped
+def _init_worker_error_tracking(**_kwargs: object) -> None:
+    """Start error tracking in each worker process.
+
+    Wired to the signal rather than to module import because the SDK must be
+    initialised after Celery forks; a client created in the parent does not
+    survive into the children intact.
+    """
+    configure_error_tracking(get_settings())
+
+
+@beat_init.connect  # type: ignore[untyped-decorator]  # celery signal.connect is untyped
+def _init_beat_error_tracking(**_kwargs: object) -> None:
+    """Start error tracking in the Beat process.
+
+    Beat is a separate process from the workers and receives neither
+    ``celeryd_init`` nor the API's startup path, so without this its failures
+    would be the only ones nobody hears about.
+    """
+    configure_error_tracking(get_settings())
 
 
 app = create_celery_app()

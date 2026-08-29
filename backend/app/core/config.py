@@ -151,6 +151,15 @@ class Settings(BaseSettings):
     artifact_orphan_sweep_minutes: int = Field(
         default=60, alias="ARTIFACT_ORPHAN_SWEEP_MINUTES"
     )
+    # Error tracking. Absent DSN means the SDK is never initialised, which is
+    # the local and test default. The DSN embeds a project key, so it is a
+    # credential rather than a plain URL.
+    sentry_dsn: SecretStr | None = Field(default=None, alias="SENTRY_DSN")
+    # Sentry bills by event volume, so tracing is opt-in: sampling every
+    # request would spend the quota that error reporting needs.
+    sentry_traces_sample_rate: float = Field(
+        default=0.0, alias="SENTRY_TRACES_SAMPLE_RATE"
+    )
     # Connection pool bounds, applied per process. Every service shares this
     # code and differs only by env, so api, worker, and Beat can each be sized
     # for their own workload against a provider that caps total connections.
