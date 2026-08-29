@@ -151,6 +151,18 @@ class Settings(BaseSettings):
     artifact_orphan_sweep_minutes: int = Field(
         default=60, alias="ARTIFACT_ORPHAN_SWEEP_MINUTES"
     )
+    # Realtime WebSocket resource caps. Counted per API process, which is the
+    # scope that matters: the resources being protected — this worker's DB
+    # connection pool and memory — are themselves per process.
+    ws_max_connections_per_user: int = Field(
+        default=5, alias="WS_MAX_CONNECTIONS_PER_USER"
+    )
+    ws_max_messages_per_second: int = Field(
+        default=10, alias="WS_MAX_MESSAGES_PER_SECOND"
+    )
+    ws_max_subscriptions_per_socket: int = Field(
+        default=50, alias="WS_MAX_SUBSCRIPTIONS_PER_SOCKET"
+    )
     # Current platform NDA document version for org attestation work.
     # Bumping it invalidates member assignability until they re-sign.
     org_member_nda_version: str = Field(

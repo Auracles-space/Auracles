@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
+from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -370,3 +371,124 @@ def test_websocket_ping_returns_pong(
             }
             websocket.send_json({"type": "ping"})
             assert websocket.receive_json() == {"type": "pong"}
+
+
+def test_websocket_refuses_connections_beyond_per_user_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    realtime_context: tuple[sessionmaker, list[str]],
+) -> None:
+    """A user already holding the maximum sockets is refused another one.
+
+    Without a cap a single account can open unbounded sockets against one API
+    process, and each socket opens a DB session per message against a fixed
+    pool. Bounding connections bounds that blast radius.
+    """
+    session_factory, _ = realtime_context
+    operator_id, _, _ = create_project_members(session_factory)
+    operator_token = create_access_token(operator_id, ["operator"])
+    monkeypatch.setattr(gateway, "WS_MAX_CONNECTIONS_PER_USER", 2)
+
+    with TestClient(app) as client, ExitStack() as stack:
+        for _ in range(2):
+            accepted = stack.enter_context(client.websocket_connect("/v1/ws"))
+            assert accepted.receive_json() == {"type": "auth_required"}
+            accepted.send_json({"type": "auth", "token": operator_token})
+            assert accepted.receive_json()["type"] == "auth_ok"
+
+        refused = stack.enter_context(client.websocket_connect("/v1/ws"))
+        assert refused.receive_json() == {"type": "auth_required"}
+        refused.send_json({"type": "auth", "token": operator_token})
+        assert refused.receive_json()["type"] == "auth_ok"
+        assert refused.receive_json() == {
+            "type": "error",
+            "error_code": "connection_limit",
+        }
+        with pytest.raises(WebSocketDisconnect) as disconnect:
+            refused.receive_json()
+
+    assert disconnect.value.code == gateway.WS_POLICY_CLOSE_CODE
+    # Every socket above closed, so the registry must be empty again. A leak
+    # here would lock the account out of realtime permanently.
+    assert gateway.active_connection_count(operator_id) == 0
+
+
+def test_websocket_closes_socket_that_floods_messages(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    realtime_context: tuple[sessionmaker, list[str]],
+) -> None:
+    """A socket exceeding its per-second message budget is closed.
+
+    Each inbound message re-validates the session against the database, so an
+    unmetered flood converts directly into DB-pool exhaustion. The limiter has
+    to shed the message before that session is opened.
+    """
+    session_factory, _ = realtime_context
+    operator_id, _, _ = create_project_members(session_factory)
+    operator_token = create_access_token(operator_id, ["operator"])
+    monkeypatch.setattr(gateway, "WS_MAX_MESSAGES_PER_SECOND", 3)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/v1/ws") as websocket:
+            assert websocket.receive_json() == {"type": "auth_required"}
+            websocket.send_json({"type": "auth", "token": operator_token})
+            assert websocket.receive_json()["type"] == "auth_ok"
+
+            for _ in range(4):
+                websocket.send_json({"type": "ping"})
+
+            for _ in range(3):
+                assert websocket.receive_json() == {"type": "pong"}
+            assert websocket.receive_json() == {
+                "type": "error",
+                "error_code": "rate_limited",
+            }
+            with pytest.raises(WebSocketDisconnect) as disconnect:
+                websocket.receive_json()
+
+    assert disconnect.value.code == gateway.WS_POLICY_CLOSE_CODE
+
+
+def test_websocket_refuses_subscriptions_beyond_per_socket_cap(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated_database: None,
+    realtime_context: tuple[sessionmaker, list[str]],
+) -> None:
+    """A socket at its subscription cap is refused an additional channel.
+
+    Each subscription holds a Redis pub/sub handle for the socket's lifetime,
+    so an uncapped subscribe loop is a slow resource leak on the broker.
+    """
+    session_factory, subscribed = realtime_context
+    operator_id, _, project_id = create_project_members(session_factory)
+    operator_token = create_access_token(operator_id, ["operator"])
+    monkeypatch.setattr(gateway, "WS_MAX_SUBSCRIPTIONS_PER_SOCKET", 1)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/v1/ws") as websocket:
+            assert websocket.receive_json() == {"type": "auth_required"}
+            websocket.send_json({"type": "auth", "token": operator_token})
+            assert websocket.receive_json()["type"] == "auth_ok"
+
+            websocket.send_json({"type": "subscribe", "channel": f"user:{operator_id}"})
+            assert websocket.receive_json() == {
+                "type": "subscribed",
+                "channel": f"user:{operator_id}",
+            }
+            websocket.send_json(
+                {"type": "subscribe", "channel": f"project:{project_id}"}
+            )
+            refused = websocket.receive_json()
+
+            # Over-subscribing is not hostile on its own, so the socket stays
+            # open and keeps serving the channels it already holds.
+            websocket.send_json({"type": "ping"})
+            assert websocket.receive_json() == {"type": "pong"}
+
+    assert refused == {
+        "type": "error",
+        "error_code": "subscription_limit",
+        "channel": f"project:{project_id}",
+    }
+    assert subscribed == [f"user:{operator_id}"]
