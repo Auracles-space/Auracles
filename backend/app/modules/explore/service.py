@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -11,7 +12,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from redis.asyncio import Redis
-from sqlalchemy import Select, and_, desc, func, or_, select
+from sqlalchemy import Select, and_, desc, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -298,6 +299,73 @@ def _base_catalog_query(current_user_id: UUID | None) -> Select[tuple[Framework]
     return query
 
 
+# Text-search configuration, rendered inline rather than bound as a parameter.
+# Postgres only uses an expression index when the query expression matches the
+# indexed one node for node, and a bind parameter is never equal to a literal.
+_SEARCH_CONFIG: ColumnElement[str] = literal_column("'english'")
+
+# These must stay textually identical to the expressions the GIN indexes are
+# built on, for the same reason. Written as literal SQL because reconstructing
+# them through the ORM emits bound parameters for the ' ' separators, which
+# silently reduces every search to a sequential scan — the exact defect this
+# replaces, but harder to notice.
+_FRAMEWORK_SEARCH_DOCUMENT: ColumnElement[object] = literal_column(
+    "to_tsvector('english', frameworks.title || ' ' || "
+    "frameworks.description || ' ' || frameworks.tags_text)"
+)
+_COLLECTION_SEARCH_DOCUMENT: ColumnElement[object] = literal_column(
+    "to_tsvector('english', framework_collections.title || ' ' || "
+    "framework_collections.description)"
+)
+
+# Strips tsquery operator characters (: * & | ! parentheses, quotes) from the
+# token interpolated into to_tsquery, which unlike websearch_to_tsquery parses
+# its argument as query syntax rather than as user prose.
+_NON_WORD_CHARACTERS = re.compile(r"[^\w]+", re.UNICODE)
+
+
+def _search_tsquery(term: str) -> ColumnElement[bool]:
+    """Build a tsquery matching whole words by stem and the last word by prefix.
+
+    Explore searches on a 300ms debounce as the user types, so the final word
+    is usually half-finished. Matching it as a prefix keeps results appearing
+    mid-word; matching the preceding words as whole terms keeps a multi-word
+    query from quietly widening.
+
+    Known limitation: the prefix is matched against stemmed lexemes, so a
+    partial word longer than its own stem has a brief dead zone. "operating"
+    indexes as "oper", so "operat" matches nothing until the word is complete.
+
+    Args:
+        term: Raw user query text.
+
+    Returns:
+        A tsquery expression suitable for the ``@@`` match operator.
+    """
+    head, _, last = term.strip().rpartition(" ")
+    prefix_token = _NON_WORD_CHARACTERS.sub("", last)
+    if not prefix_token:
+        # Nothing safe to prefix-match (the query ends in punctuation or a
+        # quoted phrase), so let websearch_to_tsquery parse the whole thing.
+        return cast(
+            ColumnElement[bool],
+            func.websearch_to_tsquery(_SEARCH_CONFIG, term),
+        )
+
+    prefix_query = func.to_tsquery(_SEARCH_CONFIG, f"{prefix_token}:*")
+    if not head.strip():
+        return cast(ColumnElement[bool], prefix_query)
+    return cast(
+        ColumnElement[bool],
+        func.websearch_to_tsquery(_SEARCH_CONFIG, head).op("&&")(prefix_query),
+    )
+
+
+def _matches_search(document: ColumnElement[object], term: str) -> ColumnElement[bool]:
+    """Match one indexed search document against a user query."""
+    return document.op("@@", is_comparison=True)(_search_tsquery(term))
+
+
 def _apply_filters(
     query: Select[tuple[Framework]],
     *,
@@ -317,13 +385,7 @@ def _apply_filters(
 ) -> Select[tuple[Framework]]:
     """Apply faceted Explore filters to the catalog query."""
     if q:
-        query = query.where(
-            or_(
-                Framework.title.ilike(f"%{q}%"),
-                Framework.description.ilike(f"%{q}%"),
-                Framework.tags_text.ilike(f"%{q}%"),
-            )
-        )
+        query = query.where(_matches_search(_FRAMEWORK_SEARCH_DOCUMENT, q))
     if sector:
         query = query.where(Framework.sector == sector)
     if industry:
@@ -879,12 +941,7 @@ def _apply_collection_filters(
 ) -> Select[tuple[FrameworkCollection]]:
     """Apply public Collection filters supported by the MVP read model."""
     if q:
-        query = query.where(
-            or_(
-                FrameworkCollection.title.ilike(f"%{q}%"),
-                FrameworkCollection.description.ilike(f"%{q}%"),
-            )
-        )
+        query = query.where(_matches_search(_COLLECTION_SEARCH_DOCUMENT, q))
     if price_min is not None:
         query = query.where(FrameworkCollection.bundle_price >= price_min)
     if price_max is not None:

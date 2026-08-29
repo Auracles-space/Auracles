@@ -1292,3 +1292,157 @@ async def test_explore_delisted_framework_accessible_to_licensed_operator(
     # 3. Unauthenticated request -> Should return 404 Not Found
     response_unauth = await client.get(f"/v1/explore/frameworks/{framework_id}")
     assert response_unauth.status_code == 404
+
+
+async def test_explore_search_matches_word_stems(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """A plural query matches its singular stem in the catalog.
+
+    Substring matching could not do this: "frameworks" is not a substring of
+    "Framework", so the row was invisible to a query most users would consider
+    identical to one that works.
+    """
+    contributor_id = await create_user("stemmer@auracles.space", ["contributor"])
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Operating Model Framework",
+        tags=["operating"],
+    )
+
+    response = await client.get(
+        "/v1/explore/frameworks",
+        params={"q": "frameworks"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [str(framework_id)]
+
+
+async def test_explore_search_requires_every_term_to_match(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Multi-word queries match on all terms regardless of their order.
+
+    Substring matching treated the whole query as one literal, so any word
+    order other than the stored one returned nothing at all.
+    """
+    contributor_id = await create_user("multiword@auracles.space", ["contributor"])
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Board Risk Operating System",
+        tags=["board", "risk"],
+    )
+    await create_framework(
+        contributor_id,
+        title="Board Composition Toolkit",
+        category="toolkit",
+        tags=["board"],
+    )
+
+    response = await client.get(
+        "/v1/explore/frameworks",
+        params={"q": "risk board"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [str(framework_id)]
+
+
+async def test_explore_search_prefix_matches_the_word_being_typed(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """A half-typed trailing word still matches, keeping type-ahead usable.
+
+    The Explore search box queries on a 300ms debounce while the user types, so
+    an incomplete final word is the common case rather than an edge case.
+    """
+    contributor_id = await create_user("prefix@auracles.space", ["contributor"])
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Compliance Operating System",
+        tags=["compliance"],
+    )
+    await create_framework(
+        contributor_id,
+        title="People Operations Toolkit",
+        category="toolkit",
+        tags=["people"],
+    )
+
+    response = await client.get(
+        "/v1/explore/frameworks",
+        params={"q": "compli"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [str(framework_id)]
+
+
+async def test_explore_search_prefix_applies_only_to_the_final_term(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Completed words match as whole terms, not as prefixes.
+
+    Only the word under the cursor is still being typed. Treating earlier terms
+    as prefixes too would quietly widen every multi-word search.
+    """
+    contributor_id = await create_user("finalterm@auracles.space", ["contributor"])
+    await create_framework(
+        contributor_id,
+        title="Compliance Operating System",
+        tags=["compliance"],
+    )
+
+    response = await client.get(
+        "/v1/explore/frameworks",
+        params={"q": "compli system"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+
+
+async def test_explore_catalog_search_matches_collection_stems(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+) -> None:
+    """Collections search with the same semantics as Frameworks.
+
+    Both appear in one mixed catalog, so differing match rules between them
+    would read to a user as results randomly appearing and vanishing.
+    """
+    contributor_id = await create_user("colsearch@auracles.space", ["contributor"])
+    framework_id, _ = await create_framework(
+        contributor_id,
+        title="Unrelated People Toolkit",
+        category="toolkit",
+        tags=["people"],
+    )
+    collection_id = await create_collection(
+        contributor_id,
+        title="Governance Bundle",
+        framework_ids=[framework_id],
+        bundle_price=Decimal("800.00"),
+    )
+
+    response = await client.get(
+        "/v1/explore/catalog",
+        params={"q": "bundles"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["id"] for item in body["items"]] == [str(collection_id)]
