@@ -67,7 +67,7 @@ Sidecar is the plan unless the human objects. Switching later is task-definition
 
 ## 3. Terraform layout
 
-Remote state in S3 + DynamoDB locking from day one (per CLAUDE.md — never local state). Staging and production state fully separate.
+Remote state in S3 from day one (per CLAUDE.md — never local state), with **native S3 locking** (`use_lockfile = true`), not a DynamoDB table. Terraform 1.10 introduced conditional-write locking in the S3 backend and 1.11 promoted it to GA while deprecating the `dynamodb_table` arguments, so the lock table is one less resource to create, pay for, and remember to destroy. Staging and production state fully separate.
 
 ```
 infra/
@@ -203,7 +203,7 @@ Cheapest lever if burn must drop: fold worker to 0.5 vCPU / 3 GB (~$31) and acce
 
 ## 8. Cutover order
 
-1. **Human:** create/verify AWS account, enable MFA on root, create the Terraform state bucket + DynamoDB table (one-time, manual by design), apply for Activate credits.
+1. **Human:** create/verify AWS account, enable MFA on root, create the Terraform state bucket with versioning enabled (one-time, manual by design — no lock table needed, see §3), apply for Activate credits.
 2. Terraform bootstrap: networking, ECR, secrets (values entered by human, never committed), IAM/OIDC.
 3. Build + push backend image to ECR manually once; stand up ECS cluster + services with `desired_count=0→1`; confirm `/health` green through the ALB.
 4. Set the runtime limits from §4 in each task definition — per-service `DB_POOL_SIZE`/`DB_MAX_OVERFLOW`, the `WS_MAX_*` caps, `TRUST_PROXY_HEADERS=true`. The caps are enforced in code with safe defaults, so this step is tuning rather than a gate; `TRUST_PROXY_HEADERS` is not, and must be set **before** the next step makes the API reachable.

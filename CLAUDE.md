@@ -73,7 +73,7 @@ Two-phase deployment. Code is identical in both phases — only env vars and dep
 | File events     | AWS Lambda (S3 trigger → virus scan)       |
 | Email           | AWS SES (or Resend — optional swap)        |
 | Infrastructure  | Terraform                                  |
-| Terraform state | AWS S3 + DynamoDB (remote state + locking) |
+| Terraform state | AWS S3 (remote state + native `use_lockfile` locking) |
 | CI/CD           | GitHub Actions → ECR → ECS rolling deploy  |
 
 See `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` for migration steps.
@@ -614,7 +614,7 @@ infra/
 │   ├── staging/
 │   │   ├── main.tf
 │   │   ├── variables.tf
-│   │   └── backend.tf   # Remote state: S3 bucket + DynamoDB lock table
+│   │   └── backend.tf   # Remote state: S3 bucket, use_lockfile = true
 │   └── production/
 │       ├── main.tf
 │       ├── variables.tf
@@ -624,7 +624,7 @@ infra/
 
 ### Rules
 
-- Remote state stored in S3 with DynamoDB locking — never use local state.
+- Remote state stored in S3 with native S3 locking (`use_lockfile = true`) — never use local state, and no DynamoDB lock table. Terraform 1.11 promoted S3 conditional-write locking to GA and deprecated the DynamoDB arguments.
 - State files for staging and production are separate — never share state between environments.
 - All secrets passed as variables referencing AWS Secrets Manager ARNs — never hardcoded in `.tf` files.
 - Run `terraform plan` and show output to human before any `terraform apply`.
