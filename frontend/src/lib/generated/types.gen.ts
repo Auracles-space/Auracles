@@ -4798,6 +4798,17 @@ export type TotpLoginVerifyRequest = {
 };
 
 /**
+ * Request body starting TOTP enrollment.
+ *
+ * ``password`` is required for accounts that have one. Passwordless (OAuth)
+ * accounts have no password to present, so the field stays optional at the
+ * schema layer and the service decides per account.
+ */
+export type TotpSetupRequest = {
+    password?: (string | null);
+};
+
+/**
  * One-time TOTP enrollment response with recovery material.
  */
 export type TotpSetupResponse = {
@@ -6113,9 +6124,13 @@ export type DisableTotpV1Auth2FaDisablePostResponse = (TotpStatusResponse);
 
 export type DisableTotpV1Auth2FaDisablePostError = (HTTPValidationError);
 
+export type SetupTotpV1Auth2FaSetupPostData = {
+    body: TotpSetupRequest;
+};
+
 export type SetupTotpV1Auth2FaSetupPostResponse = (TotpSetupResponse);
 
-export type SetupTotpV1Auth2FaSetupPostError = unknown;
+export type SetupTotpV1Auth2FaSetupPostError = (HTTPValidationError);
 
 export type TotpStatusV1Auth2FaStatusGetResponse = (TotpStatusResponse);
 

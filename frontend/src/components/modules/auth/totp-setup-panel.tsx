@@ -57,6 +57,7 @@ export function TotpSetupPanel() {
   const [success, setSuccess] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction>(null);
   const [newBackupCodes, setNewBackupCodes] = useState<string[] | null>(null);
+  const [password, setPassword] = useState("");
 
   const canVerify = isLengthBetween(code, 6, 6);
   const canConfirm = confirmCode.trim().length >= 6;
@@ -84,13 +85,27 @@ export function TotpSetupPanel() {
     setPending(null);
     setNewBackupCodes(null);
     setConfirmCode("");
+    setPassword("");
   }
 
-  async function startSetup(): Promise<void> {
+  /**
+   * Begin enrollment, re-authenticating with the account password.
+   *
+   * Enrollment re-keys the second factor and discards existing backup codes,
+   * so the backend rejects it on a bare session. Accounts that sign in through
+   * a provider have no password and send none.
+   *
+   * @param accountPassword - The account password, blank for OAuth-only users.
+   */
+  async function startSetup(accountPassword: string): Promise<void> {
+    const trimmed = accountPassword.trim();
     resetTransientState();
     setIsLoading(true);
     configureBrowserClient();
-    const result = await setupTotp({ headers: getAccessTokenHeaders() });
+    const result = await setupTotp({
+      body: { password: trimmed === "" ? null : trimmed },
+      headers: getAccessTokenHeaders(),
+    });
     setIsLoading(false);
 
     if (!result.response.ok || !result.data) {
@@ -152,7 +167,8 @@ export function TotpSetupPanel() {
 
     // Disable succeeded — immediately start a fresh enrollment for the new
     // device. startSetup clears the pending prompt and flips to the QR view.
-    await startSetup();
+    // Capture the password first: resetTransientState clears the field.
+    await startSetup(password);
   }
 
   async function confirmRegenerate(): Promise<void> {
@@ -280,9 +296,25 @@ export function TotpSetupPanel() {
                 value={confirmCode}
               />
             </label>
+            {pending === "reset" ? (
+              <label className="block" htmlFor="reset-password">
+                <span className="text-sm font-medium text-foreground">
+                  Account password
+                </span>
+                <input
+                  autoComplete="current-password"
+                  className="mt-2 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent"
+                  id="reset-password"
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Confirm your password"
+                  type="password"
+                  value={password}
+                />
+              </label>
+            ) : null}
             <p className="text-xs leading-5 text-foreground-muted">
               {pending === "reset"
-                ? "Confirm to disable 2FA on the old device and scan a fresh QR code."
+                ? "Confirm to disable 2FA on the old device and scan a fresh QR code. Leave the password blank if you sign in with Google."
                 : "Confirm to replace your remaining backup codes with a new set."}
             </p>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -345,12 +377,36 @@ export function TotpSetupPanel() {
 
   // Not enabled: first-time setup entry point.
   return (
-    <div className="space-y-5">
+    <form
+      className="space-y-5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void startSetup(password);
+      }}
+    >
       {heading}
       {error ? <FormMessage kind="error" message={error} /> : null}
-      <Button className="w-full" disabled={isLoading} onClick={startSetup}>
+      <label className="block" htmlFor="setup-password">
+        <span className="text-sm font-medium text-foreground">
+          Account password
+        </span>
+        <input
+          autoComplete="current-password"
+          className="mt-2 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent"
+          id="setup-password"
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="Confirm your password"
+          type="password"
+          value={password}
+        />
+      </label>
+      <p className="text-xs leading-5 text-foreground-muted">
+        Confirming your password stops someone with a stolen session from
+        replacing your authenticator. Leave blank if you sign in with Google.
+      </p>
+      <Button className="w-full" disabled={isLoading} type="submit">
         {isLoading ? "Preparing setup" : "Start 2FA setup"}
       </Button>
-    </div>
+    </form>
   );
 }

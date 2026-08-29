@@ -13659,6 +13659,23 @@ components:
       - code
       title: TotpLoginVerifyRequest
       type: object
+    TotpSetupRequest:
+      description: 'Request body starting TOTP enrollment.
+
+
+        ``password`` is required for accounts that have one. Passwordless (OAuth)
+
+        accounts have no password to present, so the field stays optional at the
+
+        schema layer and the service decides per account.'
+      properties:
+        password:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Password
+      title: TotpSetupRequest
+      type: object
     TotpSetupResponse:
       description: One-time TOTP enrollment response with recovery material.
       properties:
@@ -17961,8 +17978,19 @@ paths:
       - Auth
   /v1/auth/2fa/setup:
     post:
-      description: Start TOTP setup for the authenticated user.
+      description: 'Start TOTP setup for the authenticated user.
+
+
+        Requires the account password when the account has one: enrollment
+
+        replaces the second factor and discards existing backup codes.'
       operationId: setup_totp_v1_auth_2fa_setup_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpSetupRequest'
+        required: true
       responses:
         '200':
           content:
@@ -17970,6 +17998,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/TotpSetupResponse'
           description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
       security:
       - HTTPBearer: []
       summary: Setup Totp

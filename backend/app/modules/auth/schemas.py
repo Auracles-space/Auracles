@@ -153,6 +153,17 @@ class TotpSetupResponse(BaseModel):
     backup_codes: list[str]
 
 
+class TotpSetupRequest(BaseModel):
+    """Request body starting TOTP enrollment.
+
+    ``password`` is required for accounts that have one. Passwordless (OAuth)
+    accounts have no password to present, so the field stays optional at the
+    schema layer and the service decides per account.
+    """
+
+    password: str | None = None
+
+
 class TotpCodeRequest(BaseModel):
     """Request body containing a current TOTP code."""
 

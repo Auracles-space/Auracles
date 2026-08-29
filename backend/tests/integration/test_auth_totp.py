@@ -168,10 +168,15 @@ def secret_from_uri(provisioning_uri: str) -> str:
     return values["secret"][0]
 
 
-async def setup_and_enable_totp(client: AsyncClient, user_id: UUID) -> dict[str, Any]:
+async def setup_and_enable_totp(
+    client: AsyncClient,
+    user_id: UUID,
+    password: str = "CorrectHorse9",
+) -> dict[str, Any]:
     """Enable TOTP through public endpoints and return the setup response body."""
     setup = await client.post(
         "/v1/auth/2fa/setup",
+        json={"password": password},
         headers=auth_headers(user_id),
     )
     body = setup.json()
@@ -196,6 +201,7 @@ async def test_user_can_setup_and_enable_totp_with_backup_codes(
 
     setup = await client.post(
         "/v1/auth/2fa/setup",
+        json={"password": "CorrectHorse9"},
         headers=auth_headers(user_id),
     )
     body = setup.json()
@@ -223,6 +229,92 @@ async def test_user_can_setup_and_enable_totp_with_backup_codes(
     assert user.totp_enabled is True
     assert user.totp_secret is not None
     assert audit_log is not None
+
+
+async def test_totp_setup_requires_password_reauthentication(
+    client: AsyncClient,
+    migrated_database: None,
+    totp_test_context: dict[str, Any],
+) -> None:
+    """Starting TOTP setup must re-authenticate with the account password.
+
+    Setup installs a fresh secret and deletes the account's existing backup
+    codes, so a bare access token would let a session thief enroll their own
+    authenticator and lock the owner out for good. Mirrors the email-change
+    flow, which already demands the password before a sensitive identity
+    change.
+    """
+    user_id = await create_verified_user("reauth@auracles.space", "CorrectHorse9")
+
+    missing = await client.post(
+        "/v1/auth/2fa/setup",
+        json={},
+        headers=auth_headers(user_id),
+    )
+    wrong = await client.post(
+        "/v1/auth/2fa/setup",
+        json={"password": "WrongHorse9"},
+        headers=auth_headers(user_id),
+    )
+    correct = await client.post(
+        "/v1/auth/2fa/setup",
+        json={"password": "CorrectHorse9"},
+        headers=auth_headers(user_id),
+    )
+
+    async with async_session_factory() as session:
+        codes = (
+            await session.scalars(
+                select(UserBackupCode).where(UserBackupCode.user_id == user_id)
+            )
+        ).all()
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert correct.status_code == 200
+    assert correct.json()["provisioning_uri"].startswith("otpauth://totp/")
+    # The rejected attempts must not have destroyed enrollment material.
+    assert len(codes) == 10
+
+
+async def test_totp_setup_allows_passwordless_account_without_password(
+    client: AsyncClient,
+    migrated_database: None,
+    totp_test_context: dict[str, Any],
+) -> None:
+    """An OAuth-only account can still enrol, having no password to present.
+
+    Demanding a factor the account does not possess would lock passwordless
+    users out of 2FA entirely, so the re-authentication is conditional on
+    `password_hash` exactly as the email-change flow makes it.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="oauth-2fa@auracles.space",
+                password_hash=None,
+                display_name="oauth-2fa",
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(
+                    user_id=user.id,
+                    role="operator",
+                    approved_at=datetime.now(UTC),
+                )
+            )
+        user_id = user.id
+
+    setup = await client.post(
+        "/v1/auth/2fa/setup",
+        json={},
+        headers=auth_headers(user_id),
+    )
+
+    assert setup.status_code == 200
+    assert setup.json()["provisioning_uri"].startswith("otpauth://totp/")
 
 
 async def test_totp_enabled_login_requires_challenge_before_session_tokens(

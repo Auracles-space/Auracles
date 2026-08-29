@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import hash_password, verify_password
+from app.core.security import create_access_token, hash_password, verify_password
 from app.main import app
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
@@ -281,6 +281,48 @@ async def test_reset_password_changes_password_consumes_token_and_revokes_sessio
     assert user.password_hash is not None
     assert verify_password("NewCorrectHorse9", user.password_hash)
     assert audit_log is not None
+
+
+async def test_reset_password_revokes_live_access_tokens(
+    client: AsyncClient,
+    migrated_database: None,
+    reset_test_context: dict[str, Any],
+) -> None:
+    """A password reset must invalidate access tokens minted before it.
+
+    Deleting refresh tokens alone leaves a stolen access token usable for the
+    rest of its TTL. That window is long enough to seize the account
+    permanently by re-keying 2FA, so the reset has to stamp the user-level
+    revocation cutoff that `is_access_token_revoked_for_user` reads.
+    """
+    user_id = await create_verified_user("revoke@auracles.space", "CorrectHorse9")
+    stolen = {
+        "Authorization": (
+            f"Bearer {create_access_token(user_id=user_id, roles=['operator'])}"
+        )
+    }
+    before = await client.get("/v1/auth/me", headers=stolen)
+
+    await client.post(
+        "/v1/auth/forgot-password",
+        json={"email": "revoke@auracles.space"},
+    )
+    token = reset_test_context["sent_emails"].reset_calls[0]["token"]
+    reset = await client.post(
+        "/v1/auth/reset-password",
+        json={"token": token, "new_password": "NewCorrectHorse9"},
+    )
+
+    after = await client.get("/v1/auth/me", headers=stolen)
+
+    async with async_session_factory() as session:
+        user = await session.scalar(select(User).where(User.id == user_id))
+
+    assert before.status_code == 200
+    assert reset.status_code == 200
+    assert after.status_code == 401
+    assert user is not None
+    assert user.access_revoked_before is not None
 
 
 async def test_reset_password_sets_password_on_passwordless_account(

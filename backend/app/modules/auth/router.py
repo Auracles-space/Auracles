@@ -54,6 +54,7 @@ from app.modules.auth.schemas import (
     TotpBackupCodesResponse,
     TotpCodeRequest,
     TotpLoginVerifyRequest,
+    TotpSetupRequest,
     TotpSetupResponse,
     TotpStatusResponse,
     VerifyEmailRequest,
@@ -598,9 +599,7 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
     # Roles held but not yet usable (attestor awaiting admin approval). Surfaced
     # so the UI can prompt the user to complete or track their application.
     pending_roles = list(
-        dict.fromkeys(
-            [role for role, approved_at in role_rows if approved_at is None]
-        )
+        dict.fromkeys([role for role, approved_at in role_rows if approved_at is None])
     )
     return CurrentUserResponse(
         id=current_user.id,
@@ -647,11 +646,20 @@ async def totp_status(
 
 @router.post("/2fa/setup", response_model=TotpSetupResponse)
 async def setup_totp(
+    payload: TotpSetupRequest,
     current_user: CurrentUser,
     db: DatabaseSession,
 ) -> TotpSetupResponse:
-    """Start TOTP setup for the authenticated user."""
-    return await service.setup_totp(db=db, user=current_user)
+    """Start TOTP setup for the authenticated user.
+
+    Requires the account password when the account has one: enrollment
+    replaces the second factor and discards existing backup codes.
+    """
+    return await service.setup_totp(
+        db=db,
+        user=current_user,
+        password=payload.password,
+    )
 
 
 @router.post(

@@ -1100,9 +1100,7 @@ async def _rank_eligible_attestors(
             query = query.where(OrgAttestorProfile.sectors.op("&&")([fw_sector]))
         if fw_jurisdiction is not None and fw_jurisdiction != "global":
             query = query.where(
-                OrgAttestorProfile.jurisdictions.op("&&")(
-                    [fw_jurisdiction, "global"]
-                )
+                OrgAttestorProfile.jurisdictions.op("&&")([fw_jurisdiction, "global"])
             )
     else:
         query = query.where(
@@ -1251,12 +1249,16 @@ async def _can_view_attestation(
     actor = await attestor_actor(db, attestation=attestation, user_id=user.id)
     if actor.is_reviewing_member or actor.is_org_manager:
         return True
-    # Cohort org owner/admin holding an offer to their organization.
+    # Cohort org owner/admin holding a *live* offer to their organization.
+    # Offer rows are never deleted, so without the status predicate an org that
+    # declined, let the offer lapse, or lost the cohort to a rival would keep
+    # reading the winner's completed review forever.
     offer_org_id = await db.scalar(
         select(AttestationOffer.org_id)
         .join(OrgMember, OrgMember.org_id == AttestationOffer.org_id)
         .where(
             AttestationOffer.attestation_id == attestation.id,
+            AttestationOffer.status == "offered",
             OrgMember.user_id == user.id,
             OrgMember.role.in_(("owner", "admin")),
         )

@@ -16,7 +16,8 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, delete, select
+from fastapi import HTTPException
+from sqlalchemy import create_engine, delete, select, update
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
@@ -163,9 +164,7 @@ async def _make_org_attestor() -> UUID:
             await session.flush()
             session.add(OrgMember(org_id=org.id, user_id=owner_id, role="owner"))
             session.add(
-                OrgCapability(
-                    org_id=org.id, capability="attestor", status="active"
-                )
+                OrgCapability(org_id=org.id, capability="attestor", status="active")
             )
             session.add(
                 OrgAttestorProfile(
@@ -182,6 +181,59 @@ async def _make_org_attestor() -> UUID:
                 )
             )
             return org.id
+
+
+async def test_terminal_offer_does_not_grant_attestation_visibility(
+    db_session,
+) -> None:
+    """An offer that is no longer live must stop granting read access.
+
+    Offer rows are never deleted: declining, expiring, or losing the cohort to
+    a rival only sets a status. Without a status predicate on the cohort
+    branch, an attestor org that walked away from the work would keep reading
+    the eventual winner's finished report, outcome, and fee indefinitely.
+    """
+    requestor = await _make_user("operator", "req")
+    org_id = await _make_org_attestor()
+    attestation = await _make_attestation(requestor.id)
+
+    offers = await matching_service.offer_next_cohort(
+        db_session,
+        attestation_id=attestation.id,
+    )
+    await db_session.commit()
+    assert offers
+
+    owner = await db_session.scalar(
+        select(User)
+        .join(OrgMember, OrgMember.user_id == User.id)
+        .where(OrgMember.org_id == org_id, OrgMember.role == "owner")
+    )
+    assert owner is not None
+
+    # A live offer legitimately grants the cohort org visibility.
+    live = await matching_service.get_attestation_for_user(
+        db_session,
+        attestation_id=attestation.id,
+        user=owner,
+    )
+    assert live.id == attestation.id
+
+    for terminal_status in ("declined", "expired", "superseded"):
+        await db_session.execute(
+            update(AttestationOffer)
+            .where(AttestationOffer.attestation_id == attestation.id)
+            .values(status=terminal_status)
+        )
+        await db_session.commit()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await matching_service.get_attestation_for_user(
+                db_session,
+                attestation_id=attestation.id,
+                user=owner,
+            )
+        assert exc_info.value.status_code == 404, terminal_status
 
 
 async def test_offer_persists_match_score(db_session) -> None:

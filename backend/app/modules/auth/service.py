@@ -658,6 +658,11 @@ async def reset_password(
         )
 
     user.password_hash = hash_password(new_password)
+    # Refresh-token deletion alone leaves already-issued access tokens valid for
+    # the rest of their TTL. A user resetting their password to eject an
+    # intruder expects the intruder out now, and that window is long enough to
+    # seize the account permanently by re-keying 2FA.
+    user.access_revoked_before = datetime.now(UTC)
     await _revoke_user_sessions(redis, user.id)
     await redis.delete(key)
     await write_audit(
@@ -750,10 +755,14 @@ async def login(
             json.dumps({"user_id": str(user.id), "remember_me": remember_me}),
         )
         await db.commit()
-        return LoginResponse(
-            requires_2fa=True,
-            challenge_token=challenge_token,
-        ), "", remember_me
+        return (
+            LoginResponse(
+                requires_2fa=True,
+                challenge_token=challenge_token,
+            ),
+            "",
+            remember_me,
+        )
 
     roles = await _load_active_roles(db, user.id)
     access_token = create_access_token(
@@ -1192,13 +1201,46 @@ async def add_self_role(
     return assigned_role
 
 
-async def setup_totp(db: AsyncSession, user: User) -> TotpSetupResponse:
-    """Start TOTP enrollment and return one-time recovery material."""
+async def setup_totp(
+    db: AsyncSession,
+    user: User,
+    password: str | None = None,
+) -> TotpSetupResponse:
+    """Start TOTP enrollment and return one-time recovery material.
+
+    Args:
+        db: Async session used to persist the new enrollment material.
+        user: The authenticated account enrolling in 2FA.
+        password: The account password, required when the account has one.
+
+    Returns:
+        The provisioning URI, a QR rendering, and one-time backup codes.
+
+    Raises:
+        HTTPException(401): If the account has a password and it was not
+            supplied or did not match.
+        HTTPException(409): If 2FA is already enabled.
+    """
     if user.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="2FA is already enabled.",
         )
+
+    # Enrollment re-keys the account's second factor and discards its existing
+    # backup codes, so a bare access token must not be enough: a session thief
+    # would otherwise enroll their own authenticator and lock the owner out
+    # permanently. Passwordless accounts have no password to demand, and
+    # demanding one would lock them out of 2FA entirely.
+    if user.password_hash is not None:
+        if password is None or not verify_password(password, user.password_hash):
+            logger.bind(module="auth", action="setup_totp", user_id=user.id).warning(
+                "totp_setup_reauthentication_failed"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect password.",
+            )
 
     secret = pyotp.random_base32()
     provisioning_uri = pyotp.TOTP(secret).provisioning_uri(
