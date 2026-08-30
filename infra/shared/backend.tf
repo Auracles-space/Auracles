@@ -11,7 +11,7 @@
 terraform {
   backend "s3" {
     key          = "shared/terraform.tfstate"
-    region       = "us-east-1"
+    region       = "eu-west-2"
     encrypt      = true
     use_lockfile = true
   }

@@ -179,7 +179,9 @@ make staging-down    # terraform destroy — idle cost returns to ~$0
 
 ---
 
-## 7. Cost estimate (production, monthly, us-east-1 — verify in AWS calculator before apply)
+## 7. Cost estimate (production, monthly — verify in AWS calculator before apply)
+
+**Region note (2026-08-30):** figures below were priced in `us-east-1`. The build region is now **`eu-west-2` (London)**, which runs roughly 10–15% higher on compute, so read the total as **≈ 125–165**.
 
 | Item | Size | ~$/mo |
 | --- | --- | --- |
@@ -223,7 +225,7 @@ Rollback at any step ≤ 8: DNS back to Render, webhooks back to old URLs. Nothi
 | Risk | Mitigation |
 | --- | --- |
 | Public-IP tasks (no NAT) widen exposure surface | SGs allow zero inbound except ALB→api:8000; this is standard "public subnet + SG" posture. Revisit when private subnets arrive with Phase 2. |
-| Neon egress: traffic now crosses AWS↔Neon | Pick the Neon region matching the AWS region; Neon doesn't bill egress on current tiers, latency is the only cost. |
+| Neon egress: traffic now crosses AWS↔Neon | Resolved 2026-08-30 — both are `eu-west-2` (London). Neon doesn't bill egress on current tiers, so latency was the only cost, and co-location removes it. Note `eu-north-1` (Stockholm) is **not** a Neon region: building there would force a permanent cross-region hop. Neon's European options are `eu-west-2` and `eu-central-1` only. |
 | Amplify build quirks vs. Vercel (monorepo, Next 15) | Prove the Amplify build in step 6 **before** DNS cutover; Render/old URL remains live. |
 | clamd cold start (freshclam signature download, ~3 min) | Container healthcheck + ECS grace period 300 s, mirroring compose's `start_period: 180s`. |
 | Migration race if api scales >1 | Locked in §3: move migrations to `ecs run-task` before any scale-out. |

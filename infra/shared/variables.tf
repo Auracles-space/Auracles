@@ -1,9 +1,9 @@
 # Inputs for the persistent shared stack.
 
 variable "aws_region" {
-  description = "AWS region for all resources. Matches the Neon project's region so server-rendered requests do not cross a continent to reach the database."
+  description = "AWS region for all resources. Must match the Neon project's region: the API is server-rendered and issues several queries per page, so a cross-region database is latency paid on every request. London is the closest Neon-supported region to the Nigerian pilot market, whose submarine cables route through Europe regardless."
   type        = string
-  default     = "us-east-1"
+  default     = "eu-west-2"
 }
 
 variable "root_domain" {
