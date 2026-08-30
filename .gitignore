@@ -31,3 +31,23 @@ frontend/tsconfig.tsbuildinfo
 celerybeat-schedule
 celerybeat-schedule.db
 celerybeat.pid
+
+# Terraform
+# Provider binaries and lock-adjacent working state — machine-specific, large.
+**/.terraform/*
+# State must never be committed: it holds resource ids and, for some providers,
+# secret values in clear text. It lives in S3, which is the whole point.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+# Saved plans. Binary, short-lived, and can embed variable values.
+tfplan
+*.tfplan
+# Per-account backend settings (bucket name embeds an AWS account id).
+# backend.hcl.example is committed in its place.
+backend.hcl
+# Note: *.tfvars is deliberately NOT ignored. Environment tfvars are committed
+# by design — secrets are referenced by Secrets Manager ARN, never inlined, so
+# there is nothing sensitive in them and losing them would lose the config.
+crash.log
+crash.*.log

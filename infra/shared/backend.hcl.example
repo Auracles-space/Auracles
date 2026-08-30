@@ -1,0 +1,8 @@
+# Copy to backend.hcl and set your bucket, then:
+#   terraform init -backend-config=backend.hcl
+#
+# The bucket is created by hand before the first init — Terraform cannot create
+# the bucket that stores its own state. See infra/README.md for the command.
+# Replace 000000000000 with your AWS account id.
+
+bucket = "auracles-tfstate-000000000000"
