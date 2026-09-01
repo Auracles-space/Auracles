@@ -29,7 +29,7 @@ Auracles is a **knowledge marketplace**. Contributors package professional exper
 | Full Spec       | `docs/auracles-full-spec.md`                                  | PRD + full ontology + taxonomy (source of truth)    |
 | FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)          |
 | TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security      |
-| Infra (Phase 1) | `docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md` | All-AWS deployment (revised 2026-09-01): ECS + RDS + ElastiCache + Amplify in eu-north-1. The older `2026-06-07-pre-scale-infra-design.md` (Render/Neon/Upstash) is historical |
+| Infra (Phase 1) | `docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md` | All-AWS deployment (revised 2026-09-01): ECS + RDS + ElastiCache + Amplify in eu-west-2 (London — closest to the Nigerian pilot). The older `2026-06-07-pre-scale-infra-design.md` (Render/Neon/Upstash) is historical |
 | Brand Book      | `docs/auracles-brand-book.pdf`                                | Brand Book v1.0 — visual identity, colors (light + dark), typography, voice. Source of truth for `frontend-design` skill. |
 
 ---
@@ -40,7 +40,7 @@ Two-phase deployment. Code is identical in both phases — only env vars and dep
 
 ### Phase 1 — Pre-Scale (current)
 
-Revised 2026-09-01 (human decision): **all-AWS in `eu-north-1`**, replacing the
+Revised 2026-09-01 (human decision): **all-AWS in `eu-west-2` (London)**, replacing the
 earlier Render/Vercel/Neon/Upstash arrangement. Authoritative deployment design:
 `docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md`.
 

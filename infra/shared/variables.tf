@@ -1,9 +1,9 @@
 # Inputs for the persistent shared stack.
 
 variable "aws_region" {
-  description = "AWS region for all resources. eu-north-1 holds the project's existing S3 buckets and Amplify app, and with the database on RDS no external vendor pins the region. Compute, RDS, ElastiCache, and the buckets must stay co-located: the worker streams every artifact out of S3 to scan it, and the API queries Postgres per server-rendered page."
+  description = "AWS region for all resources. eu-west-2 (London) has the lowest practical latency from Lagos, the pilot market — West African submarine cables land in and near the UK. Also the ACM certificate here must sit in the ALB's region, so this stack and the environment stacks share one region by construction. Compute, RDS, ElastiCache, and the buckets stay co-located: the worker streams every artifact out of S3 to scan it, and the API queries Postgres per server-rendered page."
   type        = string
-  default     = "eu-north-1"
+  default     = "eu-west-2"
 }
 
 variable "root_domain" {

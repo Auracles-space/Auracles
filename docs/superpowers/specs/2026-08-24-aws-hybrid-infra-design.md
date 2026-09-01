@@ -13,7 +13,7 @@ Vercel and Render are being abandoned. Full TDD Phase 2 (ECS + RDS + ElastiCache
 
 | Decision | Choice | Rejected alternatives |
 | --- | --- | --- |
-| Region | **eu-north-1 (Stockholm)** (2026-09-01) | eu-west-2/London (was chosen only to co-locate with Neon, which does not operate in Stockholm; with RDS the constraint vanished). Existing S3 buckets and the Amplify app are already in eu-north-1, and Stockholm prices below London and Frankfurt |
+| Region | **eu-west-2 (London)** (2026-09-01, revised same day from Stockholm when the human made Lagos latency the priority) | eu-north-1/Stockholm (cheapest EU and held the existing Amplify app, but ~30–40ms further from Lagos on every API call; the app buckets supposedly there turned out to be in us-east-1 anyway). af-south-1/Cape Town (geographically obvious, practically wrong: no Amplify Hosting, 20–30% pricier, and Lagos traffic often routes via Europe regardless) |
 | Backend hosting | ECS Fargate (api, worker, beat, clamav) | Single EC2 + compose (throwaway); full Phase 2 now (burns budget) |
 | Compute pricing | **Fargate Spot for worker + beat; api on-demand** (2026-09-01) | All on-demand (+$14–18/mo for reclaim-resilience the code already has: Celery tasks are idempotent by project rule, and the stranded-payout sweeper catches dispatch casualties. The api serves users and stays on-demand) |
 | Frontend hosting | AWS Amplify Hosting | Fargate container (+$18/mo, manual scaling); OpenNext/Lambda (tooling risk) |
@@ -186,7 +186,7 @@ make staging-down    # terraform destroy — idle cost returns to ~$0
 
 ## 7. Cost estimate (production, monthly — verify in AWS calculator before apply)
 
-**Region note (2026-09-01):** figures below are approximate for **`eu-north-1` (Stockholm)** — the cheapest of the three regions this design passed through (`us-east-1` → briefly `eu-west-2` while Neon pinned the region → `eu-north-1` once RDS removed the pin). Verify in the calculator before apply.
+**Region note (2026-09-01):** figures below are approximate for **`eu-west-2` (London)** — the region this design finally settled in after `us-east-1` → London (Neon pin) → Stockholm (thought to hold existing resources) → London again (Lagos latency made the priority; the "existing buckets" turned out to be in us-east-1). London runs a few percent above Stockholm. Verify in the calculator before apply.
 
 | Item | Size | ~$/mo |
 | --- | --- | --- |
@@ -219,7 +219,7 @@ Cheapest lever if burn must drop: fold worker to 0.5 vCPU / 3 GB (~$31) and acce
 4. Set the runtime limits from §4 in each task definition — per-service `DB_POOL_SIZE`/`DB_MAX_OVERFLOW`, the `WS_MAX_*` caps, `TRUST_PROXY_HEADERS=true`. The caps are enforced in code with safe defaults, so this step is tuning rather than a gate; `TRUST_PROXY_HEADERS` is not, and must be set **before** the next step makes the API reachable.
 5. Point **api.auracles.space** DNS at the ALB (ACM cert validated first). Old Render URL keeps working in parallel — this is the rollback path.
 6. Update webhook endpoints at Stripe, Paystack, Persona to the new API host. (Paystack: single URL per mode — swap test URL first, verify, then live.)
-7. Amplify app connected to the GitHub repo (`appRoot=frontend`), env vars set, deploy, attach **auracles.space** domain.
+7. **New** Amplify app in `eu-west-2` connected to the GitHub repo (`appRoot=frontend`), env vars set with `NEXT_PUBLIC_WAITLIST_MODE=false`, deploy, verify on its own amplifyapp.com URL. **The existing `eu-north-1` Amplify app keeps serving the waitlist at auracles.space throughout** — its region is irrelevant (static content behind CloudFront; Lagos has an edge location). **Launch = moving the auracles.space domain from the old app to the new one; rollback = moving it back.** This replaces the earlier flip-the-env-var-and-rebuild launch plan: the waitlist stays up until the second the main app takes over. Delete the old app once comfortable post-launch.
 8. Rewrite `deploy.yml` (ECR + ECS via OIDC), delete Render hook secrets. One full push-to-main → auto-deploy verified.
 9. Run one ephemeral-staging cycle end-to-end to prove the QA workflow.
 10. Decommission Render services; delete `render.yaml` in a follow-up PR; update CLAUDE.md tech-stack table.

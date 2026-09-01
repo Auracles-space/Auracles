@@ -5,4 +5,4 @@
 # the bucket that stores its own state. See infra/README.md for the command.
 # Replace 000000000000 with your AWS account id.
 
-bucket = "auracles-tfstate-000000000000"
+bucket = "auracles-tfstate-000000000000-eu-west-2"

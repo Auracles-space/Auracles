@@ -4,13 +4,22 @@ Terraform for an all-AWS deployment (decision 2026-09-01): ECS Fargate compute,
 RDS Postgres, ElastiCache Redis, S3, Amplify. Email stays on Resend.
 Authoritative design: `docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md`.
 
-Region is **eu-north-1 (Stockholm)** for everything. With the database on RDS
-there is no external vendor pinning the region, so it went to where the
-project's S3 buckets and Amplify app already were — which also happens to be
-one of AWS's cheapest European regions. The one rule that survives from the
-earlier region debates: compute, database, cache, and buckets stay co-located,
-because the worker streams every uploaded artifact out of S3 to scan it and the
-API queries Postgres on every server-rendered page.
+Region is **eu-west-2 (London)** for everything new (decision 2026-09-01,
+revised same day from Stockholm when "closest to Nigeria" was made the
+priority). London has the lowest practical latency from Lagos (~90–120ms —
+West African submarine cables land in and near the UK) with full service
+coverage. Cape Town looks closer on a map but has no Amplify Hosting, costs
+20–30% more, and Lagos traffic often routes via Europe anyway. The co-location
+rule stands: compute, database, cache, and buckets stay together, because the
+worker streams every uploaded artifact out of S3 to scan it and the API
+queries Postgres on every server-rendered page.
+
+One deliberate exception: the **existing Amplify app in `eu-north-1` keeps
+serving the waitlist** at auracles.space, untouched — it is static content
+behind CloudFront (Lagos has an edge location), so its region is irrelevant. A
+new Amplify app in `eu-west-2` carries the main application; launch day is
+moving the domain from the old app to the new one, and rollback is moving it
+back.
 
 ## Layout
 
