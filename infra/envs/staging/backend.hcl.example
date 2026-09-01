@@ -1,0 +1,5 @@
+# Copy to backend.hcl (gitignored) and set your bucket, then:
+#   terraform init -backend-config=backend.hcl
+# Replace 000000000000 with your AWS account id.
+
+bucket = "auracles-tfstate-000000000000-eu-west-2"
