@@ -1,22 +1,16 @@
 # Auracles infrastructure
 
-Terraform for the Phase 1.5 hybrid: AWS runs compute, the data plane stays on
-Neon and Resend. Authoritative design:
-`docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md`.
+Terraform for an all-AWS deployment (decision 2026-09-01): ECS Fargate compute,
+RDS Postgres, ElastiCache Redis, S3, Amplify. Email stays on Resend.
+Authoritative design: `docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md`.
 
-Region is **eu-west-2 (London)** for everything, and AWS and Neon must stay
-co-located. The API is server-rendered and issues several queries per page, so
-a cross-region database is latency paid on every request — enough to threaten
-the Phase 6 sub-3s target for `/explore` on its own.
-
-London was chosen over the alternatives for two reasons. It is the closest
-Neon-supported region to the Nigerian pilot market: West African submarine
-cables land in Europe, so Lagos traffic routes through Europe whatever the
-destination. And `eu-north-1` (Stockholm), the original preference, is not a
-Neon region at all — building there would have guaranteed a cross-region hop.
-
-A Neon project's region is fixed at creation, so this was settled while there
-was no production data to migrate. Changing it later means downtime.
+Region is **eu-north-1 (Stockholm)** for everything. With the database on RDS
+there is no external vendor pinning the region, so it went to where the
+project's S3 buckets and Amplify app already were — which also happens to be
+one of AWS's cheapest European regions. The one rule that survives from the
+earlier region debates: compute, database, cache, and buckets stay co-located,
+because the worker streams every uploaded artifact out of S3 to scan it and the
+API queries Postgres on every server-rendered page.
 
 ## Layout
 

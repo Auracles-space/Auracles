@@ -1,8 +1,8 @@
 # AWS Hybrid Infrastructure Design (Phase 1.5)
 
 **Date:** 2026-08-24
-**Status:** Approved (human decision, 2026-08-24)
-**Supersedes:** `2026-06-07-pre-scale-infra-design.md` (Render hosting) — its Neon and Resend sections still apply. Its Upstash section does **not**: Redis moved to ElastiCache on 2026-08-29 (§1).
+**Status:** Approved (human decision, 2026-08-24). **Revised 2026-09-01 (human decision): all-AWS.** The hybrid's split data plane is gone — Neon is replaced by RDS, everything lands in one region.
+**Supersedes:** `2026-06-07-pre-scale-infra-design.md` (Render hosting) — its Resend section still applies. Its Neon and Upstash sections do **not**: Redis moved to ElastiCache (2026-08-29), Postgres moved to RDS (2026-09-01), both in §1.
 **Relation to TDD:** Overrides TDD Section 3 (infrastructure) until the Phase 2 upgrade triggers below fire.
 
 ---
@@ -13,18 +13,22 @@ Vercel and Render are being abandoned. Full TDD Phase 2 (ECS + RDS + ElastiCache
 
 | Decision | Choice | Rejected alternatives |
 | --- | --- | --- |
+| Region | **eu-north-1 (Stockholm)** (2026-09-01) | eu-west-2/London (was chosen only to co-locate with Neon, which does not operate in Stockholm; with RDS the constraint vanished). Existing S3 buckets and the Amplify app are already in eu-north-1, and Stockholm prices below London and Frankfurt |
 | Backend hosting | ECS Fargate (api, worker, beat, clamav) | Single EC2 + compose (throwaway); full Phase 2 now (burns budget) |
+| Compute pricing | **Fargate Spot for worker + beat; api on-demand** (2026-09-01) | All on-demand (+$14–18/mo for reclaim-resilience the code already has: Celery tasks are idempotent by project rule, and the stranded-payout sweeper catches dispatch casualties. The api serves users and stays on-demand) |
 | Frontend hosting | AWS Amplify Hosting | Fargate container (+$18/mo, manual scaling); OpenNext/Lambda (tooling risk) |
-| Database | **Neon stays** | RDS (+$14/mo + forces NAT) |
+| Database | **RDS Postgres 16** (revised 2026-09-01 — CEO decision, all-AWS), `db.t4g.micro`, 20 GB gp3, **single-AZ** | Neon (kept the data plane split across vendors and pinned the region to Neon's list, which excludes eu-north-1); Multi-AZ (doubles instance cost for failover the rest of the stack cannot use yet — see below) |
 | Redis | **ElastiCache** (revised 2026-08-29 — Upstash free tier exhausted) | Upstash paid (per-command billing against an always-connected Celery broker); self-hosted on ECS (owns persistence/failover for a queue holding payouts) |
 | Email | **Resend stays** | SES (no reason to move yet) |
 | NAT Gateway | **None** — tasks in public subnets with public IPs, locked security groups | NAT (+$35/mo fixed) |
-
-**Correction to this table's earlier reasoning (2026-08-29).** The rejected-alternatives column previously claimed ElastiCache and RDS each "force NAT". That is wrong, and it overstated the cost of the option now chosen. NAT exists to give *outbound internet* to instances without public IPs. Reaching an in-VPC service is a different path entirely: an ElastiCache node has a private address inside the VPC CIDR, which matches the VPC's `local` route, so a Fargate task talks to it directly regardless of which subnet either sits in. Tasks keep their public IPs and their IGW route for Stripe, Paystack, Persona, and Resend exactly as before. The only requirement is a security group rule. ElastiCache therefore costs ~$12–15/mo, not ~$47/mo. NAT would only become necessary if tasks were *moved into private subnets*, which is a separate choice this design is not making.
 | Staging | **Ephemeral** — `terraform apply` before a release QA pass, `terraform destroy` after | Always-on parity (~2× cost) |
-| Savings Plan | **No commitment** until load is known | 1-yr Compute SP (~20% off Fargate only; doesn't touch ALB) |
+| Savings Plan | **No commitment** until load is known | 1-yr Compute SP (~20% off Fargate); Database Savings Plan (up to 35% off RDS/ElastiCache — revisit after one month of real usage) |
 
-Phase 2 upgrade trigger (unchanged in spirit from the pre-scale doc): sustained load Neon's low tier cannot hold, or AWS Activate credits landing — then RDS and private subnets for the tasks slot in as new Terraform modules and env-var swaps. No code changes. ElastiCache is no longer part of that upgrade, having been pulled forward to Phase 1.
+**Single-AZ, deliberately (2026-09-01).** Multi-AZ doubles RDS cost for automatic failover against a whole-data-centre outage — rare, usually minutes long. The api, worker, and beat each run `desired_count=1` in one AZ anyway, so an AZ outage likely takes compute down with it; a standby database that fails over flawlessly would have nothing to talk to. Data durability is unaffected: automated backups and PITR are stored across AZs regardless. **Flip `multi_az = true` (checkbox, brief restart) as a launch-hardening step when real transactions flow daily — and grow api to 2 tasks across 2 AZs at the same moment, so the stack earns the redundancy together.**
+
+**Correction to this table's earlier reasoning (2026-08-29).** The rejected-alternatives column previously claimed ElastiCache and RDS each "force NAT". That is wrong, and it distorted two decisions in Upstash's and Neon's favour. NAT exists to give *outbound internet* to instances without public IPs. Reaching an in-VPC service is a different path entirely: an RDS or ElastiCache node has a private address inside the VPC CIDR, which matches the VPC's `local` route, so a Fargate task talks to it directly regardless of which subnet either sits in. Tasks keep their public IPs and their IGW route for Stripe, Paystack, Persona, and Resend exactly as before. The only requirement is a security group rule. NAT would only become necessary if tasks were *moved into private subnets*, which is a separate choice this design is not making.
+
+Phase 2 upgrade trigger, rewritten now that RDS and ElastiCache are both in Phase 1: sustained load that `db.t4g.micro`/`cache.t4g.micro` cannot hold — then larger instances, Multi-AZ, `desired_count` ≥ 2, private subnets + NAT, and Savings Plan commitments. All are size/flag changes on existing Terraform, not new architecture. No code changes.
 
 **Environment parity rule adaptation:** staging uses the *same Terraform modules* as production with smaller sizes, but exists only during release testing. Parity of architecture is kept; parity of uptime is deliberately dropped for budget.
 
@@ -49,8 +53,8 @@ Phase 2 upgrade trigger (unchanged in spirit from the pre-scale doc): sustained 
         │  beat     0.25 vCPU / 0.5GB desired=1  (singleton)        │
         └───────────┬───────────────────┬───────────────────────────┘
                     │                   │
-          Neon (Postgres)      ElastiCache (Redis broker+cache, in-VPC)
-          Resend (email)       S3 (artifacts/avatars/reports/thumbnails)
+          RDS (Postgres 16, in-VPC)   ElastiCache (Redis broker+cache, in-VPC)
+          Resend (email)              S3 (artifacts/avatars/reports/thumbnails)
           Stripe / Paystack / Persona (webhooks → ALB → api)
 ```
 
@@ -91,13 +95,14 @@ Security groups (deny by default):
 | --- | --- | --- |
 | `alb` | 443 from 0.0.0.0/0 (+ 80 → 301 redirect) | Public edge |
 | `api-task` | 8000 from `alb` SG only | Public IP exists but nothing can reach it directly |
-| `worker-task` | none | Outbound only (Neon, S3, providers); clamd is localhost |
+| `worker-task` | none | Outbound only (S3, providers); clamd is localhost |
 | `beat-task` | none | Outbound only |
 | `redis` | 6379 from `api-task`, `worker-task`, `beat-task` SGs only | ElastiCache. Never from a CIDR — Redis has no authentication worth the name, so the SG *is* the access control |
+| `rds` | 5432 from `api-task`, `worker-task`, `beat-task` SGs only | Same rule, same reason. `publicly_accessible = false` — with the database in-VPC there is no reason for it to answer the internet at all, which is a posture Neon could never offer |
 
-No NAT means tasks get public IPs for outbound internet (Neon/Stripe/Paystack/Persona/Resend). All inbound is blocked by SGs except ALB→api. Redis traffic never touches that path: ElastiCache holds a private address inside the VPC CIDR, so it is reached over the VPC `local` route and never leaves AWS. Add an S3 **gateway VPC endpoint** (free) so artifact traffic to S3 doesn't either.
+No NAT means tasks get public IPs for outbound internet (Stripe/Paystack/Persona/Resend). All inbound is blocked by SGs except ALB→api. Database and Redis traffic never touch that path: RDS and ElastiCache hold private addresses inside the VPC CIDR, reached over the VPC `local` route, and never leave AWS. Add an S3 **gateway VPC endpoint** (free) so artifact traffic to S3 doesn't either.
 
-ElastiCache needs a subnet group. Put it in **private** subnets — it requires no outbound internet, so private subnets with no NAT cost nothing and keep the node off the public internet entirely.
+RDS and ElastiCache each need a subnet group. Put both in **private** subnets — neither requires outbound internet, so private subnets with no NAT cost nothing and keep both stores off the public internet entirely.
 
 Enable **encryption in transit** on the cluster and set `REDIS_URL` to `rediss://`. The application already handles that scheme (`app/core/config.py::cache_redis_url` passes `ssl_cert_reqs` through), so it costs nothing in code. Without it, refresh tokens and rate-limit state cross the VPC in clear text.
 
@@ -131,7 +136,7 @@ Amplify env vars: `NEXT_PUBLIC_API_URL=https://api.auracles.space`, `NEXT_PUBLIC
 
 Both limits below are now enforced in code with conservative defaults, so an unconfigured deploy is already safe. What remains here is per-service tuning: each service runs its own process with its own pool, so the values differ by service and are set as environment variables in the task definitions.
 
-**Connection pool.** Bounded by `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` (`app/core/database.py::create_database_engine`, and `app/workers/schedules.py::create_beat_engine` for Beat's separate sync engine). Defaults are 5 + 5. Left implicit, as they were until these helpers existed, SQLAlchemy allows 5 + 10 **per process**, up to 45 across api + worker + beat against a Neon tier that caps connections. Also point `DATABASE_URL` at Neon's **pooled** endpoint rather than the direct one: the driver pool and the Neon pooler are different layers and both need sizing. Per-service starting point, to revisit under real load:
+**Connection pool.** Bounded by `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` (`app/core/database.py::create_database_engine`, and `app/workers/schedules.py::create_beat_engine` for Beat's separate sync engine). Defaults are 5 + 5. Left implicit, as they were until these helpers existed, SQLAlchemy allows 5 + 10 **per process**, up to 45 across api + worker + beat. That still matters on RDS: a `db.t4g.micro` has roughly 80–90 usable `max_connections`, so unbounded pools across three services could consume half the instance's headroom at idle. The Neon-era advice about a pooled endpoint no longer applies — connect directly to the RDS endpoint; RDS Proxy exists but is ~$11/mo and unnecessary at three known clients with sized pools. Per-service starting point, to revisit under real load:
 
 | Service | `DB_POOL_SIZE` | `DB_MAX_OVERFLOW` | Rationale |
 | --- | --- | --- | --- |
@@ -168,12 +173,12 @@ jobs:
 
 ```
 make staging-up      # terraform -chdir=infra/envs/staging apply  (≈5–10 min incl. ACM DNS validation reuse)
-make staging-seed    # alembic upgrade + seed script against the Neon `develop` branch
+make staging-seed    # alembic upgrade + seed script against the staging RDS instance
 # ... QA / E2E pass against staging.auracles.space ...
 make staging-down    # terraform destroy — idle cost returns to ~$0
 ```
 
-- Staging DB = Neon `develop` branch (already exists per pre-scale doc) and is **not** created or destroyed by Terraform. Staging Redis now *is* a Terraform resource, since ElastiCache is in-VPC — it comes up and goes down with the rest of the ephemeral stack. That is an improvement on the Upstash arrangement: staging starts with an empty broker every cycle instead of inheriting whatever a previous run left in a shared instance.
+- Staging DB and Redis are both Terraform resources now that both are in-VPC: a small RDS instance (`db.t4g.micro`, single-AZ, on the smallest storage) and a `cache.t4g.micro`, up and down with the rest of the ephemeral stack. Each cycle starts empty — `make staging-seed` runs `alembic upgrade head` plus the seed script, which is architecture parity with production's boot path rather than a shortcut. Cost while a cycle lives is cents; the RDS instance is the slowest piece to come up (~5–10 minutes), so `staging-up` is bounded by it. The Neon `develop`-branch arrangement this replaces is gone with Neon itself.
 - ACM certs + Route 53 zone live in a tiny **persistent** shared stack (cert validation takes too long to recreate each time); staging apply only attaches to them.
 - Fargate Spot for all staging services (~70% off the already-small window).
 
@@ -181,7 +186,7 @@ make staging-down    # terraform destroy — idle cost returns to ~$0
 
 ## 7. Cost estimate (production, monthly — verify in AWS calculator before apply)
 
-**Region note (2026-08-30):** figures below were priced in `us-east-1`. The build region is now **`eu-west-2` (London)**, which runs roughly 10–15% higher on compute, so read the total as **≈ 125–165**.
+**Region note (2026-09-01):** figures below are approximate for **`eu-north-1` (Stockholm)** — the cheapest of the three regions this design passed through (`us-east-1` → briefly `eu-west-2` while Neon pinned the region → `eu-north-1` once RDS removed the pin). Verify in the calculator before apply.
 
 | Item | Size | ~$/mo |
 | --- | --- | --- |
@@ -194,8 +199,11 @@ make staging-down    # terraform destroy — idle cost returns to ~$0
 | CloudWatch logs + ECR + data transfer | | 8–12 |
 | Route 53 hosted zone | | 0.50 |
 | ElastiCache Redis | `cache.t4g.micro`, single node | 12–15 |
-| Neon / Resend | current tiers | 0–20 |
-| **Total** | | **≈ 112–145** |
+| RDS Postgres | `db.t4g.micro`, 20 GB gp3, single-AZ | 13–15 |
+| Resend | current tier | 0–20 |
+| **Total** | | **≈ 120–150** |
+
+**Cost levers applied (2026-09-01):** Fargate Spot on worker + beat (~70% off those two rows → total lands ≈ **95–125**); single-AZ RDS (Multi-AZ deferred to launch-hardening); 30-day CloudWatch log retention set in Terraform from day one (the default is forever); Savings Plans deferred until a month of real usage. **AWS Activate Founders ($1,000) still unapplied — at this burn it is ~8 months of runway and remains the single biggest lever.** Check the account's post-July-2025 Free Tier credit balance too.
 
 Honest correction vs. the earlier estimate ($75–90): the ClamAV daemon's 2 GB requirement was not priced in. It is now. Budget survives ~2.5–3 months at this burn; **AWS Activate Founders ($1,000 credits) should be applied for immediately** — it roughly doubles runway or funds the Phase 2 upgrade.
 
@@ -225,14 +233,14 @@ Rollback at any step ≤ 8: DNS back to Render, webhooks back to old URLs. Nothi
 | Risk | Mitigation |
 | --- | --- |
 | Public-IP tasks (no NAT) widen exposure surface | SGs allow zero inbound except ALB→api:8000; this is standard "public subnet + SG" posture. Revisit when private subnets arrive with Phase 2. |
-| Neon egress: traffic now crosses AWS↔Neon | Resolved 2026-08-30 — both are `eu-west-2` (London). Neon doesn't bill egress on current tiers, so latency was the only cost, and co-location removes it. Note `eu-north-1` (Stockholm) is **not** a Neon region: building there would force a permanent cross-region hop. Neon's European options are `eu-west-2` and `eu-central-1` only. |
+| DB latency/egress from a split data plane | Resolved 2026-09-01 by dissolving the split: RDS sits in the same VPC as the tasks, so database traffic never crosses a region, a vendor boundary, or the public internet. (Historical note: this row once forced the region choice, because Neon does not operate in `eu-north-1`.) |
 | Amplify build quirks vs. Vercel (monorepo, Next 15) | Prove the Amplify build in step 6 **before** DNS cutover; Render/old URL remains live. |
 | clamd cold start (freshclam signature download, ~3 min) | Container healthcheck + ECS grace period 300 s, mirroring compose's `start_period: 180s`. |
 | Migration race if api scales >1 | Locked in §3: move migrations to `ecs run-task` before any scale-out. |
 | Beat double-run during deploy | min-healthy 0 / max 100 deployment config (§3). |
 | Ephemeral staging drift (“works on prod modules only”) | Staging uses identical modules — only tfvars differ; CI runs `terraform fmt`/`validate` on every infra PR. |
-| Default DB pool (5+10 × 3 services) exhausts Neon's connection cap | Explicit `pool_size`/`max_overflow` per service and Neon's pooled endpoint, set when `DATABASE_URL` is wired (§4). |
+| Default DB pool (5+10 × 3 services) eats `db.t4g.micro`'s ~80–90 `max_connections` | Explicit `pool_size`/`max_overflow` per service, set when `DATABASE_URL` is wired (§4). |
 | Unbounded WebSocket sockets exhaust the DB pool and take the API down with them | Per-user connection cap + per-socket rate limit landed before step 4 exposes the ALB (§4). |
 | `TRUST_PROXY_HEADERS` left off silently collapses every per-IP rate limit into one bucket | Set it on the task definition (§4); the limiter keys on the ALB address otherwise and protects nothing. |
 | No error tracking or metrics — production failures surface via users | Accepted for the pilot. Sentry (or equivalent) is the first addition once traffic is real; CloudWatch logs alone will not surface a 500 spike. |
-| Neon restore has never been exercised | Run one PITR restore against the `develop` branch during an ephemeral-staging cycle (§6). An untested restore is not a backup. |
+| RDS restore has never been exercised | Run one PITR restore into a throwaway instance during an ephemeral-staging cycle (§6). An untested restore is not a backup — this survives the Neon→RDS move unchanged. |

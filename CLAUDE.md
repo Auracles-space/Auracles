@@ -29,7 +29,7 @@ Auracles is a **knowledge marketplace**. Contributors package professional exper
 | Full Spec       | `docs/auracles-full-spec.md`                                  | PRD + full ontology + taxonomy (source of truth)    |
 | FRD             | `docs/superpowers/specs/2026-06-06-auracles-frd.md`           | Functional requirements (~76 FRs, ~24 BRs)          |
 | TDD             | `docs/superpowers/specs/2026-06-06-auracles-tdd.md`           | Technical design: schema, API, infra, security      |
-| Infra (Phase 1) | `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` | Pre-scale hosting: Render + Neon + Upstash + Resend |
+| Infra (Phase 1) | `docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md` | All-AWS deployment (revised 2026-09-01): ECS + RDS + ElastiCache + Amplify in eu-north-1. The older `2026-06-07-pre-scale-infra-design.md` (Render/Neon/Upstash) is historical |
 | Brand Book      | `docs/auracles-brand-book.pdf`                                | Brand Book v1.0 — visual identity, colors (light + dark), typography, voice. Source of truth for `frontend-design` skill. |
 
 ---
@@ -40,43 +40,49 @@ Two-phase deployment. Code is identical in both phases — only env vars and dep
 
 ### Phase 1 — Pre-Scale (current)
 
-| Layer              | Technology                                  |
-| ------------------ | ------------------------------------------- |
-| Frontend           | Next.js 15 (App Router)                     |
-| Styling            | Tailwind CSS                                |
-| Frontend hosting   | Vercel                                      |
-| Backend            | FastAPI (Python 3.13)                       |
-| Backend hosting    | Render (Web Service)                        |
-| Async workers      | Celery + Redis — Render (Background Worker) |
-| Scheduler          | Celery Beat — Render (Background Worker)    |
-| Database           | PostgreSQL 16 (Neon — serverless)           |
-| Cache + broker     | Redis (Upstash — serverless)                |
-| File storage       | AWS S3                                      |
-| Virus scan         | Celery task (ClamAV in worker image)        |
-| Payments (global)  | Stripe + Stripe Connect                     |
-| Payments (Nigeria) | Paystack                                    |
-| Email              | Resend (`noreply@auracles.space`)           |
-| API contract       | OpenAPI spec (`contracts/openapi.yaml`)     |
-| Migrations         | Alembic                                     |
-| ORM                | SQLAlchemy (async)                          |
-| Validation         | Pydantic v2                                 |
-| CI/CD              | GitHub Actions → GHCR → Render deploy hooks |
+Revised 2026-09-01 (human decision): **all-AWS in `eu-north-1`**, replacing the
+earlier Render/Vercel/Neon/Upstash arrangement. Authoritative deployment design:
+`docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md`.
 
-### Phase 2 — AWS (at scale)
+| Layer              | Technology                                         |
+| ------------------ | -------------------------------------------------- |
+| Frontend           | Next.js 15 (App Router)                            |
+| Styling            | Tailwind CSS                                       |
+| Frontend hosting   | AWS Amplify Hosting                                |
+| Backend            | FastAPI (Python 3.13)                              |
+| Backend hosting    | AWS ECS Fargate (api, on-demand)                   |
+| Async workers      | Celery + Redis — ECS Fargate (worker, Spot)        |
+| Scheduler          | Celery Beat — ECS Fargate (beat, Spot, singleton)  |
+| Database           | PostgreSQL 16 (AWS RDS, `db.t4g.micro`, single-AZ) |
+| Cache + broker     | Redis (AWS ElastiCache, `cache.t4g.micro`)         |
+| File storage       | AWS S3                                             |
+| Virus scan         | Celery task (ClamAV in worker image)               |
+| Payments (global)  | Stripe + Stripe Connect                            |
+| Payments (Nigeria) | Paystack                                           |
+| Email              | Resend (`noreply@auracles.space`)                  |
+| Error tracking     | Sentry (backend wired; inert without `SENTRY_DSN`) |
+| API contract       | OpenAPI spec (`contracts/openapi.yaml`)            |
+| Migrations         | Alembic                                            |
+| ORM                | SQLAlchemy (async)                                 |
+| Validation         | Pydantic v2                                        |
+| Infrastructure     | Terraform (`infra/`)                               |
+| CI/CD              | GitHub Actions → ECR → ECS rolling deploy          |
 
-| Layer           | Technology                                 |
-| --------------- | ------------------------------------------ |
-| Backend hosting | AWS ECS Fargate                            |
-| Scheduler       | Celery Beat (ECS singleton task)           |
-| Database        | PostgreSQL 16 (AWS RDS)                    |
-| Cache + broker  | Redis (AWS ElastiCache)                    |
-| File events     | AWS Lambda (S3 trigger → virus scan)       |
-| Email           | AWS SES (or Resend — optional swap)        |
-| Infrastructure  | Terraform                                  |
-| Terraform state | AWS S3 (remote state + native `use_lockfile` locking) |
-| CI/CD           | GitHub Actions → ECR → ECS rolling deploy  |
+### Phase 2 — scale-up (same architecture, bigger)
 
-See `docs/superpowers/specs/2026-06-07-pre-scale-infra-design.md` for migration steps.
+Phase 1 is already all-AWS, so Phase 2 is no longer a migration — it is size and
+redundancy changes on the existing Terraform, plus optional additions:
+
+| Change            | From → To                                          |
+| ----------------- | -------------------------------------------------- |
+| RDS               | single-AZ `db.t4g.micro` → Multi-AZ, larger class  |
+| api service       | `desired_count=1` → ≥2 across 2 AZs                |
+| Task networking   | public subnets → private subnets + NAT             |
+| Savings           | on-demand/Spot → Compute + Database Savings Plans  |
+| File events       | (optional) Celery-triggered scan → Lambda S3 trigger |
+| Email             | (optional) Resend → SES                            |
+
+Terraform state stays AWS S3 (remote state + native `use_lockfile` locking).
 
 ---
 
@@ -892,10 +898,10 @@ Never start a phase until the previous phase's tests are green.
 
 - All E2E tests passing (6 critical flows in `frontend/tests/e2e/`)
 - Backend coverage ≥ 80%, frontend coverage ≥ 70%
-- CI/CD fully live on Render (all deploy hooks wired)
+- CI/CD fully live (GitHub Actions → ECR → ECS rolling deploy)
 - Security review: RBAC, Escrow logic, webhook verification, presigned URLs
 - Performance: sub-3s page loads on `/explore` and `/explore/[id]`
-- Render + Neon + Upstash + Resend all production-configured
+- ECS + RDS + ElastiCache + Amplify + Resend all production-configured (`infra/` applied)
 
 ---
 
