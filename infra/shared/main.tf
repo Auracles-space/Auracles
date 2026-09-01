@@ -58,28 +58,29 @@ resource "aws_acm_certificate" "staging" {
 # production certificate will not have this luxury: its records go in at
 # Namecheap by hand.
 resource "aws_route53_record" "staging_certificate_validation" {
-  # Keyed by record name rather than by domain name, which matters here: a
-  # certificate covering both `staging.auracles.space` and `*.staging.
-  # auracles.space` yields two validation options carrying an identical record.
-  # Keying by domain name would give two Terraform resources managing one DNS
-  # record, each fighting the other on apply and destroy. Keying by record name
-  # collapses them into the single record ACM actually asked for.
+  # Keyed by domain name because for_each keys must be known at plan time, and
+  # the record names ACM assigns are not — they only exist once the certificate
+  # does. A certificate covering both `staging.auracles.space` and its wildcard
+  # yields two validation options carrying an *identical* record, so this map
+  # deliberately holds two entries that write the same thing; allow_overwrite
+  # below is what lets them coexist instead of fighting.
   for_each = {
     for option in aws_acm_certificate.staging.domain_validation_options :
-    option.resource_record_name => {
+    option.domain_name => {
+      name   = option.resource_record_name
       record = option.resource_record_value
       type   = option.resource_record_type
     }
   }
 
   zone_id = aws_route53_zone.staging.zone_id
-  name    = each.key
+  name    = each.value.name
   type    = each.value.type
   records = [each.value.record]
   ttl     = 60
 
-  # Validation records are ACM's to dictate; if one already exists from an
-  # earlier certificate, the current one wins rather than failing the apply.
+  # Load-bearing, not belt-and-braces: the apex and wildcard entries above
+  # manage the same physical record, and this is what permits it.
   allow_overwrite = true
 }
 
