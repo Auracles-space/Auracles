@@ -1,5 +1,13 @@
 # Task definitions. Sizes per the infra design §2: api 0.5 vCPU/1 GB, worker
 # 1 vCPU/4 GB (clamd's signature database alone needs ~2 GB), beat 0.25/0.5.
+#
+# ARM64 (Graviton) throughout: ~20% cheaper per vCPU than x86 Fargate, and the
+# build machine is Apple Silicon, so images build natively instead of through
+# emulation — this image carries LibreOffice and a spaCy model, so that is the
+# difference between minutes and most of an hour. Requires every image to be
+# arm64 (the official clamav image is multi-arch). If worker/beat ever fail to
+# place on FARGATE_SPOT with a capacity error, ARM Spot availability in this
+# region is the first suspect — flip use_spot off or this to X86_64.
 
 resource "aws_ecs_task_definition" "api" {
   family                   = "auracles-${var.environment}-api"
@@ -9,6 +17,11 @@ resource "aws_ecs_task_definition" "api" {
   memory                   = 1024
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
 
   container_definitions = jsonencode([
     {
@@ -43,6 +56,11 @@ resource "aws_ecs_task_definition" "worker" {
   memory                   = 4096
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
 
   container_definitions = jsonencode([
     {
@@ -105,6 +123,11 @@ resource "aws_ecs_task_definition" "beat" {
   memory                   = 512
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
+
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
 
   container_definitions = jsonencode([
     {
