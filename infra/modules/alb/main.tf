@@ -25,10 +25,14 @@ resource "aws_lb_target_group" "api" {
   vpc_id      = var.vpc_id
   target_type = "ip" # Fargate tasks register by IP, not instance
 
-  # /health pings the DB and Redis, so a passing check means the task is
-  # actually serviceable, not merely running.
+  # The health endpoint pings the DB and Redis, so a passing check means the
+  # task is actually serviceable, not merely running. The path is /v1/health —
+  # main.py mounts the health router under the /v1 prefix; CLAUDE.md's
+  # "GET /health" describes the route name, not the mounted path. Getting this
+  # wrong is a kill loop: the ALB 404s, declares the task unhealthy, and
+  # replaces it forever.
   health_check {
-    path                = "/health"
+    path                = "/v1/health"
     matcher             = "200"
     interval            = 15
     timeout             = 5

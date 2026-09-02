@@ -75,7 +75,7 @@ variable "s3_bucket_names" {
 }
 
 variable "clamav_image" {
-  description = "ClamAV sidecar image for the worker task."
+  description = "ClamAV sidecar image for the worker task. Must carry linux/arm64 — the plain version tags (1.4) are amd64-only and the pull fails with 'manifest does not contain descriptor matching platform'; the -debian variants are the multi-arch ones."
   type        = string
-  default     = "clamav/clamav:1.4"
+  default     = "clamav/clamav:1.4-debian13-slim"
 }
