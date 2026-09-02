@@ -25,6 +25,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
         backend=resolved_settings.celery_result_backend,
         include=[
             "app.workers.tasks.artifacts",
+            "app.workers.tasks.artifacts_beat",
             "app.workers.tasks.admin_beat",
             "app.workers.tasks.admin_notifications",
             "app.workers.tasks.deliverable_scan",
@@ -40,6 +41,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.gdpr_beat",
             "app.workers.tasks.notifications",
             "app.workers.tasks.org_notifications",
+            "app.workers.tasks.organizations_beat",
             "app.workers.tasks.partner_webhooks",
             "app.workers.tasks.payouts",
             "app.workers.tasks.processing.blend",
