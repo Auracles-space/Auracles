@@ -8,3 +8,6 @@ __pycache__/
 htmlcov/
 .env
 tests/
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
