@@ -144,9 +144,19 @@ module "ecs" {
     CLAMAV_HOST          = "localhost"
     CLAMAV_PORT          = "3310"
     PLATFORM_CURRENCY    = "NGN"
-    # Staging QA must never send real email to seeded addresses; lifecycle
-    # emails are logged instead, same as local dev.
-    EMAIL_SEND_ENABLED = "false"
+    # Real sending on (human decision 2026-09-02) so registration/verification
+    # can be tested end to end with real inboxes. Caveat, accepted: the E2E
+    # seeds use invented addresses, and bounces count against the domain's
+    # sender reputation — flip to "false" before running the full automated
+    # suite. Requires a real RESEND_API_KEY value in Secrets Manager.
+    EMAIL_SEND_ENABLED = "true"
+    # Persona hosted-flow config. The template id is an identifier, not a
+    # credential — changing templates later is an edit here + apply. The
+    # redirect points at the staging frontend's KYC page; the page not
+    # existing yet only means Persona lands users on a 404 after verifying,
+    # which is cosmetic until the staging frontend is up.
+    PERSONA_INQUIRY_TEMPLATE_ID = "itmpl_AS7SnZZrGnYx7CrsGbuNvddFbqbD7Q"
+    PERSONA_REDIRECT_URL        = "https://staging.auracles.space/settings/kyc"
   }
 
   secret_arns = merge(
