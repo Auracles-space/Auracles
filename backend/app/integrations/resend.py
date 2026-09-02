@@ -137,7 +137,11 @@ def _render_email_html(
 ) -> str:
     """Wrap email content in a responsive, brand-aligned Bento HTML layout."""
     frontend_url = _frontend_base_url()
-    logo_url = f"{frontend_url}/images/logo-text-black.png"
+    # Assets and action links deliberately may diverge: links carry tokens and
+    # must target the app origin even before it serves; the logo just needs a
+    # host that exists (staging points EMAIL_ASSET_BASE_URL at the live apex).
+    asset_base = get_settings().email_asset_base_url or frontend_url
+    logo_url = f"{asset_base}/images/logo-text-black.png"
 
     action_btn_html = ""
     if action_url and action_text:

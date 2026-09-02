@@ -151,6 +151,11 @@ class Settings(BaseSettings):
     artifact_orphan_sweep_minutes: int = Field(
         default=60, alias="ARTIFACT_ORPHAN_SWEEP_MINUTES"
     )
+    # Base URL email *images* load from, when it differs from the frontend
+    # origin. Action links always use the frontend origin (they carry tokens
+    # minted for the app); assets only need a host that exists. Staging points
+    # this at the live apex while its own frontend is not yet deployed.
+    email_asset_base_url: str | None = Field(default=None, alias="EMAIL_ASSET_BASE_URL")
     # Error tracking. Absent DSN means the SDK is never initialised, which is
     # the local and test default. The DSN embeds a project key, so it is a
     # credential rather than a plain URL.
@@ -181,9 +186,7 @@ class Settings(BaseSettings):
     )
     # Current platform NDA document version for org attestation work.
     # Bumping it invalidates member assignability until they re-sign.
-    org_member_nda_version: str = Field(
-        default="1.0", alias="ORG_MEMBER_NDA_VERSION"
-    )
+    org_member_nda_version: str = Field(default="1.0", alias="ORG_MEMBER_NDA_VERSION")
     invoice_seller_name: str = Field(
         default="Auracles (pending registration)",
         alias="INVOICE_SELLER_NAME",
