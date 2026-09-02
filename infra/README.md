@@ -85,3 +85,77 @@ to the zone and certificate that `shared/` creates.
 
 **Never `apply` without reading the plan.** A plan showing `destroy` or
 `replace` on an existing resource is a stop-and-ask, not a proceed.
+
+## Day-to-day operations
+
+The universal pair, always run **in the directory that owns the thing you
+changed** (edit `envs/staging/main.tf` → run in `envs/staging/`):
+
+```bash
+terraform plan -out=tfplan   # read it: "add" is fine, "change" means check,
+                             # "destroy" means stop and be certain
+terraform apply tfplan       # executes exactly the plan you read
+```
+
+### Configuration: what lives where
+
+| Kind | Lives in | Example |
+| --- | --- | --- |
+| Plain config | `envs/<env>/main.tf`, `environment_variables` block | `PLATFORM_CURRENCY=NGN` |
+| Machine-composed secrets | Secrets Manager, written by Terraform each cycle | `DATABASE_URL`, `REDIS_URL` |
+| Hand-entered secrets | Secrets Manager, value entered once by a human | `STRIPE_SECRET_KEY` |
+
+The rule that decides between the first and last row: **would it be fine on
+GitHub?** No → it is a secret. Structure lives in Terraform; values live in
+AWS. Terraform never sees a secret's value, only its ARN.
+
+Only secrets appear in the Secrets Manager console (10 per page — mind the
+pagination arrow). Plain env vars never do; to know what staging runs with,
+read the `environment_variables` block, not the AWS console.
+
+### Recipes
+
+**Change or add a plain env var** — edit the `environment_variables` block in
+`envs/staging/main.tf`, then plan + apply in `envs/staging/`. ECS rolls new
+tasks with the new environment; the api rolls with zero downtime.
+
+**Change a secret's value** (e.g. paste the real Paystack test key) — no
+Terraform. Console: Secrets Manager → the secret → *Retrieve secret value* →
+*Edit*. Or CLI:
+
+```bash
+aws secretsmanager put-secret-value --region eu-west-2 \
+  --secret-id auracles/staging/PAYSTACK_SECRET_KEY --secret-string 'sk_test_...'
+```
+
+Running tasks keep the value they started with — ECS injects secrets at task
+start only. If staging is already up, restart to pick up the new value:
+
+```bash
+aws ecs update-service --cluster auracles-staging --service api \
+  --force-new-deployment --region eu-west-2   # likewise worker / beat
+```
+
+Usually irrelevant in practice: set values first, bring staging up second, and
+fresh tasks read fresh values.
+
+**Add a brand-new secret** — three steps across two directories:
+1. Add its name to `staging_secret_names` in `shared/secrets.tf`; plan + apply
+   in `shared/` (creates an empty shell with an ARN).
+2. Put the value in (previous recipe).
+3. Plan + apply in `envs/staging/` — task definitions pick the new reference up
+   automatically, because staging consumes the whole ARN map.
+
+**Staging QA cycle** —
+
+```bash
+cd infra/envs/staging
+terraform apply tfplan       # after plan; ~10 min, RDS is the slow piece
+# ... QA pass against https://api.staging.auracles.space ...
+terraform destroy            # back to ~$0; hand-entered secrets survive in shared/
+```
+
+The 13 hand-entered secrets are typed **once, ever**: they live in the shared
+stack precisely so staging's destroy cannot touch them. Only `DATABASE_URL`
+and `REDIS_URL` die and regenerate with each cycle, because each cycle's fresh
+RDS and Redis have new hostnames.
