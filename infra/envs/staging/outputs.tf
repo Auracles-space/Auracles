@@ -44,3 +44,18 @@ output "redis_url_secret_arn" {
   description = "Secrets Manager ARN for REDIS_URL."
   value       = aws_secretsmanager_secret.redis_url.arn
 }
+
+output "api_url" {
+  description = "The staging API endpoint the QA pass runs against."
+  value       = "https://api.staging.auracles.space"
+}
+
+output "alb_dns_name" {
+  description = "Raw ALB hostname, for debugging before/without DNS."
+  value       = module.alb.dns_name
+}
+
+output "ecs_cluster_name" {
+  description = "Cluster name for aws ecs CLI operations (run-task, update-service)."
+  value       = module.ecs.cluster_name
+}

@@ -89,6 +89,90 @@ resource "aws_secretsmanager_secret" "redis_url" {
   recovery_window_in_days = 0
 }
 
+# Human-entered secrets (Stripe, Paystack, Resend, ...) are NOT here: their
+# shells live in the SHARED stack, because these are filled by hand once and
+# must survive the destroy that ends every staging cycle. Their ARNs arrive
+# through the shared remote state below.
+
+# ---------------------------------------------------------------------------
+# Compute and edge.
+# ---------------------------------------------------------------------------
+
+module "alb" {
+  source = "../../modules/alb"
+
+  environment       = "staging"
+  vpc_id            = module.networking.vpc_id
+  public_subnet_ids = module.networking.public_subnet_ids
+  security_group_id = module.networking.alb_security_group_id
+  certificate_arn   = data.terraform_remote_state.shared.outputs.staging_certificate_arn
+}
+
+module "ecs" {
+  source = "../../modules/ecs"
+
+  environment = "staging"
+  aws_region  = var.aws_region
+
+  # Tag convention: the image pushed for staging QA carries the :staging tag.
+  # Push before staging-up or all three services crash-loop on image pull.
+  backend_image = "${data.terraform_remote_state.shared.outputs.ecr_backend_repository_url}:staging"
+
+  public_subnet_ids        = module.networking.public_subnet_ids
+  api_security_group_id    = module.networking.api_task_security_group_id
+  worker_security_group_id = module.networking.worker_task_security_group_id
+  beat_security_group_id   = module.networking.beat_task_security_group_id
+  target_group_arn         = module.alb.target_group_arn
+
+  s3_bucket_names = [
+    module.s3.artifacts_bucket,
+    module.s3.avatars_bucket,
+    module.s3.reports_bucket,
+    module.s3.thumbnails_bucket,
+  ]
+
+  environment_variables = {
+    ENVIRONMENT          = "staging"
+    LOG_FORMAT           = "json"
+    AWS_DEFAULT_REGION   = var.aws_region
+    CORS_ALLOWED_ORIGINS = "https://staging.auracles.space"
+    TRUST_PROXY_HEADERS  = "true"
+    S3_ARTIFACTS_BUCKET  = module.s3.artifacts_bucket
+    S3_AVATARS_BUCKET    = module.s3.avatars_bucket
+    S3_REPORTS_BUCKET    = module.s3.reports_bucket
+    S3_THUMBNAILS_BUCKET = module.s3.thumbnails_bucket
+    CLAMAV_HOST          = "localhost"
+    CLAMAV_PORT          = "3310"
+    PLATFORM_CURRENCY    = "NGN"
+    # Staging QA must never send real email to seeded addresses; lifecycle
+    # emails are logged instead, same as local dev.
+    EMAIL_SEND_ENABLED = "false"
+  }
+
+  secret_arns = merge(
+    data.terraform_remote_state.shared.outputs.staging_secret_arns,
+    {
+      DATABASE_URL = aws_secretsmanager_secret.database_url.arn
+      REDIS_URL    = aws_secretsmanager_secret.redis_url.arn
+    },
+  )
+}
+
+# api.staging.auracles.space → ALB, inside the delegated zone. Recreated
+# freely each cycle: the zone persists, the record is ephemeral like the ALB
+# it points at, and the wildcard certificate covers the name.
+resource "aws_route53_record" "api" {
+  zone_id = data.terraform_remote_state.shared.outputs.staging_zone_id
+  name    = "api.staging.auracles.space"
+  type    = "A"
+
+  alias {
+    name                   = module.alb.dns_name
+    zone_id                = module.alb.zone_id
+    evaluate_target_health = false
+  }
+}
+
 resource "aws_secretsmanager_secret_version" "redis_url" {
   secret_id = aws_secretsmanager_secret.redis_url.id
   # rediss:// — the cluster only accepts TLS (transit encryption is on), and
