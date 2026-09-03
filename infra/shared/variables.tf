@@ -34,6 +34,25 @@ variable "github_repository" {
   }
 }
 
+variable "github_access_token" {
+  description = "GitHub personal access token with `repo` scope. Used only when Amplify first connects the repository — Amplify keeps its own installation afterwards, so the token can be revoked once the app exists. Pass it as TF_VAR_github_access_token so it never lands in a tfvars file."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "stripe_publishable_key" {
+  description = "Stripe publishable key for the staging frontend. Publishable keys are public by design — this one ships inside the client bundle — so unlike the secret key it is safe in version control."
+  type        = string
+  default     = ""
+}
+
+variable "staging_frontend_custom_domain" {
+  description = "Set true to serve the staging frontend at staging.auracles.space. Left false for the first apply because attaching a domain blocks on certificate validation; bring the app up on its amplifyapp.com URL, confirm it builds, then flip this. Same two-pass shape as dns_delegation_complete."
+  type        = bool
+  default     = false
+}
+
 variable "dns_delegation_complete" {
   description = "Set true only after the four NS records from the `namecheap_ns_records` output are live at Namecheap. Gates the ACM validation wait, which cannot succeed before the subtree is actually delegated. Applying this stack is two passes by design; see main.tf."
   type        = bool
