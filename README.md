@@ -110,6 +110,43 @@ straight to `make api` / `make worker` / `make frontend`.
 ClamAV (virus scanning) is started on demand — `docker compose up -d clamav` —
 because its first-boot signature download takes several minutes.
 
+## Deploying
+
+Two halves that meet at the container registry (ECR). Full detail in
+[`infra/README.md`](infra/README.md).
+
+**GitHub turns code into an image.** Merging to `main` builds it and pushes it
+to ECR. If staging happens to be running at the time, the workflow also rolls
+its services onto the new image; if staging is down (its usual state), the
+image simply waits there. Production is never touched by a merge — that needs a
+`v*` git tag. No AWS keys are stored in GitHub; CI authenticates per run via
+OIDC and may only push that one image and restart existing services.
+
+**You bring environments up and down**, from your machine, with your own AWS
+credentials. Terraform is never run by CI: creating and destroying
+infrastructure costs money and stays a human decision.
+
+```bash
+make staging-status  # is staging running? (~$2-3/day up, $0 down)
+make staging-up      # ~10 min; shows the plan and waits for you to type yes
+make staging-logs    # tail api — SERVICE=worker or SERVICE=beat for the others
+make staging-down    # tear it back down to $0
+make staging-plan    # review-only: writes tfplan, changes nothing
+```
+
+`make staging-up` refuses to apply unless a `:staging` image exists in ECR,
+since all three services would otherwise crash-loop invisibly. Staging is
+deliberately ephemeral: bring it up for a QA pass, tear it down after. The
+hand-entered secrets live in a separate persistent stack, so a teardown never
+costs you those.
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0   # release to production
+```
+
+This rebuilds nothing: it promotes the exact image that commit already produced
+and staging already tested. Rollback is tagging an earlier commit.
+
 ## Tests
 
 The backend suite runs against an **isolated** `auracles_test` database and Redis
