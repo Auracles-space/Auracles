@@ -146,14 +146,21 @@ fresh tasks read fresh values.
 3. Plan + apply in `envs/staging/` — task definitions pick the new reference up
    automatically, because staging consumes the whole ARN map.
 
-**Staging QA cycle** —
+**Staging QA cycle** — from the repo root:
 
 ```bash
-cd infra/envs/staging
-terraform apply tfplan       # after plan; ~10 min, RDS is the slow piece
+make staging-status   # am I paying for it right now?
+make staging-up       # ~10 min, RDS is the slow piece; prompts before applying
 # ... QA pass against https://api.staging.auracles.space ...
-terraform destroy            # back to ~$0; hand-entered secrets survive in shared/
+make staging-logs                 # tail api; SERVICE=worker or beat for the others
+make staging-down     # back to ~$0
 ```
+
+`make staging-up` refuses to run if no `:staging` image is in ECR, because all
+three services would otherwise crash-loop invisibly for ten minutes. CI pushes
+that tag on every merge to main touching `backend/`. The underlying Terraform
+commands still work directly if you want the saved-plan review flow
+(`make staging-plan` writes `tfplan`).
 
 The 13 hand-entered secrets are typed **once, ever**: they live in the shared
 stack precisely so staging's destroy cannot touch them. Only `DATABASE_URL`
