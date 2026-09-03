@@ -5,10 +5,20 @@
 # in package.json.
 #
 # The env | grep line is load-bearing: Amplify console env vars exist only
-# at build time for SSR apps. Server-side runtime vars (the Resend secrets
-# used by app/api/waitlist) must be written into .env.production during the
-# build to reach the SSR compute. NEXT_PUBLIC_* vars are inlined by
-# `next build` and need no forwarding.
+# at build time for SSR apps. Every server-side runtime var must be written
+# into .env.production during the build or it is simply absent when the SSR
+# compute runs. NEXT_PUBLIC_* vars are inlined by `next build` and need no
+# forwarding.
+#
+# What each forwarded var costs if omitted, since the failures are silent
+# rather than loud:
+#   SESSION_HINT_SECRET  middleware cannot verify the session cookie, fails
+#                        closed, and every authenticated route redirects to
+#                        /login — the app looks broken, not misconfigured.
+#   BACKEND_ORIGIN       server-side fetches fall back to the retired Render
+#                        origin (next.config.ts), so pages render empty.
+#   RESEND_*             the waitlist signup route cannot reach Resend.
+# Adding a var the app needs at runtime? Add it to this pattern too.
 version: 1
 applications:
   - appRoot: frontend
@@ -22,7 +32,7 @@ applications:
             - pnpm install --frozen-lockfile
         build:
           commands:
-            - env | grep -E '^(RESEND_API_KEY|RESEND_AUDIENCE_ID)=' >> .env.production || true
+            - env | grep -E '^(SESSION_HINT_SECRET|BACKEND_ORIGIN|RESEND_API_KEY|RESEND_AUDIENCE_ID)=' >> .env.production || true
             - pnpm build
       artifacts:
         baseDirectory: .next
