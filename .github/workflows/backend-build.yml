@@ -1,0 +1,102 @@
+# Backend image pipeline — the "merge = build" half of the deploy model.
+#
+# Every push to main that touches backend/ builds the arm64 image and pushes
+# it to ECR as :staging (plus an immutable sha-<commit> tag for forensics).
+# If the staging cluster happens to be up, its three services are rolled onto
+# the fresh image; if staging is down (the normal state — it is ephemeral),
+# the image simply waits in ECR for the next staging-up.
+#
+# This workflow NEVER touches production. Production deploys are the release
+# workflow's job and require a v* git tag — merging to main cannot reach it.
+#
+# Auth: no AWS keys stored in GitHub. The job requests an OIDC token
+# (permissions: id-token) and assumes the auracles-github-actions IAM role,
+# whose trust policy admits only main-branch and v*-tag runs of this repo.
+# The role is defined in infra/shared/github_oidc.tf.
+
+name: Backend build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-build.yml"
+  # Manual trigger for rebuilding without a code change (base image refresh).
+  workflow_dispatch:
+
+permissions:
+  id-token: write # mint the OIDC token that AWS trusts
+  contents: read
+
+# One build at a time, queued in order — two concurrent pushes racing to write
+# the :staging tag would leave whichever finished last, not whichever is newest.
+concurrency:
+  group: backend-build
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_IMAGE: 719484289944.dkr.ecr.eu-west-2.amazonaws.com/auracles-backend
+
+jobs:
+  build-and-push:
+    name: Build arm64 image, push :staging
+    # Private-repo free runners are amd64, so the arm64 (Graviton) image is
+    # cross-built under QEMU emulation. Slow on a cold cache, fine after.
+    # If the repo ever goes public or the org buys arm runners, switching to
+    # runs-on: ubuntu-24.04-arm and dropping the QEMU step makes this native.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Assume the CI role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::719484289944:role/auracles-github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Enable arm64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/arm64
+          push: true
+          # :staging is what the staging task definitions pull; sha-<commit>
+          # pins this exact build forever (well, until the keep-20 ECR
+          # lifecycle rule reaps it) so any image can be traced to its commit.
+          tags: |
+            ${{ env.ECR_IMAGE }}:staging
+            ${{ env.ECR_IMAGE }}:sha-${{ github.sha }}
+          # Layer cache lives in GitHub's cache service, so only changed
+          # layers rebuild — the QEMU penalty is mostly a first-run cost.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Roll staging onto the new image (if staging is up)
+        run: |
+          for service in api worker beat; do
+            if aws ecs update-service \
+                --cluster auracles-staging \
+                --service "$service" \
+                --force-new-deployment \
+                --query 'service.serviceName' --output text 2>/dev/null; then
+              echo "rolled $service"
+            else
+              # ClusterNotFoundException et al: staging is down, which is its
+              # normal state. The image is in ECR; the next staging-up uses it.
+              echo "staging not running — $service skipped"
+            fi
+          done

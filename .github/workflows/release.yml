@@ -1,0 +1,86 @@
+# Production release — the "git tag = deploy" half of the deploy model.
+#
+# Pushing a tag like v1.0.0 promotes the image that main's build already
+# produced for that commit: the sha-<commit> tag in ECR is re-pointed to
+# :production and the production services are rolled. Nothing is rebuilt —
+# production runs the exact bytes that were QA'd on staging, not a fresh
+# compile that might differ.
+#
+# Consequences of that promise:
+#   * The tagged commit must be on main and must have a completed
+#     "Backend build" run (that is what created sha-<commit>). Tagging an
+#     unbuilt commit fails loudly here instead of deploying something else.
+#   * Rollback is just tagging the previous good commit again (v1.0.1 on the
+#     old sha) — the old image is still in ECR.
+#
+# Until infra/envs/production exists, the roll step fails — which is the
+# correct outcome for a tag pushed before there is a production to receive it.
+
+name: Release to production
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_IMAGE: 719484289944.dkr.ecr.eu-west-2.amazonaws.com/auracles-backend
+
+jobs:
+  promote:
+    name: Retag ${{ github.ref_name }} as :production and roll
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assume the CI role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::719484289944:role/auracles-github-actions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Point :production at this commit's image
+        run: |
+          set -euo pipefail
+          SOURCE="${ECR_IMAGE}:sha-${GITHUB_SHA}"
+          # imagetools copies the manifest reference inside the registry — no
+          # image bytes travel through the runner, and multi-arch manifests
+          # survive intact.
+          if ! docker buildx imagetools create -t "${ECR_IMAGE}:production" "$SOURCE"; then
+            echo "::error::No image exists for commit ${GITHUB_SHA}."
+            echo "::error::Tags must point at a main commit whose 'Backend build' run finished. If the commit did not touch backend/, run that workflow manually (workflow_dispatch) first."
+            exit 1
+          fi
+
+      - name: Roll production onto the new image
+        run: |
+          set -euo pipefail
+          for service in api worker beat; do
+            aws ecs update-service \
+              --cluster auracles-production \
+              --service "$service" \
+              --force-new-deployment \
+              --query 'service.serviceName' --output text
+            echo "rolled $service"
+          done
+
+      - name: Wait for production to stabilise
+        run: |
+          # Fails the run if any service cannot reach steady state in ~10min,
+          # e.g. the new image crash-loops — red release, not silent breakage.
+          aws ecs wait services-stable \
+            --cluster auracles-production \
+            --services api worker beat

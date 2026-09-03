@@ -159,3 +159,32 @@ The 13 hand-entered secrets are typed **once, ever**: they live in the shared
 stack precisely so staging's destroy cannot touch them. Only `DATABASE_URL`
 and `REDIS_URL` die and regenerate with each cycle, because each cycle's fresh
 RDS and Redis have new hostnames.
+
+## CI/CD — how code reaches an environment
+
+Two workflows, two triggers, one promise: **merging can never deploy to
+production; only a `v*` git tag can.**
+
+| Event | Workflow | What happens |
+|---|---|---|
+| PR opened | `checks.yml` / `infra-checks.yml` | Tests, coverage, fmt/validate. No AWS access. |
+| Merge to `main` (touching `backend/`) | `backend-build.yml` | Builds the arm64 image, pushes `:staging` + `sha-<commit>` to ECR. If staging is up, rolls it; if down, the image waits for the next staging-up. |
+| Push tag `v1.2.3` | `release.yml` | **No rebuild.** Re-points `:production` at that commit's `sha-<commit>` image — the exact bytes staging QA'd — then rolls production and waits for it to stabilise. |
+
+Auth is OIDC (`shared/github_oidc.tf`): GitHub presents a signed per-run
+token, AWS checks it names this repo on `main` or a `v*` tag, and hands out
+the `auracles-github-actions` role. No AWS keys exist in GitHub. The role can
+push to the one ECR repository and `forceNewDeployment` the known services —
+it cannot read secrets, alter task definitions, or touch Terraform state, so
+env/secret/infra changes remain human-applied Terraform, exactly as above.
+
+**Releasing** (once production exists):
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0   # deploy commit currently on main
+# rollback = tag the previous good commit:
+git tag v1.0.1 <old-sha> && git push origin v1.0.1
+```
+
+A tag on a commit whose build never ran (e.g. it touched only `frontend/`)
+fails loudly with instructions instead of deploying something unexpected.

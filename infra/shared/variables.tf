@@ -23,6 +23,17 @@ variable "staging_subdomain" {
   }
 }
 
+variable "github_repository" {
+  description = "GitHub org/repo whose Actions runs may assume the CI role. Part of the OIDC trust condition — a token from any other repository is refused before IAM permissions are even consulted."
+  type        = string
+  default     = "Auracles-space/Auracles"
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
+    error_message = "Must be the org/repo form, e.g. Auracles-space/Auracles."
+  }
+}
+
 variable "dns_delegation_complete" {
   description = "Set true only after the four NS records from the `namecheap_ns_records` output are live at Namecheap. Gates the ACM validation wait, which cannot succeed before the subtree is actually delegated. Applying this stack is two passes by design; see main.tf."
   type        = bool
