@@ -29,6 +29,8 @@ class _FakeSettings:
         self.resend_api_key = SecretStr("re_test")
         self.resend_from_address = "no-reply@auracles.space"
         self.cors_origin_list = ["http://localhost:3000"]
+        # None = images load from the frontend origin, the pre-override default.
+        self.email_asset_base_url = None
 
 
 def test_classify_daily_quota_is_permanent() -> None:
