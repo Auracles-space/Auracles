@@ -14,12 +14,12 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
 from app.modules.auth.models import User, UserRole
 
 
 class BootstrapConfigError(RuntimeError):
-    """Raised when required bootstrap environment variables are missing."""
+    """Raised when the bootstrap environment is missing or unsafe to act on."""
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,24 @@ def bootstrap_admin() -> BootstrapResult:
                 session.flush()
                 created = True
             else:
-                # Idempotent re-run: ensure the bootstrap admin keeps super powers.
+                # An account already holds this address. Promoting it blindly
+                # would be a privilege-escalation path: registration creates
+                # the user row before the address is verified, so anyone can
+                # claim ADMIN_EMAIL ahead of the first bootstrap, and this
+                # script never rewrites an existing password — the squatter
+                # would end up a superadmin whose password only they know.
+                #
+                # Proving knowledge of ADMIN_PASSWORD is what distinguishes a
+                # legitimate idempotent re-run from that. Refuse otherwise and
+                # let a human decide; deleting the row and re-running is the
+                # recovery.
+                if not verify_password(admin_password, user.password_hash or ""):
+                    raise BootstrapConfigError(
+                        f"An account already exists for {admin_email} and its password "
+                        "does not match ADMIN_PASSWORD. Refusing to grant it admin. "
+                        "Investigate who registered it; if it is unwanted, delete the "
+                        "user row and re-run."
+                    )
                 user.is_superadmin = True
                 created = False
 

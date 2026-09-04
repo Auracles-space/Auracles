@@ -215,6 +215,27 @@ than a command line — ECS task overrides can carry plain environment values
 but not secret references, and a password passed as an override would land in
 CloudTrail.
 
+The credentials come from two places, one of them a one-time setup step:
+
+| | Where | Set by |
+| --- | --- | --- |
+| `ADMIN_EMAIL` | `envs/staging/main.tf` — plain env var, it is an address not a credential | already `dev@auracles.space` |
+| `ADMIN_PASSWORD` | Secrets Manager, `auracles/staging/ADMIN_PASSWORD` | **you, once** |
+
+```bash
+# one time only — the shell survives every staging destroy
+aws secretsmanager put-secret-value --region eu-west-2 \
+  --secret-id auracles/staging/ADMIN_PASSWORD --secret-string '<strong password>'
+```
+
+Then sign in at the staging frontend with that pair:
+<https://main.d1hsumq9pfyik0.amplifyapp.com>
+
+**It creates an admin and nothing else.** No frameworks, no operators, no
+transactions — `/explore` will be empty, which is not a bug. Auth, settings,
+and admin flows are exercisable immediately; anything involving a marketplace
+listing needs data that no script currently generates.
+
 The hand-entered secrets (14 of them) are typed **once, ever**: they live in the shared
 stack precisely so staging's destroy cannot touch them. Only `DATABASE_URL`
 and `REDIS_URL` die and regenerate with each cycle, because each cycle's fresh
