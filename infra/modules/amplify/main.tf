@@ -12,10 +12,86 @@
 # Amplify prefers that file over an app-level build spec whenever it exists, so
 # setting one in Terraform would create a second source of truth that silently
 # loses. Change the build by editing amplify.yml.
+#
+# Creating this app for the first time needs a GitHub token in
+# TF_VAR_github_access_token (see variables.tf). Afterwards it does not: the
+# token is ignored on update, so routine applies need nothing exported. Without
+# it on create, the AWS provider rejects the empty value with a length error.
+
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
+
+# Server-side rendering runs as an Amplify-managed compute service, and that
+# service writes the app's server logs to CloudWatch under its own identity —
+# so an SSR app with no service role fails at BUILD with "Unable to assume
+# specified IAM Role", before it ever reaches the deploy step. The console
+# creates this role silently when you click through the SSR setup, which is why
+# it is easy to miss when defining an app in Terraform instead.
+resource "aws_iam_role" "ssr_logging" {
+  name = "${var.app_name}-amplify-ssr-logging"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "amplify.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+        # Confused-deputy guard: only Amplify acting for THIS account may
+        # assume the role. Scoping to the app's own ARN would be tighter still,
+        # but the app does not exist yet at the moment this is written.
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${var.app_name}-amplify-ssr-logging"
+  }
+}
+
+resource "aws_iam_role_policy" "ssr_logging" {
+  name = "push-ssr-logs"
+  role = aws_iam_role.ssr_logging.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "CreateLogGroup"
+        Effect = "Allow"
+        Action = "logs:CreateLogGroup"
+        # /aws/amplify/* only: this identity exists to write one app's logs,
+        # not to create log groups anywhere in the account.
+        Resource = "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/amplify/*"
+      },
+      {
+        Sid    = "PushLogs"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+        ]
+        Resource = "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/amplify/*:log-stream:*"
+      },
+      {
+        Sid      = "DescribeLogGroups"
+        Effect   = "Allow"
+        Action   = "logs:DescribeLogGroups"
+        Resource = "arn:aws:logs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:log-group:*"
+      },
+    ]
+  })
+}
 
 resource "aws_amplify_app" "this" {
-  name       = var.app_name
-  repository = var.repository_url
+  name                 = var.app_name
+  repository           = var.repository_url
+  iam_service_role_arn = aws_iam_role.ssr_logging.arn
 
   # Only read when Amplify first connects the repository; rotating or dropping
   # the token afterwards does not disturb the connection, so this is not a
@@ -25,10 +101,13 @@ resource "aws_amplify_app" "this" {
   access_token = var.github_access_token == "" ? null : var.github_access_token
 
   lifecycle {
-    precondition {
-      condition     = var.github_access_token != ""
-      error_message = "A GitHub token is required to connect the repository. Create a fine-grained personal access token with Contents: read-only and Webhooks: read+write on Auracles-space/Auracles, then export TF_VAR_github_access_token=<token> before applying. It is needed only for this first connection and can be revoked afterwards."
-    }
+    # The token is a one-time handshake, not stored configuration: AWS never
+    # returns it, so Terraform cannot tell whether the value it holds is still
+    # the live one. Without this, every later apply would push whatever the
+    # variable happens to contain — an empty or stale value would overwrite a
+    # working connection for no reason. Reconnecting the repository is a
+    # deliberate act: taint this resource, do not drift into it.
+    ignore_changes = [access_token]
   }
 
   # WEB_COMPUTE is the SSR platform. The frontend server-renders Explore and
