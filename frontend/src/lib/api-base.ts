@@ -1,11 +1,11 @@
 /**
  * API base-URL resolution shared by every generated/browser client.
  *
- * Production runs the frontend (Vercel) and backend (Render) on different
- * registrable domains. Auth cookies — notably the `session_hint` the routing
- * middleware reads — are host-only, so a cookie set by the Render origin is
- * invisible to the Vercel domain. To keep auth same-origin we proxy browser
- * traffic through a Vercel rewrite (`/api/* -> backend`) and point
+ * The frontend (Amplify) and backend (ECS behind an ALB) answer on different
+ * hosts. Auth cookies — notably the `session_hint` the routing middleware
+ * reads — are host-only, so a cookie set by the API origin is invisible to the
+ * frontend's. To keep auth same-origin we proxy browser traffic through the
+ * frontend's own rewrite (`/api/* -> backend`, see next.config.ts) and point
  * `NEXT_PUBLIC_API_URL` at the relative `/api` path.
  *
  * A relative path only resolves in the browser. Server Components fetch from
@@ -18,9 +18,17 @@ function configuredApiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 }
 
-/** Absolute backend origin used for server-side fetches and WS handshakes. */
+/**
+ * Absolute backend origin used for server-side fetches and WS handshakes.
+ *
+ * The fallback is localhost deliberately. It was previously the Render origin
+ * the platform has since left — a hostname nobody here controls any more, and
+ * therefore one somebody else could register and start receiving server-side
+ * API traffic on. Localhost cannot be taken over, and a deployed build that
+ * reaches for it fails immediately instead of silently talking to a stranger.
+ */
 function backendOrigin(): string {
-  return process.env.BACKEND_ORIGIN ?? "https://auracles-api.onrender.com";
+  return process.env.BACKEND_ORIGIN ?? "http://localhost:8000";
 }
 
 /**
