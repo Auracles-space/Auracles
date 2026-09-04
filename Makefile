@@ -1,6 +1,6 @@
 .PHONY: dev datastores api worker beat migrate test-db down logs frontend \
         staging-plan staging-up staging-down staging-status staging-logs \
-        staging-bootstrap-admin
+        staging-bootstrap-admin staging-frontend-build staging-frontend-logs
 
 # Staging lives in eu-west-2 and is deliberately ephemeral: bring it up for a
 # QA pass, tear it down after. See infra/README.md.
@@ -114,6 +114,39 @@ staging-status:
 SERVICE ?= api
 staging-logs:
 	aws logs tail /ecs/auracles-staging/$(SERVICE) --region $(AWS_REGION) --follow
+
+# Rebuild and redeploy the staging frontend. Needed after ANY change to its
+# environment variables: Next.js bakes them into the bundle at build time, so
+# `terraform apply` alone changes what the next build will use and nothing
+# about what is currently served. Also the way to deploy frontend code without
+# waiting for a push.
+staging-frontend-build:
+	@app=$$(aws amplify list-apps --region $(AWS_REGION) \
+	  --query "apps[?name=='auracles-staging'].appId | [0]" --output text); \
+	if [ -z "$$app" ] || [ "$$app" = "None" ]; then \
+	  echo "no auracles-staging Amplify app found — apply infra/shared first"; exit 1; \
+	fi; \
+	job=$$(aws amplify start-job --region $(AWS_REGION) --app-id "$$app" \
+	  --branch-name main --job-type RELEASE --query 'jobSummary.jobId' --output text); \
+	echo "build $$job started on app $$app; watching..."; \
+	while :; do \
+	  st=$$(aws amplify get-job --region $(AWS_REGION) --app-id "$$app" \
+	    --branch-name main --job-id "$$job" --query 'job.summary.status' --output text); \
+	  case "$$st" in \
+	    SUCCEED) echo "build SUCCEEDED → https://main.$$app.amplifyapp.com"; break;; \
+	    FAILED|CANCELLED) echo "build $$st — logs: make staging-frontend-logs"; exit 1;; \
+	  esac; \
+	  sleep 20; \
+	done
+
+# Print the URL of the most recent staging frontend build log.
+staging-frontend-logs:
+	@app=$$(aws amplify list-apps --region $(AWS_REGION) \
+	  --query "apps[?name=='auracles-staging'].appId | [0]" --output text); \
+	job=$$(aws amplify list-jobs --region $(AWS_REGION) --app-id "$$app" \
+	  --branch-name main --max-items 1 --query 'jobSummaries[0].jobId' --output text); \
+	aws amplify get-job --region $(AWS_REGION) --app-id "$$app" --branch-name main \
+	  --job-id "$$job" --query 'job.steps[].logUrl' --output text
 
 # Create the initial admin account on a fresh staging database. Idempotent —
 # a second run just re-asserts the admin role, so it is safe after every

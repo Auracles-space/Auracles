@@ -146,6 +146,46 @@ fresh tasks read fresh values.
 3. Plan + apply in `envs/staging/` — task definitions pick the new reference up
    automatically, because staging consumes the whole ARN map.
 
+### Frontend configuration (Amplify)
+
+The frontend's variables live in `shared/amplify.tf`, in the
+`branch_environment_variables` block, and reach AWS on `terraform apply` in
+`shared/` — same as the backend so far. Then it diverges, in one way that
+matters:
+
+> **Applying is not enough. The frontend must be rebuilt.**
+> Next.js bakes these values into the compiled bundle at build time, so a
+> running app keeps the values it was *built* with. The backend habit —
+> apply, force a new deployment, done — does not work here. Terraform changes
+> what the *next* build will use; nothing visible changes until one runs.
+
+```bash
+# 1. edit the value
+#      shared/amplify.tf                 → most variables
+#      shared/shared.auto.tfvars         → those exposed as var.* (Stripe key)
+# 2. push the change to AWS
+terraform -chdir=infra/shared apply
+# 3. rebuild, or the live site keeps the old value
+make staging-frontend-build
+```
+
+**Adding a brand-new variable** has one extra step, and skipping it fails
+silently:
+
+1. Add it to `branch_environment_variables` in `shared/amplify.tf`.
+2. **If it is server-side** (anything not prefixed `NEXT_PUBLIC_`), also add it
+   to the `env | grep -E` pattern in `amplify.yml` at the repository root.
+   Amplify exposes variables to the *build*, not to the running SSR server, so
+   a value that is not copied into `.env.production` during the build simply
+   does not exist at runtime. `NEXT_PUBLIC_*` values need no forwarding —
+   `next build` inlines them into the client bundle.
+3. Apply, then rebuild.
+
+The failure mode when step 2 is missed is not an error: the variable reads as
+`undefined` and the code takes its fallback path. That is how a missing
+`SESSION_HINT_SECRET` turns into "every logged-in route redirects to /login"
+rather than anything that mentions a variable.
+
 **Staging QA cycle** — from the repo root:
 
 ```bash
