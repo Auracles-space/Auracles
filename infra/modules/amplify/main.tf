@@ -37,14 +37,13 @@ resource "aws_iam_role" "ssr_logging" {
         Effect    = "Allow"
         Principal = { Service = "amplify.amazonaws.com" }
         Action    = "sts:AssumeRole"
-        # Confused-deputy guard: only Amplify acting for THIS account may
-        # assume the role. Scoping to the app's own ARN would be tighter still,
-        # but the app does not exist yet at the moment this is written.
-        Condition = {
-          StringEquals = {
-            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
-          }
-        }
+        # No aws:SourceAccount / aws:SourceArn condition, deliberately, after
+        # trying one: Amplify does not supply those keys when it assumes this
+        # role, and a StringEquals on an absent key fails closed. The build
+        # then dies at its first step with "Unable to assume specified IAM
+        # Role" and nothing indicating which condition was responsible. The
+        # console-generated role has no condition either; the permissions
+        # below are what keep the blast radius small.
       }
     ]
   })
