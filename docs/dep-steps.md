@@ -144,7 +144,7 @@ echo "PARTNER_WEBHOOK_ENCRYPTION_KEY=$(.venv/bin/python -c 'from cryptography.fe
 ## 8. Choose yourself → 3 values
 
 ```
-ADMIN_EMAIL=admin@auracles.space
+ADMIN_EMAIL=dev@auracles.space
 ADMIN_PASSWORD=<strong password>
 CORS_ALLOWED_ORIGINS=https://<your-prod-vercel-domain>   # no '*'
 ```
