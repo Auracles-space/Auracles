@@ -16,4 +16,4 @@ stripe_publishable_key = "pk_test_51TiLS9Pob42GNkA63DVRkXejrFaLN2uc4tMOESFBVPOxi
 
 # The staging frontend starts on its amplifyapp.com URL. Flip to true and
 # re-apply once it builds cleanly, to serve it at staging.auracles.space.
-staging_frontend_custom_domain = false
+staging_frontend_custom_domain = true
