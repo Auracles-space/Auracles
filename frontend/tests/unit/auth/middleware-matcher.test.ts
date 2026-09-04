@@ -80,7 +80,12 @@ describe("every redirecting guard is reachable from the matcher", () => {
     "%s redirects an authenticated visitor and is matched",
     (pathname) => {
       const decision = resolveAuthRouteDecision({
-        hint: { userId: "u1", roles: ["operator"], twoFactorPending: false },
+        hint: {
+          userId: "u1",
+          roles: ["operator"],
+          totpVerified: true,
+          expiresAt: 4102444800,
+        },
         pathname,
       });
 
