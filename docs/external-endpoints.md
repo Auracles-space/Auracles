@@ -97,6 +97,29 @@ Matching env vars on our side: `GOOGLE_REDIRECT_URI` and
 `GOOGLE_DRIVE_REDIRECT_URI`. They must equal what Google holds, character for
 character — Google compares exactly, including trailing slashes.
 
+Where each one is set:
+
+| Var | Staging | Local dev |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID` | `infra/envs/staging/main.tf`, `environment_variables` — filled | `backend/.env` |
+| `GOOGLE_REDIRECT_URI` | same block — filled | `backend/.env` |
+| `GOOGLE_DRIVE_REDIRECT_URI` | same block — filled | `backend/.env` |
+| `GOOGLE_CLIENT_SECRET` | Secrets Manager, `auracles/staging/GOOGLE_CLIENT_SECRET` — filled | `backend/.env` |
+
+All four staging values are in place as of 2026-09-04, so the only outstanding
+step is registering the three URLs above in the Google console. Staging reuses
+the OAuth client local dev already uses (`464831374479-…`) — one client holds a
+list of authorized redirect URIs, so localhost and staging coexist on it.
+Production should get its own client, so a staging misconfiguration cannot reach
+real sign-ins.
+
+Only the client *secret* is a secret. The client id ships in every OAuth URL the
+browser follows, and the redirect URIs are public by construction — putting them
+in Terraform keeps them reviewable in a diff. Editing that block needs a
+`terraform apply` in `infra/envs/staging` (it replaces the three task
+definitions, nothing more). Local dev needs no apply: the values are already in
+`backend/.env.example`, pointing at `localhost:3000`.
+
 ### Resend
 
 No callback URL. What matters is the sending domain's DNS (SPF/DKIM/DMARC at

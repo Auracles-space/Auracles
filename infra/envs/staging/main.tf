@@ -165,6 +165,25 @@ module "ecs" {
     # which is cosmetic until the staging frontend is up.
     PERSONA_INQUIRY_TEMPLATE_ID = "itmpl_AS7SnZZrGnYx7CrsGbuNvddFbqbD7Q"
     PERSONA_REDIRECT_URL        = "https://staging.auracles.space/settings/kyc"
+    # Google OAuth. These two must match the "Authorized redirect URI" entries
+    # in the Google Cloud console byte for byte — Google compares the string,
+    # not the URL, so a trailing slash or a different host is a rejected login.
+    # Both point at the FRONTEND: the callback sets host-only auth cookies, and
+    # a cookie set by the API origin is invisible to the frontend's. The
+    # frontend proxies /api/* through to the backend, keeping it same-origin.
+    # See docs/external-endpoints.md.
+    GOOGLE_REDIRECT_URI       = "https://staging.auracles.space/api/v1/auth/google/callback"
+    GOOGLE_DRIVE_REDIRECT_URI = "https://staging.auracles.space/api/v1/integrations/connectors/google-drive/callback"
+    # In plain sight deliberately: a client id is an identifier that ships in
+    # every OAuth URL the browser follows, not a credential. Its partner
+    # GOOGLE_CLIENT_SECRET is a real secret, lives in Secrets Manager, and
+    # arrives through staging_secret_arns below.
+    #
+    # This is the same OAuth client local dev uses. Reusing one client across
+    # environments is fine — a client holds a list of authorized redirect URIs,
+    # so localhost and staging coexist. Production should get its own client,
+    # so that a staging misconfiguration cannot affect real sign-ins.
+    GOOGLE_CLIENT_ID = "464831374479-pu58s3c71o2bmjrhtk2pe1orsca3q2hu.apps.googleusercontent.com"
   }
 
   secret_arns = merge(

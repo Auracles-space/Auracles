@@ -26,7 +26,8 @@
       "Bash(perl -0pi -e 's/^ *AttestorProfile,\\\\n//mg; s/^ *await session\\\\.execute\\\\\\(delete\\\\\\(AttestorProfile\\\\\\)\\\\\\)\\\\n//mg' tests/integration/test_attestation_offers.py)",
       "Bash(perl -0pi -e 's/^ *AttestorApplication,\\\\n//mg; s/^ *AttestorProfile,\\\\n//mg' tests/unit/test_attestation_schema_foundation.py)",
       "Bash(git rm *)",
-      "Bash(echo \"exit $?\")"
+      "Bash(echo \"exit $?\")",
+      "Bash(terraform state *)"
     ]
   },
   "hooks": {
