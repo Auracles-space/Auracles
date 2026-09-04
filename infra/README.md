@@ -162,7 +162,20 @@ that tag on every merge to main touching `backend/`. The underlying Terraform
 commands still work directly if you want the saved-plan review flow
 (`make staging-plan` writes `tfplan`).
 
-The 13 hand-entered secrets are typed **once, ever**: they live in the shared
+Each cycle brings up an empty database, so the first thing a QA pass needs is
+an admin to log in as:
+
+```bash
+make staging-bootstrap-admin   # idempotent; safe to re-run
+```
+
+It runs `scripts.bootstrap_admin` as a one-off ECS task against the same task
+definition the api uses, so the password arrives from Secrets Manager rather
+than a command line — ECS task overrides can carry plain environment values
+but not secret references, and a password passed as an override would land in
+CloudTrail.
+
+The hand-entered secrets (14 of them) are typed **once, ever**: they live in the shared
 stack precisely so staging's destroy cannot touch them. Only `DATABASE_URL`
 and `REDIS_URL` die and regenerate with each cycle, because each cycle's fresh
 RDS and Redis have new hostnames.

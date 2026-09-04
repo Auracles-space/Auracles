@@ -27,6 +27,12 @@ locals {
     "PERSONA_WEBHOOK_SECRET",
     "GOOGLE_CLIENT_SECRET",
     "BRAVE_SEARCH_API_KEY",
+    # Password for the bootstrap admin account, consumed by
+    # scripts.bootstrap_admin on a fresh database. It has to reach the task
+    # definition rather than a run-task override, because ECS overrides can
+    # inject plain environment values but not Secrets Manager references — and
+    # passing a password as an override would put it in CloudTrail.
+    "ADMIN_PASSWORD",
   ]
 }
 

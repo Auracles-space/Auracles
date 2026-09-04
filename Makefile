@@ -1,5 +1,6 @@
 .PHONY: dev datastores api worker beat migrate test-db down logs frontend \
-        staging-plan staging-up staging-down staging-status staging-logs
+        staging-plan staging-up staging-down staging-status staging-logs \
+        staging-bootstrap-admin
 
 # Staging lives in eu-west-2 and is deliberately ephemeral: bring it up for a
 # QA pass, tear it down after. See infra/README.md.
@@ -88,7 +89,7 @@ staging-up:
 	@echo "Staging is up. Health: https://api.staging.auracles.space/v1/health"
 	@echo "Remember: make staging-down when the QA pass is over."
 
-# Tear staging down to $0. The 13 hand-entered secrets survive: they live in
+# Tear staging down to $0. The hand-entered secrets survive: they live in
 # the shared stack precisely so this cannot touch them. Only DATABASE_URL and
 # REDIS_URL die, and the next staging-up regenerates them.
 staging-down:
@@ -113,3 +114,34 @@ staging-status:
 SERVICE ?= api
 staging-logs:
 	aws logs tail /ecs/auracles-staging/$(SERVICE) --region $(AWS_REGION) --follow
+
+# Create the initial admin account on a fresh staging database. Idempotent —
+# a second run just re-asserts the admin role, so it is safe after every
+# staging-up. Reads ADMIN_EMAIL from the task definition and ADMIN_PASSWORD
+# from Secrets Manager; neither value passes through this command line, which
+# is why it runs as a task override rather than `docker run -e`.
+#
+# The network configuration is copied from the running api service instead of
+# being hardcoded, so it cannot drift from what Terraform actually built.
+staging-bootstrap-admin:
+	@set -e; \
+	net=$$(aws ecs describe-services --region $(AWS_REGION) --cluster auracles-staging \
+	  --services api --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json); \
+	if [ "$$net" = "null" ] || [ -z "$$net" ]; then \
+	  echo "staging is not running — bring it up first with: make staging-up"; exit 1; \
+	fi; \
+	subnets=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["subnets"]))'); \
+	sgs=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["securityGroups"]))'); \
+	arn=$$(aws ecs run-task --region $(AWS_REGION) --cluster auracles-staging \
+	  --task-definition auracles-staging-api --launch-type FARGATE \
+	  --network-configuration "awsvpcConfiguration={subnets=[$$subnets],securityGroups=[$$sgs],assignPublicIp=ENABLED}" \
+	  --overrides '{"containerOverrides":[{"name":"api","command":["python","-m","scripts.bootstrap_admin"]}]}' \
+	  --query 'tasks[0].taskArn' --output text); \
+	echo "bootstrap task: $$arn"; \
+	aws ecs wait tasks-stopped --region $(AWS_REGION) --cluster auracles-staging --tasks "$$arn"; \
+	code=$$(aws ecs describe-tasks --region $(AWS_REGION) --cluster auracles-staging --tasks "$$arn" \
+	  --query 'tasks[0].containers[0].exitCode' --output text); \
+	echo "exit code: $$code"; \
+	aws logs tail /ecs/auracles-staging/api --region $(AWS_REGION) --since 5m \
+	  --filter-pattern 'admin_user' 2>/dev/null | tail -5; \
+	[ "$$code" = "0" ]

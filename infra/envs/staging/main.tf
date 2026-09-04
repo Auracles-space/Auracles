@@ -144,6 +144,9 @@ module "ecs" {
     CLAMAV_HOST          = "localhost"
     CLAMAV_PORT          = "3310"
     PLATFORM_CURRENCY    = "NGN"
+    # Identity of the bootstrap admin. The matching password is a secret; this
+    # half is just an address. Used by `make staging-bootstrap-admin`.
+    ADMIN_EMAIL = "admin@auracles.space"
     # Real sending on (human decision 2026-09-02) so registration/verification
     # can be tested end to end with real inboxes. Caveat, accepted: the E2E
     # seeds use invented addresses, and bounces count against the domain's
