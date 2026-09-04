@@ -114,6 +114,14 @@ resource "aws_amplify_app" "this" {
   # authenticated route, so the static platform would break both.
   platform = "WEB_COMPUTE"
 
+  # Amplify prefers amplify.yml from the repository when it is present, so this
+  # copy is normally unused — but it cannot be left empty (the API rejects a
+  # zero-length build spec), and a stale one is a trap: delete or rename
+  # amplify.yml and the app silently falls back to whatever was last stored,
+  # which may predate the Node pin or the secret forwarding. Feeding it the
+  # same file keeps the fallback honest instead of ancient.
+  build_spec = var.build_spec
+
   # Applies to every branch. Branch-level values in aws_amplify_branch win
   # where they overlap, which is how one app can serve two environments.
   environment_variables = var.environment_variables

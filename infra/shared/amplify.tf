@@ -28,6 +28,10 @@ module "staging_frontend" {
 
   github_access_token = var.github_access_token
 
+  # The repository's own build spec, so the app-level fallback copy stays in
+  # step with the file that actually runs.
+  build_spec = file("${path.module}/../../amplify.yml")
+
   environment_variables = {
     # Monorepo: the app is frontend/, not the repository root.
     AMPLIFY_MONOREPO_APP_ROOT = "frontend"

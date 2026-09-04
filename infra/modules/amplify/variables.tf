@@ -52,3 +52,8 @@ variable "custom_domain" {
   type        = string
   default     = null
 }
+
+variable "build_spec" {
+  description = "Contents of the Amplify build spec. Pass the repository's own amplify.yml so the app-level copy — which Amplify falls back to if that file ever disappears — cannot drift into something older than the build it is meant to reproduce."
+  type        = string
+}
