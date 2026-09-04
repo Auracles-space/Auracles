@@ -25,13 +25,13 @@ correct, and it reads as a Google misconfiguration rather than a host mistake.
 | | Staging | Production |
 | --- | --- | --- |
 | API | `https://api.staging.auracles.space` | `https://api.auracles.space` *(not built yet)* |
-| Frontend | `https://staging.auracles.space` *(pending custom domain; currently `https://main.d1hsumq9pfyik0.amplifyapp.com`)* | `https://auracles.space` |
+| Frontend | `https://staging.auracles.space` | `https://auracles.space` |
 
-> **Sequence this correctly.** Attach the staging custom domain *before*
-> registering anything with Google. Until `staging_frontend_custom_domain = true`
-> is applied, staging answers on its `amplifyapp.com` URL — and Google matches
-> redirect URIs exactly, so registering the temporary URL means redoing every
-> entry later.
+> The staging custom domain went live on 2026-09-04, so every URL below is
+> final — nothing here will need re-registering. Amplify still answers on
+> `main.d1hsumq9pfyik0.amplifyapp.com` as well, but do not register that
+> hostname anywhere: Google matches redirect URIs exactly, and a second
+> registered origin is a second thing to remember to remove.
 
 ## Register these
 
@@ -41,29 +41,39 @@ Two endpoints, not one. The app verifies against a comma-separated list of
 signing secrets and tries each (`app/integrations/stripe.py:582`), which is what
 makes the split possible.
 
-| Endpoint | Path | Events |
+| Endpoint | Staging URL | Events |
 | --- | --- | --- |
-| Payments | `<API>/v1/webhooks/stripe` | `payment_intent.*`, `payout.*`, `transfer.*` |
-| Connect | `<API>/v1/webhooks/stripe` | `account.updated` |
+| Payments | `https://api.staging.auracles.space/v1/webhooks/stripe` | `payment_intent.*`, `payout.*`, `transfer.*` |
+| Connect | `https://api.staging.auracles.space/v1/webhooks/stripe` | `account.updated` |
+
+Production later: `https://api.auracles.space/v1/webhooks/stripe`.
 
 Put both signing secrets in `STRIPE_WEBHOOK_SECRET`, comma-separated, no spaces.
 Staging's live values are already in Secrets Manager.
 
 ### Paystack — Dashboard → Settings → API Keys & Webhooks
 
-| Setting | Value |
+| Setting | Staging URL |
 | --- | --- |
-| Webhook URL | `<API>/v1/webhooks/paystack` |
+| Webhook URL | `https://api.staging.auracles.space/v1/webhooks/paystack` |
+
+Production later: `https://api.auracles.space/v1/webhooks/paystack`.
 
 No separate webhook secret exists: Paystack signs with the secret key itself
 (HMAC SHA-512), so `PAYSTACK_SECRET_KEY` is the verification key.
 
 ### Persona — Dashboard → Webhooks, and the inquiry template
 
-| Setting | Value | Host |
-| --- | --- | --- |
-| Webhook | `<API>/v1/webhooks/persona` | API |
-| Redirect after completion | `<FRONTEND>/settings/kyc` | **frontend** |
+Note the two rows point at **different hosts** — this is the easiest one to
+get wrong.
+
+| Setting | Staging URL |
+| --- | --- |
+| Webhook (server-to-server) | `https://api.staging.auracles.space/v1/webhooks/persona` |
+| Redirect after completion (browser) | `https://staging.auracles.space/settings/kyc` |
+
+Production later: `https://api.auracles.space/v1/webhooks/persona` and
+`https://auracles.space/settings/kyc`.
 
 The redirect is also held in `PERSONA_REDIRECT_URL`
 (`infra/envs/staging/main.tf`), and the template id in
@@ -75,11 +85,13 @@ credential.
 All three point at the **frontend**. Both callback paths are the frontend proxy
 route, not the backend's own.
 
-| Setting | Value |
+| Setting | Staging URL |
 | --- | --- |
-| Authorized JavaScript origin | `<FRONTEND>` |
-| Authorized redirect URI (sign-in) | `<FRONTEND>/api/v1/auth/google/callback` |
-| Authorized redirect URI (Drive connector) | `<FRONTEND>/api/v1/integrations/connectors/google-drive/callback` |
+| Authorized JavaScript origin | `https://staging.auracles.space` |
+| Authorized redirect URI (sign-in) | `https://staging.auracles.space/api/v1/auth/google/callback` |
+| Authorized redirect URI (Drive connector) | `https://staging.auracles.space/api/v1/integrations/connectors/google-drive/callback` |
+
+Production later: the same three paths on `https://auracles.space`.
 
 Matching env vars on our side: `GOOGLE_REDIRECT_URI` and
 `GOOGLE_DRIVE_REDIRECT_URI`. They must equal what Google holds, character for
