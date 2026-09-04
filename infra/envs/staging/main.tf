@@ -153,10 +153,11 @@ module "ecs" {
     # sender reputation — flip to "false" before running the full automated
     # suite. Requires a real RESEND_API_KEY value in Secrets Manager.
     EMAIL_SEND_ENABLED = "true"
-    # Email images load from the live apex while the staging frontend does not
-    # exist; action links still target the staging origin (they carry tokens).
-    # Remove once the staging frontend serves /images/*.
-    EMAIL_ASSET_BASE_URL = "https://auracles.space"
+    # EMAIL_ASSET_BASE_URL is deliberately absent. It existed only while
+    # staging had no frontend and email images had to load from the live apex.
+    # staging.auracles.space now serves /images/* itself (verified 2026-09-04),
+    # so images and action links both come from the staging origin, which is
+    # what production will do too — one less way staging and production differ.
     # Persona hosted-flow config. The template id is an identifier, not a
     # credential — changing templates later is an edit here + apply. The
     # redirect points at the staging frontend's KYC page; the page not
