@@ -1,6 +1,7 @@
 .PHONY: dev datastores api worker beat migrate test-db down logs frontend \
         staging-plan staging-up staging-down staging-status staging-logs \
-        staging-bootstrap-admin staging-frontend-build staging-frontend-logs
+        staging-bootstrap-admin staging-frontend-build staging-frontend-logs \
+        staging-run staging-seed
 
 # Staging lives in eu-west-2 and is deliberately ephemeral: bring it up for a
 # QA pass, tear it down after. See infra/README.md.
@@ -177,4 +178,73 @@ staging-bootstrap-admin:
 	echo "exit code: $$code"; \
 	aws logs tail /ecs/auracles-staging/api --region $(AWS_REGION) --since 5m \
 	  --filter-pattern 'admin_user' 2>/dev/null | tail -5; \
+	[ "$$code" = "0" ]
+
+# Run one Python statement inside a throwaway staging task, for QA work the UI
+# cannot reach — chiefly firing a Celery Beat task on demand (§24 of
+# docs/auracles-ui-full-test-scenarios.md) instead of waiting for its schedule:
+#
+#   make staging-run CMD="from app.workers.tasks.projects_beat import \
+#     auto_approve_deliverables; auto_approve_deliverables.apply()"
+#
+# `.apply()` executes the task in-process, so this needs no worker and the api
+# task definition (same image, same env) serves. CMD travels via the environment
+# rather than the shell so quotes and semicolons inside it survive intact.
+staging-run:
+	@set -e; \
+	test -n "$(CMD)" || { echo 'usage: make staging-run CMD="<python statements>"'; exit 1; }; \
+	net=$$(aws ecs describe-services --region $(AWS_REGION) --cluster auracles-staging \
+	  --services api --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json); \
+	if [ "$$net" = "null" ] || [ -z "$$net" ]; then \
+	  echo "staging is not running — bring it up first with: make staging-up"; exit 1; \
+	fi; \
+	subnets=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["subnets"]))'); \
+	sgs=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["securityGroups"]))'); \
+	overrides=$$(CMD="$(CMD)" python3 -c 'import json,os; print(json.dumps({"containerOverrides":[{"name":"api","command":["python","-c",os.environ["CMD"]]}]}))'); \
+	arn=$$(aws ecs run-task --region $(AWS_REGION) --cluster auracles-staging \
+	  --task-definition auracles-staging-api --launch-type FARGATE \
+	  --network-configuration "awsvpcConfiguration={subnets=[$$subnets],securityGroups=[$$sgs],assignPublicIp=ENABLED}" \
+	  --overrides "$$overrides" --query 'tasks[0].taskArn' --output text); \
+	echo "task: $$arn"; \
+	aws ecs wait tasks-stopped --region $(AWS_REGION) --cluster auracles-staging --tasks "$$arn"; \
+	code=$$(aws ecs describe-tasks --region $(AWS_REGION) --cluster auracles-staging --tasks "$$arn" \
+	  --query 'tasks[0].containers[0].exitCode' --output text); \
+	echo "exit code: $$code"; \
+	aws logs tail /ecs/auracles-staging/api --region $(AWS_REGION) --since 5m 2>/dev/null | tail -30; \
+	[ "$$code" = "0" ]
+
+# Create a pre-verified staging test account, so a QA pass does not need a live
+# inbox per account. Registration and email verification themselves are covered
+# by AU-1/AU-4 with a real address; every other account in the bank can start
+# here:
+#
+#   make staging-seed EMAIL=auracles.qa+operator@gmail.com \
+#     PASSWORD=Operator-Pass-2026 ROLES=operator
+#
+# ROLES is a comma-separated subset of contributor,operator,attestor,admin.
+# The password is visible in CloudTrail as a task-override parameter — fine for
+# throwaway staging accounts, never for real credentials, which is why the admin
+# password comes from Secrets Manager via staging-bootstrap-admin instead.
+staging-seed:
+	@set -e; \
+	test -n "$(EMAIL)" -a -n "$(PASSWORD)" -a -n "$(ROLES)" || { \
+	  echo 'usage: make staging-seed EMAIL=... PASSWORD=... ROLES=contributor,operator'; exit 1; }; \
+	net=$$(aws ecs describe-services --region $(AWS_REGION) --cluster auracles-staging \
+	  --services api --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json); \
+	if [ "$$net" = "null" ] || [ -z "$$net" ]; then \
+	  echo "staging is not running — bring it up first with: make staging-up"; exit 1; \
+	fi; \
+	subnets=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["subnets"]))'); \
+	sgs=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["securityGroups"]))'); \
+	overrides=$$(SEED_EMAIL="$(EMAIL)" SEED_PASSWORD="$(PASSWORD)" SEED_ROLES="$(ROLES)" \
+	  python3 -c 'import json,os; print(json.dumps({"containerOverrides":[{"name":"api","command":["python","-m","scripts.seed_user"],"environment":[{"name":k,"value":os.environ[k]} for k in ("SEED_EMAIL","SEED_PASSWORD","SEED_ROLES")]}]}))'); \
+	arn=$$(aws ecs run-task --region $(AWS_REGION) --cluster auracles-staging \
+	  --task-definition auracles-staging-api --launch-type FARGATE \
+	  --network-configuration "awsvpcConfiguration={subnets=[$$subnets],securityGroups=[$$sgs],assignPublicIp=ENABLED}" \
+	  --overrides "$$overrides" --query 'tasks[0].taskArn' --output text); \
+	echo "seed task: $$arn"; \
+	aws ecs wait tasks-stopped --region $(AWS_REGION) --cluster auracles-staging --tasks "$$arn"; \
+	code=$$(aws ecs describe-tasks --region $(AWS_REGION) --cluster auracles-staging --tasks "$$arn" \
+	  --query 'tasks[0].containers[0].exitCode' --output text); \
+	echo "exit code: $$code"; \
 	[ "$$code" = "0" ]

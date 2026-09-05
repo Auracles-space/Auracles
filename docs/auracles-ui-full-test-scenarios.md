@@ -1,8 +1,22 @@
-# Auracles — UI Test Scenarios & Inputs (v2)
+# Auracles — UI Test Scenarios & Inputs (v2.1 — staging)
 
 What to test, what to enter, what to expect. Tester drives the UI; this doc supplies the **flows, the actors, the sample inputs/params, and the pass condition**. No click-by-click — you know the screens.
 
-**Scope:** local stack first; same scenarios re-run on live after go-ahead. Payments in **test mode**, S3 = LocalStack, email captured (check logs/test inbox), ClamAV container running for scan paths.
+**Scope:** this pass runs against **staging** — frontend `https://staging.auracles.space`, API `https://api.staging.auracles.space`. The same scenarios re-run on production after go-ahead.
+
+Staging is real infrastructure, not the local stack. Five differences change how you test:
+
+| | Local stack | Staging (this pass) |
+|---|---|---|
+| Payments | test mode | test mode, both rails live (Stripe + Paystack) |
+| S3 | LocalStack | real buckets, real presigned URLs |
+| Email | captured in logs / test inbox | **really sent via Resend** — every account needs a reachable inbox (see below) |
+| Virus scan | ClamAV container | ClamAV sidecar inside the worker task |
+| Celery Beat | `make beat` + `make worker` | one-off ECS task per run (§24) |
+
+Staging is destroyed between QA cycles, so the database starts empty every time: expect to register the whole account bank and publish the first frameworks yourselves. Nothing is seeded.
+
+**What's new in v2.1 vs v2:** retargeted from the local stack to staging — Scope table, real-inbox/`staging-seed` account setup, §24 Beat triggers via `make staging-run`, §3 ordering, and an AWS production checklist replacing the Render/Vercel/Upstash one. No scenario was added, removed, or reworded. (v2.1 also restores the 173 scenario rows in §7–§24 that commit `ad5f2003` overwrote.)
 
 **What's new in v2 vs v1:** Google sign-in, Organizations (core + attestor + contributor + operator capabilities), redefined Attestation (org-attestor pipeline: offers → rubric review → report → acceptance), Google Drive connectors (import, source binding, preview, re-sync, re-bind), artifact PII/similarity/rarity pipeline, framework reviews, project amendments + acceptance-cancel + milestone finalize/reopen, profiles with avatar/banner, notifications, org admin surfaces, expanded scheduled tasks.
 
@@ -16,15 +30,15 @@ Every account kind needed to cover every feature. **Setup state** = one-time pre
 
 | Handle | Email | Password | Roles | Setup state | Covers |
 |--------|-------|----------|-------|-------------|--------|
-| Contributor | `contrib@auracles.dev` | `Contrib-Pass-2026` | contributor | 2FA enrolled; KYC verified (via AD-3); Stripe Connect payout account; Google Drive connected (§6) | §2 profiles, §4 frameworks, §5 artifacts, §6 connectors, §9 payouts, §13 attestation requestor, §16 credentials, §17 reputation, §18 collections |
-| Operator | `operator@auracles.dev` | `Operator-Pass-2026` | operator | 2FA enrolled; Stripe payment method saved | §3 explore, §7 purchases, §8 reviews (RV-1/3), §10 projects (operator side), §18 saved searches, §20–21 |
-| Operator 2 | `operator2@auracles.dev` | `Operator2-Pass-26` | operator | none | negative cases: PU-7 no-license download, RV-2 review w/o license, PR-16 non-member workspace, PF-5 public-profile view, CR-4 unauthorized evidence |
-| Dual | `dual@auracles.dev` | `Dual-Pass-2026!` | contributor + operator | 2FA enrolled | PU-11 self-deal block, §10 contributor side (proposals/deliverables), role-switch UX |
-| NG Operator | `ng.operator@auracles.dev` | `Naija-Pass-2026` | operator, country **NG** | Paystack payment method | PU-4 Paystack routing, NGN currency display |
-| Developer | `developer@auracles.dev` | `Developer-Pass-26` | operator | approved partner application (DV-2) | §19 developer platform (keys, webhooks, tier, partner payouts) |
-| Org Owner | `orgowner@auracles.dev` | `OrgOwner-Pass-26` | operator | 2FA enrolled (org payment method setup is TOTP-gated) | §11 org core (owner/admin actions), §12 attestor application, §14–15 capability activation, org checkout/funding |
-| Org Member | `orgmember@auracles.dev` | `OrgMember-Pass-26` | (none; joins via invitation) | none | OR-4/5 invitation accept, OO-5/6 grants + granted download, OR-12 member-RBAC 403s, OO-14 / GD-2 member exit |
-| Org Member 2 | `orgmember2@auracles.dev` | `OrgMember2-Pass2026` | (none; joins via invitation) | NDA signed in `Acme Advisory` (OA-1) | OR-8 teams, OA-4 trial nominee, OA-9/10 reviewing-member workspace, promoted admin for OR-6/OR-9 transfer target |
+| Contributor | `QA+contrib@…` | `Contrib-Pass-2026` | contributor | 2FA enrolled; KYC verified (via AD-3); Stripe Connect payout account; Google Drive connected (§6) | §2 profiles, §4 frameworks, §5 artifacts, §6 connectors, §9 payouts, §13 attestation requestor, §16 credentials, §17 reputation, §18 collections |
+| Operator | `QA+operator@…` | `Operator-Pass-2026` | operator | 2FA enrolled; Stripe payment method saved | §3 explore, §7 purchases, §8 reviews (RV-1/3), §10 projects (operator side), §18 saved searches, §20–21 |
+| Operator 2 | `QA+operator2@…` | `Operator2-Pass-26` | operator | none | negative cases: PU-7 no-license download, RV-2 review w/o license, PR-16 non-member workspace, PF-5 public-profile view, CR-4 unauthorized evidence |
+| Dual | `QA+dual@…` | `Dual-Pass-2026!` | contributor + operator | 2FA enrolled | PU-11 self-deal block, §10 contributor side (proposals/deliverables), role-switch UX |
+| NG Operator | `QA+ngoperator@…` | `Naija-Pass-2026` | operator, country **NG** | Paystack payment method | PU-4 Paystack routing, NGN currency display |
+| Developer | `QA+developer@…` | `Developer-Pass-26` | operator | approved partner application (DV-2) | §19 developer platform (keys, webhooks, tier, partner payouts) |
+| Org Owner | `QA+orgowner@…` | `OrgOwner-Pass-26` | operator | 2FA enrolled (org payment method setup is TOTP-gated) | §11 org core (owner/admin actions), §12 attestor application, §14–15 capability activation, org checkout/funding |
+| Org Member | `QA+orgmember@…` | `OrgMember-Pass-26` | (none; joins via invitation) | none | OR-4/5 invitation accept, OO-5/6 grants + granted download, OR-12 member-RBAC 403s, OO-14 / GD-2 member exit |
+| Org Member 2 | `QA+orgmember2@…` | `OrgMember2-Pass2026` | (none; joins via invitation) | NDA signed in `Acme Advisory` (OA-1) | OR-8 teams, OA-4 trial nominee, OA-9/10 reviewing-member workspace, promoted admin for OR-6/OR-9 transfer target |
 | Admin | from `bootstrap_admin.py` | (`ADMIN_PASSWORD`) | admin | 2FA enrolled (RE-5 recompute is TOTP-gated) | §22 all admin, AD-* references inside other sections |
 | Google user | a real Google test account you control | (Google) | roleless at first login | none — stays passwordless until GA-6 | §1b Google auth, GA-7 passwordless re-auth, onboarding role step |
 
@@ -32,21 +46,68 @@ Throwaway accounts — register when the scenario needs them; each is consumed/m
 
 | Handle | Email | Password | Consumed by |
 |--------|-------|----------|-------------|
-| Unverified | `unverified@auracles.dev` | `Unverified-Pass26` | AU-4 negative: registered but never verified → login blocked until verify; resend-verification. |
-| Suspend-me | `suspendme@auracles.dev` | `SuspendMe-Pass-26` | AD-1 suspend/unsuspend (reversible, reusable after); AU-10 forgot/reset (its password may drift — fine, throwaway). |
-| Delete-me | `deleteme@auracles.dev` | `DeleteMe-Pass-2026` | GD-2 account deletion (destroyed — register fresh per run). Give it: one org membership with a grant (OO-14), a Drive connection (CN-10) before deleting. |
+| Unverified | `QA+unverified@…` | `Unverified-Pass26` | AU-4 negative: registered but never verified → login blocked until verify; resend-verification. |
+| Suspend-me | `QA+suspendme@…` | `SuspendMe-Pass-26` | AD-1 suspend/unsuspend (reversible, reusable after); AU-10 forgot/reset (its password may drift — fine, throwaway). |
+| Delete-me | `QA+deleteme@…` | `DeleteMe-Pass-2026` | GD-2 account deletion (destroyed — register fresh per run). Give it: one org membership with a grant (OO-14), a Drive connection (CN-10) before deleting. |
 | Google-link | existing email/password account re-registered with matching Google email | — | GA-3 auto-link (needs a Google account whose email equals an existing password account — easiest: register `your.gmail@gmail.com` with a password first, then "Continue with Google"). |
 
 > Password policy = **≥ 12 chars**. Use a sub-12 value (`Short1`) to test rejection.
 >
-> **Email domains:** use `auracles.dev` (or any real TLD you control) — **not** `.test`, `.example`, `.invalid`, `.localhost`, or `example.com/.net/.org`. Those are RFC 2606 reserved/special-use names and `email-validator` rejects them at registration ("…special-use or reserved name that cannot be used with email"). No real inbox needed for the seeded accounts — email is captured in logs/test inbox per the Scope note.
 > Individual attestors no longer exist — attestation is organization-based. The old "apply as attestor" user is gone.
 > The **Google user** doing Drive-connector tests (§6) can be the same Google account — connector OAuth is per-user via Contributor's settings, independent of Google *login*.
 
+### Email addresses — read this before registering anything
+
+Staging really sends mail. Registration is gated on clicking a verification link
+(AU-4), so **every account above needs an inbox somebody can actually open.** The
+old `@auracles.dev` addresses in v2 only worked because the local stack captured
+mail instead of sending it; on staging they go nowhere and the whole matrix
+stalls at the fourth row.
+
+**Substitute `QA` throughout with one real inbox the tester controls**, using
+plus-addressing so all thirteen accounts land in that single inbox:
+
+```
+QA+contrib@…   →   auracles.qa@gmail.com  becomes  auracles.qa+contrib@gmail.com
+```
+
+Gmail, Outlook, and Fastmail all route `user+anything@` to `user@`. The suffix
+survives into the To: header, so the inbox is trivially filterable per account.
+
+Do **not** use `.test`, `.example`, `.invalid`, `.localhost`, or
+`example.com/.net/.org` — those are RFC 2606 reserved names and `email-validator`
+rejects them at registration ("…special-use or reserved name that cannot be used
+with email").
+
+**There is no way to recover a verification link except by receiving the email.**
+The token is held in Redis under a *hash* of itself
+(`auth/service.py:113`), so it cannot be read back out of the database, and it is
+only written to the logs when `EMAIL_SEND_ENABLED=false` — which staging is not.
+If the mail doesn't arrive, that account is unusable.
+
+**So don't register thirteen accounts by hand.** Register only the two the
+verification flow is actually testing — AU-1/AU-4 (Contributor) and the
+Unverified throwaway — and seed the rest pre-verified in one pass:
+
+```
+make staging-seed EMAIL=auracles.qa+operator@gmail.com \
+                  PASSWORD=Operator-Pass-2026 ROLES=operator
+```
+
+Roles are a comma-separated subset of `contributor,operator,attestor,admin`.
+Seeded accounts arrive verified with roles set; **2FA, KYC, payment methods, and
+payout onboarding are still manual** — the Setup-state column above still applies.
+
+> Passwords passed this way appear in CloudTrail as task-override parameters.
+> Acceptable for throwaway staging accounts, never for anything real. This is why
+> the admin password comes from Secrets Manager (`make staging-bootstrap-admin`)
+> rather than an override.
+
 ### Setup order (dependencies between accounts)
 
-1. Admin exists first (`bootstrap_admin.py`) — needed to verify KYC, approve org-attestor application, approve developer application.
-2. Register Contributor, Operator, Operator 2, Dual, NG Operator, Developer, Org Owner, Org Member, Org Member 2 → verify emails.
+0. Staging is up (`make staging-up`) and migrated. Confirm `https://api.staging.auracles.space/v1/health` is green before touching the UI — a red health check makes every scenario below fail for the same uninteresting reason.
+1. Admin exists first — `make staging-bootstrap-admin` (locally: `bootstrap_admin.py`). Needed to verify KYC, approve the org-attestor application, and approve the developer application.
+2. Register **Contributor** through the UI with a real address and verify by email — that is AU-1/AU-4, and it must be exercised for real at least once. Create Operator, Operator 2, Dual, NG Operator, Developer, Org Owner, Org Member, Org Member 2 with `make staging-seed` (pre-verified; see "Email addresses" above).
 3. Enroll 2FA where the table says so; save payment methods; Contributor: KYC (ST-4 → AD-3) + payout onboarding (FN-2) + Drive connect (CN-1).
 4. Org Owner creates both orgs (§11); invites Org Member + Org Member 2 into both; promotes Org Member 2 to admin in `Acme Advisory`.
 5. `Acme Advisory`: NDA signatures → attestor application → admin pipeline (OA-2..7). `Northwind Ops`: activate contributor + operator capabilities (OC-1, OO-1); org payment method (OO-2).
@@ -100,14 +161,14 @@ Throwaway accounts — register when the scenario needs them; each is consumed/m
 | AU-2 | Password too short | — (new) | password `Short1` | Submit disabled / 422 "≥12 chars". |
 | AU-3 | Role combo | — (new: Dual) | roles = Contributor + Operator | Accepted (Attestor is no longer a self-serve individual role). |
 | AU-4 | Verify email | Contributor; negative: Unverified | token from captured email | Email verified; login allowed. Unverified account can't log in; resend-verification works. |
-| AU-5 | Login wrong pass | Operator | `operator@auracles.dev` / `wrongpass1234` | 401 generic error. |
+| AU-5 | Login wrong pass | Operator | `QA+operator@…` / `wrongpass1234` | 401 generic error. |
 | AU-6 | Login OK | Operator | Operator row | Lands on role dashboard; refresh cookie set (HttpOnly); access token never in localStorage. |
 | AU-7 | 2FA setup | Dual | enroll authenticator, enter current code | 2FA enabled; backup codes shown **once**; regenerate replaces them. |
 | AU-8 | 2FA login | Dual | login then enter code at `/2fa-challenge` | Wrong `000000` → 401; valid code → in; backup code works once. |
 | AU-9 | 2FA disable | Dual (re-enroll after) | valid TOTP required | Disabled; next login has no challenge. Re-enroll to restore bank state. |
 | AU-10 | Forgot/reset | Suspend-me | email → reset link → new pass `Reset-Pass-2026` | Old pass fails, new works. |
 | AU-11 | Logout | Operator | — | Protected route redirects to `/login`; refresh token revoked (back button can't restore session). |
-| AU-12 | Rate limit | — | 6+ rapid failed logins on `operator@auracles.dev` | Throttled response. |
+| AU-12 | Rate limit | — | 6+ rapid failed logins on `QA+operator@…` | Throttled response. |
 | AU-13 | Route guard | — (logged out) | hit `/dashboard/frameworks` | Redirect to `/login`. |
 | AU-14 | Token refresh | Operator | stay idle past 15 min, then act | Silent refresh; no logout, no error flash. |
 
@@ -134,6 +195,14 @@ Throwaway accounts — register when the scenario needs them; each is consumed/m
 | PF-5 | Public profile | Operator 2 | open Contributor's `/profile/[id]` | Public fields only — no email, no KYC status, no payout data anywhere in page or network tab. |
 
 ## 3. Explore / Discovery
+
+> **Run this section after §4 and §5, not in numbered order.** Staging starts
+> with an empty database, so on a fresh cycle there is nothing published to
+> browse, search, or paginate — EX-1 through EX-4 would all "pass" against an
+> empty feed while proving nothing. Publish at least three frameworks in §4
+> first (varied category and price, so EX-3's filters have something to
+> discriminate). EX-6 additionally needs §14, EX-8 needs §12 approved, and EX-9
+> needs an org from §11.
 
 | # | Flow | As | Inputs | Expect |
 |---|------|----|--------|--------|
@@ -264,7 +333,7 @@ Operator posts + funds; **Dual** is the bidding Contributor side.
 | OR-1 | Create org | Org Owner | create `Acme Advisory` (slug auto) | Org appears under `/dashboard/organizations`; creator = owner. |
 | OR-2 | Org shell tabs | Org Owner vs Org Member | open org | Tabs scale with role/capabilities: Profile, Members always; Invitations/Teams/Attestor + more for admin; Danger Zone owner-only. |
 | OR-3 | Logo upload | Org Owner | PNG < 5 MB via upload-url → confirm | Two-step verified upload; logo renders. Free-string logo keys via PATCH are impossible. |
-| OR-4 | Invite member | Org Owner | invite `orgmember@auracles.dev` role member | Email with token link `/org-invitations/[token]`; pending listed. |
+| OR-4 | Invite member | Org Owner | invite `QA+orgmember@…` role member | Email with token link `/org-invitations/[token]`; pending listed. |
 | OR-5 | Accept invitation | Org Member | open token link logged in | Joins org; shows in Members. Expired/consumed token → clear error (SC-13 expires pending ones). |
 | OR-6 | Roles | Org Owner | promote Org Member 2 → admin (in `Acme Advisory`); demote test in `Scratch Org` | Admin tabs appear/disappear accordingly. |
 | OR-7 | Remove member | Org Owner | remove a member (use `Scratch Org`) | Gone; their org access (library grants etc.) severed. |
@@ -460,10 +529,33 @@ add/remove members.
 
 Actor = tester/ops (no UI account) — you trigger the task, then verify effect as the account named in the referenced scenario.
 
-**How to trigger without waiting:**
-- Start scheduler + worker: `make beat` **plus** `make worker`.
-- Or force-run one task now: `cd backend && uv run python -c "from app.workers.tasks.<module> import <task>; <task>.apply()"`.
-- For expiry/overdue cases, set the relevant timestamp into the past in the DB, or lower the window in `platform_config`, then run the task. **Re-run once more to confirm idempotency** (no double effect).
+**How to trigger without waiting (staging):**
+
+Beat runs on its own schedule in staging and you should not wait for it. Fire a
+task on demand with:
+
+```
+make staging-run CMD="from app.workers.tasks.<module> import <task>; <task>.apply()"
+```
+
+For example, PR-12's auto-release (SC-8):
+
+```
+make staging-run CMD="from app.workers.tasks.projects_beat import auto_approve_deliverables; auto_approve_deliverables.apply()"
+```
+
+This launches a throwaway ECS task on the api image, runs the task in-process
+(`.apply()` needs no worker or broker), prints the exit code, and tails the last
+30 log lines. A non-zero exit fails the command.
+
+- For expiry/overdue cases, set the relevant timestamp into the past in the DB,
+  or lower the window in `platform_config`, then run the task.
+- **Re-run once more to confirm idempotency** (no double effect). This matters
+  more on staging than locally: Beat may fire the same task on its own schedule
+  between your two runs, so a non-idempotent task shows up as drift you did not
+  cause.
+- Locally the equivalents are still `make beat` + `make worker`, or
+  `cd backend && uv run python -c "..."`.
 
 | # | Task | Expect |
 |---|------|--------|
@@ -543,16 +635,37 @@ Live testing is authorized **only** when every row is green.
 
 ## Live (post-go-ahead) — re-verify only the delta
 
-After local sign-off, on live re-check only what differs from local — don't re-run the full matrix blind:
+After staging sign-off, on production re-check only what differs — don't re-run
+the full matrix blind. Production is `https://auracles.space` (frontend) and
+`https://api.auracles.space` (API), on the same all-AWS architecture as staging
+in `eu-west-2`.
 
-- [ ] Real env vars set on Render (all `sync:false` secrets) + Vercel, including Google OAuth client (login) AND Drive connector client.
-- [ ] `drive.readonly` scope verification status — until Google approves, Drive connector limited to test users.
-- [ ] `REDIS_URL` is `rediss://` Upstash base; app uses **DB 0 only**.
-- [ ] Public health green: `https://<api>.onrender.com/v1/health` (no `:10000`).
-- [ ] CORS allowlist = real Vercel origin (no `*`).
-- [ ] Stripe/Paystack **live** webhooks registered + signing secrets set; replay-idempotency spot-check.
-- [ ] S3 real buckets + least-privilege IAM; presigned URLs work; orphan-sweep age guard confirmed against real bucket before first beat run.
-- [ ] ClamAV present in worker image (scan actually runs, not skipped).
-- [ ] CI-gated deploy: Checks green → `deploy.yml` fires Render hooks.
-- [ ] e2e `org-operator.spec.ts` passes in staging (pre-release gate).
-- [ ] Smoke the 8 critical flows on live with test data before announcing to team.
+> The production stack does not exist yet: `infra/envs/production/` is unwritten
+> as of 2026-09-05. Every item below is a gate for its first apply, not something
+> checkable today.
+
+**Configuration deltas**
+
+- [ ] All 15 secret shells filled in production Secrets Manager (`auracles/production/*`) — a task referencing an empty shell fails to start with a `ResourceInitializationError` naming it.
+- [ ] Stripe and Paystack keys are **live-mode**, not the test keys staging uses.
+- [ ] **Production has its own Google OAuth client**, separate from the one staging shares with local dev, so a staging misconfiguration cannot reach real sign-ins. Register all three URLs on `https://auracles.space` (`docs/external-endpoints.md`).
+- [ ] `drive.readonly` scope verification status — until Google approves, the Drive connector is limited to test users.
+- [ ] `CORS_ALLOWED_ORIGINS` = `https://auracles.space` exactly (no `*`). Its first entry is also the origin every transactional email link is built from.
+- [ ] `REDIS_URL` is `rediss://` against the production ElastiCache node; app uses **DB 0 only**.
+- [ ] `EMAIL_SEND_ENABLED=true` and Resend's sending domain verified.
+
+**Infrastructure deltas from staging**
+
+- [ ] RDS: `deletion_protection = true`, `skip_final_snapshot = false`, backup retention > 0 — staging deliberately inverts all three.
+- [ ] S3 buckets are production buckets with least-privilege IAM; presigned URLs work; the orphan-sweep age guard confirmed against the real bucket **before** the first Beat run.
+- [ ] ClamAV sidecar present in the worker task and actually scanning (AR-4's EICAR file must be rejected, not silently skipped).
+- [ ] ALB health check green: `https://api.auracles.space/v1/health`.
+
+**Release mechanics**
+
+- [ ] Stripe and Paystack **live** webhooks registered against `api.auracles.space` + signing secrets set; replay-idempotency spot-check (PU-5).
+- [ ] Persona webhook → API host, redirect → frontend host (the two easiest to swap).
+- [ ] Deploy path exercised: merge to `main` builds the image, `git tag v*` deploys to production.
+- [ ] Waitlist flipped off: `NEXT_PUBLIC_WAITLIST_MODE=false`, `auracles.space` moved from the waitlist Amplify app to the product app, Resend audience imported into `waitlist_entries`.
+- [ ] Playwright suite green — it runs locally/in CI against mocks on `127.0.0.1`, so it is a pre-release gate, **not** something that can be pointed at a deployed environment.
+- [ ] Smoke the 8 release-blocking flows on production with test data before announcing to the team.
