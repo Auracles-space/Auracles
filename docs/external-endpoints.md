@@ -106,8 +106,11 @@ Where each one is set:
 | `GOOGLE_DRIVE_REDIRECT_URI` | same block — filled | `backend/.env` |
 | `GOOGLE_CLIENT_SECRET` | Secrets Manager, `auracles/staging/GOOGLE_CLIENT_SECRET` — filled | `backend/.env` |
 
-All four staging values are in place as of 2026-09-04, so the only outstanding
-step is registering the three URLs above in the Google console. Staging reuses
+**Done 2026-09-05** — all four staging values are in place on our side, and the
+three URLs above are registered in the Google console. Unverified until the next
+`make staging-up`: GA-1 (Google sign-in) and CN-1 (Drive connect) in
+`docs/auracles-ui-full-test-scenarios.md` are what prove it, and a mismatch shows
+up as a rejected login with every credential correct. Staging reuses
 the OAuth client local dev already uses (`464831374479-…`) — one client holds a
 list of authorized redirect URIs, so localhost and staging coexist on it.
 Production should get its own client, so a staging misconfiguration cannot reach
@@ -143,8 +146,9 @@ somebody else can register and then receive real traffic on.
       dashboard to live mode to see them; test mode shows nothing.
 - [ ] **Paystack** — check the webhook URL for an `onrender.com` host.
 - [ ] **Persona** — same check.
-- [ ] **Google Cloud** — remove `dev-auracles.vercel.app` redirect URIs and
-      origins once the real ones are registered.
+- [x] **Google Cloud** — real URLs registered 2026-09-05. Confirm the two
+      `dev-auracles.vercel.app` redirect URIs and origins went with them; a
+      stale entry on a hostname nobody owns is the dangerous kind.
 - [ ] **GitHub** — the `vercel` and `render` GitHub Apps are still installed on
       the org and no longer used (`gh api /orgs/Auracles-space/installations`).
 
