@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminRoleAssignmentRequest(BaseModel):
@@ -40,6 +40,41 @@ class AdminKycReviewResponse(BaseModel):
 
     user_id: UUID
     kyc_status: str
+
+
+class AdminKycDocumentResponse(BaseModel):
+    """Metadata for one identity document in the admin review queue.
+
+    Carries no storage key: the file is reached only through the download
+    endpoint, which checks the scan result and audits the access.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    doc_type: str
+    mime_type: str
+    file_size: int
+    status: str
+    scan_status: str
+    reviewed_by: UUID | None
+    reviewed_at: datetime | None
+    notes: str | None
+    created_at: datetime
+
+
+class AdminKycDocumentsResponse(BaseModel):
+    """Identity documents a user has submitted for manual review."""
+
+    user_id: UUID
+    documents: list[AdminKycDocumentResponse]
+
+
+class AdminKycDocumentDownloadResponse(BaseModel):
+    """Short-lived presigned link to one identity document."""
+
+    download_url: str
+    expires_in: int
 
 
 class AdminFrameworkSuspendRequest(BaseModel):

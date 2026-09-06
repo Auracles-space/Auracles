@@ -15,7 +15,7 @@ const steps = [
     title: "Complete your profile",
   },
   {
-    body: "A quick, secure check with our verification partner — about two minutes with a government ID. Your documents stay with Persona, never stored on Auracles.",
+    body: "Upload a photo of a government ID — it takes about a minute. Our team reviews it privately, and your document is never published.",
     title: "Verify your identity",
   },
 ];

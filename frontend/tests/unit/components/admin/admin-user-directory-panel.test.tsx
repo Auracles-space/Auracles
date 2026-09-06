@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminUserDirectoryPanel } from "@/components/modules/admin/admin-user-directory-panel";
 import {
   listAdminUsersV1AdminUsersGet,
+  listUserKycDocumentsV1AdminUsersUserIdKycDocumentsGet,
   reviewKycV1AdminUsersUserIdKycPatch,
   suspendUserV1AdminUsersUserIdSuspendPost,
 } from "@/lib/generated/sdk.gen";
@@ -21,7 +22,12 @@ vi.mock("@/lib/auth/form-client", () => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
+  downloadUserKycDocumentV1AdminUsersUserIdKycDocumentsDocumentIdDownloadGet:
+    vi.fn(),
   listAdminUsersV1AdminUsersGet: vi.fn(),
+  // The KYC review form embeds the submitted-document list, which loads on
+  // open; without this the panel's own tests fail on an unmocked export.
+  listUserKycDocumentsV1AdminUsersUserIdKycDocumentsGet: vi.fn(),
   reviewKycV1AdminUsersUserIdKycPatch: vi.fn(),
   suspendUserV1AdminUsersUserIdSuspendPost: vi.fn(),
   unsuspendUserV1AdminUsersUserIdUnsuspendPost: vi.fn(),
@@ -31,6 +37,14 @@ describe("AdminUserDirectoryPanel", () => {
   beforeEach(() => {
     vi.mocked(listAdminUsersV1AdminUsersGet).mockReset();
     vi.mocked(suspendUserV1AdminUsersUserIdSuspendPost).mockReset();
+    vi.mocked(
+      listUserKycDocumentsV1AdminUsersUserIdKycDocumentsGet,
+    ).mockResolvedValue({
+      data: { documents: [], user_id: "user-1" },
+      error: undefined,
+      request: new Request("http://127.0.0.1:8000"),
+      response: new Response(null, { status: 200 }),
+    });
     vi.mocked(listAdminUsersV1AdminUsersGet).mockResolvedValue({
       data: {
         items: [

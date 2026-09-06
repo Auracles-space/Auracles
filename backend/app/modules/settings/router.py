@@ -1,6 +1,7 @@
 """FastAPI router for authenticated settings endpoints."""
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
 from redis.asyncio import Redis
@@ -25,6 +26,9 @@ from app.modules.settings import service
 from app.modules.settings.schemas import (
     EmailChangeConfirmRequest,
     EmailChangeRequest,
+    KycDocumentResponse,
+    KycDocumentUploadRequest,
+    KycDocumentUploadResponse,
     KycStatusResponse,
     KycSyncRequest,
     KycVerificationSessionResponse,
@@ -58,6 +62,55 @@ async def get_kyc_status(
 ) -> KycStatusResponse:
     """Return the authenticated user's KYC status."""
     return await service.get_kyc_status(db=db, user=current_user)
+
+
+@router.post(
+    "/kyc/documents",
+    response_model=KycDocumentUploadResponse,
+    summary="Request an upload target for an identity document",
+    description=(
+        "Reserves an identity document and returns a presigned S3 POST policy. "
+        "Post the file to `upload_url` as multipart form data — every entry in "
+        "`fields` first, the file part last — then call the confirm endpoint. "
+        "The document is not submitted for review until it is confirmed."
+    ),
+)
+async def request_kyc_document_upload_url(
+    payload: KycDocumentUploadRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> KycDocumentUploadResponse:
+    """Return a presigned POST target for one identity document."""
+    return await service.request_kyc_document_upload_url(
+        db=db,
+        redis=redis,
+        user=current_user,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/kyc/documents/{document_id}/confirm",
+    response_model=KycDocumentResponse,
+    summary="Confirm an uploaded identity document",
+    description=(
+        "Confirms that the file reached storage, queues the malware scan, and "
+        "moves the account to `pending` so it enters the admin review queue. "
+        "Idempotent."
+    ),
+)
+async def confirm_kyc_document(
+    document_id: UUID,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+) -> KycDocumentResponse:
+    """Confirm an uploaded identity document and open it for review."""
+    return await service.confirm_kyc_document(
+        db=db,
+        user=current_user,
+        document_id=document_id,
+    )
 
 
 @router.post("/kyc/sync", response_model=KycStatusResponse)

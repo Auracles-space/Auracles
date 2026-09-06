@@ -59,6 +59,14 @@ KYC_DOCUMENT_STATUS_ENUM = ENUM(
     name="kyc_document_status_enum",
     create_type=False,
 )
+KYC_DOCUMENT_SCAN_STATUS_ENUM = ENUM(
+    "awaiting_upload",
+    "pending_scan",
+    "clean",
+    "quarantined",
+    name="kyc_document_scan_status_enum",
+    create_type=False,
+)
 
 
 class User(UpdatedAtMixin, Base):
@@ -275,7 +283,17 @@ class UserBackupCode(CreatedAtMixin, Base):
 
 
 class KycDocument(CreatedAtMixin, Base):
-    """Identity document uploaded by a user for KYC review."""
+    """Identity document uploaded by a user for KYC review.
+
+    Carries two independent states. ``status`` is the admin's verdict on the
+    document (pending/verified/rejected). ``scan_status`` is the malware
+    lifecycle: a row is created ``awaiting_upload`` when the presigned target is
+    issued, becomes ``pending_scan`` once the browser confirms the upload, then
+    ``clean`` or ``quarantined``. An admin may only download a ``clean``
+    document.
+
+    Maps to: FR-AUTH-009, FR-SET-004.
+    """
 
     __tablename__ = "kyc_documents"
 
@@ -297,6 +315,11 @@ class KycDocument(CreatedAtMixin, Base):
         KYC_DOCUMENT_STATUS_ENUM,
         nullable=False,
         server_default="pending",
+    )
+    scan_status: Mapped[str] = mapped_column(
+        KYC_DOCUMENT_SCAN_STATUS_ENUM,
+        nullable=False,
+        server_default="awaiting_upload",
     )
     reviewed_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

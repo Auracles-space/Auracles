@@ -596,6 +596,41 @@ export type AdminInvoicesResponse = {
 };
 
 /**
+ * Short-lived presigned link to one identity document.
+ */
+export type AdminKycDocumentDownloadResponse = {
+    download_url: string;
+    expires_in: number;
+};
+
+/**
+ * Metadata for one identity document in the admin review queue.
+ *
+ * Carries no storage key: the file is reached only through the download
+ * endpoint, which checks the scan result and audits the access.
+ */
+export type AdminKycDocumentResponse = {
+    created_at: string;
+    doc_type: string;
+    file_size: number;
+    id: string;
+    mime_type: string;
+    notes: (string | null);
+    reviewed_at: (string | null);
+    reviewed_by: (string | null);
+    scan_status: string;
+    status: string;
+};
+
+/**
+ * Identity documents a user has submitted for manual review.
+ */
+export type AdminKycDocumentsResponse = {
+    documents: Array<AdminKycDocumentResponse>;
+    user_id: string;
+};
+
+/**
  * Request body for admin KYC review decisions.
  */
 export type AdminKycReviewRequest = {
@@ -2761,6 +2796,10 @@ export type HTTPValidationError = {
 
 /**
  * Public KYC document metadata returned to the document owner.
+ *
+ * Deliberately omits ``s3_key``. Identity documents are delivered by presigned
+ * URL only, and publishing the object key would hand out a target list that
+ * outlives any single presigned link.
  */
 export type KycDocumentResponse = {
     created_at: string;
@@ -2770,8 +2809,41 @@ export type KycDocumentResponse = {
     mime_type: string;
     notes: (string | null);
     reviewed_at: (string | null);
-    s3_key: string;
+    scan_status: string;
     status: string;
+};
+
+/**
+ * Request for a presigned target to upload one identity document.
+ *
+ * ``file_size`` is declared up front so an oversized file is refused before a
+ * single byte reaches S3; the presigned policy then enforces the same ceiling
+ * server-side, so a client that lies about it still cannot exceed the cap.
+ */
+export type KycDocumentUploadRequest = {
+    doc_type: 'passport' | 'drivers_license' | 'national_id' | 'proof_of_address';
+    file_size: number;
+    filename: string;
+    mime_type: string;
+};
+
+export type doc_type = 'passport' | 'drivers_license' | 'national_id' | 'proof_of_address';
+
+/**
+ * Presigned POST target for one identity document upload.
+ *
+ * The client posts a multipart form to ``upload_url`` containing every entry
+ * in ``fields`` followed by the file part, then calls the confirm endpoint
+ * with ``document_id``.
+ */
+export type KycDocumentUploadResponse = {
+    document_id: string;
+    expires_in: number;
+    fields: {
+        [key: string]: (string);
+    };
+    max_size: number;
+    upload_url: string;
 };
 
 /**
@@ -5763,6 +5835,27 @@ export type ReviewKycV1AdminUsersUserIdKycPatchData = {
 export type ReviewKycV1AdminUsersUserIdKycPatchResponse = (AdminKycReviewResponse);
 
 export type ReviewKycV1AdminUsersUserIdKycPatchError = (HTTPValidationError);
+
+export type ListUserKycDocumentsV1AdminUsersUserIdKycDocumentsGetData = {
+    path: {
+        user_id: string;
+    };
+};
+
+export type ListUserKycDocumentsV1AdminUsersUserIdKycDocumentsGetResponse = (AdminKycDocumentsResponse);
+
+export type ListUserKycDocumentsV1AdminUsersUserIdKycDocumentsGetError = (HTTPValidationError);
+
+export type DownloadUserKycDocumentV1AdminUsersUserIdKycDocumentsDocumentIdDownloadGetData = {
+    path: {
+        document_id: string;
+        user_id: string;
+    };
+};
+
+export type DownloadUserKycDocumentV1AdminUsersUserIdKycDocumentsDocumentIdDownloadGetResponse = (AdminKycDocumentDownloadResponse);
+
+export type DownloadUserKycDocumentV1AdminUsersUserIdKycDocumentsDocumentIdDownloadGetError = (HTTPValidationError);
 
 export type AssignRoleV1AdminUsersUserIdRolesPatchData = {
     body: AdminRoleAssignmentRequest;
@@ -9024,6 +9117,24 @@ export type ConfirmEmailChangeV1SettingsAccountEmailChangeConfirmPostError = (HT
 export type GetKycStatusV1SettingsKycGetResponse = (KycStatusResponse);
 
 export type GetKycStatusV1SettingsKycGetError = unknown;
+
+export type RequestKycDocumentUploadUrlV1SettingsKycDocumentsPostData = {
+    body: KycDocumentUploadRequest;
+};
+
+export type RequestKycDocumentUploadUrlV1SettingsKycDocumentsPostResponse = (KycDocumentUploadResponse);
+
+export type RequestKycDocumentUploadUrlV1SettingsKycDocumentsPostError = (HTTPValidationError);
+
+export type ConfirmKycDocumentV1SettingsKycDocumentsDocumentIdConfirmPostData = {
+    path: {
+        document_id: string;
+    };
+};
+
+export type ConfirmKycDocumentV1SettingsKycDocumentsDocumentIdConfirmPostResponse = (KycDocumentResponse);
+
+export type ConfirmKycDocumentV1SettingsKycDocumentsDocumentIdConfirmPostError = (HTTPValidationError);
 
 export type StartIdentityVerificationV1SettingsKycSessionPostResponse = (KycVerificationSessionResponse);
 

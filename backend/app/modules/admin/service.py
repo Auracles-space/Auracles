@@ -22,11 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.currency import platform_currency
+from app.integrations import s3
 from app.modules.admin.models import AnalyticsDailySnapshot
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth import service as auth_service
-from app.modules.auth.models import User, UserRole
+from app.modules.auth.models import KycDocument, User, UserRole
 from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials import escrow_service
 from app.modules.financials.models import (
@@ -163,6 +165,9 @@ MODERATION_QUEUE_SORT_PRIORITY = {
     "rarity_review": 2,
 }
 ADMIN_USER_DIRECTORY_STATUSES = ("all", "active", "suspended", "kyc_pending")
+# Long enough for a reviewer to open and read a scan, short enough that a URL
+# copied out of the admin UI is worthless by the time it leaves the building.
+KYC_DOCUMENT_DOWNLOAD_TTL_SECONDS = 300
 ADMIN_PAYOUT_STATUSES = ("all", "pending", "processing", "completed", "failed")
 ADMIN_PAYOUT_PROVIDERS = ("all", "stripe", "paystack")
 ADMIN_DELETION_STATUSES = (
@@ -1689,19 +1694,29 @@ async def review_user_kyc(
     notes: str | None,
     totp_code: str,
 ) -> User:
-    """Manually override a user's identity-verification status.
+    """Record an admin's identity-verification decision for a user.
 
-    Identity verification is normally automated via Persona; this admin path is
-    the override for appeals and cases Persona cannot resolve. It sets the user's
-    KYC status directly — there is no document to review — audits the action, and
-    notifies the user of the verdict.
+    This is the deciding step of manual identity verification (FR-AUTH-009): the
+    user uploads documents, the admin reads them, and this writes the verdict.
+    It also serves as the override for appeals and, when the platform runs the
+    provider flow, for cases Persona cannot resolve — which is why it does not
+    require a document to exist.
+
+    The verdict settles every document still pending for that user, stamping the
+    reviewer and the time, so the queue can tell a reviewed applicant from a
+    waiting one. Rejection is deliberately not terminal: the user may submit
+    again, since the usual cause is an unreadable photo.
+
+    Maps to: FR-SET-011, BR-SET-003.
 
     Args:
         db: Async DB session.
-        admin: The acting admin (audited as actor).
-        target_user_id: The user whose status is overridden.
+        redis: Redis client backing admin TOTP verification.
+        admin: The acting admin (audited as actor and stamped as reviewer).
+        target_user_id: The user whose status is decided.
         review_status: ``verified`` or ``rejected``.
-        notes: Optional reason recorded in the audit metadata.
+        notes: Optional reason, recorded on the documents and in the audit.
+        totp_code: The admin's current TOTP code.
 
     Returns:
         The updated User.
@@ -1721,6 +1736,27 @@ async def review_user_kyc(
         )
 
     target.kyc_status = review_status
+    decided_at = datetime.now(UTC)
+    pending_documents = (
+        (
+            await db.execute(
+                select(KycDocument).where(
+                    KycDocument.user_id == target_user_id,
+                    KycDocument.status == "pending",
+                    # Reservations were never uploaded; there is nothing to
+                    # decide about them.
+                    KycDocument.scan_status != "awaiting_upload",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for document in pending_documents:
+        document.status = review_status
+        document.reviewed_by = admin.id
+        document.reviewed_at = decided_at
+        document.notes = notes
     await write_audit(
         db=db,
         actor_id=admin.id,
@@ -1731,6 +1767,7 @@ async def review_user_kyc(
             "status": review_status,
             "source": "admin_override",
             "notes": notes,
+            "documents_reviewed": len(pending_documents),
         },
     )
     # Notify the user of the verdict so an override surfaces without polling.
@@ -1758,6 +1795,131 @@ async def review_user_kyc(
         )
     await db.commit()
     return target
+
+
+async def list_user_kyc_documents(
+    db: AsyncSession,
+    target_user_id: UUID,
+) -> list[KycDocument]:
+    """List the identity documents a user has submitted for review.
+
+    Reservations (``awaiting_upload``) are excluded: the presigned target was
+    issued but nothing was uploaded, so there is no file behind the row and it
+    would only put an unopenable entry in front of a reviewer.
+
+    Maps to: FR-AUTH-009, FR-SET-011.
+
+    Args:
+        db: Async DB session.
+        target_user_id: The user whose documents are being reviewed.
+
+    Returns:
+        Submitted documents, newest first.
+
+    Raises:
+        HTTPException(404): If the target user does not exist.
+    """
+    target = await db.scalar(select(User).where(User.id == target_user_id))
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+    documents = (
+        (
+            await db.execute(
+                select(KycDocument)
+                .where(
+                    KycDocument.user_id == target_user_id,
+                    KycDocument.scan_status != "awaiting_upload",
+                )
+                .order_by(desc(KycDocument.created_at))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(documents)
+
+
+async def get_kyc_document_download_url(
+    db: AsyncSession,
+    admin: User,
+    target_user_id: UUID,
+    document_id: UUID,
+) -> tuple[str, int]:
+    """Issue a short-lived presigned URL for one submitted identity document.
+
+    Reading a person's identity papers is a PII access, so it is audited with
+    the acting admin — the audit row is the record of who looked and when.
+
+    The document must have cleared the malware scan. Any registered account can
+    put a file here, and it is staff who open it, so an unscanned or quarantined
+    document is refused rather than merely warned about.
+
+    Maps to: FR-AUTH-009, FR-SET-011.
+
+    Args:
+        db: Async DB session.
+        admin: The acting admin (audited as actor).
+        target_user_id: The user the document must belong to.
+        document_id: The document to download.
+
+    Returns:
+        A ``(download_url, expires_in)`` pair.
+
+    Raises:
+        HTTPException(404): If the document does not exist or belongs to a
+            different user than the one addressed in the path.
+        HTTPException(409): If the document has not cleared the virus scan.
+    """
+    document = await db.scalar(
+        select(KycDocument).where(
+            KycDocument.id == document_id,
+            # Scoped to the addressed user so an edited URL cannot read one
+            # subject's papers under another subject's audit trail.
+            KycDocument.user_id == target_user_id,
+        )
+    )
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Identity document not found.",
+        )
+    if document.scan_status != "clean":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This document has not cleared the virus scan and cannot be "
+                "opened."
+            ),
+        )
+
+    settings = get_settings()
+    download_url = s3.storage.presigned_get(
+        bucket=settings.s3_artifacts_bucket,
+        key=document.s3_key,
+        expires_in=KYC_DOCUMENT_DOWNLOAD_TTL_SECONDS,
+    )
+    await write_audit(
+        db=db,
+        actor_id=admin.id,
+        action="kyc_document_viewed",
+        target_type="kyc_document",
+        target_id=document.id,
+        metadata={
+            "subject_user_id": str(target_user_id),
+            "doc_type": document.doc_type,
+        },
+    )
+    await db.commit()
+    logger.bind(
+        module="admin",
+        action="get_kyc_document_download_url",
+        user_id=admin.id,
+        document_id=str(document_id),
+    ).info("kyc_document_viewed")
+    return download_url, KYC_DOCUMENT_DOWNLOAD_TTL_SECONDS
 
 
 async def list_admin_frameworks(

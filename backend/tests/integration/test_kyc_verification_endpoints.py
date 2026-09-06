@@ -19,6 +19,7 @@ from alembic.config import Config
 from httpx import AsyncClient
 from sqlalchemy import create_engine, select
 
+from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
@@ -81,8 +82,15 @@ def migrated_database() -> Iterator[None]:
 
 
 @pytest.fixture
-async def verification_context() -> AsyncIterator[None]:
-    """Reset identity state and stub Redis + Persona for the session endpoint."""
+async def verification_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[None]:
+    """Reset identity state and stub Redis + Persona for the session endpoint.
+
+    The platform defaults to ``KYC_PROVIDER=manual``, under which these routes
+    are deliberately unreachable, so the provider flow is switched on explicitly
+    here — that is the configuration these tests are about.
+    """
     await engine.dispose()
 
     async def cleanup() -> None:
@@ -92,6 +100,7 @@ async def verification_context() -> AsyncIterator[None]:
 
     await cleanup()
 
+    monkeypatch.setattr(get_settings(), "kyc_provider", "persona")
     app.dependency_overrides[get_redis] = lambda: FakeRateLimitRedis()
     original_create = settings_service.persona.build_hosted_inquiry_url
     settings_service.persona.build_hosted_inquiry_url = _fake_hosted_url  # type: ignore[assignment]

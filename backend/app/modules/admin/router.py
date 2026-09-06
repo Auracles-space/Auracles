@@ -32,6 +32,9 @@ from app.modules.admin.schemas import (
     AdminFrameworkStatusResponse,
     AdminFrameworkSuspendRequest,
     AdminInvoicesResponse,
+    AdminKycDocumentDownloadResponse,
+    AdminKycDocumentResponse,
+    AdminKycDocumentsResponse,
     AdminKycReviewRequest,
     AdminKycReviewResponse,
     AdminLicenseGrantRequest,
@@ -556,6 +559,63 @@ async def review_kyc(
     return AdminKycReviewResponse(
         user_id=user_id,
         kyc_status=user.kyc_status,
+    )
+
+
+@router.get(
+    "/users/{user_id}/kyc/documents",
+    response_model=AdminKycDocumentsResponse,
+    summary="List a user's submitted identity documents",
+    description=(
+        "Returns the identity documents a user submitted for manual review. "
+        "Documents whose upload was never completed are omitted. Metadata only "
+        "— fetch the file itself from the download endpoint."
+    ),
+)
+async def list_user_kyc_documents(
+    user_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminKycDocumentsResponse:
+    """List the identity documents a user submitted for review."""
+    documents = await service.list_user_kyc_documents(
+        db=db,
+        target_user_id=user_id,
+    )
+    return AdminKycDocumentsResponse(
+        user_id=user_id,
+        documents=[
+            AdminKycDocumentResponse.model_validate(document) for document in documents
+        ],
+    )
+
+
+@router.get(
+    "/users/{user_id}/kyc/documents/{document_id}/download",
+    response_model=AdminKycDocumentDownloadResponse,
+    summary="Open one submitted identity document",
+    description=(
+        "Returns a short-lived presigned URL for a submitted identity document. "
+        "The document must have cleared the virus scan. The access is audited "
+        "against the acting admin."
+    ),
+)
+async def download_user_kyc_document(
+    user_id: UUID,
+    document_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminKycDocumentDownloadResponse:
+    """Return a presigned URL for one submitted identity document."""
+    download_url, expires_in = await service.get_kyc_document_download_url(
+        db=db,
+        admin=admin,
+        target_user_id=user_id,
+        document_id=document_id,
+    )
+    return AdminKycDocumentDownloadResponse(
+        download_url=download_url,
+        expires_in=expires_in,
     )
 
 

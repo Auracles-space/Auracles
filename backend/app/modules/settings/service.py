@@ -4,28 +4,33 @@ from __future__ import annotations
 
 import json
 from typing import cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
 from redis.asyncio import Redis
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import generate_opaque_token, hash_token, verify_password
-from app.integrations import persona
+from app.integrations import persona, s3
 from app.integrations.persona import PersonaProviderError
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import IdentityVerification, KycDocument, User
 from app.modules.settings.schemas import (
+    KycDocumentResponse,
+    KycDocumentUploadRequest,
+    KycDocumentUploadResponse,
     KycStatusResponse,
     KycVerificationSessionResponse,
     SessionResponse,
     SessionsResponse,
 )
+from app.workers.tasks.kyc_document_scan import scan_kyc_document
 from app.workers.tasks.notifications import (
     send_email_change_alert,
     send_email_change_verification,
@@ -34,9 +39,46 @@ from app.workers.tasks.notifications import (
 EMAIL_CHANGE_PREFIX = "ec_"
 EMAIL_CHANGE_TTL_SECONDS = 86_400
 
+# Identity documents are photographs or scans, not archives or office files.
+# Restricting the set keeps what an admin opens during review to formats a
+# browser renders inertly, and the extension is taken from here rather than from
+# the client-supplied filename.
+KYC_DOCUMENT_MIME_EXTENSIONS = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "application/pdf": "pdf",
+}
+# A passport page or NIN slip is a photograph, not a data set. 10 MB is generous
+# for a phone camera capture and bounds what one account can push into storage.
+KYC_DOCUMENT_MAX_SIZE = 10 * 1024 * 1024
+KYC_DOCUMENT_UPLOAD_URL_TTL_SECONDS = 900
+# Four document types exist and a user may legitimately re-submit a rejected
+# one, so the cap sits above any honest need while still bounding abuse.
+KYC_MAX_DOCUMENTS = 10
+
 # Cap identity-verification session starts to limit per-check provider cost
 # from a single account: five new Persona inquiries per hour per user.
 _kyc_session_limiter = RateLimiter("kyc_session", limit=5, window=3600)
+# Manual submission costs storage rather than per-check provider fees, so the
+# window is wider — but still bounded, since each request reserves an object key.
+_kyc_document_limiter = RateLimiter("kyc_document", limit=20, window=3600)
+
+
+def _require_provider_verification() -> None:
+    """Reject provider-flow calls unless ``KYC_PROVIDER=persona``.
+
+    Under manual review the hosted provider flow is not part of the product.
+    Answering 404 rather than 501 keeps the disabled route indistinguishable
+    from one that was never deployed.
+
+    Raises:
+        HTTPException(404): If the platform is configured for manual review.
+    """
+    if get_settings().kyc_provider != "persona":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Provider identity verification is not enabled.",
+        )
 
 
 def _email_change_key(token: str) -> str:
@@ -72,10 +114,12 @@ async def start_identity_verification(
         The hosted Persona verification URL and inquiry id.
 
     Raises:
+        HTTPException(404): If the platform runs manual review (KYC_PROVIDER).
         HTTPException(409): If the user is already verified.
         HTTPException(429): If the per-user session window is exceeded.
         HTTPException(502): If Persona cannot create the inquiry.
     """
+    _require_provider_verification()
     if user.kyc_status == "verified":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -155,9 +199,11 @@ async def sync_kyc_from_return(
         The user's KYC status (and documents) after reconciliation.
 
     Raises:
-        HTTPException(404): If the inquiry is unknown or owned by another user.
+        HTTPException(404): If the platform runs manual review (KYC_PROVIDER),
+            or the inquiry is unknown or owned by another user.
         HTTPException(502): If Persona cannot be reached.
     """
+    _require_provider_verification()
     # Local import avoids a module-load cycle: webhooks.service pulls in several
     # modules at import time; settings.service is one of the leaves.
     from app.modules.webhooks.service import _apply_persona_decision
@@ -239,12 +285,30 @@ async def sync_kyc_from_return(
 
 
 async def get_kyc_status(db: AsyncSession, user: User) -> KycStatusResponse:
-    """Return the current user's KYC status and document metadata."""
+    """Return the current user's KYC status and submitted document metadata.
+
+    Rows still ``awaiting_upload`` are reservations, not submissions — the
+    presigned target was issued but the browser never completed the upload — so
+    they are excluded. Showing them would tell a user they had submitted a
+    document that does not exist.
+
+    Maps to: FR-SET-004.
+
+    Args:
+        db: Async DB session.
+        user: The authenticated user whose status is read.
+
+    Returns:
+        The user's KYC status and the metadata of every submitted document.
+    """
     documents = (
         (
             await db.execute(
                 select(KycDocument)
-                .where(KycDocument.user_id == user.id)
+                .where(
+                    KycDocument.user_id == user.id,
+                    KycDocument.scan_status != "awaiting_upload",
+                )
                 .order_by(desc(KycDocument.created_at))
             )
         )
@@ -252,6 +316,197 @@ async def get_kyc_status(db: AsyncSession, user: User) -> KycStatusResponse:
         .all()
     )
     return KycStatusResponse(kyc_status=user.kyc_status, documents=list(documents))
+
+
+async def request_kyc_document_upload_url(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    payload: KycDocumentUploadRequest,
+) -> KycDocumentUploadResponse:
+    """Reserve an identity document and return a private S3 POST upload target.
+
+    Creates the ``KycDocument`` row in ``awaiting_upload`` so the object key is
+    fixed before the browser uploads, then hands back a presigned POST policy
+    that S3 itself enforces the MIME type and size ceiling against. The account
+    does not move to ``pending`` here — only a confirmed upload opens a review.
+
+    The object key is built entirely from UUIDs and the MIME type, never from
+    the client-supplied filename, so no user input reaches the storage path.
+
+    Maps to: FR-AUTH-009.
+
+    Args:
+        db: Async DB session.
+        redis: Redis client backing the per-user rate-limit window.
+        user: The authenticated user submitting the document.
+        payload: Declared document type, filename, MIME type and size.
+
+    Returns:
+        The presigned POST target and the reserved document id.
+
+    Raises:
+        HTTPException(409): If the user's identity is already verified.
+        HTTPException(413): If the declared size exceeds the KYC ceiling.
+        HTTPException(415): If the MIME type is not an accepted document format.
+        HTTPException(422): If the per-user document cap is already reached.
+        HTTPException(429): If the per-user upload window is exceeded.
+    """
+    log = logger.bind(
+        module="kyc",
+        action="request_kyc_document_upload_url",
+        user_id=user.id,
+    )
+    # Unhappy paths first: a settled verification must not be silently reopened,
+    # and both file constraints are checked before any storage work happens.
+    if user.kyc_status == "verified":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Identity is already verified.",
+        )
+    if payload.mime_type not in KYC_DOCUMENT_MIME_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Identity documents must be a JPEG, PNG, or PDF.",
+        )
+    if payload.file_size > KYC_DOCUMENT_MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                "Identity documents must be "
+                f"{KYC_DOCUMENT_MAX_SIZE // (1024 * 1024)} MB or smaller."
+            ),
+        )
+
+    await _kyc_document_limiter.check(cast(RedisCounter, redis), str(user.id))
+
+    existing_count = await db.scalar(
+        select(func.count())
+        .select_from(KycDocument)
+        .where(KycDocument.user_id == user.id)
+    )
+    if (existing_count or 0) >= KYC_MAX_DOCUMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"At most {KYC_MAX_DOCUMENTS} identity documents can be held "
+                "on an account. Contact support to replace one."
+            ),
+        )
+
+    document_id = uuid4()
+    extension = KYC_DOCUMENT_MIME_EXTENSIONS[payload.mime_type]
+    s3_key = f"kyc/{user.id}/{document_id}.{extension}"
+    db.add(
+        KycDocument(
+            id=document_id,
+            user_id=user.id,
+            doc_type=payload.doc_type,
+            s3_key=s3_key,
+            mime_type=payload.mime_type,
+            file_size=payload.file_size,
+            status="pending",
+            scan_status="awaiting_upload",
+        )
+    )
+    settings = get_settings()
+    upload_target = s3.storage.presigned_post(
+        bucket=settings.s3_artifacts_bucket,
+        key=s3_key,
+        mime_type=payload.mime_type,
+        max_size=KYC_DOCUMENT_MAX_SIZE,
+        expires_in=KYC_DOCUMENT_UPLOAD_URL_TTL_SECONDS,
+    )
+    await db.commit()
+    log.bind(document_id=str(document_id)).info("kyc_upload_url_created")
+    return KycDocumentUploadResponse(
+        document_id=document_id,
+        upload_url=str(upload_target["url"]),
+        fields={
+            str(field_name): str(field_value)
+            for field_name, field_value in upload_target["fields"].items()
+        },
+        max_size=KYC_DOCUMENT_MAX_SIZE,
+        expires_in=KYC_DOCUMENT_UPLOAD_URL_TTL_SECONDS,
+    )
+
+
+async def confirm_kyc_document(
+    db: AsyncSession,
+    user: User,
+    document_id: UUID,
+) -> KycDocumentResponse:
+    """Confirm an uploaded identity document and open it for admin review.
+
+    Verifies the object actually landed in private storage, queues the malware
+    scan an admin's download is gated on, and moves the account to ``pending``
+    so it appears in the admin review queue. Idempotent: a repeated call returns
+    the document without queuing a second scan.
+
+    Maps to: FR-AUTH-009.
+
+    Args:
+        db: Async DB session.
+        user: The authenticated user who owns the document.
+        document_id: The reserved document to confirm.
+
+    Returns:
+        The confirmed document's metadata.
+
+    Raises:
+        HTTPException(404): If the document does not exist or is not the
+            caller's — the two are deliberately indistinguishable.
+        HTTPException(422): If no object was uploaded against the reservation.
+    """
+    log = logger.bind(
+        module="kyc",
+        action="confirm_kyc_document",
+        user_id=user.id,
+        document_id=str(document_id),
+    )
+    document = await db.scalar(
+        select(KycDocument).where(
+            KycDocument.id == document_id,
+            # Ownership is part of the lookup, not a check after it: a document
+            # belonging to someone else must be indistinguishable from one that
+            # does not exist.
+            KycDocument.user_id == user.id,
+        )
+    )
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Identity document not found.",
+        )
+    if document.scan_status != "awaiting_upload":
+        return KycDocumentResponse.model_validate(document)
+
+    settings = get_settings()
+    if not s3.storage.object_exists(settings.s3_artifacts_bucket, document.s3_key):
+        log.warning("kyc_document_missing_object")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Upload the document before confirming it.",
+        )
+
+    document.scan_status = "pending_scan"
+    # A submitted document is what puts the account in front of an admin; the
+    # admin queue is filtered on users whose kyc_status is pending.
+    if user.kyc_status != "verified":
+        user.kyc_status = "pending"
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="kyc_document_uploaded",
+        target_type="kyc_document",
+        target_id=document.id,
+        metadata={"doc_type": document.doc_type, "provider": "manual"},
+    )
+    await db.commit()
+    await db.refresh(document)
+    scan_kyc_document.delay(str(document.id))
+    log.info("kyc_document_uploaded")
+    return KycDocumentResponse.model_validate(document)
 
 
 async def list_sessions(

@@ -9,6 +9,7 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 
+import { AdminKycDocumentList } from "@/components/modules/admin/admin-kyc-document-list";
 import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { authTokenStore } from "@/lib/auth/token-store";
@@ -431,6 +432,9 @@ export function AdminUserDirectoryPanel() {
               {/* Expandable KYC review form */}
               {kycReviewUserId === item.user_id ? (
                 <div className="mt-4 grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4 col-span-full text-left">
+                  {/* The documents come first: the decision below is about
+                      them, and approving unlocks payouts. */}
+                  <AdminKycDocumentList userId={item.user_id} />
                   <label className="grid gap-2 text-sm font-semibold text-foreground">
                     Notes (optional)
                     <textarea

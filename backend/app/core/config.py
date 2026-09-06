@@ -214,6 +214,15 @@ class Settings(BaseSettings):
     paystack_webhook_secret: SecretStr | None = Field(
         default=None, alias="PAYSTACK_WEBHOOK_SECRET"
     )
+    # Which identity-verification route the platform runs. ``manual`` puts
+    # uploaded documents in front of an admin (FR-AUTH-009); ``persona`` hands
+    # off to the hosted provider flow. Manual is the default because the Persona
+    # organisation is inactive — its cheapest plan is far above what a pilot
+    # justifies — and a reachable provider link would only dead-end at a 403.
+    # The provider code stays in place; this flag is the way back to it.
+    kyc_provider: Literal["manual", "persona"] = Field(
+        default="manual", alias="KYC_PROVIDER"
+    )
     persona_api_key: SecretStr | None = Field(default=None, alias="PERSONA_API_KEY")
     persona_webhook_secret: SecretStr | None = Field(
         default=None, alias="PERSONA_WEBHOOK_SECRET"

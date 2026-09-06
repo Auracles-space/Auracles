@@ -1689,6 +1689,98 @@ components:
       - page_size
       title: AdminInvoicesResponse
       type: object
+    AdminKycDocumentDownloadResponse:
+      description: Short-lived presigned link to one identity document.
+      properties:
+        download_url:
+          title: Download Url
+          type: string
+        expires_in:
+          title: Expires In
+          type: integer
+      required:
+      - download_url
+      - expires_in
+      title: AdminKycDocumentDownloadResponse
+      type: object
+    AdminKycDocumentResponse:
+      description: 'Metadata for one identity document in the admin review queue.
+
+
+        Carries no storage key: the file is reached only through the download
+
+        endpoint, which checks the scan result and audits the access.'
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        doc_type:
+          title: Doc Type
+          type: string
+        file_size:
+          title: File Size
+          type: integer
+        id:
+          format: uuid
+          title: Id
+          type: string
+        mime_type:
+          title: Mime Type
+          type: string
+        notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Notes
+        reviewed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Reviewed At
+        reviewed_by:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Reviewed By
+        scan_status:
+          title: Scan Status
+          type: string
+        status:
+          title: Status
+          type: string
+      required:
+      - id
+      - doc_type
+      - mime_type
+      - file_size
+      - status
+      - scan_status
+      - reviewed_by
+      - reviewed_at
+      - notes
+      - created_at
+      title: AdminKycDocumentResponse
+      type: object
+    AdminKycDocumentsResponse:
+      description: Identity documents a user has submitted for manual review.
+      properties:
+        documents:
+          items:
+            $ref: '#/components/schemas/AdminKycDocumentResponse'
+          title: Documents
+          type: array
+        user_id:
+          format: uuid
+          title: User Id
+          type: string
+      required:
+      - user_id
+      - documents
+      title: AdminKycDocumentsResponse
+      type: object
     AdminKycReviewRequest:
       description: Request body for admin KYC review decisions.
       properties:
@@ -8199,7 +8291,14 @@ components:
       title: HealthResponse
       type: object
     KycDocumentResponse:
-      description: Public KYC document metadata returned to the document owner.
+      description: 'Public KYC document metadata returned to the document owner.
+
+
+        Deliberately omits ``s3_key``. Identity documents are delivered by presigned
+
+        URL only, and publishing the object key would hand out a target list that
+
+        outlives any single presigned link.'
       properties:
         created_at:
           format: date-time
@@ -8229,8 +8328,8 @@ components:
             type: string
           - type: 'null'
           title: Reviewed At
-        s3_key:
-          title: S3 Key
+        scan_status:
+          title: Scan Status
           type: string
         status:
           title: Status
@@ -8238,14 +8337,90 @@ components:
       required:
       - id
       - doc_type
-      - s3_key
       - mime_type
       - file_size
       - status
+      - scan_status
       - reviewed_at
       - notes
       - created_at
       title: KycDocumentResponse
+      type: object
+    KycDocumentUploadRequest:
+      description: 'Request for a presigned target to upload one identity document.
+
+
+        ``file_size`` is declared up front so an oversized file is refused before
+        a
+
+        single byte reaches S3; the presigned policy then enforces the same ceiling
+
+        server-side, so a client that lies about it still cannot exceed the cap.'
+      properties:
+        doc_type:
+          enum:
+          - passport
+          - drivers_license
+          - national_id
+          - proof_of_address
+          title: Doc Type
+          type: string
+        file_size:
+          exclusiveMinimum: 0.0
+          title: File Size
+          type: integer
+        filename:
+          maxLength: 255
+          minLength: 1
+          title: Filename
+          type: string
+        mime_type:
+          maxLength: 100
+          minLength: 1
+          title: Mime Type
+          type: string
+      required:
+      - doc_type
+      - filename
+      - mime_type
+      - file_size
+      title: KycDocumentUploadRequest
+      type: object
+    KycDocumentUploadResponse:
+      description: 'Presigned POST target for one identity document upload.
+
+
+        The client posts a multipart form to ``upload_url`` containing every entry
+
+        in ``fields`` followed by the file part, then calls the confirm endpoint
+
+        with ``document_id``.'
+      properties:
+        document_id:
+          format: uuid
+          title: Document Id
+          type: string
+        expires_in:
+          title: Expires In
+          type: integer
+        fields:
+          additionalProperties:
+            type: string
+          title: Fields
+          type: object
+        max_size:
+          title: Max Size
+          type: integer
+        upload_url:
+          title: Upload Url
+          type: string
+      required:
+      - document_id
+      - upload_url
+      - fields
+      - max_size
+      - expires_in
+      title: KycDocumentUploadResponse
       type: object
     KycStatusResponse:
       description: Authenticated user's KYC status and document metadata.
@@ -8306,7 +8481,6 @@ components:
           anyOf:
           - type: string
           - type: 'null'
-          default: null
           title: Inquiry Id
       required:
       - hosted_url
@@ -16699,6 +16873,77 @@ paths:
       security:
       - HTTPBearer: []
       summary: Review Kyc
+      tags:
+      - Admin
+  /v1/admin/users/{user_id}/kyc/documents:
+    get:
+      description: Returns the identity documents a user submitted for manual review.
+        Documents whose upload was never completed are omitted. Metadata only — fetch
+        the file itself from the download endpoint.
+      operationId: list_user_kyc_documents_v1_admin_users__user_id__kyc_documents_get
+      parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          format: uuid
+          title: User Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminKycDocumentsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List a user's submitted identity documents
+      tags:
+      - Admin
+  /v1/admin/users/{user_id}/kyc/documents/{document_id}/download:
+    get:
+      description: Returns a short-lived presigned URL for a submitted identity document.
+        The document must have cleared the virus scan. The access is audited against
+        the acting admin.
+      operationId: download_user_kyc_document_v1_admin_users__user_id__kyc_documents__document_id__download_get
+      parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          format: uuid
+          title: User Id
+          type: string
+      - in: path
+        name: document_id
+        required: true
+        schema:
+          format: uuid
+          title: Document Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminKycDocumentDownloadResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Open one submitted identity document
       tags:
       - Admin
   /v1/admin/users/{user_id}/roles:
@@ -27970,6 +28215,68 @@ paths:
       security:
       - HTTPBearer: []
       summary: Get Kyc Status
+      tags:
+      - Settings
+  /v1/settings/kyc/documents:
+    post:
+      description: Reserves an identity document and returns a presigned S3 POST policy.
+        Post the file to `upload_url` as multipart form data — every entry in `fields`
+        first, the file part last — then call the confirm endpoint. The document is
+        not submitted for review until it is confirmed.
+      operationId: request_kyc_document_upload_url_v1_settings_kyc_documents_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KycDocumentUploadRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycDocumentUploadResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Request an upload target for an identity document
+      tags:
+      - Settings
+  /v1/settings/kyc/documents/{document_id}/confirm:
+    post:
+      description: Confirms that the file reached storage, queues the malware scan,
+        and moves the account to `pending` so it enters the admin review queue. Idempotent.
+      operationId: confirm_kyc_document_v1_settings_kyc_documents__document_id__confirm_post
+      parameters:
+      - in: path
+        name: document_id
+        required: true
+        schema:
+          format: uuid
+          title: Document Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KycDocumentResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Confirm an uploaded identity document
       tags:
       - Settings
   /v1/settings/kyc/session:
