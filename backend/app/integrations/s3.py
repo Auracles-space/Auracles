@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, cast
 
+from botocore.config import Config as BotoConfig  # type: ignore[import-untyped]
 from botocore.exceptions import (  # type: ignore[import-untyped]
     BotoCoreError,
     ClientError,
@@ -26,7 +27,24 @@ def _aws_client_kwargs(settings: Settings) -> dict[str, Any]:
     Returns:
         Keyword arguments suitable for ``boto3.client``.
     """
-    kwargs: dict[str, Any] = {"region_name": settings.aws_default_region}
+    # addressing_style="virtual" is what pins presigned URLs to the bucket's
+    # own region. boto3 otherwise builds them against the legacy global host
+    # (`<bucket>.s3.amazonaws.com`), and since our buckets live in eu-west-2,
+    # S3 answers those with 307 TemporaryRedirect — so the browser re-sends the
+    # whole file to the regional host. Uploads still complete, which is how it
+    # went unnoticed: it silently doubled the bytes for every artifact upload.
+    # (signature_version alone does NOT fix this — it was measured.)
+    # Only against real AWS: LocalStack is addressed by a custom endpoint, and
+    # virtual-host style there would produce `http://<bucket>.localhost:4566`,
+    # a hostname that does not resolve. Path style is what LocalStack wants.
+    addressing = "path" if settings.aws_endpoint_url is not None else "virtual"
+    kwargs: dict[str, Any] = {
+        "region_name": settings.aws_default_region,
+        "config": BotoConfig(
+            signature_version="s3v4",
+            s3={"addressing_style": addressing},
+        ),
+    }
     if settings.aws_access_key_id is not None:
         kwargs["aws_access_key_id"] = settings.aws_access_key_id.get_secret_value()
     if settings.aws_secret_access_key is not None:
