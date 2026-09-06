@@ -89,8 +89,13 @@ async def start_identity_verification(
         action="verification_started",
         user_id=user.id,
     )
+    # Hosted flow, not `create_inquiry`: Persona mints the inquiry when the user
+    # lands on the link, so nothing is called server-side. The Auracles Persona
+    # environment does not have `inquiries.create.api` enabled and no API key can
+    # grant it, so the API path returns 403 for every key (verified 2026-09-06).
+    # Consequence: no inquiry id yet — the row is claimed later by reference id.
     try:
-        inquiry = await persona.create_inquiry(reference_id=str(user.id))
+        hosted_url = persona.build_hosted_inquiry_url(reference_id=str(user.id))
     except PersonaProviderError as exc:
         log.error("persona_inquiry_failed", error=str(exc))
         raise HTTPException(
@@ -102,7 +107,7 @@ async def start_identity_verification(
         IdentityVerification(
             user_id=user.id,
             provider="persona",
-            inquiry_id=inquiry.inquiry_id,
+            inquiry_id=None,
             status="created",
         )
     )
@@ -118,8 +123,8 @@ async def start_identity_verification(
     await db.commit()
     log.info("verification_started")
     return KycVerificationSessionResponse(
-        hosted_url=inquiry.hosted_url,
-        inquiry_id=inquiry.inquiry_id,
+        hosted_url=hosted_url,
+        inquiry_id=None,
     )
 
 
@@ -162,6 +167,20 @@ async def sync_kyc_from_return(
             IdentityVerification.inquiry_id == inquiry_id
         )
     )
+    if record is None:
+        # First return from a hosted flow: the row has no inquiry id yet, so
+        # match the caller's own pending row. Scoped to `user.id` — the id in
+        # the request is attacker-supplied, and matching it against anyone
+        # else's pending row would let a caller bind a stranger's inquiry.
+        record = await db.scalar(
+            select(IdentityVerification)
+            .where(
+                IdentityVerification.user_id == user.id,
+                IdentityVerification.inquiry_id.is_(None),
+            )
+            .order_by(IdentityVerification.created_at.desc())
+            .limit(1)
+        )
     if record is None or record.user_id != user.id:
         # Deny by default; do not distinguish "unknown" from "not yours".
         raise HTTPException(
@@ -184,6 +203,26 @@ async def sync_kyc_from_return(
             detail="Identity verification provider is unavailable.",
         ) from exc
 
+    # Persona is the authority on who this inquiry belongs to. The id arrives
+    # from the client (Persona appends it to the return URL), and under hosted
+    # flow the local row cannot vouch for it: a row awaiting its id would
+    # otherwise adopt any inquiry the caller names, including an approved one
+    # belonging to somebody else. Deny by default on any mismatch.
+    if inquiry.reference_id != str(user.id):
+        log.warning(
+            "inquiry_reference_mismatch",
+            provider="persona",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Verification inquiry not found.",
+        )
+
+    # Read the id before the rollback below: rolling back expires every ORM
+    # instance, so touching `user.id` afterwards triggers a lazy reload from a
+    # non-async context and raises MissingGreenlet.
+    reference_id = str(user.id)
+
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -191,6 +230,7 @@ async def sync_kyc_from_return(
             db,
             inquiry_id=inquiry_id,
             inquiry_status=inquiry.status,
+            reference_id=reference_id,
         )
     log.info("verification_synced", ingest_status=ingest_status)
 

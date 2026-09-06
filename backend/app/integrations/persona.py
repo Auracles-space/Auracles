@@ -27,6 +27,9 @@ import httpx
 from app.core.config import Settings, get_settings
 
 PERSONA_API_BASE_URL = "https://api.withpersona.com/api/v1"
+# Hosted flow lives on the account's inquiry subdomain, not the API host.
+# `inquiry` is Persona's default; change this only if the org sets a custom one.
+PERSONA_HOSTED_FLOW_URL = "https://inquiry.withpersona.com/verify"
 PERSONA_API_VERSION = "2023-01-05"
 PERSONA_TIMEOUT_SECONDS = 15.0
 
@@ -213,6 +216,59 @@ def _append_redirect(hosted_url: str, redirect_url: str | None) -> str:
         return hosted_url
     separator = "&" if "?" in hosted_url else "?"
     return f"{hosted_url}{separator}{urlencode({'redirect-uri': redirect_url})}"
+
+
+def _require_environment_id(settings: Settings) -> str:
+    """Return the configured Persona environment id or raise.
+
+    Deliberately has no default. The environment id is what selects Sandbox
+    versus Production on a hosted link, so falling back to either one would
+    quietly send staging testers into the wrong environment — and in the
+    Production direction that means real identity checks against real people.
+    """
+    if settings.persona_environment_id is None:
+        raise PersonaProviderError("PERSONA_ENVIRONMENT_ID is not configured.")
+    return settings.persona_environment_id
+
+
+def build_hosted_inquiry_url(
+    *,
+    reference_id: str,
+    settings: Settings | None = None,
+) -> str:
+    """Build the hosted-flow link that starts identity verification.
+
+    Persona mints the inquiry when the user lands on this URL, so nothing is
+    called server-side and no API-key permission is involved. This is why the
+    app uses it in preference to ``create_inquiry``: the Auracles Persona
+    environment does not have ``inquiries.create.api`` enabled, and a key
+    cannot grant it — three separate sandbox keys were refused identically
+    (2026-09-06).
+
+    The consequence to know about: the inquiry id does not exist yet, so the
+    ``IdentityVerification`` row is written with a null ``inquiry_id`` and is
+    matched later by ``reference_id`` — see ``_apply_persona_decision``.
+
+    Args:
+        reference_id: Our user id, tagged on the inquiry so the webhook and the
+            on-return sync can map Persona's verdict back to the user.
+        settings: Optional settings override (defaults to process settings).
+
+    Returns:
+        Absolute hosted-flow URL for the user's browser.
+
+    Raises:
+        PersonaProviderError: If the template id or environment id is missing.
+    """
+    resolved = settings or get_settings()
+    params = {
+        "inquiry-template-id": _require_template_id(resolved),
+        "environment-id": _require_environment_id(resolved),
+        "reference-id": reference_id,
+    }
+    if resolved.persona_redirect_url:
+        params["redirect-uri"] = resolved.persona_redirect_url
+    return f"{PERSONA_HOSTED_FLOW_URL}?{urlencode(params)}"
 
 
 def _extract_one_time_link(payload: dict[str, Any]) -> str:

@@ -30,8 +30,20 @@ from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_async
 
 
-def _persona_event(inquiry_id: str, inquiry_status: str) -> dict[str, Any]:
-    """Build a Persona inquiry webhook event body."""
+def _persona_event(
+    inquiry_id: str,
+    inquiry_status: str,
+    reference_id: str | None = None,
+) -> dict[str, Any]:
+    """Build a Persona inquiry webhook event body.
+
+    ``reference_id`` is our user id as tagged on the hosted-flow link. Persona
+    includes it on real events; it is what lets the first event find a row that
+    has no inquiry id yet.
+    """
+    attributes: dict[str, Any] = {"status": inquiry_status}
+    if reference_id is not None:
+        attributes["reference-id"] = reference_id
     return {
         "data": {
             "type": "event",
@@ -42,7 +54,7 @@ def _persona_event(inquiry_id: str, inquiry_status: str) -> dict[str, Any]:
                     "data": {
                         "type": "inquiry",
                         "id": inquiry_id,
-                        "attributes": {"status": inquiry_status},
+                        "attributes": attributes,
                     }
                 },
             },
@@ -103,7 +115,7 @@ async def webhook_context() -> AsyncIterator[None]:
         await engine.dispose()
 
 
-async def _seed_inquiry(email: str, inquiry_id: str) -> UUID:
+async def _seed_inquiry(email: str, inquiry_id: str | None) -> UUID:
     """Create a user with a pending Persona inquiry and return the user id."""
     async with async_session_factory() as session:
         async with session.begin():
@@ -217,3 +229,73 @@ async def test_invalid_signature_is_rejected_without_state_change(
     assert response.status_code == 400
     assert user is not None and user.kyc_status == "pending"
     assert audit is not None
+
+
+async def test_hosted_flow_inquiry_is_adopted_by_reference_id(
+    client: AsyncClient,
+    migrated_database: None,
+    stub_persona_signature: None,
+    webhook_context: None,
+) -> None:
+    """The first event claims the pending row that has no inquiry id yet.
+
+    Verification starts from a hosted-flow link, so Persona mints the inquiry
+    only when the user arrives and the row is written with a null inquiry_id.
+    Without matching on reference-id the decision would be dropped as an
+    unknown inquiry and the user would stay pending forever.
+    """
+    user_id = await _seed_inquiry("hosted@auracles.space", None)
+    body = json.dumps(
+        _persona_event("inq_hosted", "approved", reference_id=str(user_id))
+    ).encode()
+
+    response = await client.post(
+        "/v1/webhooks/persona",
+        content=body,
+        headers={"Persona-Signature": "valid"},
+    )
+
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+        record = await session.scalar(
+            select(IdentityVerification).where(
+                IdentityVerification.user_id == user_id
+            )
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "processed"
+    assert user is not None and user.kyc_status == "verified"
+    # The id is adopted, so later events for the same inquiry match directly.
+    assert record is not None and record.inquiry_id == "inq_hosted"
+
+
+async def test_hosted_flow_event_without_matching_user_is_not_applied(
+    client: AsyncClient,
+    migrated_database: None,
+    stub_persona_signature: None,
+    webhook_context: None,
+) -> None:
+    """A reference id that matches no pending row changes nothing.
+
+    Guards the adoption path against binding an inquiry to an arbitrary user:
+    an unknown reference is reported as received and dropped, never applied.
+    """
+    user_id = await _seed_inquiry("nomatch@auracles.space", "inq_owned")
+    stranger_id = "00000000-0000-4000-8000-0000000000ff"
+    body = json.dumps(
+        _persona_event("inq_stranger", "approved", reference_id=stranger_id)
+    ).encode()
+
+    response = await client.post(
+        "/v1/webhooks/persona",
+        content=body,
+        headers={"Persona-Signature": "valid"},
+    )
+
+    async with async_session_factory() as session:
+        user = await session.get(User, user_id)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "received"
+    assert user is not None and user.kyc_status == "pending"

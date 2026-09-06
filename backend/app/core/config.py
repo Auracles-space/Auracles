@@ -222,6 +222,11 @@ class Settings(BaseSettings):
         default=None, alias="PERSONA_INQUIRY_TEMPLATE_ID"
     )
     persona_redirect_url: str | None = Field(default=None, alias="PERSONA_REDIRECT_URL")
+    # Selects Sandbox vs Production on the hosted flow link. Not a credential —
+    # it travels as a query parameter in the URL the user's browser follows.
+    persona_environment_id: str | None = Field(
+        default=None, alias="PERSONA_ENVIRONMENT_ID"
+    )
     google_client_id: str | None = Field(default=None, alias="GOOGLE_CLIENT_ID")
     google_client_secret: SecretStr | None = Field(
         default=None, alias="GOOGLE_CLIENT_SECRET"

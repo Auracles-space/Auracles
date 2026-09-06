@@ -165,6 +165,13 @@ module "ecs" {
     # which is cosmetic until the staging frontend is up.
     PERSONA_INQUIRY_TEMPLATE_ID = "itmpl_AS7SnZZrGnYx7CrsGbuNvddFbqbD7Q"
     PERSONA_REDIRECT_URL        = "https://staging.auracles.space/settings/kyc"
+    # Selects Sandbox vs Production on the hosted-flow link, and it is the only
+    # thing that does — there is no default, because guessing wrong in the
+    # Production direction means running real identity checks on real people.
+    # Verification uses a hosted link rather than POST /inquiries: this Persona
+    # environment does not have `inquiries.create.api` enabled and no API key
+    # can grant it (three sandbox keys refused identically, 2026-09-06).
+    PERSONA_ENVIRONMENT_ID = "env_AS7SnZZwmpe2bP5cunyLJntESMEfaq"
     # Google OAuth. These two must match the "Authorized redirect URI" entries
     # in the Google Cloud console byte for byte — Google compares the string,
     # not the URL, so a trailing slash or a different host is a rejected login.

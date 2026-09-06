@@ -342,7 +342,14 @@ class IdentityVerification(CreatedAtMixin, Base):
         nullable=False,
         server_default="persona",
     )
-    inquiry_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    # Null until Persona mints the inquiry. The app starts verification with a
+    # hosted-flow link (no API call), so the id does not exist until the user
+    # lands on it — the row is matched by user_id in the meantime and the id is
+    # backfilled by the first webhook or on-return sync. Still unique once set;
+    # Postgres permits many NULLs under a unique constraint.
+    inquiry_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True
+    )
     status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

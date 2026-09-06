@@ -34,10 +34,15 @@ class KycVerificationSessionResponse(BaseModel):
 
     The frontend redirects the user to ``hosted_url`` to complete identity
     verification; the Persona webhook later flips ``kyc_status``.
+
+    ``inquiry_id`` is null on issue. The link is a hosted flow, so Persona mints
+    the inquiry only when the user arrives — the id first reaches us on the
+    return redirect (as ``inquiry-id``) or on the webhook. Clients must not
+    depend on it being present here.
     """
 
     hosted_url: str
-    inquiry_id: str
+    inquiry_id: str | None = None
 
 
 class KycSyncRequest(BaseModel):

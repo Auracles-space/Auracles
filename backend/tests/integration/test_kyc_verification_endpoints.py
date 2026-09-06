@@ -22,7 +22,7 @@ from sqlalchemy import create_engine, select
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
-from app.integrations.persona import PersonaInquiry, PersonaInquiryStatus
+from app.integrations.persona import PersonaInquiryStatus
 from app.main import app
 from app.modules.auth.models import IdentityVerification, User, UserRole
 from app.modules.settings import service as settings_service
@@ -51,11 +51,17 @@ class FakeRateLimitRedis:
         return 3600
 
 
-async def _fake_create_inquiry(*, reference_id: str, **_: Any) -> PersonaInquiry:
-    """Return a deterministic Persona inquiry without any network call."""
-    return PersonaInquiry(
-        inquiry_id=f"inq_{reference_id[:8]}",
-        hosted_url=f"https://withpersona.com/verify?inquiry-id=inq_{reference_id[:8]}",
+def _fake_hosted_url(*, reference_id: str, **_: Any) -> str:
+    """Return a deterministic hosted-flow link without reading settings.
+
+    Hosted flow needs no network call at all — the URL is built locally — so
+    this stands in only to keep the test independent of whether
+    PERSONA_ENVIRONMENT_ID happens to be set in the runner's environment.
+    """
+    return (
+        "https://inquiry.withpersona.com/verify"
+        f"?inquiry-template-id=itmpl_test&environment-id=env_test"
+        f"&reference-id={reference_id}"
     )
 
 
@@ -87,12 +93,12 @@ async def verification_context() -> AsyncIterator[None]:
     await cleanup()
 
     app.dependency_overrides[get_redis] = lambda: FakeRateLimitRedis()
-    original_create = settings_service.persona.create_inquiry
-    settings_service.persona.create_inquiry = _fake_create_inquiry  # type: ignore[assignment]
+    original_create = settings_service.persona.build_hosted_inquiry_url
+    settings_service.persona.build_hosted_inquiry_url = _fake_hosted_url  # type: ignore[assignment]
     try:
         yield
     finally:
-        settings_service.persona.create_inquiry = original_create  # type: ignore[assignment]
+        settings_service.persona.build_hosted_inquiry_url = original_create  # type: ignore[assignment]
         app.dependency_overrides.pop(get_redis, None)
         await cleanup()
         await engine.dispose()
@@ -132,7 +138,13 @@ async def test_start_session_creates_inquiry_and_marks_pending(
     migrated_database: None,
     verification_context: None,
 ) -> None:
-    """Starting a session returns a hosted URL and records the inquiry."""
+    """Starting a session returns a hosted URL and records a pending row.
+
+    Under hosted flow the inquiry does not exist yet — Persona mints it when
+    the user opens the link — so the row is written with a null ``inquiry_id``
+    and the response carries none. The id arrives later, on the return sync or
+    the webhook.
+    """
     user_id = await _create_user("verify@auracles.space", ["operator"])
 
     response = await client.post(
@@ -150,10 +162,13 @@ async def test_start_session_creates_inquiry_and_marks_pending(
         )
 
     assert response.status_code == 200
-    assert response.json()["hosted_url"].startswith("https://withpersona.com/verify")
-    assert response.json()["inquiry_id"].startswith("inq_")
+    assert response.json()["hosted_url"].startswith(
+        "https://inquiry.withpersona.com/verify"
+    )
+    assert response.json()["inquiry_id"] is None
     assert user is not None and user.kyc_status == "pending"
     assert inquiry is not None and inquiry.status == "created"
+    assert inquiry.inquiry_id is None
     assert audit_log is not None
 
 
@@ -168,7 +183,7 @@ async def test_start_session_requires_authentication(
     assert response.status_code == 401
 
 
-async def _seed_inquiry(user_id: UUID, inquiry_id: str) -> None:
+async def _seed_inquiry(user_id: UUID, inquiry_id: str | None) -> None:
     """Seed a pending identity-verification row as `session` start would."""
     async with async_session_factory() as session:
         async with session.begin():
@@ -325,3 +340,54 @@ async def test_start_session_conflicts_when_already_verified(
     )
 
     assert response.status_code == 409
+
+
+async def test_sync_rejects_inquiry_belonging_to_another_user(
+    client: AsyncClient,
+    migrated_database: None,
+    verification_context: None,
+) -> None:
+    """An inquiry Persona says belongs to somebody else is refused.
+
+    The inquiry id is supplied by the caller (Persona appends it to the return
+    URL), and under hosted flow a row awaiting its id would otherwise adopt
+    whatever id was named — letting a caller claim a stranger's approved
+    inquiry and verify themselves with it. Persona's reference-id is the
+    authority, and a mismatch must 404 without touching KYC state.
+    """
+    attacker_id = await _create_user("attacker@auracles.space", ["operator"])
+    victim_id = await _create_user("victim@auracles.space", ["operator"])
+    # The attacker has a pending hosted-flow row with no inquiry id yet.
+    await _seed_inquiry(attacker_id, None)
+
+    async def fake_fetch(*, inquiry_id: str, **_: Any) -> PersonaInquiryStatus:
+        # Persona reports the inquiry as the victim's, not the caller's.
+        return PersonaInquiryStatus(
+            inquiry_id=inquiry_id,
+            status="approved",
+            reference_id=str(victim_id),
+        )
+
+    original = settings_service.persona.fetch_inquiry
+    settings_service.persona.fetch_inquiry = fake_fetch  # type: ignore[assignment]
+    try:
+        response = await client.post(
+            "/v1/settings/kyc/sync",
+            headers=_auth_headers(attacker_id, ["operator"]),
+            json={"inquiry_id": "inq_victim"},
+        )
+    finally:
+        settings_service.persona.fetch_inquiry = original  # type: ignore[assignment]
+
+    async with async_session_factory() as session:
+        attacker = await session.get(User, attacker_id)
+        record = await session.scalar(
+            select(IdentityVerification).where(
+                IdentityVerification.user_id == attacker_id
+            )
+        )
+
+    assert response.status_code == 404
+    assert attacker is not None and attacker.kyc_status == "pending"
+    # The row must not have adopted the stranger's inquiry id either.
+    assert record is not None and record.inquiry_id is None

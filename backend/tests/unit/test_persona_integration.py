@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -19,6 +20,7 @@ import respx
 from app.core.config import Settings
 from app.integrations.persona import (
     PersonaProviderError,
+    build_hosted_inquiry_url,
     create_inquiry,
     fetch_inquiry,
     verify_webhook,
@@ -174,3 +176,79 @@ def test_verify_webhook_accepts_valid_signature_and_rejects_tampering() -> None:
 
     with pytest.raises(PersonaProviderError):
         verify_webhook(payload, None, settings=PERSONA_SETTINGS)
+
+
+HOSTED_SETTINGS = Settings(
+    PERSONA_API_KEY="persona_test_key",
+    PERSONA_WEBHOOK_SECRET="wbhsec_test",
+    PERSONA_INQUIRY_TEMPLATE_ID="itmpl_test",
+    PERSONA_ENVIRONMENT_ID="env_test",
+    PERSONA_REDIRECT_URL="https://auracles.space/settings/kyc",
+)
+
+
+def test_build_hosted_inquiry_url_carries_template_environment_and_reference() -> None:
+    """The hosted link addresses the template and tags the user reference.
+
+    Hosted flow is how inquiries are created: Persona mints the inquiry when
+    the user lands, so no API call and no ``inquiries.create.api`` permission
+    is involved. The reference id is what later maps the webhook back to the
+    user, since the inquiry id does not exist until the user arrives.
+    """
+    url = build_hosted_inquiry_url(
+        reference_id="11111111-1111-1111-1111-111111111111",
+        settings=HOSTED_SETTINGS,
+    )
+
+    parsed = urlparse(url)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "inquiry.withpersona.com"
+    assert parsed.path == "/verify"
+
+    query = parse_qs(parsed.query)
+    assert query["inquiry-template-id"] == ["itmpl_test"]
+    assert query["environment-id"] == ["env_test"]
+    assert query["reference-id"] == ["11111111-1111-1111-1111-111111111111"]
+    assert query["redirect-uri"] == ["https://auracles.space/settings/kyc"]
+
+
+def test_build_hosted_inquiry_url_requires_environment_id() -> None:
+    """A missing environment id fails loudly rather than defaulting.
+
+    Persona resolves Sandbox vs Production from this parameter. Omitting it
+    would silently send staging testers into the production environment.
+    """
+    settings = Settings(
+        PERSONA_API_KEY="persona_test_key",
+        PERSONA_WEBHOOK_SECRET="wbhsec_test",
+        PERSONA_INQUIRY_TEMPLATE_ID="itmpl_test",
+    )
+
+    with pytest.raises(PersonaProviderError):
+        build_hosted_inquiry_url(
+            reference_id="11111111-1111-1111-1111-111111111111",
+            settings=settings,
+        )
+
+
+def test_build_hosted_inquiry_url_omits_redirect_when_unset() -> None:
+    """No configured redirect means no redirect-uri parameter, not an empty one.
+
+    ``PERSONA_REDIRECT_URL`` is passed as None explicitly: a developer's local
+    ``.env`` supplies one, and inheriting it would make this assertion pass or
+    fail depending on whose machine ran it.
+    """
+    settings = Settings(
+        PERSONA_API_KEY="persona_test_key",
+        PERSONA_WEBHOOK_SECRET="wbhsec_test",
+        PERSONA_INQUIRY_TEMPLATE_ID="itmpl_test",
+        PERSONA_ENVIRONMENT_ID="env_test",
+        PERSONA_REDIRECT_URL=None,
+    )
+
+    url = build_hosted_inquiry_url(
+        reference_id="11111111-1111-1111-1111-111111111111",
+        settings=settings,
+    )
+
+    assert "redirect-uri" not in parse_qs(urlparse(url).query)

@@ -2021,13 +2021,75 @@ async def _audit_persona_invalid_signature(db: AsyncSession) -> None:
         )
 
 
+async def _adopt_hosted_inquiry(
+    db: AsyncSession,
+    *,
+    inquiry_id: str,
+    reference_id: str,
+) -> IdentityVerification | None:
+    """Attach a freshly minted inquiry id to the user's pending hosted-flow row.
+
+    Hosted flow gives us the inquiry id only once the user reaches Persona, so
+    the row starts with a null id and is claimed here on the first event.
+
+    ``reference_id`` arrives on a signature-verified webhook, but it is still
+    provider-supplied input: it is parsed as a UUID rather than trusted into a
+    query, and a value that matches no pending row simply yields None, which the
+    caller reports as an unknown inquiry.
+
+    Args:
+        db: Session inside the caller's transaction.
+        inquiry_id: Persona's ``inq_...`` id to adopt.
+        reference_id: The user id we tagged on the hosted link.
+
+    Returns:
+        The now-identified row, or None when there is nothing to adopt.
+    """
+    try:
+        user_id = UUID(reference_id)
+    except ValueError:
+        logger.bind(module="webhooks", action="persona_webhook").warning(
+            "unparseable_reference_id", provider="persona"
+        )
+        return None
+
+    record = await db.scalar(
+        select(IdentityVerification)
+        .where(
+            IdentityVerification.user_id == user_id,
+            IdentityVerification.inquiry_id.is_(None),
+        )
+        .order_by(IdentityVerification.created_at.desc())
+        .limit(1)
+        .with_for_update()
+    )
+    if record is None:
+        return None
+
+    record.inquiry_id = inquiry_id
+    logger.bind(
+        module="webhooks",
+        action="persona_webhook",
+        user_id=user_id,
+        inquiry_id=inquiry_id,
+    ).info("hosted_inquiry_adopted")
+    return record
+
+
 async def _apply_persona_decision(
     db: AsyncSession,
     *,
     inquiry_id: str,
     inquiry_status: str,
+    reference_id: str | None = None,
 ) -> str:
     """Apply one Persona inquiry decision to identity + KYC state.
+
+    Verification starts from a hosted-flow link, so the inquiry id does not
+    exist when the row is written (see ``persona.build_hosted_inquiry_url``).
+    The first event for an inquiry therefore matches on ``reference_id`` — our
+    user id, tagged on the inquiry — and adopts the id onto that row. Later
+    events for the same inquiry match on the id directly.
 
     Returns the webhook ingest status: ``processed`` when a decision is applied,
     ``duplicate`` when the inquiry already reached a terminal state, or
@@ -2038,6 +2100,10 @@ async def _apply_persona_decision(
         .where(IdentityVerification.inquiry_id == inquiry_id)
         .with_for_update()
     )
+    if record is None and reference_id is not None:
+        record = await _adopt_hosted_inquiry(
+            db, inquiry_id=inquiry_id, reference_id=reference_id
+        )
     if record is None:
         logger.bind(
             module="webhooks",
@@ -2140,6 +2206,15 @@ async def handle_persona_webhook(
         if isinstance(inquiry_attributes, dict)
         else None
     )
+    # Our user id, tagged on the hosted link. Carries the first event of a
+    # hosted-flow inquiry back to the row that has no inquiry id yet.
+    reference_id = (
+        inquiry_attributes.get("reference-id")
+        if isinstance(inquiry_attributes, dict)
+        else None
+    )
+    if not isinstance(reference_id, str):
+        reference_id = None
     if not isinstance(inquiry_id, str) or not isinstance(inquiry_status, str):
         # Could not locate the inquiry id/status at the expected envelope path.
         # Log structure only (event name + resource type/keys) so a real-world
@@ -2169,6 +2244,7 @@ async def handle_persona_webhook(
                 db,
                 inquiry_id=inquiry_id,
                 inquiry_status=inquiry_status,
+                reference_id=reference_id,
             )
     except Exception as exc:
         if db.in_transaction():
