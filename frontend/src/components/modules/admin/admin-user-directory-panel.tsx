@@ -444,10 +444,9 @@ export function AdminUserDirectoryPanel() {
                       value={kycNotes}
                     />
                   </label>
-                  <label className="grid gap-2 text-sm font-semibold text-foreground">
-                    Authenticator code
-                    <TotpInput onChange={setTotpCode} value={totpCode} />
-                  </label>
+                  {/* TotpInput renders its own label; wrapping it in another
+                      duplicated the caption and nested a label inside a label. */}
+                  <TotpInput onChange={setTotpCode} value={totpCode} />
                   <div className="flex flex-wrap gap-3">
                     <Button
                       disabled={kycBusy || totpCode.trim().length < 6}
