@@ -78,7 +78,12 @@ resource "aws_s3_bucket_cors_configuration" "this" {
 
   cors_rule {
     allowed_origins = var.cors_allowed_origins
-    allowed_methods = ["GET", "PUT", "HEAD"]
+    # POST is the one that matters: every browser upload in the app goes through
+    # a presigned *POST* policy (generate_presigned_post), not a presigned PUT.
+    # Without it the browser's preflight fails and the upload dies as an opaque
+    # network error — artifacts, avatars, org logos, deliverables and KYC
+    # documents alike. PUT stays for any direct-PUT path and costs nothing.
+    allowed_methods = ["GET", "POST", "PUT", "HEAD"]
     allowed_headers = ["*"]
     expose_headers  = ["ETag"]
     max_age_seconds = 3600
