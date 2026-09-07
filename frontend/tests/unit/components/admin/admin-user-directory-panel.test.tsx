@@ -152,4 +152,35 @@ describe("AdminUserDirectoryPanel", () => {
       await within(userCard).findByText(/KYC: verified/i),
     ).toBeInTheDocument();
   });
+
+  it("clears the authenticator code after a KYC decision", async () => {
+    // A spent code left in the field carries into the next user's review, where
+    // the backend rejects it as a replay — the reviewer meets a confusing
+    // "Invalid 2FA code" on a code their app is still showing.
+    vi.mocked(reviewKycV1AdminUsersUserIdKycPatch).mockResolvedValue({
+      data: { user_id: "user-1", kyc_status: "verified" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<AdminUserDirectoryPanel />);
+    const userCard = await screen.findByRole("article", {
+      name: /ada contributor/i,
+    });
+
+    fireEvent.click(within(userCard).getByRole("button", { name: /review kyc/i }));
+    fireEvent.change(within(userCard).getByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(within(userCard).getByRole("button", { name: /approve kyc/i }));
+
+    await waitFor(() => {
+      expect(reviewKycV1AdminUsersUserIdKycPatch).toHaveBeenCalled();
+    });
+
+    // The code field is shared across every TOTP-gated action in the panel, so
+    // opening any of them next is what would surface a leftover code.
+    fireEvent.click(within(userCard).getByRole("button", { name: /suspend/i }));
+    expect(within(userCard).getByLabelText(/authenticator code/i)).toHaveValue("");
+  });
 });

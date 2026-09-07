@@ -246,6 +246,10 @@ export function AdminUserDirectoryPanel() {
       };
     });
     setKycNotes("");
+    // Clear the code too, as suspend/unsuspend do. A spent code left in the
+    // field carries into the next user's review, where the backend rejects it
+    // as a replay — so the reviewer would meet a confusing "Invalid 2FA code".
+    setTotpCode("");
     setKycReviewUserId(null);
   }
 
@@ -396,6 +400,7 @@ export function AdminUserDirectoryPanel() {
                   <Button
                     onClick={() => {
                       setKycNotes("");
+                      setTotpCode("");
                       setKycReviewUserId(item.user_id);
                     }}
                     className="min-h-10 px-4"
@@ -468,6 +473,7 @@ export function AdminUserDirectoryPanel() {
                     <Button
                       onClick={() => {
                         setKycNotes("");
+                        setTotpCode("");
                         setKycReviewUserId(null);
                       }}
                       variant="secondary"
