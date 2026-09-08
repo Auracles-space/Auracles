@@ -337,6 +337,52 @@ async def test_me_exposes_pending_attestor_role(
     assert body["pending_roles"] == ["attestor"]
 
 
+async def test_me_omits_a_usable_role_from_pending_roles(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+) -> None:
+    """An unstamped Contributor grant is active, so it is not reported pending.
+
+    Only Attestor is gated on approval. Every other role is usable the moment
+    it exists, so a null ``approved_at`` on one carries no meaning — reporting
+    it under ``pending_roles`` describes a working role as awaiting approval
+    and makes the two lists overlap.
+    """
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = User(
+                email="unstamped-contributor@auracles.space",
+                password_hash=hash_password("CorrectHorse9"),
+                display_name="Unstamped Contributor",
+                email_verified=True,
+            )
+            session.add(user)
+            await session.flush()
+            session.add(
+                UserRole(user_id=user.id, role="contributor", approved_at=None)
+            )
+
+    login = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": "unstamped-contributor@auracles.space",
+            "password": "CorrectHorse9",
+        },
+    )
+    access_token = login.json()["access_token"]
+    me_response = await client.get(
+        "/v1/auth/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    body = me_response.json()
+    assert me_response.status_code == 200
+    assert body["roles"] == ["contributor"]
+    assert body["pending_roles"] == []
+
+
 async def test_login_rejects_unverified_and_deactivated_accounts(
     client: AsyncClient,
     migrated_database: None,

@@ -300,15 +300,22 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
             Commission and deliver custom work
           </h1>
         </div>
+        {/* Posting is Operator-gated but the route guard admits Contributors,
+            so an unconditional link walked them through the whole form only to
+            lose it to a 403 on submit. Point them at the role instead — a
+            Contributor who wants to commission work is a customer, not an
+            error. */}
         <Link
           className="inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
           href={
-            mode.kind === "org"
-              ? `${projectBasePath}?view=create`
-              : `${projectBasePath}/new`
+            !showOperator
+              ? `/settings/roles?next=${encodeURIComponent(`${projectBasePath}/new`)}`
+              : mode.kind === "org"
+                ? `${projectBasePath}?view=create`
+                : `${projectBasePath}/new`
           }
         >
-          Post project
+          {showOperator ? "Post project" : "Become an Operator to post"}
         </Link>
       </div>
 

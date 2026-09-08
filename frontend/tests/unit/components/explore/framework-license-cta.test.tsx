@@ -20,6 +20,10 @@ vi.mock("@/lib/auth/current-user-session", () => ({
   loadCurrentUserSession: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/explore/fw-1",
+}));
+
 vi.mock("@/lib/generated/sdk.gen", () => ({
   listOperatorLibrary: vi.fn(),
   listMyOrganizationsV1OrgsMineGet: vi.fn(),
@@ -183,6 +187,29 @@ describe("FrameworkLicenseCta", () => {
 
     const link = await screen.findByRole("link", { name: /license framework/i });
     expect(link).toHaveAttribute("href", `/checkout/${FRAMEWORK_ID}`);
+  });
+
+  it("offers the Operator role to a signed-in Contributor instead of checkout", async () => {
+    // Only Operators can hold a license, and /checkout is role-guarded, so the
+    // license link was a wall for a Contributor-only account. The role page is
+    // the way through, and it returns them to this framework afterwards.
+    vi.mocked(loadCurrentUserSession).mockResolvedValue(
+      session({ roles: ["contributor"] }),
+    );
+
+    render(
+      <FrameworkLicenseCta contributorId="owner-9" frameworkId={FRAMEWORK_ID} />,
+    );
+
+    const cta = await screen.findByRole("link", { name: /become an operator/i });
+    expect(cta).toHaveAttribute(
+      "href",
+      "/settings/roles?next=%2Fexplore%2Ffw-1",
+    );
+    expect(
+      screen.queryByRole("link", { name: /license framework/i }),
+    ).not.toBeInTheDocument();
+    expect(listOperatorLibrary).not.toHaveBeenCalled();
   });
 
   it("shows the license link to a signed-out visitor", async () => {

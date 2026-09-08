@@ -21,6 +21,10 @@ vi.mock("@/lib/auth/current-user-session", () => ({
   loadCurrentUserSession: vi.fn(),
 }));
 
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams("next=%2Fprojects%2Fnew"),
+}));
+
 vi.mock("@/lib/auth/refresh-client", () => ({
   refreshAccessToken: vi.fn(async () => true),
 }));
@@ -72,18 +76,18 @@ describe("AccountRolesPanel", () => {
     expect(screen.getByText(/both marketplace roles/i)).toBeInTheDocument();
   });
 
-  it("lists a role once when it is reported as both held and pending", async () => {
-    // `/v1/auth/me` derives pending_roles from `approved_at IS NULL` and does
-    // not subtract them from roles, so the two arrays overlap for any role
-    // whose grant predates approval stamping. Rendering both reads as two
-    // separate Contributor grants on the same account.
-    mockSession(["contributor"], ["contributor"]);
+  it("marks an Attestor application as awaiting approval", async () => {
+    // Attestor is the only role gated on approval, so it is the only thing
+    // `pending_roles` carries — the contract guarantees it never overlaps the
+    // active roles.
+    mockSession(["contributor"], ["attestor"]);
 
     render(<AccountRolesPanel />);
 
     await screen.findByRole("heading", { name: /how you use auracles/i });
-    expect(within(screen.getByRole("list")).getAllByText(/Contributor/)).toHaveLength(1);
-    expect(screen.queryByText(/awaiting approval/i)).not.toBeInTheDocument();
+    const active = within(screen.getByRole("list"));
+    expect(active.getByText(/^Contributor$/)).toBeInTheDocument();
+    expect(active.getByText(/Attestor — awaiting approval/)).toBeInTheDocument();
   });
 
   it("treats a role awaiting approval as already requested", async () => {

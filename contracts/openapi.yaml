@@ -5521,6 +5521,9 @@ components:
           title: Kyc Status
           type: string
         pending_roles:
+          description: Roles held but not yet usable — in practice only an Attestor
+            application awaiting admin approval. Never overlaps `roles`, so callers
+            can render the two lists side by side.
           items:
             type: string
           title: Pending Roles

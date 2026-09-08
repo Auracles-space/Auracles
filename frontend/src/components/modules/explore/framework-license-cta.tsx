@@ -17,6 +17,7 @@
  * Maps to: FR-FIN-003, FR-FWK-014.
  */
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -30,7 +31,13 @@ import type {
   MyOrganizationResponse,
 } from "@/lib/generated/types.gen";
 
-type CtaState = "loading" | "owner" | "org_owner" | "licensed" | "available";
+type CtaState =
+  | "loading"
+  | "owner"
+  | "org_owner"
+  | "licensed"
+  | "needs_operator_role"
+  | "available";
 
 type FrameworkLicenseCtaProps = {
   frameworkId: string;
@@ -55,6 +62,9 @@ export function FrameworkLicenseCta({
   contributorOrgId,
 }: FrameworkLicenseCtaProps) {
   const [state, setState] = useState<CtaState>("loading");
+  // Framework detail is a public SSR route; the current path is the return
+  // destination after a role is added.
+  const pathname = usePathname() ?? `/explore/${frameworkId}`;
 
   useEffect(() => {
     let active = true;
@@ -95,8 +105,10 @@ export function FrameworkLicenseCta({
         }
       }
       // Only operators can hold a license, so only they need the library check.
+      // A signed-in non-operator cannot buy at all — /checkout is role-guarded
+      // — so send them to the role rather than into that wall.
       if (!session.roles.includes("operator")) {
-        setState("available");
+        setState("needs_operator_role");
         return;
       }
       const result = await listOperatorLibrary({
@@ -155,6 +167,23 @@ export function FrameworkLicenseCta({
       <Link className={PRIMARY_LINK} href="/library">
         View in your library
       </Link>
+    );
+  }
+
+  if (state === "needs_operator_role") {
+    return (
+      <>
+        <Link
+          className={PRIMARY_LINK}
+          href={`/settings/roles?next=${encodeURIComponent(pathname)}`}
+        >
+          Become an Operator to license
+        </Link>
+        <p className="mt-2 text-center text-xs leading-5 text-foreground-muted">
+          Licensing is an Operator action. Adding the role takes a moment and
+          keeps everything you already have.
+        </p>
+      </>
     );
   }
 

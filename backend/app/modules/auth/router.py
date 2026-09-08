@@ -598,8 +598,18 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
     roles = list(dict.fromkeys(roles))
     # Roles held but not yet usable (attestor awaiting admin approval). Surfaced
     # so the UI can prompt the user to complete or track their application.
+    #
+    # Subtracting the active roles is what makes "pending" mean pending. Only
+    # attestor is gated on approval, so a null ``approved_at`` on any other role
+    # carries no meaning — reporting it here described working roles as awaiting
+    # approval and let the two lists overlap, which callers then had to undo.
+    active_roles = set(roles)
     pending_roles = list(
-        dict.fromkeys([role for role, approved_at in role_rows if approved_at is None])
+        dict.fromkeys(
+            role
+            for role, approved_at in role_rows
+            if approved_at is None and role not in active_roles
+        )
     )
     return CurrentUserResponse(
         id=current_user.id,

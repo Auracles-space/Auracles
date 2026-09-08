@@ -14,6 +14,7 @@
  *
  * Maps to: FR-AUTH-013, FR-SET-002.
  */
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -23,6 +24,7 @@ import {
   type SelfRole,
 } from "@/components/modules/auth/role-selection-form";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
+import { toSafeInternalPath } from "@/lib/auth/onboarding";
 
 import { FormMessage } from "../auth/form-message";
 
@@ -34,6 +36,10 @@ export function AccountRolesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
   const [pendingRoles, setPendingRoles] = useState<string[]>([]);
+  // Narrowed: it arrives from a query parameter and decides a navigation.
+  const returnTo = toSafeInternalPath(
+    useSearchParams()?.get("next") ?? undefined,
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -56,12 +62,13 @@ export function AccountRolesPanel() {
     };
   }, []);
 
-  // A reload is the honest way to settle a role change: the nav, the route
-  // guards and the landing page all branch on roles, and the access token has
-  // just been reissued underneath them.
-  const reloadAfterRoleChange = useCallback(() => {
-    window.location.reload();
-  }, []);
+  // A full navigation is the honest way to settle a role change: the nav, the
+  // route guards and the landing page all branch on roles, and the access
+  // token has just been reissued underneath them. When the user arrived from a
+  // blocked action, return them to it — that is the whole point of the trip.
+  const settleRoleChange = useCallback(() => {
+    window.location.assign(returnTo ?? window.location.pathname);
+  }, [returnTo]);
 
   if (loading) {
     return (
@@ -71,10 +78,9 @@ export function AccountRolesPanel() {
     );
   }
 
-  // `/v1/auth/me` derives pending_roles from `approved_at IS NULL` without
-  // subtracting them from roles, so the arrays overlap. Only a role that is
-  // exclusively pending is genuinely awaiting approval.
-  const awaitingApproval = pendingRoles.filter((role) => !roles.includes(role));
+  // `pending_roles` is disjoint from `roles` by contract, so the two lists can
+  // be rendered side by side. Both count as held: a role already requested must
+  // not be offered again, which would only 409.
   const heldRoles = new Set([...roles, ...pendingRoles]);
   const missingRoles = SELF_ROLES.filter((role) => !heldRoles.has(role));
 
@@ -107,7 +113,7 @@ export function AccountRolesPanel() {
         <h3 className="font-heading text-sm font-semibold text-foreground">
           Active on this account
         </h3>
-        {roles.length === 0 && awaitingApproval.length === 0 ? (
+        {roles.length === 0 && pendingRoles.length === 0 ? (
           <p className="mt-2 text-sm leading-6 text-foreground-muted">
             No roles yet.
           </p>
@@ -121,7 +127,7 @@ export function AccountRolesPanel() {
                 {describeRole(role)}
               </li>
             ))}
-            {awaitingApproval.map((role) => (
+            {pendingRoles.map((role) => (
               <li
                 className="inline-flex items-center rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-sm font-medium text-accent"
                 key={`pending-${role}`}
@@ -139,7 +145,7 @@ export function AccountRolesPanel() {
             availableRoles={missingRoles as SelfRole[]}
             description="Adding a role is immediate and does not affect the roles you already hold. Identity verification is not repeated."
             heading="Add a role"
-            onSaved={reloadAfterRoleChange}
+            onSaved={settleRoleChange}
             submitLabel="Add role"
           />
         </div>

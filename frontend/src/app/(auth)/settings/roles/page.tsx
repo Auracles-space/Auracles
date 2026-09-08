@@ -7,6 +7,8 @@
  *
  * Maps to: FR-AUTH-013, FR-SET-002.
  */
+import { Suspense } from "react";
+
 import { AccountRolesPanel } from "@/components/modules/settings/account-roles-panel";
 
 /**
@@ -27,8 +29,12 @@ export default function RolesSettingsPage() {
           actions without changing anything you already have.
         </p>
       </header>
+      {/* The panel reads `?next=` via useSearchParams, which needs a boundary
+          during prerender. */}
       <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm md:p-6">
-        <AccountRolesPanel />
+        <Suspense>
+          <AccountRolesPanel />
+        </Suspense>
       </section>
     </div>
   );

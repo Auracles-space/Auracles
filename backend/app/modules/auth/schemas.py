@@ -121,7 +121,13 @@ class CurrentUserResponse(BaseModel):
     display_name: str
     avatar_url: str | None
     roles: list[str]
-    pending_roles: list[str]
+    pending_roles: list[str] = Field(
+        description=(
+            "Roles held but not yet usable — in practice only an Attestor "
+            "application awaiting admin approval. Never overlaps `roles`, so "
+            "callers can render the two lists side by side."
+        )
+    )
     email_verified: bool
     kyc_status: str
     deactivated_at: datetime | None

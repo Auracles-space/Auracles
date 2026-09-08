@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectListShell } from "@/components/modules/projects/project-list-shell";
 
-const { push, replace } = vi.hoisted(() => ({
+const { push, replace, tokenRoles } = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
+  tokenRoles: { current: [] as string[] },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -22,7 +23,8 @@ vi.mock("@/lib/auth/form-client", () => ({
 
 vi.mock("@/lib/auth/token-store", () => ({
   authTokenStore: {
-    getState: () => ({ roles: [] }), // default empty roles
+    // Mutable so a case can act as a specific role; reset to [] each test.
+    getState: () => ({ roles: tokenRoles.current }),
   },
 }));
 
@@ -35,6 +37,43 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
 describe("ProjectListShell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    tokenRoles.current = [];
+  });
+
+  it("sends a Contributor to the role page instead of a form they cannot submit", async () => {
+    // Posting is Operator-gated, but the route guard admits Contributors, so an
+    // unconditional CTA let them fill in the whole form and lose it to a 403.
+    tokenRoles.current = ["contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    const cta = await screen.findByRole("link", { name: /become an operator/i });
+    expect(cta).toHaveAttribute("href", "/settings/roles?next=%2Fprojects%2Fnew");
+    expect(
+      screen.queryByRole("link", { name: /^post project$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the direct post link for an Operator", async () => {
+    tokenRoles.current = ["operator"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    expect(
+      await screen.findByRole("link", { name: /^post project$/i }),
+    ).toHaveAttribute("href", "/projects/new");
   });
 
   it("calls listOrgProjects when mode is org", async () => {

@@ -2005,6 +2005,9 @@ export type CurrentUserResponse = {
     id: string;
     is_superadmin?: boolean;
     kyc_status: string;
+    /**
+     * Roles held but not yet usable — in practice only an Attestor application awaiting admin approval. Never overlaps `roles`, so callers can render the two lists side by side.
+     */
     pending_roles: Array<(string)>;
     roles: Array<(string)>;
 };
