@@ -72,6 +72,20 @@ describe("AccountRolesPanel", () => {
     expect(screen.getByText(/both marketplace roles/i)).toBeInTheDocument();
   });
 
+  it("lists a role once when it is reported as both held and pending", async () => {
+    // `/v1/auth/me` derives pending_roles from `approved_at IS NULL` and does
+    // not subtract them from roles, so the two arrays overlap for any role
+    // whose grant predates approval stamping. Rendering both reads as two
+    // separate Contributor grants on the same account.
+    mockSession(["contributor"], ["contributor"]);
+
+    render(<AccountRolesPanel />);
+
+    await screen.findByRole("heading", { name: /how you use auracles/i });
+    expect(within(screen.getByRole("list")).getAllByText(/Contributor/)).toHaveLength(1);
+    expect(screen.queryByText(/awaiting approval/i)).not.toBeInTheDocument();
+  });
+
   it("treats a role awaiting approval as already requested", async () => {
     // Attestor is org-granted, but a pending self-role must not be offered
     // again either — a second request is a 409, not a second application.

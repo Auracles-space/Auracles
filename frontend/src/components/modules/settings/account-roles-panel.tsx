@@ -71,6 +71,10 @@ export function AccountRolesPanel() {
     );
   }
 
+  // `/v1/auth/me` derives pending_roles from `approved_at IS NULL` without
+  // subtracting them from roles, so the arrays overlap. Only a role that is
+  // exclusively pending is genuinely awaiting approval.
+  const awaitingApproval = pendingRoles.filter((role) => !roles.includes(role));
   const heldRoles = new Set([...roles, ...pendingRoles]);
   const missingRoles = SELF_ROLES.filter((role) => !heldRoles.has(role));
 
@@ -103,7 +107,7 @@ export function AccountRolesPanel() {
         <h3 className="font-heading text-sm font-semibold text-foreground">
           Active on this account
         </h3>
-        {roles.length === 0 && pendingRoles.length === 0 ? (
+        {roles.length === 0 && awaitingApproval.length === 0 ? (
           <p className="mt-2 text-sm leading-6 text-foreground-muted">
             No roles yet.
           </p>
@@ -117,7 +121,7 @@ export function AccountRolesPanel() {
                 {describeRole(role)}
               </li>
             ))}
-            {pendingRoles.map((role) => (
+            {awaitingApproval.map((role) => (
               <li
                 className="inline-flex items-center rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-sm font-medium text-accent"
                 key={`pending-${role}`}

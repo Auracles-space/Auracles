@@ -21,7 +21,7 @@ import {
   INCOMPLETE_USER_EVENT,
   type IncompleteUserEventDetail,
 } from "@/lib/auth/incomplete-user-events";
-import { ONBOARDING_PATH } from "@/lib/auth/onboarding";
+import { ONBOARDING_PATH, toSafeInternalPath } from "@/lib/auth/onboarding";
 
 /**
  * Subscribe to incomplete-user events and redirect when one fires.
@@ -39,15 +39,22 @@ export function IncompleteUserListener() {
       if (!detail) {
         return;
       }
-      // Avoid redirect loops if the user is already on the onboarding surface.
-      if (window.location.pathname.startsWith(ONBOARDING_PATH)) {
+      // The backend names the surface that can clear each block, and they are
+      // not all onboarding: consent is settled on /settings/consent, which is
+      // the only page able to accept new legal versions. Sending every block to
+      // onboarding stranded those users on a checklist with nothing to do.
+      // The value is still narrowed — it decides a navigation.
+      const destination =
+        toSafeInternalPath(detail.onboardingUrl) ?? ONBOARDING_PATH;
+      // Avoid redirect loops if the user is already on the target surface.
+      if (window.location.pathname.startsWith(destination)) {
         return;
       }
       const params = new URLSearchParams({
         next: detail.attemptedPath,
         error_code: detail.errorCode,
       });
-      router.push(`${ONBOARDING_PATH}?${params.toString()}`);
+      router.push(`${destination}?${params.toString()}`);
     };
 
     window.addEventListener(INCOMPLETE_USER_EVENT, handler);
