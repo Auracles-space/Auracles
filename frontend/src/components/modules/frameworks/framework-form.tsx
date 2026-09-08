@@ -241,7 +241,7 @@ export function FrameworkForm({
     setSaving(true);
 
     const pricing: PricingConfig = {
-      currency: framework?.pricing.currency ?? "USD",
+      currency: framework?.pricing.currency ?? PLATFORM_CURRENCY,
       license_types: form.licenseTypes,
       org_price:
         form.licenseTypes.includes("organizational") && form.orgPrice.trim() !== ""

@@ -57,6 +57,7 @@ import {
 import { formatMoney } from "@/lib/marketplace/format";
 import { useProjectRealtime } from "@/lib/projects/realtime";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
+import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 type ProjectWorkspaceProps = {
   projectId: string;
@@ -428,7 +429,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     const result = await submitProposal({
       body: {
         budget: proposalBudget,
-        currency: "USD",
+        currency: PLATFORM_CURRENCY,
         deliverables: [
           {
             description: "Implementation playbook and rollout plan.",
@@ -467,7 +468,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
     const result = await createMilestone({
       body: {
         budget: milestoneForm.budget,
-        currency: "USD",
+        currency: PLATFORM_CURRENCY,
         description: milestoneForm.description,
         due_date: milestoneForm.dueDate || null,
         name: milestoneForm.name,

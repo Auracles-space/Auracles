@@ -17,6 +17,7 @@ import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 import type { ProjectCreateRequest } from "@/lib/generated/types.gen";
 import { FUNCTION_OPTIONS } from "@/lib/marketplace/taxonomy";
+import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 type ProjectFormState = {
   budgetMax: string;
@@ -115,7 +116,7 @@ export function ProjectCreateForm({ mode = { kind: "self" } }: { mode?: ProjectA
       budget_max: form.budgetMax,
       budget_min: form.budgetMin,
       category: form.category,
-      currency: "USD",
+      currency: PLATFORM_CURRENCY,
       deadline: form.deadline || null,
       description: form.description,
       required_deliverables: [

@@ -35,6 +35,7 @@ import {
   submitDeveloperApplicationV1DeveloperApplicationsPost,
   totpStatus,
 } from "@/lib/generated/sdk.gen";
+import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 /**
  * Return Developer portal data, derived state, and mutation handlers.
@@ -230,7 +231,7 @@ export function useDeveloperPortal() {
     const result = await requestPartnerPayoutV1DeveloperPayoutsPost({
       body: {
         amount,
-        currency: "USD",
+        currency: PLATFORM_CURRENCY,
         payout_account_id: payoutAccountId,
         totp_code: totpCode,
       },

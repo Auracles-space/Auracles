@@ -4,6 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectCreateForm } from "@/components/modules/projects/project-create-form";
 import { createProject } from "@/lib/generated/sdk.gen";
 
+// The suite pins NEXT_PUBLIC_PLATFORM_CURRENCY to USD (see tests/setup.ts), so
+// comparing against the real constant would match a hardcoded "USD" and prove
+// nothing. A distinctive value proves the form reads the setting.
+vi.mock("@/lib/marketplace/currency", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/marketplace/currency")>(
+      "@/lib/marketplace/currency",
+    );
+  return { ...actual, PLATFORM_CURRENCY: "NGN" };
+});
+
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
@@ -51,6 +62,26 @@ describe("ProjectCreateForm", () => {
   beforeEach(() => {
     vi.mocked(createProject).mockReset();
     push.mockReset();
+  });
+
+  it("submits amounts in the platform's settlement currency", async () => {
+    // The backend settles one currency and rejects anything else with "Only
+    // NGN amounts are supported." A hardcoded USD here meant a correctly
+    // filled form was refused for a field the user never saw.
+    vi.mocked(createProject).mockResolvedValue({
+      data: { id: "project-1" },
+      error: undefined,
+      response: new Response(null, { status: 201 }),
+    } as never);
+
+    render(<ProjectCreateForm />);
+    fillForm();
+    fireEvent.click(screen.getByRole("button", { name: /post project/i }));
+
+    await waitFor(() => expect(createProject).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(createProject).mock.calls[0][0]).toMatchObject({
+      body: { currency: "NGN" },
+    });
   });
 
   it("disables submit until all required fields are filled", () => {

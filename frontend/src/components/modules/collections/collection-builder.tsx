@@ -28,6 +28,7 @@ import {
 } from "@/lib/auth/form-client";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 type CollectionFormState = {
   title: string;
@@ -140,7 +141,7 @@ export function CollectionBuilder() {
     const result = await createCollection({
       body: {
         bundle_price: form.bundlePrice,
-        currency: "USD",
+        currency: PLATFORM_CURRENCY,
         description: form.description,
         title: form.title,
       },
