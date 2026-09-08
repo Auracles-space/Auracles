@@ -27,6 +27,7 @@ from app.core.cookies import (
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.core.network import client_ip
+from app.core.profile_images import resolve_profile_image_url
 from app.core.redis import get_redis
 from app.core.security import decode_access_token
 from app.integrations.google_oauth import (
@@ -615,7 +616,7 @@ async def me(current_user: CurrentUser, db: DatabaseSession) -> CurrentUserRespo
         id=current_user.id,
         email=current_user.email,
         display_name=current_user.display_name,
-        avatar_url=current_user.avatar_url,
+        avatar_url=resolve_profile_image_url(current_user.avatar_url),
         roles=roles,
         pending_roles=pending_roles,
         email_verified=current_user.email_verified,

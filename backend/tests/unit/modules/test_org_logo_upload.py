@@ -228,27 +228,24 @@ async def test_confirm_logo_upload_persists_logo_key(
         assert stored.logo_key == key
 
 
-def _expected_avatars_public_url(key: str) -> str:
-    """Build the public URL the avatars bucket serves ``key`` at (test-local)."""
-    settings = app.state.settings
-    bucket = settings.s3_avatars_bucket
-    if settings.aws_endpoint_url is not None:
-        return f"{settings.aws_endpoint_url.rstrip('/')}/{bucket}/{key}"
-    return f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{key}"
-
-
 @pytest.mark.asyncio
-async def test_confirm_logo_upload_returns_public_logo_url(
+async def test_confirm_logo_upload_returns_a_signed_logo_url(
     org_logo_state: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The confirm response exposes a resolved public ``logo_url`` for the key.
+    """The confirm response exposes a loadable ``logo_url`` for the key.
 
-    Clients cannot serve the raw ``logo_key``; the response must carry the
-    deterministic public URL so the logo renders without client-side S3 logic.
+    Clients cannot serve the raw ``logo_key``, and the avatars bucket blocks
+    all public access, so the response must carry a signed URL rather than the
+    deterministic one the bucket would serve if it were public.
     """
     context, _user, org = await _create_owner_context()
     monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+    monkeypatch.setattr(
+        s3.storage,
+        "presigned_get",
+        lambda bucket, key, expires_in: f"https://s3.test/signed/{key}?sig=x",
+    )
     key = f"org-logos/{org.id}/{uuid4()}.png"
 
     async with async_session_factory() as session:
@@ -258,7 +255,7 @@ async def test_confirm_logo_upload_returns_public_logo_url(
             payload=LogoConfirmRequest(file_key=key),
         )
 
-    assert response.logo_url == _expected_avatars_public_url(key)
+    assert response.logo_url == f"https://s3.test/signed/{key}?sig=x"
 
 
 def test_organization_response_logo_url_is_none_without_key() -> None:

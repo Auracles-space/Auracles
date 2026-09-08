@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.config import get_settings
+from app.core.profile_images import resolve_profile_image_url
 from app.integrations import s3
 from app.modules.attestation.models import Attestation, AttestationBadge, Credential
 from app.modules.attestation.schemas import PublicCredentialResponse
@@ -1518,7 +1519,7 @@ async def get_contributor_profile(
     return ExploreContributorProfile(
         id=contributor.id,
         display_name=contributor.display_name,
-        avatar_url=contributor.avatar_url,
+        avatar_url=resolve_profile_image_url(contributor.avatar_url),
         bio=contributor.bio,
         location=contributor.location,
         website=_safe_public_url(contributor.website),

@@ -53,6 +53,15 @@ class FakeAvatarStorage:
         del bucket
         return key in self.existing_keys
 
+    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+        """Return a deterministic signed read URL.
+
+        Profile images live in a private bucket, so every serialized avatar or
+        banner is signed on the way out rather than derived from the key.
+        """
+        del bucket, expires_in
+        return f"https://s3.test/signed/{key}"
+
 
 @pytest.fixture
 def migrated_database() -> Iterator[None]:

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.profile_images import resolve_profile_image_url
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import hash_token
 from app.integrations import s3
@@ -1391,7 +1392,7 @@ async def search_members(
             MemberSearchResult(
                 user_id=user_id,
                 display_name=display_name,
-                avatar_url=avatar_url,
+                avatar_url=resolve_profile_image_url(avatar_url),
                 masked_email=_mask_email(email),
             )
             for user_id, display_name, avatar_url, email in rows

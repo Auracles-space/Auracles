@@ -22,8 +22,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.core.config import get_settings
-from app.integrations import s3
+from app.core.profile_images import resolve_profile_image_url
 from app.modules.attestation.schemas import CoiEntry
 from app.modules.library.schemas import LibraryItem
 from app.shared.taxonomy import (
@@ -40,10 +39,10 @@ OrgCapabilityName = Literal["contributor", "operator", "attestor"]
 
 
 def _logo_public_url(logo_key: str | None) -> str | None:
-    """Resolve an org ``logo_key`` to the public URL its logo is served at.
+    """Resolve an org ``logo_key`` to a URL its logo can be loaded from.
 
-    Org logos live in the public avatars bucket, so the URL is deterministic
-    from the key. Returns ``None`` when the org has no logo.
+    The bucket is private, so the URL is signed and short-lived rather than
+    derived from the key. Returns ``None`` when the org has no logo.
 
     Args:
         logo_key: The stored logo object key, or ``None``.
@@ -51,10 +50,7 @@ def _logo_public_url(logo_key: str | None) -> str | None:
     Returns:
         The public logo URL, or ``None`` when no logo is set.
     """
-    if logo_key is None:
-        return None
-    settings = get_settings()
-    return s3.public_object_url(settings, settings.s3_avatars_bucket, logo_key)
+    return resolve_profile_image_url(logo_key)
 
 
 def _ensure_safe_prose(value: str) -> str:

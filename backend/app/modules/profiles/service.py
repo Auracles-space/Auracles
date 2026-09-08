@@ -17,7 +17,8 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import Settings, get_settings
+from app.core.config import get_settings
+from app.core.profile_images import resolve_profile_image_url
 from app.integrations import s3
 from app.modules.attestation.models import Credential
 from app.modules.attestation.schemas import PublicCredentialResponse
@@ -46,25 +47,6 @@ ALLOWED_AVATAR_MIME_TYPES = {
 }
 AVATAR_MAX_SIZE = 5 * 1024 * 1024
 AVATAR_UPLOAD_URL_TTL_SECONDS = 900
-
-
-def _avatar_public_url(settings: Settings, file_key: str) -> str:
-    """Build the public URL an avatar object is served at.
-
-    Avatars live in a public-read bucket, so the URL is deterministic from the
-    key. A configured endpoint (LocalStack) is path-style; AWS is virtual-host.
-
-    Args:
-        settings: Application settings holding bucket, region, endpoint.
-        file_key: The avatar object key.
-
-    Returns:
-        The public URL for the object.
-    """
-    bucket = settings.s3_avatars_bucket
-    if settings.aws_endpoint_url is not None:
-        return f"{settings.aws_endpoint_url.rstrip('/')}/{bucket}/{file_key}"
-    return f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{file_key}"
 
 
 async def _verified_credentials(
@@ -261,8 +243,10 @@ async def get_public_profile(
     return PublicProfileResponse(
         id=user.id,
         display_name=user.display_name,
-        avatar_url=user.avatar_url,
-        banner_url=None if is_limited else user.banner_url,
+        avatar_url=resolve_profile_image_url(user.avatar_url),
+        banner_url=(
+            None if is_limited else resolve_profile_image_url(user.banner_url)
+        ),
         headline=None if is_limited else user.headline,
         bio=None if is_limited else user.bio,
         location=None if is_limited else user.location,
@@ -304,8 +288,8 @@ async def get_own_profile(
     return PublicProfileResponse(
         id=user.id,
         display_name=user.display_name,
-        avatar_url=user.avatar_url,
-        banner_url=user.banner_url,
+        avatar_url=resolve_profile_image_url(user.avatar_url),
+        banner_url=resolve_profile_image_url(user.banner_url),
         headline=user.headline,
         bio=user.bio,
         location=user.location,
@@ -457,7 +441,7 @@ def _presign_profile_image(
         str(target["url"]),
         fields,
         file_key,
-        _avatar_public_url(settings, file_key),
+        resolve_profile_image_url(file_key),
     )
 
 
@@ -489,7 +473,7 @@ def _verify_profile_image(*, user: User, file_key: str, prefix: str) -> str:
             status_code=status.HTTP_409_CONFLICT,
             detail="Image upload not found. Complete the upload and retry.",
         )
-    return _avatar_public_url(settings, file_key)
+    return file_key
 
 
 async def request_avatar_upload_url(
