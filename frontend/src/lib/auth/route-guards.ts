@@ -137,6 +137,42 @@ function landingRedirect(roles: string[]): AuthRouteDecision {
   };
 }
 
+/** Roles a user can grant themselves from `/settings/roles`. */
+const selfAssignableRoles = new Set(["contributor", "operator"]);
+
+/**
+ * Decide where a user who lacks a route's role should be sent.
+ *
+ * When the missing role is one they could simply add, send them to the page
+ * that adds it, carrying the destination so they resume where they meant to
+ * be. Landing them somewhere else instead told them nothing about why the page
+ * would not open, and — before `/settings/roles` existed — left no way to act.
+ *
+ * Roles that are granted rather than chosen (admin, attestor) keep the plain
+ * landing redirect: offering a control that cannot help would be a worse lie
+ * than saying nothing.
+ *
+ * @param pathname - The route the user tried to open.
+ * @param roles - Active session roles from the verified hint.
+ * @param requiredRoles - Role requirement of the matched protected prefix.
+ */
+function wrongRoleRedirect(
+  pathname: string,
+  roles: string[],
+  requiredRoles: string[] | null,
+): AuthRouteDecision {
+  const addableRoles = (requiredRoles ?? []).filter(
+    (role) => selfAssignableRoles.has(role) && !roles.includes(role),
+  );
+  if (addableRoles.length === 0) {
+    return landingRedirect(roles);
+  }
+  return {
+    kind: "redirect",
+    location: `/settings/roles?next=${encodeURIComponent(pathname)}`,
+  };
+}
+
 /**
  * Resolve whether the current route requires authentication and/or roles.
  *
@@ -202,7 +238,11 @@ function resolveNextDecision(
   }
 
   if (hint && requiresWrongRoleRedirect(pathname, hint.roles)) {
-    return landingRedirect(hint.roles);
+    return wrongRoleRedirect(
+      pathname,
+      hint.roles,
+      resolveProtectedRoute(pathname)?.requiredRoles ?? null,
+    );
   }
 
   if (!hint && isPublicAuthPath(pathname)) {

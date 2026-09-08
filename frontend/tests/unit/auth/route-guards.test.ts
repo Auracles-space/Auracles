@@ -55,13 +55,12 @@ describe("auth route guards", () => {
   });
 
   it.each([
+    // Not self-assignable: nothing the user can do about it, so a silent
+    // bounce to their own landing page is the honest outcome.
     ["/admin", ["operator"], "/explore"],
-    ["/attestations", ["attestor"], "/settings/identity"],
-    ["/dashboard/frameworks", ["operator"], "/explore"],
-    ["/library", ["contributor"], "/dashboard"],
-    ["/checkout/checkout-1", ["contributor"], "/dashboard"],
+    ["/attestor", ["operator"], "/explore"],
   ])(
-    "redirects wrong-role users away from %s when holding %s",
+    "bounces %s to the landing page when holding %s and the role cannot be self-added",
     (pathname, roles, location) => {
       expect(
         resolveAuthRouteDecision({
@@ -71,6 +70,39 @@ describe("auth route guards", () => {
       ).toEqual({ kind: "redirect", location });
     },
   );
+
+  it.each([
+    // Both directions: whichever marketplace role is missing, the user can add
+    // it, so send them where they can — silently landing them somewhere else
+    // told them nothing about why the page would not open.
+    ["/dashboard/frameworks", ["operator"], "%2Fdashboard%2Fframeworks"],
+    ["/dashboard/collections", ["operator"], "%2Fdashboard%2Fcollections"],
+    ["/library", ["contributor"], "%2Flibrary"],
+    ["/checkout/checkout-1", ["contributor"], "%2Fcheckout%2Fcheckout-1"],
+    ["/attestations", ["attestor"], "%2Fattestations"],
+  ])(
+    "offers the missing role for %s when holding %s",
+    (pathname, roles, encodedNext) => {
+      expect(
+        resolveAuthRouteDecision({
+          hint: makeHint(roles as string[]),
+          pathname,
+        }),
+      ).toEqual({
+        kind: "redirect",
+        location: `/settings/roles?next=${encodedNext}`,
+      });
+    },
+  );
+
+  it("does not loop: the roles page itself is always reachable", () => {
+    expect(
+      resolveAuthRouteDecision({
+        hint: makeHint(["attestor"]),
+        pathname: "/settings/roles",
+      }),
+    ).toEqual({ kind: "next" });
+  });
 
   it.each([
     ["/admin", ["admin"]],
