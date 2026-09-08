@@ -30,6 +30,11 @@ const settingsLinks: SettingsLink[] = [
     getSummary: () => "Private credentials, email verification, and KYC status.",
   },
   {
+    href: "/settings/roles",
+    label: "Roles & Access",
+    getSummary: () => "Choose whether you contribute, operate, or both.",
+  },
+  {
     href: "/settings/account",
     label: "Account & Security",
     getSummary: () => "Security, password, and GDPR controls.",

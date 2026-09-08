@@ -94,7 +94,7 @@ export default async function OnboardingPage({
           ) : null}
         </header>
         <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
-          <OnboardingPrompt returnTo={next} />
+          <OnboardingPrompt errorCode={errorCode} returnTo={next} />
         </section>
       </div>
     </main>

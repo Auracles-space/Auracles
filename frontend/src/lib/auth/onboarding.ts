@@ -22,6 +22,27 @@ export function isPhaseOneOnboardingComplete(user: CurrentUserResponse): boolean
 }
 
 /**
+ * Narrow an untrusted `?next=` value to a same-origin path.
+ *
+ * The onboarding route takes its return destination from a query parameter, so
+ * the value reaches us as attacker-controllable text. Anything that could leave
+ * the origin — an absolute URL, a protocol-relative `//host`, or a backslash
+ * variant browsers normalise to one — is discarded rather than sanitised.
+ *
+ * @param value - Raw `next` query parameter, if present.
+ * @returns The path when it is safe to navigate to, otherwise null.
+ */
+export function toSafeInternalPath(value: string | undefined): string | null {
+  if (!value || !value.startsWith("/")) {
+    return null;
+  }
+  if (value.startsWith("//") || value.startsWith("/\\")) {
+    return null;
+  }
+  return value;
+}
+
+/**
  * Route incomplete users to onboarding, otherwise preserve role landing.
  *
  * @param user - Current authenticated user profile from `/v1/auth/me`.

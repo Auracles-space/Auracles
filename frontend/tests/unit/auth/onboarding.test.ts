@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getOnboardingDestination,
   isPhaseOneOnboardingComplete,
+  toSafeInternalPath,
 } from "@/lib/auth/onboarding";
 
 const baseUser = {
@@ -38,5 +39,26 @@ describe("phase one onboarding", () => {
         "/explore",
       ),
     ).toBe("/settings/onboarding");
+  });
+});
+
+describe("toSafeInternalPath", () => {
+  it("keeps an ordinary same-origin path", () => {
+    expect(toSafeInternalPath("/projects/new")).toBe("/projects/new");
+    expect(toSafeInternalPath("/explore?q=risk")).toBe("/explore?q=risk");
+  });
+
+  it("rejects anything that could leave the origin", () => {
+    // The value arrives from a query parameter, so it is attacker-controlled:
+    // onboarding must never bounce a signed-in user off-site.
+    expect(toSafeInternalPath("https://evil.example/steal")).toBeNull();
+    expect(toSafeInternalPath("//evil.example/steal")).toBeNull();
+    expect(toSafeInternalPath("/\\evil.example/steal")).toBeNull();
+    expect(toSafeInternalPath("javascript:alert(1)")).toBeNull();
+  });
+
+  it("treats a missing or empty value as no destination", () => {
+    expect(toSafeInternalPath(undefined)).toBeNull();
+    expect(toSafeInternalPath("")).toBeNull();
   });
 });

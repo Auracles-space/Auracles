@@ -10,10 +10,22 @@ vi.mock("@/lib/auth/form-client", () => ({
   getAccessTokenHeaders: () => ({ Authorization: "Bearer access-token" }),
 }));
 
+vi.mock("@/lib/auth/refresh-client", () => ({
+  refreshAccessToken: vi.fn(async () => true),
+}));
+
 vi.mock("@/lib/generated/sdk.gen", () => ({
   addRoleV1AuthRolesPost: vi.fn(),
   getCurrentUser: vi.fn(),
 }));
+
+function mockCurrentUser(data: Record<string, unknown>): void {
+  vi.mocked(getCurrentUser).mockResolvedValue({
+    data,
+    error: undefined,
+    response: new Response(null, { status: 200 }),
+  } as never);
+}
 
 describe("OnboardingPrompt", () => {
   beforeEach(() => {
@@ -21,11 +33,7 @@ describe("OnboardingPrompt", () => {
   });
 
   it("keeps browse and preview available once the user has a role", async () => {
-    vi.mocked(getCurrentUser).mockResolvedValue({
-      data: { roles: ["operator"], pending_roles: [] },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    } as never);
+    mockCurrentUser({ pending_roles: [], roles: ["operator"] });
 
     render(<OnboardingPrompt />);
 
@@ -39,11 +47,7 @@ describe("OnboardingPrompt", () => {
   });
 
   it("gates onboarding behind role selection for a roleless user", async () => {
-    vi.mocked(getCurrentUser).mockResolvedValue({
-      data: { roles: [], pending_roles: [] },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    } as never);
+    mockCurrentUser({ pending_roles: [], roles: [] });
 
     render(<OnboardingPrompt />);
 
@@ -57,5 +61,58 @@ describe("OnboardingPrompt", () => {
     expect(
       screen.queryByRole("link", { name: /browse frameworks/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("reports a finished step as done instead of outstanding work", async () => {
+    // The bug this pins: a verified, named user bounced here for an unrelated
+    // reason was told to go and verify their identity, which they had already
+    // done. Completed steps must read as complete.
+    mockCurrentUser({
+      display_name: "Victor",
+      email_verified: true,
+      kyc_status: "verified",
+      pending_roles: [],
+      roles: ["contributor"],
+    });
+
+    render(<OnboardingPrompt />);
+
+    await screen.findByText(/verify your identity/i);
+    expect(screen.getAllByText(/^done$/i).length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.queryByRole("link", { name: /^verify identity$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers the missing role when the block was a role, not identity", async () => {
+    mockCurrentUser({
+      display_name: "Victor",
+      email_verified: true,
+      kyc_status: "verified",
+      pending_roles: [],
+      roles: ["contributor"],
+    });
+
+    render(<OnboardingPrompt errorCode="role_required" returnTo="/projects/new" />);
+
+    // Only the role they lack is offered, and the identity step stays done.
+    expect(await screen.findByLabelText(/Operator/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Contributor/)).not.toBeInTheDocument();
+  });
+
+  it("still shows the identity action when KYC is genuinely unfinished", async () => {
+    mockCurrentUser({
+      display_name: "Victor",
+      email_verified: true,
+      kyc_status: "unverified",
+      pending_roles: [],
+      roles: ["contributor"],
+    });
+
+    render(<OnboardingPrompt returnTo="/projects/new" />);
+
+    expect(
+      await screen.findByRole("link", { name: /^verify identity$/i }),
+    ).toHaveAttribute("href", "/settings/kyc?next=%2Fprojects%2Fnew");
   });
 });
