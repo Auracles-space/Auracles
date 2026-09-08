@@ -59,6 +59,7 @@ from app.modules.reputation import weights as reputation_weights
 from app.modules.waitlist.models import WaitlistEntry
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
+from app.workers.tasks.kyc_notifications import send_kyc_verdict_notification
 from app.workers.tasks.processing.minhash_index import (
     index_framework_artifacts,
     remove_framework_artifacts_from_index,
@@ -1794,6 +1795,13 @@ async def review_user_kyc(
             dedupe_key=f"kyc-override:{target_user_id}:{review_status}",
         )
     await db.commit()
+    # Dispatched after commit: the verdict must not depend on a mail provider,
+    # and the applicant has no other signal that anyone reviewed their document.
+    if review_status in ("verified", "rejected"):
+        send_kyc_verdict_notification.delay(
+            user_id=str(target_user_id),
+            verified=review_status == "verified",
+        )
     return target
 
 

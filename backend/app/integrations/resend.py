@@ -530,3 +530,69 @@ def send_org_invitation_email(
             "html": html,
         }
     )
+
+
+def send_kyc_verdict_email(*, email: str, verified: bool) -> None:
+    """Tell a user the outcome of their identity verification.
+
+    Manual review is asynchronous and invisible from the user's side: they
+    upload a document and then have no signal that anyone looked at it. The
+    in-app notification only reaches someone already on the site, so without
+    this the verdict effectively never arrives.
+
+    Rejection copy deliberately does not carry the admin's review notes. Those
+    are written for the audit trail, not for the applicant, and the usual cause
+    is simply an unreadable photo.
+
+    Args:
+        email: The applicant's address.
+        verified: True when the identity was accepted, False when rejected.
+    """
+    settings = get_settings()
+    action_url = f"{_frontend_base_url()}/settings/kyc"
+    if _delivery_disabled(
+        "settings", "send_kyc_verdict_email", email, link=action_url
+    ):
+        return
+    if settings.resend_api_key is None:
+        logger.bind(module="settings", action="send_kyc_verdict_email").info(
+            "resend_not_configured"
+        )
+        return
+
+    import resend
+
+    resend.api_key = settings.resend_api_key.get_secret_value()
+
+    if verified:
+        subject = "Your identity is verified"
+        content_html = (
+            "<p style=\"margin: 0 0 16px 0;\">Your identity has been verified.</p>"
+            "<p style=\"margin: 0;\">Payouts and paid work are now open to you. "
+            "Nothing further is needed.</p>"
+        )
+        action_text = "Go to your account"
+    else:
+        subject = "Your identity verification needs attention"
+        content_html = (
+            "<p style=\"margin: 0 0 16px 0;\">We could not verify your identity "
+            "from the document you submitted.</p>"
+            "<p style=\"margin: 0;\">The most common reason is a photo that is "
+            "blurred, cropped, or too dark to read. You can submit another "
+            "document at any time.</p>"
+        )
+        action_text = "Submit a new document"
+
+    _dispatch(
+        {
+            "from": settings.resend_from_address,
+            "to": email,
+            "subject": subject,
+            "html": _render_email_html(
+                title=subject,
+                content_html=content_html,
+                action_url=action_url,
+                action_text=action_text,
+            ),
+        }
+    )

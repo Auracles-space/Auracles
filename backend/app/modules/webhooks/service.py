@@ -12,7 +12,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -57,6 +57,7 @@ from app.modules.webhooks.models import WebhookEvent
 from app.modules.webhooks.schemas import WebhookIngestResponse
 from app.modules.workspace.models import WorkspaceMessage
 from app.workers.tasks.financials import generate_invoice_pdf
+from app.workers.tasks.kyc_notifications import send_kyc_verdict_notification
 
 
 class WebhookProcessingError(RuntimeError):
@@ -2076,13 +2077,20 @@ async def _adopt_hosted_inquiry(
     return record
 
 
+class PersonaVerdict(NamedTuple):
+    """A committed identity decision, carried out to the post-commit fanout."""
+
+    user_id: UUID
+    verified: bool
+
+
 async def _apply_persona_decision(
     db: AsyncSession,
     *,
     inquiry_id: str,
     inquiry_status: str,
     reference_id: str | None = None,
-) -> str:
+) -> tuple[str, PersonaVerdict | None]:
     """Apply one Persona inquiry decision to identity + KYC state.
 
     Verification starts from a hosted-flow link, so the inquiry id does not
@@ -2109,15 +2117,15 @@ async def _apply_persona_decision(
             module="webhooks",
             action="persona_webhook",
         ).warning("unknown_inquiry", provider="persona")
-        return "received"
+        return "received", None
 
     if record.status in _PERSONA_TERMINAL_STATUSES:
-        return "duplicate"
+        return "duplicate", None
 
     if inquiry_status not in _PERSONA_TERMINAL_STATUSES:
         # Non-terminal progress (created/pending/needs_review): track only.
         record.status = inquiry_status
-        return "received"
+        return "received", None
 
     verified = inquiry_status in _PERSONA_VERIFIED_STATUSES
     kyc_status = "verified" if verified else "rejected"
@@ -2158,7 +2166,7 @@ async def _apply_persona_decision(
         payload={"inquiry_id": inquiry_id, "status": kyc_status},
         dedupe_key=f"persona-decision:{inquiry_id}:{kyc_status}",
     )
-    return "processed"
+    return "processed", PersonaVerdict(user_id=user.id, verified=verified)
 
 
 async def handle_persona_webhook(
@@ -2240,7 +2248,7 @@ async def handle_persona_webhook(
         if db.in_transaction():
             await db.rollback()
         async with db.begin():
-            ingest_status = await _apply_persona_decision(
+            ingest_status, verdict = await _apply_persona_decision(
                 db,
                 inquiry_id=inquiry_id,
                 inquiry_status=inquiry_status,
@@ -2258,6 +2266,15 @@ async def handle_persona_webhook(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Webhook processing failed.",
         ) from exc
+
+    # Queued only now the decision has committed: a mail provider must never be
+    # able to roll back a verification, and the applicant needs the verdict by
+    # email — the in-app notification only reaches someone already on the site.
+    if verdict is not None:
+        send_kyc_verdict_notification.delay(
+            user_id=str(verdict.user_id),
+            verified=verdict.verified,
+        )
 
     logger.bind(
         module="webhooks",

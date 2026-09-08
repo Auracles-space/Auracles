@@ -397,6 +397,43 @@ async def test_review_decision_settles_submitted_documents(
     assert document.notes == "NIN slip matches the account name."
 
 
+async def test_review_decision_emails_the_applicant(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_kyc_context: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The verdict is queued for email, not left as an in-app notice only.
+
+    Manual review is invisible from the applicant's side: they upload a
+    document and get no signal that anyone looked at it. QA reported exactly
+    this gap on staging.
+    """
+    queued: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        admin_service.send_kyc_verdict_notification,
+        "delay",
+        lambda **kwargs: queued.append(kwargs),
+    )
+    user_id, _document_id = await _create_applicant("emailed@auracles.space")
+    admin_id, admin_totp = await _create_admin_with_totp(
+        "doc-admin9@auracles.space"
+    )
+
+    response = await client.patch(
+        f"/v1/admin/users/{user_id}/kyc",
+        json={
+            "status": "verified",
+            "notes": None,
+            "totp_code": pyotp.TOTP(admin_totp).now(),
+        },
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    assert queued == [{"user_id": str(user_id), "verified": True}]
+
+
 async def test_rejection_settles_documents_as_rejected(
     client: AsyncClient,
     migrated_database: None,

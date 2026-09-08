@@ -40,6 +40,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.invoicing_beat",
             "app.workers.tasks.gdpr_beat",
             "app.workers.tasks.kyc_document_scan",
+            "app.workers.tasks.kyc_notifications",
             "app.workers.tasks.notifications",
             "app.workers.tasks.org_notifications",
             "app.workers.tasks.organizations_beat",
