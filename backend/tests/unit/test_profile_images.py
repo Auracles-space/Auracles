@@ -10,7 +10,24 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config import get_settings
 from app.core.profile_images import profile_image_key, resolve_profile_image_url
+
+
+@pytest.fixture(autouse=True)
+def _pin_storage_settings(monkeypatch: pytest.MonkeyPatch):
+    """Pin the bucket and endpoint these cases assert against.
+
+    Whether a stored URL is recognised as our own depends on the configured
+    endpoint and bucket. Inheriting those from a developer's local ``.env``
+    made the LocalStack case pass here and fail in CI, which loads no dotenv
+    at all.
+    """
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://localhost:4566")
+    monkeypatch.setenv("S3_AVATARS_BUCKET", "auracles-avatars-dev")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 class _Storage:
