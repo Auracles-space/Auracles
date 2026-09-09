@@ -426,6 +426,10 @@ async def test_login_rate_limits_failed_password_attempts(
     )
 
     assert locked_response.status_code == 429
+    # A lockout with no end date reads as "you are banned". Say when it lifts,
+    # in the body a user reads and in the header a client can act on.
+    assert "minutes" in locked_response.json()["detail"]
+    assert int(locked_response.headers["Retry-After"]) > 0
 
 
 async def test_refresh_rotates_cookie_and_logout_revokes_session(

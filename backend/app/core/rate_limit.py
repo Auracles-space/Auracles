@@ -10,11 +10,14 @@ from typing import Protocol
 from fastapi import HTTPException, status
 
 
-def _format_retry_phrase(seconds: int) -> str:
+def format_retry_phrase(seconds: int) -> str:
     """Render a wait duration as a short, user-facing phrase.
 
     Sub-minute waits are reported in seconds; longer waits are rounded up to
     whole minutes so the message never tells a user to retry "in 0 minutes".
+
+    Shared with the auth lockouts, which count failures themselves rather than
+    going through ``RateLimiter`` but owe the user the same answer.
 
     Args:
         seconds: Remaining cooldown in seconds.
@@ -70,7 +73,7 @@ class RateLimiter:
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=(
                     "Too many attempts. Please try again in "
-                    f"{_format_retry_phrase(retry_after)}."
+                    f"{format_retry_phrase(retry_after)}."
                 ),
                 headers={"Retry-After": str(retry_after)},
             )

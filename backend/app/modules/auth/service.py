@@ -29,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.rate_limit import RateLimiter, RedisCounter
+from app.core.rate_limit import RateLimiter, RedisCounter, format_retry_phrase
 from app.core.security import (
     create_access_token,
     decrypt_totp_secret,
@@ -230,13 +230,45 @@ def _qr_png_base64(provisioning_uri: str) -> str:
     return b64encode(buffer.getvalue()).decode("ascii")
 
 
+def _lockout_error(ttl: int, *, window: int, what: str) -> HTTPException:
+    """Build the 429 a failure lockout raises, saying when it lifts.
+
+    These lockouts count failures directly in Redis rather than going through
+    ``RateLimiter``, so they have to spell out the wait themselves. A lockout
+    that gives no end date is indistinguishable from a permanent ban, and the
+    user's only recourse is to keep retrying — which is what the counter is
+    there to stop.
+
+    Args:
+        ttl: Remaining TTL on the failure counter, in seconds. A non-positive
+            value means Redis holds no expiry yet, so the full window is used.
+        window: The lockout window to fall back to.
+        what: Plural noun for the attempts being limited, e.g. ``"login
+            attempts"``.
+
+    Returns:
+        A 429 carrying both a readable message and a ``Retry-After`` header.
+    """
+    retry_after = ttl if ttl > 0 else window
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=(
+            f"Too many {what}. Please try again in "
+            f"{format_retry_phrase(retry_after)}."
+        ),
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 async def _ensure_totp_not_locked(redis: Redis, user_id: UUID) -> None:
     """Reject verification when recent wrong-code attempts exceeded the limit."""
-    attempts = int(await redis.get(_totp_failure_key(user_id)) or "0")
+    failure_key = _totp_failure_key(user_id)
+    attempts = int(await redis.get(failure_key) or "0")
     if attempts >= TOTP_FAILURE_LIMIT:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many 2FA attempts.",
+        raise _lockout_error(
+            await redis.ttl(failure_key),
+            window=TOTP_FAILURE_WINDOW_SECONDS,
+            what="2FA attempts",
         )
 
 
@@ -697,9 +729,10 @@ async def login(
     await LOGIN_IP_LIMITER.check(cast(RedisCounter, redis), ip or "unknown")
     failure_key = _login_failure_key(normalized_email)
     if int(await redis.get(failure_key) or "0") >= LOGIN_FAILURE_LIMIT:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts.",
+        raise _lockout_error(
+            await redis.ttl(failure_key),
+            window=LOGIN_FAILURE_WINDOW_SECONDS,
+            what="login attempts",
         )
 
     user = await db.scalar(select(User).where(User.email == normalized_email))

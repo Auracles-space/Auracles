@@ -508,6 +508,10 @@ async def test_totp_wrong_code_attempts_are_rate_limited(
     )
 
     assert locked.status_code == 429
+    # The 2FA window is five minutes, short enough to be worth waiting out —
+    # but only if the user is told that rather than left guessing.
+    assert "minutes" in locked.json()["detail"]
+    assert int(locked.headers["Retry-After"]) > 0
 
 
 async def test_totp_login_challenge_is_single_use(
