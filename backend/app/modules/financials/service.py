@@ -1056,6 +1056,36 @@ async def _mark_purchase_failed(
         )
 
 
+def _purchase_callback_url(
+    transaction_id: UUID,
+    *,
+    buyer_org_id: UUID | None = None,
+) -> str:
+    """Build the URL Paystack returns a Framework buyer to after payment.
+
+    Paystack keeps the payer on its own success page when no callback URL is
+    sent, so a buyer who has already paid never sees the License land and can
+    pay a second time. The escrow itself settles from the webhook either way,
+    so this is a stranded user rather than lost money.
+
+    Args:
+        transaction_id: Pending purchase transaction, echoed so the Library
+            can confirm the specific purchase that just completed.
+        buyer_org_id: Purchasing Organization, when the buyer is an org — its
+            Library lives under the org workspace rather than at `/library`.
+
+    Returns:
+        Absolute URL on the frontend origin.
+    """
+    library_path = (
+        f"/dashboard/organizations/{buyer_org_id}/operator/library"
+        if buyer_org_id
+        else "/library"
+    )
+    base = get_settings().frontend_base_url
+    return f"{base}{library_path}?purchase={transaction_id}"
+
+
 async def _start_paystack_purchase(
     db: AsyncSession,
     *,
@@ -1106,6 +1136,7 @@ async def _start_paystack_purchase(
 
     try:
         initialized = await paystack.initialize_transaction(
+            callback_url=_purchase_callback_url(transaction_id),
             email=operator_email,
             amount=amount,
             currency=currency,
@@ -1208,6 +1239,10 @@ async def _start_paystack_org_purchase(
 
     try:
         initialized = await paystack.initialize_transaction(
+            callback_url=_purchase_callback_url(
+                transaction_id,
+                buyer_org_id=org_id,
+            ),
             email=billing_email,
             amount=amount,
             currency=currency,

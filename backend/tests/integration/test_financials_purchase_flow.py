@@ -974,7 +974,12 @@ async def test_nigerian_operator_checks_out_on_paystack(
                 "framework_id": str(framework_id),
                 "license_type": "team",
             },
-            "callback_url": None,
+            # Paystack keeps the payer on its own success page without this, so
+            # a buyer who has already paid never reaches the Library that now
+            # holds the License.
+            "callback_url": (
+                f"http://localhost:3000/library?purchase={transaction.id}"
+            ),
         }
     ]
 

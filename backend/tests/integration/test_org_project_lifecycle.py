@@ -474,6 +474,7 @@ async def test_org_milestone_funding_routes_to_paystack_for_nigerian_billing(
                 "amount": amount,
                 "currency": currency,
                 "metadata": dict(metadata),
+                "callback_url": callback_url,
             }
         )
         return PaystackInitializedTransaction(
@@ -541,6 +542,13 @@ async def test_org_milestone_funding_routes_to_paystack_for_nigerian_billing(
     assert initialized["metadata"]["kind"] == "escrow"
     assert initialized["metadata"]["transaction_id"] == str(transaction.id)
     assert initialized["metadata"]["payer_org_id"] == org_id
+    # An org-funded Milestone lives in the org workspace, so the Paystack
+    # callback must return there rather than to the personal /projects.
+    assert initialized["callback_url"] == (
+        f"http://localhost:3000/dashboard/organizations/{org_id}"
+        f"/projects/{project_id}"
+        f"?funded={transaction.id}&funded_milestone={milestone_id}"
+    )
 
 
 async def test_org_admin_can_cancel_unfunded_project_acceptance(

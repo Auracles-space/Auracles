@@ -540,6 +540,11 @@ async def test_nigerian_requestor_funds_attestation_on_paystack(
     assert initialized["metadata"]["kind"] == "escrow"
     assert initialized["metadata"]["transaction_id"] == str(transaction.id)
     assert initialized["metadata"]["attestation_id"] == body["id"]
+    # Without a callback URL Paystack keeps the payer on its own success page,
+    # so a paid requestor never returns to the Attestation and can pay twice.
+    assert initialized["callback_url"] == (
+        f"http://localhost:3000/attestations/{body['id']}?funded=1"
+    )
 
 
 async def test_paystack_fee_payment_reinitializes_hosted_checkout(

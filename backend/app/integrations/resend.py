@@ -122,11 +122,11 @@ def _delivery_disabled(
 def _frontend_base_url() -> str:
     """Return the app's public base URL for building email links.
 
-    Uses the first configured CORS origin (the frontend origin), falling back
-    to the local dev URL when none is set.
+    Delegates to the shared setting so email links and provider redirect
+    targets (Paystack's `callback_url`) can never disagree about which origin
+    the browser is on.
     """
-    origins = get_settings().cors_origin_list
-    return origins[0] if origins else "http://localhost:3000"
+    return get_settings().frontend_base_url
 
 
 def _render_email_html(

@@ -451,6 +451,12 @@ async def test_org_purchase_routes_to_paystack_for_nigerian_billing(
     assert initialized["metadata"]["kind"] == "purchase"
     assert initialized["metadata"]["transaction_id"] == str(transaction.id)
     assert initialized["metadata"]["payer_org_id"] == org["id"]
+    # An org buyer's Library lives in the org workspace, so the Paystack
+    # callback must return there rather than to the personal /library.
+    assert initialized["callback_url"] == (
+        f"http://localhost:3000/dashboard/organizations/{org['id']}"
+        f"/operator/library?purchase={transaction.id}"
+    )
 
 
 async def test_org_purchase_requires_auth_and_admin_role(

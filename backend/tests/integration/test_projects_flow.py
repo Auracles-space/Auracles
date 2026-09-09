@@ -2464,6 +2464,12 @@ async def test_nigerian_operator_funds_milestone_on_paystack(
     assert initialized["metadata"]["transaction_id"] == str(transaction.id)
     assert initialized["metadata"]["project_id"] == project_id
     assert initialized["metadata"]["milestone_id"] == milestone_id
+    # Funding Escrow is the point an Operator most needs to see confirmed;
+    # without a callback Paystack strands them on its own success page.
+    assert initialized["callback_url"] == (
+        f"http://localhost:3000/projects/{project_id}"
+        f"?funded={transaction.id}&funded_milestone={milestone_id}"
+    )
 
 
 async def test_fund_milestone_omitted_country_keeps_stripe_rail(

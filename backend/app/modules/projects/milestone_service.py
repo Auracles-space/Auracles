@@ -734,6 +734,43 @@ async def _mark_milestone_funding_failed(
         )
 
 
+def _milestone_funding_callback_url(
+    *,
+    project_id: UUID,
+    milestone_id: UUID,
+    transaction_id: UUID,
+    payer_org_id: UUID | None = None,
+) -> str:
+    """Build the URL Paystack returns a funding Operator to after payment.
+
+    Paystack keeps the payer on its own success page when no callback URL is
+    sent. Funding Escrow is the point an Operator most needs confirmed, so
+    landing nowhere invites a second charge; the hold itself settles from the
+    webhook either way, so the cost is a stranded user rather than lost money.
+
+    Args:
+        project_id: Project whose Workspace the Operator returns to.
+        milestone_id: Milestone just funded, echoed so the Workspace can
+            highlight it.
+        transaction_id: Pending funding transaction, echoed for confirmation.
+        payer_org_id: Paying Organization, when the Operator funds on behalf
+            of an org — its Projects live under the org workspace.
+
+    Returns:
+        Absolute URL on the frontend origin.
+    """
+    project_list_path = (
+        f"/dashboard/organizations/{payer_org_id}/projects"
+        if payer_org_id
+        else "/projects"
+    )
+    base = get_settings().frontend_base_url
+    return (
+        f"{base}{project_list_path}/{project_id}"
+        f"?funded={transaction_id}&funded_milestone={milestone_id}"
+    )
+
+
 async def _start_paystack_milestone_funding(
     *,
     db: AsyncSession,
@@ -763,6 +800,11 @@ async def _start_paystack_milestone_funding(
     }
     try:
         initialized = await paystack.initialize_transaction(
+            callback_url=_milestone_funding_callback_url(
+                project_id=project_id,
+                milestone_id=milestone_id,
+                transaction_id=transaction_id,
+            ),
             email=operator_email,
             amount=amount,
             currency=currency,
@@ -1428,6 +1470,12 @@ async def _start_paystack_org_milestone_funding(
     }
     try:
         initialized = await paystack.initialize_transaction(
+            callback_url=_milestone_funding_callback_url(
+                project_id=project_id,
+                milestone_id=milestone_id,
+                transaction_id=transaction_id,
+                payer_org_id=org_id,
+            ),
             email=billing_email,
             amount=amount,
             currency=currency,

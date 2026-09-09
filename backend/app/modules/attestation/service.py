@@ -17,6 +17,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.currency import platform_currency
 from app.integrations import paystack, stripe
 from app.integrations.payment_router import select_provider
@@ -929,6 +930,12 @@ async def _start_paystack_attestation_fee(
 ) -> AttestationFundingResponse:
     """Initialize Paystack hosted checkout for a pending Attestation fee.
 
+    Sends Paystack a `callback_url` back to the Attestation. Without one
+    Paystack leaves the payer on its own success page, where the requestor
+    sees no confirmation from us and can pay a second time; the escrow itself
+    still settles from the webhook, so the symptom is a stranded user rather
+    than lost money.
+
     Raises:
         HTTPException(502): Paystack could not initialize the charge. The
             pending transaction is marked failed first so it never strands.
@@ -938,8 +945,12 @@ async def _start_paystack_attestation_fee(
         "attestation_id": str(attestation_id),
         "requestor_user_id": str(requestor_id),
     }
+    callback_url = (
+        f"{get_settings().frontend_base_url}/attestations/{attestation_id}?funded=1"
+    )
     try:
         initialized = await paystack.initialize_transaction(
+            callback_url=callback_url,
             email=requestor_email,
             amount=amount,
             currency=platform_currency(),

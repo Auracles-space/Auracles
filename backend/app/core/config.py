@@ -440,6 +440,22 @@ class Settings(BaseSettings):
         ]
 
     @property
+    def frontend_base_url(self) -> str:
+        """Return the app's public base URL for links that leave the API.
+
+        Email action links and provider redirect targets (Paystack's
+        `callback_url`) both need the origin the browser actually sits on.
+        The first configured CORS origin is that origin by construction —
+        it is the one the frontend is served from — so it is derived here
+        rather than configured twice and allowed to drift.
+
+        Returns:
+            Origin without a trailing slash, falling back to the local dev URL.
+        """
+        origins = self.cors_origin_list
+        return (origins[0] if origins else "http://localhost:3000").rstrip("/")
+
+    @property
     def async_database_url(self) -> str:
         """Return a SQLAlchemy asyncpg-compatible database URL."""
         return _to_async_postgres_url(self.database_url)
