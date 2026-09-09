@@ -59,6 +59,13 @@ jobs:
       # mirrors backend/Dockerfile so CI and the deployed image agree.
       - name: Install PDF rendering system libraries
         run: |
+          # The runner image ships third-party apt sources (Google Chrome), and
+          # a single broken index fails `apt-get update` wholesale — which took
+          # this job down for something Pango has no relation to. Drop the
+          # sources we do not install from rather than ignoring update errors,
+          # so a genuine Ubuntu mirror failure still fails loudly.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                     /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libpango-1.0-0 libpangocairo-1.0-0
