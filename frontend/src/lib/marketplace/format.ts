@@ -5,14 +5,25 @@
  * dashboards, and Operator library screens.
  */
 
+import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
+
 /**
  * Format a decimal money string from the API for display.
  *
+ * Some figures — admin GMV, developer commission totals — arrive as bare
+ * decimal strings with no currency field beside them, because the platform
+ * settles in exactly one currency. Those callers omit `currency`, so the
+ * default has to be the settlement currency: defaulting to USD printed dollar
+ * signs over naira amounts.
+ *
  * @param price - Decimal string returned by the backend.
- * @param currency - ISO currency code.
+ * @param currency - ISO currency code; defaults to the settlement currency.
  * @returns Compact marketplace price label.
  */
-export function formatMoney(price: string, currency = "USD"): string {
+export function formatMoney(
+  price: string,
+  currency = PLATFORM_CURRENCY,
+): string {
   const amount = Number(price);
   if (!Number.isFinite(amount)) {
     return `${currency} ${price}`;

@@ -20,6 +20,16 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   requestPayout: vi.fn(),
 }));
 
+// tests/setup.ts pins NEXT_PUBLIC_PLATFORM_CURRENCY to USD, so a hardcoded
+// "USD" in the request body would satisfy an assertion written against the
+// real constant. Pin the settlement currency to naira instead, which is what
+// the pilot deployment actually settles in and the only value it accepts.
+vi.mock("@/lib/marketplace/currency", () => ({
+  PLATFORM_CURRENCY: "NGN",
+  currencySymbol: () => "₦",
+  payoutProviderForCountry: () => "paystack",
+}));
+
 const account = {
   account_type: "express",
   created_at: "2026-06-09T00:00:00Z",
@@ -101,7 +111,7 @@ describe("PayoutHistoryTable", () => {
         expect.objectContaining({
           body: {
             amount: "200.00",
-            currency: "USD",
+            currency: "NGN",
             payout_account_id: account.id,
             totp_code: "123456",
           },

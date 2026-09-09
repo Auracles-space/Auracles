@@ -21,6 +21,7 @@ import type {
   OrgAttestorApplicationResponse,
 } from "@/lib/generated/types.gen";
 import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
+import { currencySymbol } from "@/lib/marketplace/currency";
 import {
   ErrorMessage,
   HeaderCard,
@@ -258,7 +259,7 @@ export function AdminAttestationPanel() {
               {resolutionType === "split" && (
                 <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-surface-2 p-3 border border-border-default">
                   <label className="grid gap-1.5 text-xs font-semibold text-foreground">
-                    Release to Contributor ($)
+                    Release to Contributor ({currencySymbol()})
                     <Input 
                       className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
                       onChange={(event) => setReleaseAmount(event.target.value)} 
@@ -267,7 +268,7 @@ export function AdminAttestationPanel() {
                     />
                   </label>
                   <label className="grid gap-1.5 text-xs font-semibold text-foreground">
-                    Refund to Operator ($)
+                    Refund to Operator ({currencySymbol()})
                     <Input 
                       className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
                       onChange={(event) => setRefundAmount(event.target.value)} 

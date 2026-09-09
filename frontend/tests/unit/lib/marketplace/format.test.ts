@@ -1,6 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { formatFrameworkStatus } from "@/lib/marketplace/format";
+import { formatFrameworkStatus, formatMoney } from "@/lib/marketplace/format";
+
+// A distinctive third currency: tests/setup.ts pins NEXT_PUBLIC_PLATFORM_CURRENCY
+// to USD, so asserting against the real constant would pass even if the default
+// were still hardcoded to dollars.
+vi.mock("@/lib/marketplace/currency", () => ({
+  PLATFORM_CURRENCY: "GBP",
+}));
+
+describe("formatMoney", () => {
+  it("falls back to the platform settlement currency, not dollars", () => {
+    // Analytics and developer-portal figures arrive as bare decimal strings
+    // with no currency field, so the default is what the admin actually reads.
+    expect(formatMoney("350.00")).toContain("£");
+    expect(formatMoney("350.00")).not.toContain("$");
+  });
+
+  it("still honours an explicit currency from the API record", () => {
+    expect(formatMoney("350.00", "USD")).toContain("$");
+  });
+});
 
 describe("formatFrameworkStatus", () => {
   it("maps workflow statuses to plain contributor-facing labels", () => {

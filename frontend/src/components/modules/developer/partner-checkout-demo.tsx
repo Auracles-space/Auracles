@@ -18,6 +18,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { getStripeClient } from "@/lib/financials/stripe-client";
+import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 import { formatMoney } from "@/lib/marketplace/format";
 
 const PARTNER_API_BASE = `${
@@ -128,7 +129,7 @@ export function PartnerCheckoutDemo() {
       setPreview({
         title: data.title,
         price: data.price,
-        currency: data.currency ?? "USD",
+        currency: data.currency ?? PLATFORM_CURRENCY,
       });
     } catch {
       setError("Network error loading the framework.");

@@ -25,6 +25,7 @@ import {
   resolveAdminProjectDispute,
 } from "@/lib/generated/sdk.gen";
 import type { AdminDisputeResponse } from "@/lib/generated/types.gen";
+import { currencySymbol } from "@/lib/marketplace/currency";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type DisputeStatusFilter = "active" | "resolved";
@@ -448,7 +449,7 @@ export function AdminDisputesPanel() {
                       {resolutionType === "split" ? (
                         <>
                           <label className="grid gap-1.5 text-sm font-semibold text-foreground">
-                            Release to Contributor ($)
+                            Release to Contributor ({currencySymbol(dispute.currency)})
                             <span className="text-xs font-normal text-foreground-muted">
                               Paid to {dispute.contributor_name}.
                             </span>
@@ -464,7 +465,7 @@ export function AdminDisputesPanel() {
                           </label>
 
                           <label className="grid gap-1.5 text-sm font-semibold text-foreground">
-                            Refund to Operator ($)
+                            Refund to Operator ({currencySymbol(dispute.currency)})
                             <span className="text-xs font-normal text-foreground-muted">
                               Returned to {dispute.operator_name}.
                             </span>

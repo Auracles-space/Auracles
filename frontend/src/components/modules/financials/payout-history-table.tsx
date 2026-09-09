@@ -31,6 +31,7 @@ import type {
   PayoutAccountResponse,
   PayoutResponse,
 } from "@/lib/generated/types.gen";
+import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 /**
@@ -233,7 +234,7 @@ export function PayoutRequestModal({
     const result = await requestPayout({
       body: {
         amount,
-        currency: "USD",
+        currency: PLATFORM_CURRENCY,
         payout_account_id: payoutAccountId,
         totp_code: totpCode,
       },
