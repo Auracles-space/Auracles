@@ -17,7 +17,7 @@ enough that a leaked URL is worth little.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, overload
 from urllib.parse import unquote, urlsplit
 
 from app.core.config import get_settings
@@ -99,6 +99,33 @@ def _is_own_bucket_host(host: str) -> bool:
     return host.startswith("s3.") and host.endswith(".amazonaws.com")
 
 
+@overload
+def resolve_profile_image_url(
+    stored: str,
+    *,
+    storage: _PresignsGets | None = ...,
+    bucket: str | None = ...,
+) -> str: ...
+
+
+@overload
+def resolve_profile_image_url(
+    stored: None,
+    *,
+    storage: _PresignsGets | None = ...,
+    bucket: str | None = ...,
+) -> None: ...
+
+
+@overload
+def resolve_profile_image_url(
+    stored: str | None,
+    *,
+    storage: _PresignsGets | None = ...,
+    bucket: str | None = ...,
+) -> str | None: ...
+
+
 def resolve_profile_image_url(
     stored: str | None,
     *,
@@ -106,6 +133,10 @@ def resolve_profile_image_url(
     bucket: str | None = None,
 ) -> str | None:
     """Resolve a stored profile image to a signed URL a browser can load.
+
+    Overloaded because ``None`` comes back only for a falsy ``stored``: callers
+    that pass a key they just minted get a plain ``str`` and should not have to
+    narrow a value that can never be None.
 
     Args:
         stored: The persisted key or legacy URL.
