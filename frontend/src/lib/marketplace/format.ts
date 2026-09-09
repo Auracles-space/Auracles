@@ -5,7 +5,7 @@
  * dashboards, and Operator library screens.
  */
 
-import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
+import { CURRENCY_DISPLAY, PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 /**
  * Format a decimal money string from the API for display.
@@ -28,11 +28,18 @@ export function formatMoney(
   if (!Number.isFinite(amount)) {
     return `${currency} ${price}`;
   }
-  return new Intl.NumberFormat("en-US", {
-    currency,
-    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-    style: "currency",
-  }).format(amount);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      currency,
+      currencyDisplay: CURRENCY_DISPLAY,
+      maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
+      style: "currency",
+    }).format(amount);
+  } catch {
+    // An unrecognised code from the API is worth showing plainly rather than
+    // throwing inside a price tag and blanking the surrounding card.
+    return `${currency} ${price}`;
+  }
 }
 
 /**

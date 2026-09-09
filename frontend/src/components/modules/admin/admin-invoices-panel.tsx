@@ -19,6 +19,7 @@ import {
 import { listAdminInvoicesV1AdminInvoicesGet } from "@/lib/generated/sdk.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import type { AdminInvoicesResponse } from "@/lib/generated/types.gen";
+import { CURRENCY_DISPLAY } from "@/lib/marketplace/currency";
 
 /**
  * Format an invoice date for compact admin copy.
@@ -46,8 +47,9 @@ function formatAmount(amount: string, currency: string): string {
   }
   try {
     return new Intl.NumberFormat(undefined, {
-      style: "currency",
       currency,
+      currencyDisplay: CURRENCY_DISPLAY,
+      style: "currency",
     }).format(value);
   } catch {
     return `${amount} ${currency}`;

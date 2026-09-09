@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth/form-client";
 import { listAdminPayoutsV1AdminPayoutsGet } from "@/lib/generated/sdk.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
+import { CURRENCY_DISPLAY } from "@/lib/marketplace/currency";
 import type {
   AdminPayoutDirectoryResponse,
   AdminPayoutItem,
@@ -65,8 +66,9 @@ function formatAmount(amount: string, currency: string): string {
   }
   try {
     return new Intl.NumberFormat(undefined, {
-      style: "currency",
       currency,
+      currencyDisplay: CURRENCY_DISPLAY,
+      style: "currency",
     }).format(value);
   } catch {
     return `${amount} ${currency}`;

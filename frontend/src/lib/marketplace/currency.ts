@@ -16,6 +16,20 @@ export const PLATFORM_CURRENCY =
   process.env.NEXT_PUBLIC_PLATFORM_CURRENCY ?? "NGN";
 
 /**
+ * How every money amount on this platform writes its currency.
+ *
+ * CLDR's default (`"symbol"`) resolves NGN to the literal string "NGN" in
+ * every locale except en-NG, so the pilot's own currency reads as an ISO code
+ * on charts, ledgers and price tags — "NGN 350" where a Nigerian reader
+ * expects "₦350". `"narrowSymbol"` resolves it to ₦ and leaves $, £ and €
+ * exactly as they were.
+ *
+ * Shared rather than repeated so a money formatter can never quietly disagree
+ * with the others about how the currency is written.
+ */
+export const CURRENCY_DISPLAY = "narrowSymbol" as const;
+
+/**
  * Return the currency symbol for a code, for use as an input adornment.
  *
  * Derived through `Intl` rather than a hand-kept map so a new currency needs
@@ -26,11 +40,18 @@ export const PLATFORM_CURRENCY =
  * @returns The symbol (e.g. `₦`, `$`), or the code when none is available.
  */
 export function currencySymbol(currency: string = PLATFORM_CURRENCY): string {
-  const parts = new Intl.NumberFormat("en-US", {
-    currency,
-    style: "currency",
-  }).formatToParts(0);
-  return parts.find((part) => part.type === "currency")?.value ?? currency;
+  try {
+    const parts = new Intl.NumberFormat("en-US", {
+      currency,
+      currencyDisplay: CURRENCY_DISPLAY,
+      style: "currency",
+    }).formatToParts(0);
+    return parts.find((part) => part.type === "currency")?.value ?? currency;
+  } catch {
+    // An unknown code, or an engine without narrow-symbol support, must not
+    // take down the form this label sits in.
+    return currency;
+  }
 }
 
 /** Payment rails a payout account can settle on. */

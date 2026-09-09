@@ -6,6 +6,7 @@ import { formatFrameworkStatus, formatMoney } from "@/lib/marketplace/format";
 // to USD, so asserting against the real constant would pass even if the default
 // were still hardcoded to dollars.
 vi.mock("@/lib/marketplace/currency", () => ({
+  CURRENCY_DISPLAY: "narrowSymbol",
   PLATFORM_CURRENCY: "GBP",
 }));
 
@@ -19,6 +20,14 @@ describe("formatMoney", () => {
 
   it("still honours an explicit currency from the API record", () => {
     expect(formatMoney("350.00", "USD")).toContain("$");
+  });
+
+  it("prints the naira sign rather than the ISO code", () => {
+    // CLDR's default symbol for NGN outside en-NG is the literal string "NGN",
+    // so the pilot's own currency renders as a code on every chart and ledger
+    // unless the narrow symbol is asked for by name.
+    expect(formatMoney("350.00", "NGN")).toContain("₦");
+    expect(formatMoney("350.00", "NGN")).not.toContain("NGN");
   });
 });
 

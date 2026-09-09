@@ -25,6 +25,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
 // real constant. Pin the settlement currency to naira instead, which is what
 // the pilot deployment actually settles in and the only value it accepts.
 vi.mock("@/lib/marketplace/currency", () => ({
+  CURRENCY_DISPLAY: "narrowSymbol",
   PLATFORM_CURRENCY: "NGN",
   currencySymbol: () => "₦",
   payoutProviderForCountry: () => "paystack",

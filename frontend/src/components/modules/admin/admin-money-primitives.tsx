@@ -8,6 +8,8 @@
  * Maps to: admin financial oversight (money movement traceability).
  */
 
+import { CURRENCY_DISPLAY } from "@/lib/marketplace/currency";
+
 /** Tabs across the money-oversight surface, in investigation order. */
 export const MONEY_TABS = [
   { id: "payments", label: "Payments" },
@@ -88,8 +90,9 @@ export function formatAmount(amount: string, currency: string): string {
   }
   try {
     return new Intl.NumberFormat(undefined, {
-      style: "currency",
       currency,
+      currencyDisplay: CURRENCY_DISPLAY,
+      style: "currency",
     }).format(value);
   } catch {
     return `${amount} ${currency}`;
