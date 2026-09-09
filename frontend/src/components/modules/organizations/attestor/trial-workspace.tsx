@@ -165,7 +165,19 @@ export function TrialWorkspace({ orgId }: TrialWorkspaceProps) {
   }
 
   if (!trial) {
-    return null;
+    // Every load failure sets an error above, so reaching here means the call
+    // resolved without a trial. Rendering nothing put a blank page on a tab
+    // offered to every member — the shell documents this as a friendly
+    // "no active trial" state, so say that rather than showing a white screen.
+    return (
+      <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+        <p className="text-sm text-foreground-muted">
+          No calibration trial is assigned to you right now. If your
+          organization has nominated you, the trial appears here once its
+          attestor application has been reviewed.
+        </p>
+      </section>
+    );
   }
 
   const allDimensionsScored = trial.dimensions.every((dimension) =>

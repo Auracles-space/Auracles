@@ -801,13 +801,20 @@ async def nominate_trial_member(
             title="You've been nominated for a trial attestation",
             body=(
                 "Your organization has nominated you to complete a trial "
-                "attestation on its behalf. Open the attestor page to begin."
+                "attestation on its behalf. The trial opens on your "
+                "Calibration Trial page once the application is reviewed, and "
+                "you will be notified when it is ready to start."
             ),
             payload={
                 "org_id": str(org_id),
                 "application_id": str(application.id),
             },
-            link=f"/dashboard/organizations/{org_id}/attestor",
+            # The nominee is a plain org member. `/attestor` is the
+            # application tab, whose endpoint is owner/admin only, so sending
+            # them there failed to load the one page they were told to open.
+            # `/attestor-trial` is the member-facing surface and is offered to
+            # every member in the org shell.
+            link=f"/dashboard/organizations/{org_id}/attestor-trial",
             dedupe_key=f"org_attestor_trial_nominated:{application.id}:{member_id}",
         )
     except Exception as exc:  # pragma: no cover - defensive queue guard

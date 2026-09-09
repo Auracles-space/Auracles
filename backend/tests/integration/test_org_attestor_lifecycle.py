@@ -74,20 +74,24 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture(autouse=True)
-def _stub_trial_notification(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Prevent the lifecycle nomination step from enqueuing to the real broker.
+def trial_notifications(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Capture nomination notifications instead of enqueuing to the real broker.
 
     `nominate_trial_member` fires `dispatch_project_notification.delay`; without
     this stub the shared dev worker would consume a task for a user that only
-    exists in the test database and log a spurious failure.
+    exists in the test database and log a spurious failure. Recorded rather
+    than dropped so tests can assert where the nominee is actually sent.
     """
     from app.modules.organizations import attestor_application_service as _svc
 
-    class _NoDispatch:
-        def delay(self, **kwargs: object) -> None:
-            return None
+    sent: list[dict[str, object]] = []
 
-    monkeypatch.setattr(_svc, "dispatch_project_notification", _NoDispatch())
+    class _RecordingDispatch:
+        def delay(self, **kwargs: object) -> None:
+            sent.append(kwargs)
+
+    monkeypatch.setattr(_svc, "dispatch_project_notification", _RecordingDispatch())
+    return sent
 
 NDA_VERSION = get_settings().org_member_nda_version
 
@@ -407,7 +411,10 @@ async def _pass_trial(application_id: UUID) -> None:
 
 
 async def test_org_attestor_full_lifecycle(
-    client: AsyncClient, clean_state: FakeRedis, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient,
+    clean_state: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+    trial_notifications: list[dict[str, object]],
 ) -> None:
     """One organization travels application → activation → attested settlement.
 
@@ -490,6 +497,18 @@ async def test_org_attestor_full_lifecycle(
         headers=_auth(owner_id),
     )
     assert nominated.status_code == 200
+    # The nominee is a plain member, so the link has to land on a page a member
+    # can actually open. The attestor-application tab behind /attestor is
+    # owner/admin only, and pointing there left the nominee staring at a load
+    # failure on the one page they were told to open.
+    nomination = next(
+        call
+        for call in trial_notifications
+        if call["notification_type"] == "org_attestor_trial_nominated"
+    )
+    assert nomination["link"] == (
+        f"/dashboard/organizations/{org_id}/attestor-trial"
+    )
 
     submitted = await client.post(f"{app_base}/submit", headers=_auth(owner_id))
     assert submitted.status_code == 200
