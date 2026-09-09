@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import Path
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -36,6 +38,45 @@ from app.modules.organizations.models import (
 _LIVE_APPLICATION_STATUSES = ("draft", "submitted", "needs_info")
 
 
+_NDA_DOCUMENT_DIR = Path(__file__).parent / "nda_documents"
+
+
+class MissingNdaDocumentError(RuntimeError):
+    """Raised when the configured NDA version has no document on disk."""
+
+
+@lru_cache(maxsize=8)
+def nda_document_text(version: str) -> str:
+    """Return the agreement text for one NDA version.
+
+    Versions are Markdown files named for the version string, so publishing new
+    wording is adding a file and bumping ``ORG_MEMBER_NDA_VERSION`` — which is
+    reviewable as a diff and keeps the text a signature refers to immutable.
+
+    Args:
+        version: NDA version string, e.g. ``"1.0"``.
+
+    Returns:
+        The document's Markdown source.
+
+    Raises:
+        MissingNdaDocumentError: No document exists for the version. Raised
+            rather than returning empty text: a version bump that forgets its
+            document would otherwise ask members to sign a blank agreement.
+    """
+    # The version reaches the filesystem, so refuse anything that is not a
+    # plain version string rather than resolving a traversal into the package.
+    if not version or not all(char.isalnum() or char in "._-" for char in version):
+        raise MissingNdaDocumentError(f"Unsupported NDA version {version!r}.")
+    document = _NDA_DOCUMENT_DIR / f"{version}.md"
+    try:
+        return document.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise MissingNdaDocumentError(
+            f"No NDA document for version {version!r}."
+        ) from exc
+
+
 @dataclass(frozen=True)
 class NdaStatus:
     """A member's NDA position for one organization.
@@ -43,12 +84,15 @@ class NdaStatus:
     Attributes:
         required: True iff the org's attestor capability is pending or active.
         current_version: Platform NDA version members must hold.
+        document: Agreement text for ``current_version``, so every signing
+            surface renders the same words rather than its own copy.
         signed_version: Version the member last signed, if any.
         signed_at: Timestamp of the member's last signature, if any.
     """
 
     required: bool
     current_version: str
+    document: str
     signed_version: str | None
     signed_at: datetime | None
 
@@ -119,9 +163,11 @@ async def get_nda_status(
     signature = await db.scalar(
         select(OrgMemberNda).where(OrgMemberNda.member_id == member.id)
     )
+    version = get_settings().org_member_nda_version
     return NdaStatus(
         required=await _nda_required(db, org_id=org_id),
-        current_version=get_settings().org_member_nda_version,
+        current_version=version,
+        document=nda_document_text(version),
         signed_version=signature.nda_version if signature else None,
         signed_at=signature.signed_at if signature else None,
     )

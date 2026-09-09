@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { 
-  previewInvitationV1OrgInvitationsTokenGet, 
+import {
+  previewInvitationV1OrgInvitationsTokenGet,
   acceptInvitationV1OrgInvitationsTokenAcceptPost,
+  getOrgNda,
   signOrgNda
 } from "@/lib/generated/sdk.gen";
 import type { OrgInvitationPreviewResponse } from "@/lib/generated/types.gen";
@@ -28,6 +29,10 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
   const [joinedOrg, setJoinedOrg] = useState<{ id: string; name: string } | null>(null);
   const [signingNda, setSigningNda] = useState(false);
   const [ndaSigned, setNdaSigned] = useState(false);
+  // Served by the API rather than written here: this screen and the org NDA
+  // panel each used to hardcode their own wording, so which door a member came
+  // through decided which agreement they signed.
+  const [ndaDocument, setNdaDocument] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadPreview() {
@@ -78,7 +83,15 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
         setAccepting(false);
       } else {
         if (result.data?.nda_required) {
-          setJoinedOrg({ id: result.data.org.id, name: result.data.org.name });
+          const org = { id: result.data.org.id, name: result.data.org.name };
+          setJoinedOrg(org);
+          const nda = await getOrgNda({
+            path: { org_id: org.id },
+            headers: getAccessTokenHeaders(),
+          });
+          if (nda.response.ok && nda.data) {
+            setNdaDocument(nda.data.document);
+          }
           setAccepting(false);
         } else {
           router.push("/dashboard/organizations");
@@ -159,16 +172,20 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
                   You have successfully joined <span className="font-semibold text-foreground">{joinedOrg.name}</span>! 
                   However, you must sign the organization&apos;s NDA before you can participate in any attestations or view confidential materials.
                 </p>
-                <div className="border border-border-default rounded-md p-4 bg-surface-2 text-xs h-32 overflow-y-auto whitespace-pre-wrap font-mono text-foreground-muted mb-6 text-left">
-                  [Confidentiality Agreement Text Placeholder]
-                  
-                  The Recipient agrees not to disclose any Confidential Information to third parties...
-                  (Full legal text would be fetched and displayed here)
+                <div className="mb-6 h-32 overflow-y-auto whitespace-pre-wrap rounded-xl border border-border-default bg-surface-2 p-4 text-left text-xs leading-5 text-foreground-muted">
+                  {ndaDocument ?? "Loading the agreement…"}
                 </div>
                 
                 <div className="flex flex-col gap-3">
-                  <Button onClick={handleSignNda} loading={signingNda} className="w-full min-h-12 text-base">
-                    Sign NDA & Continue
+                  {/* Signing text the member was never shown is not consent,
+                      so the action waits for the agreement to load. */}
+                  <Button
+                    onClick={handleSignNda}
+                    loading={signingNda}
+                    disabled={!ndaDocument}
+                    className="w-full min-h-12 text-base"
+                  >
+                    Sign NDA &amp; Continue
                   </Button>
                   <Button 
                     variant="secondary" 

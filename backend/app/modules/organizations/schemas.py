@@ -570,10 +570,16 @@ class AdminOrgsResponse(BaseModel):
 
 
 class OrgNdaStatusResponse(BaseModel):
-    """A member's NDA status for one organization."""
+    """A member's NDA status for one organization.
+
+    Carries the agreement text as well as its version: a member has to be able
+    to read what they are signing, and serving it here keeps every signing
+    surface on one wording.
+    """
 
     required: bool
     current_version: str
+    document: str
     signed_version: str | None = None
     signed_at: datetime | None = None
 

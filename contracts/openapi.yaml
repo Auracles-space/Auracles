@@ -10624,10 +10624,20 @@ components:
       title: OrgMembersResponse
       type: object
     OrgNdaStatusResponse:
-      description: A member's NDA status for one organization.
+      description: 'A member''s NDA status for one organization.
+
+
+        Carries the agreement text as well as its version: a member has to be able
+
+        to read what they are signing, and serving it here keeps every signing
+
+        surface on one wording.'
       properties:
         current_version:
           title: Current Version
+          type: string
+        document:
+          title: Document
           type: string
         required:
           title: Required
@@ -10646,6 +10656,7 @@ components:
       required:
       - required
       - current_version
+      - document
       title: OrgNdaStatusResponse
       type: object
     OrgNominateTrialMemberRequest:

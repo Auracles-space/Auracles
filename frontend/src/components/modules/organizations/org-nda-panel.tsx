@@ -91,12 +91,8 @@ export function OrgNdaPanel({ onSigned }: { onSigned?: () => void }) {
           </div>
         )}
 
-        <div className="border border-neutral-200 rounded-md p-4 bg-neutral-50 text-sm h-64 overflow-y-auto whitespace-pre-wrap font-mono text-neutral-700">
-          {/* We do not receive the actual NDA text from the endpoint, so we show a placeholder for now */}
-          [Confidentiality Agreement Text Placeholder for version {nda.current_version}]
-          
-          The Recipient agrees not to disclose any Confidential Information to third parties...
-          (Full legal text would be fetched and displayed here)
+        <div className="h-64 overflow-y-auto whitespace-pre-wrap rounded-xl border border-border-default bg-surface-2 p-4 text-sm leading-6 text-foreground-muted">
+          {nda.document}
         </div>
       </div>
       {!isSigned && (

@@ -999,6 +999,7 @@ async def get_nda_status(
     return OrgNdaStatusResponse(
         required=nda_status.required,
         current_version=nda_status.current_version,
+        document=nda_status.document,
         signed_version=nda_status.signed_version,
         signed_at=nda_status.signed_at,
     )
@@ -1029,6 +1030,7 @@ async def sign_nda(
     return OrgNdaStatusResponse(
         required=nda_status.required,
         current_version=nda_status.current_version,
+        document=nda_status.document,
         signed_version=nda_status.signed_version,
         signed_at=nda_status.signed_at,
     )

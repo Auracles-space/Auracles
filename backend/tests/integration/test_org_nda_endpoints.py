@@ -143,6 +143,24 @@ async def test_nda_status_and_sign_happy_path(
     assert again.json()["signed_version"] == body["current_version"]
 
 
+async def test_nda_status_carries_the_document_being_signed(
+    client: AsyncClient, migrated_database: None, clean_nda_state: None
+) -> None:
+    """The endpoint returns the agreement text, not just its version.
+
+    Returning a bare version left each signing surface to invent its own copy,
+    so members signed differently-worded stubs depending on which screen they
+    came through.
+    """
+    owner_id, _ = await create_user("nda-doc")
+    org_id = await create_org_with_capability(owner_id)
+
+    body = (await client.get(f"/v1/orgs/{org_id}/nda", headers=auth(owner_id))).json()
+
+    assert body["document"]
+    assert "Placeholder" not in body["document"]
+
+
 async def test_nda_requires_authentication(
     client: AsyncClient, migrated_database: None, clean_nda_state: None
 ) -> None:
