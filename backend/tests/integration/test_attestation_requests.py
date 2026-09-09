@@ -834,6 +834,137 @@ async def test_operator_initiated_request_enters_consent_unpaid(
     assert transaction is None
 
 
+async def test_requestor_cancels_own_request_awaiting_owner_consent(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A requestor can abandon their own request while it awaits consent.
+
+    Nothing has been charged at ``pending_owner_consent`` — no Transaction
+    exists yet — so withdrawing is a pure state change with no money to
+    unwind.
+    """
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    owner_id = await create_user("fw-author-cancel@auracles.space", ["contributor"])
+    operator_id = await create_user("fw-buyer-cancel@auracles.space", ["operator"])
+    framework_id = await _create_framework(owner_id, "published")
+    operator_headers = auth_headers(operator_id, ["operator"])
+
+    created = await client.post(
+        "/v1/attestations",
+        headers=operator_headers,
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "quality",
+            "brief": _FRAMEWORK_BRIEF,
+            "requested_specializations": ["operations"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+    attestation_id = created.json()["id"]
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=operator_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+
+
+async def test_requestor_cannot_cancel_once_the_fee_is_payable(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Withdrawing must stop at the point money can already be in flight.
+
+    The fee webhook rejects any Attestation that has left ``pending_fee``, so
+    allowing a withdrawal here would let a payment land against a cancelled
+    request and strand the held funds.
+    """
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("fw-own-cancel@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    created = await client.post(
+        "/v1/attestations",
+        headers=headers,
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "quality",
+            "brief": _FRAMEWORK_BRIEF,
+        },
+    )
+    attestation_id = created.json()["id"]
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=headers,
+    )
+
+    assert response.status_code == 409
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, UUID(attestation_id))
+
+    assert attestation is not None
+    assert attestation.status == "pending_fee"
+
+
+async def test_requestor_cannot_cancel_another_users_request(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stranger withdrawing someone else's request gets a 404, not a 403.
+
+    A 403 would confirm the Attestation exists to a caller with no claim on it.
+    """
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    owner_id = await create_user("fw-author-idor@auracles.space", ["contributor"])
+    operator_id = await create_user("fw-buyer-idor@auracles.space", ["operator"])
+    stranger_id = await create_user("fw-stranger-idor@auracles.space", ["operator"])
+    framework_id = await _create_framework(owner_id, "published")
+
+    created = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "quality",
+            "brief": _FRAMEWORK_BRIEF,
+            "requested_specializations": ["operations"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+    attestation_id = created.json()["id"]
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=auth_headers(stranger_id, ["operator"]),
+    )
+
+    assert response.status_code == 404
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, UUID(attestation_id))
+
+    assert attestation is not None
+    assert attestation.status == "pending_owner_consent"
+
+
 async def test_operator_cannot_request_on_unpublished_framework(
     client: AsyncClient,
     migrated_database: None,

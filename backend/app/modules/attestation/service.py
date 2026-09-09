@@ -411,6 +411,77 @@ async def decide_owner_consent(
     return attestation
 
 
+async def cancel_attestation_request(
+    db: AsyncSession,
+    requestor: User,
+    *,
+    attestation_id: UUID,
+) -> Attestation:
+    """Withdraw the caller's own Attestation request before any fee is charged.
+
+    Deliberately limited to ``pending_owner_consent``, the one requestor-facing
+    state where no Transaction exists. Cancelling a ``pending_fee`` request
+    would race the payment webhook, which rejects any Attestation that has left
+    ``pending_fee`` — a payment landing after the cancel would strand held
+    funds against a dead request.
+
+    Args:
+        db: Async database session.
+        requestor: Authenticated user withdrawing their own request.
+        attestation_id: Attestation being withdrawn.
+
+    Returns:
+        The cancelled Attestation row.
+
+    Raises:
+        HTTPException(404): The row does not exist or belongs to another
+            requestor — an existence check must not leak either way.
+        HTTPException(409): The request has moved past the pre-payment state.
+    """
+    requestor_id = requestor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        attestation = await db.get(Attestation, attestation_id, with_for_update=True)
+        if attestation is None or attestation.requestor_id != requestor_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation not found.",
+            )
+        if attestation.status == "cancelled":
+            # Withdrawing twice is the same outcome the caller asked for, so a
+            # double-tap returns the row rather than a confusing conflict.
+            return attestation
+        if attestation.status != "pending_owner_consent":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Only a request still awaiting the framework owner's "
+                    "consent can be withdrawn."
+                ),
+            )
+        attestation.status = "cancelled"
+        attestation.closed_at = datetime.now(UTC)
+        await write_audit(
+            db=db,
+            actor_id=requestor_id,
+            action="attestation_request_withdrawn",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={"previous_status": "pending_owner_consent"},
+        )
+
+    await db.refresh(attestation)
+    logger.bind(
+        module="attestation",
+        action="cancel_attestation_request",
+        user_id=str(requestor_id),
+        attestation_id=str(attestation_id),
+    ).info("attestation_request_withdrawn")
+    return attestation
+
+
 async def fund_attestation(
     db: AsyncSession,
     requestor: User,

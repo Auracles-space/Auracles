@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { requestAttestation } from "@/lib/generated/sdk.gen";
+import {
+  cancelAttestationRequest,
+  listAttestations,
+  requestAttestation,
+} from "@/lib/generated/sdk.gen";
 import { RequestorPanel } from "./requestor-panel";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -18,6 +22,7 @@ vi.mock("./attestation-funding-panel", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   acceptAttestationReport: vi.fn(),
+  cancelAttestationRequest: vi.fn(),
   createAttestationDispute: vi.fn(),
   listAttestations: vi.fn(async () => ({
     response: { ok: true },
@@ -264,5 +269,57 @@ describe("RequestorPanel framework request", () => {
 
     await waitFor(() => expect(requestAttestation).toHaveBeenCalled());
     expect(screen.queryByTestId("funding-panel")).toBeNull();
+  });
+});
+
+/** One requestor-visible attestation in the given status. */
+function attestationInStatus(status: string) {
+  return {
+    id: "att-withdraw-1",
+    target_type: "framework",
+    target_id: "11111111-1111-1111-1111-111111111111",
+    status,
+    outcome: null,
+    fee_amount: "1200.00",
+    currency: "NGN",
+    summary: null,
+    open_clarification: false,
+  };
+}
+
+describe("RequestorPanel withdrawal", () => {
+  it("offers a way out of a request still awaiting owner approval", async () => {
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: { attestations: [attestationInStatus("pending_owner_consent")] },
+    } as never);
+    vi.mocked(cancelAttestationRequest).mockResolvedValue({
+      response: { ok: true },
+      data: { ...attestationInStatus("cancelled") },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Withdraw request/i }));
+
+    await waitFor(() => {
+      expect(cancelAttestationRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ path: { attestation_id: "att-withdraw-1" } }),
+      );
+    });
+  });
+
+  it("offers no withdrawal once the fee is payable", async () => {
+    // Past this point a payment can already be in flight, and the fee webhook
+    // rejects any attestation that has left pending_fee.
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: { attestations: [attestationInStatus("pending_fee")] },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    await screen.findByText(/Awaiting payment/i);
+    expect(screen.queryByRole("button", { name: /Withdraw request/i })).toBeNull();
   });
 });

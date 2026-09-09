@@ -11,6 +11,8 @@ import { formatLabel, formatMoney } from "@/lib/marketplace/format";
  */
 const STATUS_LABELS: Record<string, string> = {
   pending_fee: "Awaiting payment",
+  pending_owner_consent: "Awaiting owner approval",
+  cancelled: "Withdrawn",
   matching: "Finding attestor",
   needs_admin: "Finding attestor",
   offered: "Offer sent",

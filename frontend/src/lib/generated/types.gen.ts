@@ -6057,6 +6057,16 @@ export type RespondToAttestationClarificationV1AttestationsAttestationIdClarific
 
 export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostError = (HTTPValidationError);
 
+export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostResponse = (AttestationRequestResponse);
+
+export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostError = (HTTPValidationError);
+
 export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostData = {
     body: AttestationConsentRequest;
     path: {

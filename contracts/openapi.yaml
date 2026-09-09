@@ -17637,6 +17637,39 @@ paths:
       summary: Respond to a workspace clarification
       tags:
       - Attestation
+  /v1/attestations/{attestation_id}/cancel:
+    post:
+      description: Withdraw the caller's own Attestation request while it is still
+        awaiting the framework owner's consent, before any fee is charged. A request
+        that has reached fee payment cannot be withdrawn here, because a payment already
+        in flight would strand held funds.
+      operationId: cancel_attestation_request_v1_attestations__attestation_id__cancel_post
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Withdraw an unpaid attestation request
+      tags:
+      - Attestation
   /v1/attestations/{attestation_id}/consent:
     post:
       description: Approve or decline an operator-initiated attestation as the framework

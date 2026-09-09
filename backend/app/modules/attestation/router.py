@@ -162,6 +162,31 @@ async def decide_owner_consent(
 
 
 @router.post(
+    "/attestations/{attestation_id}/cancel",
+    response_model=AttestationRequestResponse,
+    summary="Withdraw an unpaid attestation request",
+    description=(
+        "Withdraw the caller's own Attestation request while it is still "
+        "awaiting the framework owner's consent, before any fee is charged. "
+        "A request that has reached fee payment cannot be withdrawn here, "
+        "because a payment already in flight would strand held funds."
+    ),
+)
+async def cancel_attestation_request(
+    attestation_id: UUID,
+    requestor: RequestorUser,
+    db: DatabaseSession,
+) -> AttestationRequestResponse:
+    """Withdraw the caller's own pre-payment Attestation request."""
+    attestation = await attestation_service.cancel_attestation_request(
+        db=db,
+        requestor=requestor,
+        attestation_id=attestation_id,
+    )
+    return AttestationRequestResponse.model_validate(attestation)
+
+
+@router.post(
     "/attestations/{attestation_id}/fund",
     response_model=AttestationFundingResponse,
     status_code=status.HTTP_201_CREATED,

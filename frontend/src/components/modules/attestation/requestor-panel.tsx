@@ -17,6 +17,7 @@ import {
 import { JURISDICTION_OPTIONS } from "@/lib/marketplace/taxonomy";
 import {
   acceptAttestationReport,
+  cancelAttestationRequest,
   createAttestationDispute,
   listAttestations,
   listContributorFrameworks,
@@ -223,6 +224,46 @@ export function RequestorPanel() {
   }
 
   /**
+   * Reset the request form without submitting it.
+   *
+   * The form lives in a collapsible block, so a requestor who opened it and
+   * changed their mind needs a way to put it back rather than clearing seven
+   * fields by hand.
+   */
+  function clearRequestForm() {
+    setTargetId("");
+    setReviewType("");
+    setWhatItDoes("");
+    setUseCase("");
+    setJurisdiction("");
+    setFocusAreas("");
+    setDesiredOutcome("");
+    setError(null);
+  }
+
+  /**
+   * Withdraw a request that is still waiting on the framework owner.
+   *
+   * Only offered before the fee becomes payable: past that point a payment can
+   * already be in flight, and withdrawing would strand the held funds.
+   *
+   * @param attestationId - Attestation UUID.
+   */
+  async function handleWithdrawRequest(attestationId: string) {
+    setError(null);
+    configureBrowserClient();
+    const result = await cancelAttestationRequest({
+      headers: getAccessTokenHeaders(),
+      path: { attestation_id: attestationId },
+    });
+    if (!result.response.ok) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    await loadRequestorAttestations();
+  }
+
+  /**
    * Raise a dispute against a submitted report.
    *
    * @param attestationId - Attestation UUID.
@@ -374,14 +415,24 @@ export function RequestorPanel() {
             </span>
           </label>
         </div>
-        <button
-          className="mt-6 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={!canRequest || isRequesting}
-          onClick={handleRequestAttestation}
-          type="button"
-        >
-          {isRequesting ? "Requesting…" : "Request attestation"}
-        </button>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button
+            className="min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!canRequest || isRequesting}
+            onClick={handleRequestAttestation}
+            type="button"
+          >
+            {isRequesting ? "Requesting…" : "Request attestation"}
+          </button>
+          <button
+            className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={isRequesting}
+            onClick={clearRequestForm}
+            type="button"
+          >
+            Clear form
+          </button>
+        </div>
       </details>
 
       {fundingSession && (
@@ -418,6 +469,21 @@ export function RequestorPanel() {
                 View details
               </Link>
             </div>
+            {attestation.status === "pending_owner_consent" ? (
+              <div className="mt-4 rounded-xl border border-border-default bg-surface-2 p-4">
+                <p className="text-sm leading-6 text-foreground-muted">
+                  Waiting on the framework owner to approve this review. Nothing
+                  has been charged yet, so you can withdraw it at no cost.
+                </p>
+                <button
+                  className="mt-3 min-h-12 rounded-xl border border-error/50 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error"
+                  onClick={() => handleWithdrawRequest(attestation.id)}
+                  type="button"
+                >
+                  Withdraw request
+                </button>
+              </div>
+            ) : null}
             {attestation.status === "report_submitted" ? (
               <div className="mt-4 grid gap-3">
                 <button

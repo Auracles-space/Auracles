@@ -32,6 +32,8 @@ const compatibilityAliases = {
   createFrameworkReview: "createFrameworkReviewV1FrameworksFrameworkIdReviewsPost",
   createFrameworkVersion: "createNewVersionV1FrameworksFrameworkIdVersionsPost",
   cancelAcceptance: "cancelAcceptanceV1ProjectsProjectIdCancelAcceptancePost",
+  cancelAttestationRequest:
+    "cancelAttestationRequestV1AttestationsAttestationIdCancelPost",
   cancelOrgAcceptance: "cancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePost",
   createMilestone: "createMilestoneV1ProjectsProjectIdMilestonesPost",
   createPaymentMethodSetup: "createPaymentMethodSetupV1FinancialsPaymentMethodsPost",
