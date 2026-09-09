@@ -36,7 +36,14 @@ class FakeInvoiceStorage:
         """Return whether an invoice object exists."""
         return key in self.existing_keys
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a deterministic fake presigned invoice URL."""
         self.presigned_get_requests.append((bucket, key, expires_in))
         return f"https://s3.test/{bucket}/{key}?expires={expires_in}"

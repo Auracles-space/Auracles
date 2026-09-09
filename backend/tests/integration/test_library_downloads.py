@@ -102,12 +102,21 @@ class FakeDownloadStorage:
     def __init__(self) -> None:
         """Create empty fake S3 state."""
         self.presigned_get_requests: list[tuple[str, str, int]] = []
+        self.download_names: list[str | None] = []
         self.counter = 0
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a unique deterministic fake presigned GET URL."""
         self.counter += 1
         self.presigned_get_requests.append((bucket, key, expires_in))
+        self.download_names.append(download_name)
         return f"https://s3.test/{bucket}/{key}?download={self.counter}"
 
 
@@ -527,6 +536,11 @@ async def test_operator_download_requires_license_and_verified_kyc(
     }
     assert verified.status_code == 200
     assert verified.json()["download_url"].startswith("https://s3.test/")
+    # Signed as an attachment under the Artifact's own name. Without it S3
+    # serves a PDF inline, so the browser leaves Auracles for an S3 URL that
+    # expires minutes later.
+    fake_storage = library_test_context["storage"]
+    assert fake_storage.download_names == ["licensed.pdf"]
 
     async with async_session_factory() as session:
         count = await session.scalar(select(func.count()).select_from(ArtifactDownload))

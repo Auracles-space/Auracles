@@ -120,6 +120,31 @@ def public_object_url(settings: Settings, bucket: str, key: str) -> str:
     return f"https://{bucket}.s3.{settings.aws_default_region}.amazonaws.com/{key}"
 
 
+def _safe_download_name(name: str) -> str:
+    """Reduce a user-supplied filename to something safe in a header.
+
+    The name lands inside ``attachment; filename="..."``. Artifact names are
+    whatever filename a contributor uploaded under, validated only for length,
+    so a quote would close the quoted-string early and a CR/LF would let the
+    rest of the name become a header of the uploader's choosing.
+
+    Path separators are dropped too: only the final segment is a filename, and
+    a browser saving ``../../x`` is nobody's intent.
+
+    Args:
+        name: Raw filename from the record.
+
+    Returns:
+        A single path segment free of quotes, backslashes and control
+        characters, falling back to ``"download"`` when nothing usable is left.
+    """
+    segment = name.replace("\\", "/").rsplit("/", 1)[-1]
+    cleaned = "".join(
+        char for char in segment if char.isprintable() and char not in '"\\'
+    ).strip()
+    return cleaned or "download"
+
+
 class S3Storage:
     """Small wrapper around S3 operations used by request services."""
 
@@ -225,11 +250,25 @@ class S3Storage:
         *,
         download_name: str | None = None,
     ) -> str:
-        """Create a short-lived GET URL for a private S3 object."""
+        """Create a short-lived GET URL for a private S3 object.
+
+        Args:
+            bucket: Bucket holding the object.
+            key: Object key.
+            expires_in: URL lifetime in seconds.
+            download_name: Filename to force an attachment download under. Pass
+                it for anything a browser can render inline (PDFs, images), or
+                the tab navigates to S3 and strands the user on a URL that
+                expires. Sanitised here because callers pass user-supplied
+                filenames.
+
+        Returns:
+            A presigned GET URL.
+        """
         params: dict[str, Any] = {"Bucket": bucket, "Key": key}
         if download_name is not None:
             params["ResponseContentDisposition"] = (
-                f'attachment; filename="{download_name}"'
+                f'attachment; filename="{_safe_download_name(download_name)}"'
             )
         return str(
             self._client.generate_presigned_url(

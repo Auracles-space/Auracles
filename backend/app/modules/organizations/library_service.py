@@ -361,6 +361,7 @@ async def request_org_artifact_download(
             settings.s3_artifacts_bucket,
             artifact.file_key,
             ARTIFACT_DOWNLOAD_URL_TTL_SECONDS,
+            download_name=artifact.name,
         )
         db.add(
             ArtifactDownload(

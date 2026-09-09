@@ -53,7 +53,14 @@ class FakeAvatarStorage:
         del bucket
         return key in self.existing_keys
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a deterministic signed read URL.
 
         Profile images live in a private bucket, so every serialized avatar or

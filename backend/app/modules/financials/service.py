@@ -652,6 +652,7 @@ async def get_framework_purchase_invoice(
             settings.s3_reports_bucket,
             key,
             INVOICE_URL_TTL_SECONDS,
+            download_name=f"{invoice.invoice_number}.pdf",
         )
         # Handed back as data, not as a redirect: the caller authenticates with
         # the Authorization header and navigates to S3 itself, so no credential
@@ -779,6 +780,7 @@ async def get_org_framework_purchase_invoice(
             settings.s3_reports_bucket,
             key,
             INVOICE_URL_TTL_SECONDS,
+            download_name=f"{invoice.invoice_number}.pdf",
         )
         # Handed back as data, not as a redirect: the caller authenticates with
         # the Authorization header and navigates to S3 itself, so no credential

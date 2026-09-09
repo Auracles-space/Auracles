@@ -93,7 +93,14 @@ class FakeRedis:
 class FakeStorage:
     """S3 storage test double for nominee trial artifact URLs."""
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a deterministic fake presigned URL."""
         return f"https://storage.test/{bucket}/{key}?exp={expires_in}"
 

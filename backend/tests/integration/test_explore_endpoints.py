@@ -89,7 +89,14 @@ class FakeExploreStorage:
         """Create empty fake S3 state."""
         self.presigned_get_requests: list[tuple[str, str, int]] = []
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a deterministic fake preview URL."""
         self.presigned_get_requests.append((bucket, key, expires_in))
         return f"https://s3.test/{bucket}/{key}?signature=fake"

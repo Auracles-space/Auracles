@@ -112,7 +112,14 @@ class CombinedStorage:
             },
         }
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a deterministic fake preview URL."""
         self.presigned_gets.append((bucket, key, expires_in))
         return f"https://s3.test/{bucket}/{key}?expires={expires_in}"

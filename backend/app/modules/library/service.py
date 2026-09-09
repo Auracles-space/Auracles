@@ -187,6 +187,7 @@ async def request_artifact_download(
             settings.s3_artifacts_bucket,
             artifact.file_key,
             ARTIFACT_DOWNLOAD_URL_TTL_SECONDS,
+            download_name=artifact.name,
         )
         download = ArtifactDownload(
             license_id=license_row.id,

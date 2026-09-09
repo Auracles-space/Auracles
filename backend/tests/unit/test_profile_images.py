@@ -36,7 +36,14 @@ class _Storage:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, int]] = []
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a stub presigned URL and record the arguments."""
         self.calls.append((bucket, key, expires_in))
         return f"https://signed.example/{key}?sig=abc"

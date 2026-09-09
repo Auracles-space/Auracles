@@ -75,7 +75,14 @@ class FakeRedis:
 class FakeExploreStorage:
     """S3 storage double for preview URL generation."""
 
-    def presigned_get(self, bucket: str, key: str, expires_in: int) -> str:
+    def presigned_get(
+        self,
+        bucket: str,
+        key: str,
+        expires_in: int,
+        *,
+        download_name: str | None = None,
+    ) -> str:
         """Return a deterministic fake presigned URL."""
         return f"https://s3.test/{bucket}/{key}?expires={expires_in}"
 
