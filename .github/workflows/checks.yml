@@ -61,11 +61,14 @@ jobs:
         run: |
           # The runner image ships third-party apt sources (Google Chrome), and
           # a single broken index fails `apt-get update` wholesale — which took
-          # this job down for something Pango has no relation to. Drop the
-          # sources we do not install from rather than ignoring update errors,
-          # so a genuine Ubuntu mirror failure still fails loudly.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
-                     /etc/apt/sources.list.d/microsoft-prod.list
+          # this job down for something Pango has no relation to. Matched on
+          # content rather than filename: the image has moved between
+          # `google-chrome.list` and deb822 `.sources`, so a hardcoded name
+          # silently stops matching. Dropping the source beats ignoring update
+          # errors, which would let a real mirror outage install nothing.
+          sudo grep -rlZ -e dl.google.com -e packages.microsoft.com \
+            /etc/apt/sources.list.d/ 2>/dev/null \
+            | sudo xargs -0 -r rm -f
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libpango-1.0-0 libpangocairo-1.0-0
