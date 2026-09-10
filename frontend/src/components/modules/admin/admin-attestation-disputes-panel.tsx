@@ -212,7 +212,7 @@ export function AdminAttestationDisputesPanel() {
       </p>
 
       <nav
-        aria-label="Filter disputes by status"
+        aria-label="Filter attestation disputes by status"
         className="mt-4 flex flex-wrap gap-1 rounded-2xl border border-border-default bg-surface-2 p-1.5"
       >
         {STATUS_FILTERS.map((filter) => {

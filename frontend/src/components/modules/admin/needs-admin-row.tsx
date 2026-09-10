@@ -53,7 +53,13 @@ export function NeedsAdminRow({
 
   const reasonOk = reason.trim().length >= 5;
   const totpOk = totp.trim().length >= 6;
-  const canAssign = orgId.length > 0 && reasonOk && totpOk && !busy;
+  // A request lands in needs_admin because matching found no attestor, so an
+  // empty directory is the expected case, not an edge one. Showing a blank
+  // dropdown reads as a broken page; the assign path is genuinely unavailable
+  // until an organization completes attestor approval, and refund is the only
+  // action left.
+  const hasAttestorOrgs = attestorOrgs.length > 0;
+  const canAssign = hasAttestorOrgs && orgId.length > 0 && reasonOk && totpOk && !busy;
   const canRefund = reasonOk && totpOk && !busy;
 
   /** Dispatch an offer to the selected org for this request. */
@@ -112,18 +118,32 @@ export function NeedsAdminRow({
       </div>
       <p className="text-xs text-foreground-muted">{attestation.id}</p>
 
+      {hasAttestorOrgs ? null : (
+        <p className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+          No approved attestor organizations yet, so there is nobody to assign
+          this to. An organization becomes assignable once it passes business
+          verification and the calibration trial in Admin &rarr; Org Attestors.
+          Until then, refunding the fee is the only action available.
+        </p>
+      )}
+
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-          Attestor org
-          <Select onChange={(event) => setOrgId(event.target.value)} value={orgId}>
-            <option value="">Select an attestor org</option>
-            {attestorOrgs.map((org) => (
-              <option key={org.org_id} value={org.org_id}>
-                {org.name}
-              </option>
-            ))}
-          </Select>
-        </label>
+        {hasAttestorOrgs ? (
+          <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+            Attestor org
+            <Select
+              onChange={(event) => setOrgId(event.target.value)}
+              value={orgId}
+            >
+              <option value="">Select an attestor org</option>
+              {attestorOrgs.map((org) => (
+                <option key={org.org_id} value={org.org_id}>
+                  {org.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ) : null}
         <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
           Reason
           <Input
@@ -146,14 +166,16 @@ export function NeedsAdminRow({
       {error ? <p className="text-sm text-error">{error}</p> : null}
 
       <div className="flex flex-wrap gap-3">
-        <button
-          className="min-h-11 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!canAssign}
-          onClick={handleAssign}
-          type="button"
-        >
-          Assign to org
-        </button>
+        {hasAttestorOrgs ? (
+          <button
+            className="min-h-11 rounded-xl bg-foreground px-5 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canAssign}
+            onClick={handleAssign}
+            type="button"
+          >
+            Assign to org
+          </button>
+        ) : null}
         <button
           className="min-h-11 rounded-xl border border-error px-5 text-sm font-semibold text-error outline-none transition-all hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!canRefund}

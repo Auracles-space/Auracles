@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  listAdminAttestationDisputes,
   listAdminAttestations,
   listAttestorOrgs,
   listOrgAttestorApplicationsForAdmin,
@@ -17,7 +16,6 @@ vi.mock("@/lib/auth/form-client", () => ({
 vi.mock("@/lib/generated/sdk.gen", () => ({
   adminAssignAttestation: vi.fn(),
   adminRefundAttestation: vi.fn(),
-  listAdminAttestationDisputes: vi.fn(),
   listAdminAttestations: vi.fn(),
   listAttestorOrgs: vi.fn(),
   listOrgAttestorApplicationsForAdmin: vi.fn(),
@@ -47,14 +45,6 @@ function needsAdminItem() {
 }
 
 describe("AdminAttestationPanel needs-admin queue", () => {
-  beforeEach(() => {
-    // The panel embeds the dispute queue, which loads on mount.
-    vi.mocked(listAdminAttestationDisputes).mockResolvedValue({
-      response: { ok: true },
-      data: { disputes: [] },
-    } as never);
-  });
-
   it("renders each needs-admin request as an inline row with a count", async () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue({
       response: { ok: true },

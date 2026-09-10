@@ -130,3 +130,26 @@ describe("NeedsAdminRow", () => {
     expect(onResolved).toHaveBeenCalledWith("att-1");
   });
 });
+
+describe("NeedsAdminRow with no active attestor orgs", () => {
+  it("explains the empty picker instead of showing a blank dropdown", () => {
+    // A request reaches needs_admin precisely because matching found nobody.
+    // An empty, unexplained dropdown reads as a broken page rather than as
+    // "no organization has completed attestor approval yet".
+    render(
+      <NeedsAdminRow
+        attestation={attestation}
+        attestorOrgs={[] as never}
+        onResolved={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/No approved attestor organizations/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Attestor org/i)).toBeNull();
+    // Refund stays available: it is the only action left to take.
+    expect(screen.getByRole("button", { name: /Refund/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Assign to org/i })).toBeNull();
+  });
+});

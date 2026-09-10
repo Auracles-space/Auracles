@@ -40,7 +40,8 @@ const adminLinks = [
   {
     href: "/admin/disputes",
     label: "Disputes",
-    summary: "Resolve Project milestone disputes with escrow outcomes.",
+    summary:
+      "Resolve Project milestone and Attestation disputes with escrow outcomes.",
   },
   {
     href: "/admin/money",

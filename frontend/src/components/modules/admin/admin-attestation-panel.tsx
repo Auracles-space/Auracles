@@ -26,7 +26,6 @@ import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
 import { AttestorApplicationRow } from "@/components/modules/admin/attestor-application-row";
 import { emitNeedsAdminChanged } from "@/components/modules/admin/admin-events";
 import { AttestationDetailModal } from "@/components/modules/admin/attestation-detail-modal";
-import { AdminAttestationDisputesPanel } from "@/components/modules/admin/admin-attestation-disputes-panel";
 
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
@@ -102,7 +101,7 @@ export function AdminAttestationPanel() {
       <HeaderCard
         eyebrow="Admin attestation"
         title="Review and resolution"
-        summary="Review Attestor applications, manually assign exhausted requests, refund needs-admin requests, or resolve disputes."
+        summary="Review Attestor applications, manually assign exhausted requests, and refund needs-admin requests. Disputes resolve under Admin → Disputes."
       />
       
       <ErrorMessage message={error} />
@@ -189,8 +188,6 @@ export function AdminAttestationPanel() {
           )}
         </div>
       </div>
-
-      <AdminAttestationDisputesPanel />
 
       {detailId ? (
         <AttestationDetailModal
