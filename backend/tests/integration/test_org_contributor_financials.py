@@ -117,19 +117,19 @@ async def _seed_contributor_org_financial_rows(
                     status="active",
                 )
             )
-            session.add(
-                OrgLegalProfile(
-                    org_id=org_id,
-                    legal_name="Shared Legal Name LLC",
-                    registration_number="RC-123456",
-                    address={"country": "US", "city": "New York"},
-                    tax_document_type="w9" if include_tax_document else None,
-                    tax_document_key=(
-                        "org-legal-profiles/tax-doc.pdf"
-                        if include_tax_document
-                        else None
-                    ),
-                )
+            # create_org already made a verified legal profile (an unverified
+            # org is a shell), so this seeder shapes that row rather than
+            # colliding with the one-per-org constraint.
+            profile = await session.scalar(
+                select(OrgLegalProfile).where(OrgLegalProfile.org_id == org_id)
+            )
+            assert profile is not None
+            profile.legal_name = "Shared Legal Name LLC"
+            profile.registration_number = "RC-123456"
+            profile.address = {"country": "US", "city": "New York"}
+            profile.tax_document_type = "w9" if include_tax_document else None
+            profile.tax_document_key = (
+                "org-legal-profiles/tax-doc.pdf" if include_tax_document else None
             )
             payout_account = PayoutAccount(
                 org_id=org_id,
@@ -195,7 +195,9 @@ async def test_owner_can_upsert_and_read_shared_legal_profile(
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
     owner_token = create_access_token(owner_id, [])
-    org = await create_org(client, owner_token, "org-legal-profile")
+    # Pre-verification: identity fields are still ordinary data entry. Once
+    # verified they lock, which is its own test below.
+    org = await create_org(client, owner_token, "org-legal-profile", verified=False)
 
     updated = await client.put(
         f"/v1/orgs/{org['id']}/legal-profile",
@@ -220,6 +222,51 @@ async def test_owner_can_upsert_and_read_shared_legal_profile(
     assert fetched.status_code == 200
     assert fetched.json()["registration_number"] == "RC-123456"
     assert fetched.json()["address"] == {"country": "US", "city": "New York"}
+
+
+async def test_verified_identity_cannot_be_renamed(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: None,
+) -> None:
+    """A verified org cannot change the name an admin verified.
+
+    Without this, the owner could verify as one entity, rename to another, and
+    keep the badge — on a platform whose product is provenance. Non-identity
+    fields (address) stay editable: they are invoice data, not what the
+    reviewer checked.
+    """
+    del migrated_database, clean_state
+    owner_secret = pyotp.random_base32()
+    owner_id = await _create_user("org-owner-lock", totp_secret=owner_secret)
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "org-legal-lock")
+
+    renamed = await client.put(
+        f"/v1/orgs/{org['id']}/legal-profile",
+        headers=auth(owner_token),
+        json={
+            "legal_name": "Entirely Different Entity Ltd",
+            "registration_number": "RC-999999",
+            "totp_code": pyotp.TOTP(owner_secret).now(),
+        },
+    )
+    assert renamed.status_code == 409
+
+    address_only = await client.put(
+        f"/v1/orgs/{org['id']}/legal-profile",
+        headers=auth(owner_token),
+        json={
+            "legal_name": "Verified Test Org Ltd",
+            "registration_number": "RC000000",
+            "address": {"country": "NG", "city": "Lagos"},
+            "totp_code": pyotp.TOTP(owner_secret).at(
+                datetime.now(UTC) + timedelta(seconds=30)
+            ),
+        },
+    )
+    assert address_only.status_code == 200
+    assert address_only.json()["address"] == {"country": "NG", "city": "Lagos"}
 
 
 async def test_legal_profile_endpoints_require_owner_and_valid_totp(
@@ -269,7 +316,9 @@ async def test_owner_can_create_legal_profile_tax_document_upload_session(
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
     owner_token = create_access_token(owner_id, [])
-    org = await create_org(client, owner_token, "org-legal-tax-doc")
+    # Identity is entered before verification; once verified it locks, and
+    # this test is about the tax-document session, not the lock.
+    org = await create_org(client, owner_token, "org-legal-tax-doc", verified=False)
 
     updated = await client.put(
         f"/v1/orgs/{org['id']}/legal-profile",

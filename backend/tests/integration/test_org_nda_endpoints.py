@@ -26,6 +26,7 @@ from app.modules.organizations.models import (
     Organization,
     OrgCapability,
     OrgInvitation,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
 )
@@ -107,6 +108,18 @@ async def create_org_with_capability(
             session.add(org)
             await session.flush()
             session.add(OrgMember(org_id=org.id, user_id=owner_id, role="owner"))
+            # Business-verified: an unverified org is a shell whose members,
+            # NDA and attestation work are all refused.
+            session.add(
+                OrgLegalProfile(
+                    org_id=org.id,
+                    legal_name="Verified Test Org Ltd",
+                    registration_number="RC000000",
+                    incorporation_doc_keys=["org-incorporation-docs/c.pdf"],
+                    kyb_status="verified",
+                    kyb_verified_at=datetime.now(UTC),
+                )
+            )
             if attestor_status is not None:
                 session.add(
                     OrgCapability(

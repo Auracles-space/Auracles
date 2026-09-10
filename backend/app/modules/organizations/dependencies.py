@@ -19,6 +19,7 @@ from app.core.audit import write_audit
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.models import User
+from app.modules.organizations import kyb_service
 from app.modules.organizations.models import (
     Organization,
     OrgCapability,
@@ -91,11 +92,21 @@ async def _deny(
     )
 
 
-def require_org_role(minimum_role: str) -> Callable[..., object]:
+def require_org_role(
+    minimum_role: str,
+    *,
+    verified: bool = False,
+) -> Callable[..., object]:
     """Build a dependency enforcing the caller's minimum organization role.
 
     Args:
         minimum_role: Lowest allowed role: ``member``, ``admin``, or ``owner``.
+        verified: Also require the organization to have passed business
+            verification. An unverified organization is a shell — it cannot
+            invite, staff, sell, or transact — so almost every route sets this.
+            The exceptions are the routes that lead *out* of the shell:
+            verification itself, the legal profile it verifies, the org's own
+            profile, and reads.
     """
     user_dependency = get_current_user
 
@@ -132,6 +143,9 @@ def require_org_role(minimum_role: str) -> Callable[..., object]:
                     "member_role": membership.role,
                 },
             )
+
+        if verified:
+            await kyb_service.require_org_kyb_verified(db, org_id=org_id)
 
         return OrgContext(org=organization, member=membership, user=user)
 

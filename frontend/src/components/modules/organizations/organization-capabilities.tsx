@@ -72,7 +72,8 @@ function StatusPill({ status }: { status?: string }) {
  * Card of self-service capability rows for organization owners and admins.
  */
 export function OrganizationCapabilities() {
-  const { orgId, role, capabilities, isSuspended, refreshOrganization } = useOrganization();
+  const { orgId, role, capabilities, kybStatus, isSuspended, refreshOrganization } =
+    useOrganization();
   const router = useRouter();
   const toast = useToast();
 
@@ -168,14 +169,25 @@ export function OrganizationCapabilities() {
               <StatusPill status={capabilities?.[cap.key]} />
               {capabilities?.[cap.key] !== "active" &&
               capabilities?.[cap.key] !== "suspended" ? (
-                <button
-                  type="button"
-                  aria-label={`Activate ${cap.label} capability`}
-                  onClick={() => openConfirm(cap.key)}
-                  className="min-h-11 rounded-xl bg-foreground px-5 py-2 text-sm font-semibold text-background shadow-sm transition hover:bg-foreground/90"
-                >
-                  Activate
-                </button>
+                kybStatus === "verified" ? (
+                  <button
+                    type="button"
+                    aria-label={`Activate ${cap.label} capability`}
+                    onClick={() => openConfirm(cap.key)}
+                    className="min-h-11 rounded-xl bg-foreground px-5 py-2 text-sm font-semibold text-background shadow-sm transition hover:bg-foreground/90"
+                  >
+                    Activate
+                  </button>
+                ) : (
+                  // The API refuses activation for an unverified org, so a
+                  // live Activate button here would only manufacture a 403.
+                  <a
+                    className="inline-flex min-h-11 items-center rounded-xl border border-border-default bg-surface-2 px-5 py-2 text-sm font-semibold text-foreground-muted transition hover:bg-surface-3"
+                    href={`/dashboard/organizations/${orgId}/verification`}
+                  >
+                    Verify to activate
+                  </a>
+                )
               ) : null}
             </div>
           </li>

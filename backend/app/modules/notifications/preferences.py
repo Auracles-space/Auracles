@@ -99,6 +99,8 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "org_invitation_declined": "account",
     "org_attestor_trial_nominated": "account",
     "org_attestor_trial_assigned": "account",
+    "org_kyb_verified": "account",
+    "org_kyb_rejected": "account",
     "org_attestor_needs_info": "account",
     "org_attestor_approved": "account",
     "org_attestor_rejected": "account",

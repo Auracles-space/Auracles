@@ -190,6 +190,8 @@ async def _create_org(
         headers=_auth_headers(owner_id),
     )
     assert response.status_code == 201
+    # An unverified org is a shell; tests want a usable one.
+    await verify_org_kyb((response.json())["id"])
     return response.json()
 
 

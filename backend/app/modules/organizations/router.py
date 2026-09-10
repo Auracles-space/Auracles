@@ -151,9 +151,22 @@ public_router = APIRouter(prefix="/contributors", tags=["Organizations"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
+# Unverified organizations reach only the routes that lead out of the shell:
+# verification itself, the legal profile it checks, the org's own profile, and
+# reads. Everything else takes a Verified* context, so business verification is
+# enforced once at the dependency layer rather than remembered per service.
 OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
+VerifiedOrgMemberCtx = Annotated[
+    OrgContext, Depends(require_org_role("member", verified=True))
+]
+VerifiedOrgAdmin = Annotated[
+    OrgContext, Depends(require_org_role("admin", verified=True))
+]
+VerifiedOrgOwner = Annotated[
+    OrgContext, Depends(require_org_role("owner", verified=True))
+]
 
 # Every organization created needs an admin to verify it before it can do
 # anything, so unbounded creation floods the review queue. A day's allowance is
@@ -463,7 +476,7 @@ async def deactivate_organization(
 )
 async def list_members(
     org_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgMembersResponse:
     """List members of one organization."""
@@ -483,7 +496,7 @@ async def list_members(
 )
 async def activate_contributor_capability(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgCapabilityResponse:
@@ -511,7 +524,7 @@ async def activate_contributor_capability(
 )
 async def activate_operator_capability(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgCapabilityResponse:
@@ -539,7 +552,7 @@ async def add_org_license_grant(
     org_id: UUID,
     license_id: UUID,
     payload: OrgLicenseGrantRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgLicenseGrantResponse:
     """Create one org License grant for a team or member."""
@@ -565,7 +578,7 @@ async def revoke_org_license_grant(
     org_id: UUID,
     license_id: UUID,
     grant_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Delete one org License grant."""
@@ -587,7 +600,7 @@ async def revoke_org_license_grant(
 async def list_org_license_grants(
     org_id: UUID,
     license_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgLicenseGrantsResponse:
     """Return the current grant rows for one org-owned License."""
@@ -613,7 +626,7 @@ async def list_org_license_grants(
 )
 async def list_org_library(
     org_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgLibraryResponse:
     """Return the org shared library for the current member."""
@@ -647,7 +660,7 @@ async def request_org_library_artifact_download(
     license_id: UUID,
     artifact_id: UUID,
     request: Request,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> ArtifactDownloadResponse:
     """Return a short-lived download URL for a granted org library Artifact."""
@@ -674,7 +687,7 @@ async def request_org_library_artifact_download(
 async def remove_member(
     org_id: UUID,
     member_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> None:
     """Remove one member or leave the organization."""
@@ -695,7 +708,7 @@ async def change_member_role(
     org_id: UUID,
     member_id: UUID,
     payload: OrgMemberRoleUpdateRequest,
-    context: OrgOwner,
+    context: VerifiedOrgOwner,
     db: DatabaseSession,
 ) -> OrgMemberResponse:
     """Change one member between member and admin roles."""
@@ -720,7 +733,7 @@ async def change_member_role(
 async def transfer_ownership(
     org_id: UUID,
     payload: OrgOwnershipTransferRequest,
-    context: OrgOwner,
+    context: VerifiedOrgOwner,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> None:
@@ -748,7 +761,7 @@ async def transfer_ownership(
 async def create_invitation(
     org_id: UUID,
     payload: OrgInvitationCreateRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgInvitationResponse:
@@ -775,7 +788,7 @@ async def create_invitation(
 async def search_org_members(
     org_id: UUID,
     q: str,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> MemberSearchResponse:
@@ -792,7 +805,7 @@ async def search_org_members(
 )
 async def list_invitations(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgInvitationsResponse:
     """List pending invitations for one organization."""
@@ -809,7 +822,7 @@ async def list_invitations(
 async def revoke_invitation(
     org_id: UUID,
     invitation_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Revoke one pending invitation."""
@@ -831,7 +844,7 @@ async def revoke_invitation(
 async def create_team(
     org_id: UUID,
     payload: OrgTeamCreateRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgTeamResponse:
     """Create a new team in the organization."""
@@ -847,7 +860,7 @@ async def create_team(
 )
 async def list_teams(
     org_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgTeamsResponse:
     """List teams in the organization."""
@@ -865,7 +878,7 @@ async def rename_team(
     org_id: UUID,
     team_id: UUID,
     payload: OrgTeamRenameRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgTeamResponse:
     """Rename a team in the organization."""
@@ -884,7 +897,7 @@ async def rename_team(
 async def delete_team(
     org_id: UUID,
     team_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Delete a team in the organization."""
@@ -901,7 +914,7 @@ async def delete_team(
 async def list_team_members(
     org_id: UUID,
     team_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgTeamMembersResponse:
     """List the members of one team."""
@@ -919,7 +932,7 @@ async def add_team_member(
     org_id: UUID,
     team_id: UUID,
     member_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Add a member to a team."""
@@ -939,7 +952,7 @@ async def remove_team_member(
     org_id: UUID,
     team_id: UUID,
     member_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Remove a member from a team."""
@@ -962,7 +975,7 @@ async def enable_team_capability(
     org_id: UUID,
     team_id: UUID,
     capability: OrgCapabilityName,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Enable one marketplace capability on a team."""
@@ -985,7 +998,7 @@ async def disable_team_capability(
     org_id: UUID,
     team_id: UUID,
     capability: OrgCapabilityName,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Disable one marketplace capability on a team."""
@@ -1010,7 +1023,7 @@ async def disable_team_capability(
 )
 async def get_nda_status(
     org_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgNdaStatusResponse:
     """Return the caller's NDA status for one organization."""
@@ -1038,7 +1051,7 @@ async def get_nda_status(
 )
 async def sign_nda(
     org_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgNdaStatusResponse:
@@ -1071,7 +1084,7 @@ async def sign_nda(
 async def create_attestor_application(
     org_id: UUID,
     payload: OrgAttestorApplicationCreateRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestorApplicationResponse:
     """Create a draft org attestor application."""
@@ -1095,7 +1108,7 @@ async def create_attestor_application(
 )
 async def get_attestor_application(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestorApplicationResponse:
     """Return the org's attestor application with its gate checklist."""
@@ -1117,7 +1130,7 @@ async def get_attestor_application(
 async def update_attestor_application(
     org_id: UUID,
     payload: OrgAttestorApplicationUpdateRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestorApplicationResponse:
     """Partially edit the org's draft attestor application."""
@@ -1141,7 +1154,7 @@ async def update_attestor_application(
 )
 async def submit_attestor_application(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgAttestorApplicationResponse:
@@ -1168,7 +1181,7 @@ async def submit_attestor_application(
 async def sign_attestor_undertakings(
     org_id: UUID,
     payload: OrgUndertakingsSignRequest,
-    context: OrgOwner,
+    context: VerifiedOrgOwner,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgAttestorApplicationResponse:
@@ -1194,7 +1207,7 @@ async def sign_attestor_undertakings(
 async def set_attestor_tax_document(
     org_id: UUID,
     payload: OrgAttestorTaxDocumentRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> CredentialEvidenceUploadSessionResponse:
     """Create a presigned tax-document upload session for the application."""
@@ -1343,7 +1356,7 @@ async def submit_org_kyb(
 async def nominate_attestor_trial_member(
     org_id: UUID,
     payload: OrgNominateTrialMemberRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestorApplicationResponse:
     """Nominate the org member who performs the calibration trial."""
@@ -1370,7 +1383,7 @@ async def nominate_attestor_trial_member(
 )
 async def get_attestor_trial(
     org_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> NomineeTrialResponse:
     """Return the nominated member's live calibration trial."""
@@ -1393,7 +1406,7 @@ async def get_attestor_trial(
 async def submit_attestor_trial(
     org_id: UUID,
     payload: TrialSubmitRequest,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> NomineeTrialResponse:
     """Submit the nominee's rubric for the active calibration trial."""
@@ -1433,7 +1446,7 @@ def _offer_item(
 )
 async def list_org_attestation_offers(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestationOffersResponse:
     """List cohort offers made to the attestor org."""
@@ -1478,7 +1491,7 @@ async def accept_org_attestation_offer(
     org_id: UUID,
     offer_id: UUID,
     payload: OrgAcceptOfferRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestationItem:
     """Accept a cohort offer and assign the reviewing member."""
@@ -1501,7 +1514,7 @@ async def accept_org_attestation_offer(
 async def decline_org_attestation_offer(
     org_id: UUID,
     offer_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestationItem:
     """Decline a cohort offer made to the org."""
@@ -1527,7 +1540,7 @@ async def reassign_org_reviewing_member(
     org_id: UUID,
     attestation_id: UUID,
     payload: OrgReassignReviewerRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgAttestationItem:
     """Reassign the reviewing member before review starts."""
@@ -1552,7 +1565,7 @@ async def reassign_org_reviewing_member(
 )
 async def list_org_attestations(
     org_id: UUID,
-    context: OrgMemberCtx,
+    context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgAttestationsResponse:
     """List the org's attestations, scoped by the caller's role."""
@@ -1831,7 +1844,7 @@ async def set_legal_profile_tax_document(
 )
 async def get_org_earnings(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> EarningsResponse:
     """Return the org's released earnings balances."""
@@ -1851,7 +1864,7 @@ async def get_org_earnings(
 async def create_org_payment_method_setup(
     org_id: UUID,
     payload: OrgPaymentMethodSetupRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgPaymentMethodSetupResponse:
@@ -1880,7 +1893,7 @@ async def create_org_payment_method_setup(
 )
 async def list_org_payment_methods(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgPaymentMethodsResponse:
     """List safe organization payment-method metadata for org admins."""
@@ -1907,7 +1920,7 @@ async def delete_org_payment_method(
     org_id: UUID,
     payment_method_id: str,
     payload: OrgPaymentMethodDeleteRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgPaymentMethodDeleteResponse:
@@ -1935,7 +1948,7 @@ async def delete_org_payment_method(
 async def onboard_org_payout_account(
     org_id: UUID,
     payload: OrgPayoutAccountOnboardRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> PayoutAccountOnboardResponse:
     """Onboard an org-owned payout destination."""
@@ -1958,7 +1971,7 @@ async def onboard_org_payout_account(
 async def request_org_payout(
     org_id: UUID,
     payload: PayoutRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> PayoutResponse:
@@ -1979,7 +1992,7 @@ async def request_org_payout(
 )
 async def list_org_invoices(
     org_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> OrgInvoicesResponse:
     """List issued invoices for the org's settled work."""
@@ -2001,7 +2014,7 @@ async def list_org_invoices(
 async def get_org_purchase_invoice(
     org_id: UUID,
     transaction_id: UUID,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     db: DatabaseSession,
 ) -> Response:
     """Redirect to the org purchase invoice PDF or queue its generation."""
@@ -2028,7 +2041,7 @@ async def create_org_framework_purchase(
     org_id: UUID,
     framework_id: UUID,
     payload: PurchaseRequest,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     _: Annotated[None, Depends(require_org_capability("operator"))],
     db: DatabaseSession,
     redis: RedisClient,
@@ -2061,7 +2074,7 @@ async def create_org_framework_review(
     org_id: UUID,
     framework_id: UUID,
     payload: FrameworkReviewCreate,
-    context: OrgAdmin,
+    context: VerifiedOrgAdmin,
     _: Annotated[None, Depends(require_org_capability("operator"))],
     db: DatabaseSession,
 ) -> FrameworkReviewResponse:

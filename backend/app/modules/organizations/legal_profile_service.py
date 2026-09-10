@@ -97,6 +97,23 @@ async def upsert_legal_profile(
             db.add(profile)
             action = "org_legal_profile_created"
         else:
+            # A verified identity is what an admin actually checked, so the
+            # name and registration number lock: changing them here would let
+            # an org verify as one entity, rename to another, and keep the
+            # badge. Address stays editable — it is invoice data, not part of
+            # the verified identity.
+            identity_changed = (
+                legal_name != profile.legal_name
+                or registration_number != profile.registration_number
+            )
+            if profile.kyb_status == "verified" and identity_changed:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Verified business details cannot be changed. Contact "
+                        "support to update them."
+                    ),
+                )
             profile.legal_name = legal_name
             profile.registration_number = registration_number
             profile.address = address

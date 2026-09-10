@@ -712,12 +712,14 @@ async def test_org_contributor_full_lifecycle(
     }
 
     # --- Owner configures legal identity, payout account, and payout ----
+    # Identity was fixed at verification and is locked; only the address —
+    # invoice data, not verified identity — is still the owner's to set.
     legal_profile = await client.put(
         f"/v1/orgs/{org['id']}/legal-profile",
         headers=auth(owner_token),
         json={
-            "legal_name": "Lifecycle Contributor LLC",
-            "registration_number": "RC-445566",
+            "legal_name": "Verified Test Org Ltd",
+            "registration_number": "RC000000",
             "address": {"country": "GB", "city": "London"},
             "totp_code": pyotp.TOTP(owner_secret).now(),
         },

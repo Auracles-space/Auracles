@@ -123,17 +123,29 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const contributorActive = contributorCap === "active";
   const contributorGrant = myOrg.grants?.["contributor"] === true;
 
+  const isVerified = myOrg.kyb_status === "verified";
+
+  // An unverified organization is a shell: the API refuses everything except
+  // its profile and verification, so the shell offers exactly those rather
+  // than a full tab bar of buttons that would all 403.
   const tabs: TabItem[] = [
     { id: "", label: "Profile" },
     // Business verification gates every capability, so it is the first thing a
     // new org needs and stays visible afterwards as the record of its identity.
-    { id: "verification", label: "Verification" },
-    { id: "members", label: "Members" },
+    {
+      id: "verification",
+      label: "Verification",
+      dot: !isVerified,
+      dotLabel: "Verification required",
+    },
+  ];
+  if (isVerified) {
+    tabs.push({ id: "members", label: "Members" });
     // Any member may be nominated for the attestor calibration trial; the page
     // resolves to a friendly "no active trial" state for non-nominees.
-    { id: "attestor-trial", label: "Calibration Trial" },
-  ];
-  if (needsNda) {
+    tabs.push({ id: "attestor-trial", label: "Calibration Trial" });
+  }
+  if (isVerified && needsNda) {
     tabs.push({
       id: "nda",
       label: "NDA",
@@ -141,15 +153,15 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
       dotLabel: "NDA signature required",
     });
   }
-  if (contributorActive && (isAdmin || contributorGrant)) {
+  if (isVerified && contributorActive && (isAdmin || contributorGrant)) {
     tabs.push({ id: "frameworks", label: "Frameworks" });
   }
-  if (isOperator) {
+  if (isVerified && isOperator) {
     tabs.push({ id: "operator", label: "Operator" });
   }
   
   const counts = myOrg.counts;
-  if (isAdmin) {
+  if (isVerified && isAdmin) {
     tabs.push({
       id: "invitations",
       label: "Invitations",
@@ -171,7 +183,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   // The Queue is where a staffed reviewing member reaches their assigned work,
   // so it must be visible to plain members too — not just admins. The backend
   // scopes a member to their own rows; the count badge stays admin-only.
-  if (isAdmin || attestorActive) {
+  if (isVerified && (isAdmin || attestorActive)) {
     tabs.push({ id: "queue", label: "Queue", count: counts?.queue });
   }
   if (isOwner) {
@@ -193,12 +205,25 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     router.push(`/dashboard/organizations/${orgId}${id ? `/${id}` : ""}`);
   }
 
+  // A deep link into a gated tab on an unverified org would render a page
+  // whose every request 403s; send it to the page that unblocks the org.
+  const OPEN_SEGMENTS = new Set(["", "verification", "danger-zone"]);
+  if (!isVerified && !OPEN_SEGMENTS.has(rawSegment)) {
+    router.replace(`/dashboard/organizations/${orgId}/verification`);
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Spinner className="h-8 w-8 text-accent" />
+      </div>
+    );
+  }
+
   return (
     <OrganizationProvider
       orgId={orgId}
       role={role}
       org={myOrg.org}
       capabilities={myOrg.capabilities}
+      kybStatus={myOrg.kyb_status ?? "unverified"}
       refreshOrganization={loadOrg}
     >
       <div className="mx-auto w-full max-w-7xl px-4 py-8 md:py-12">
@@ -213,6 +238,25 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
             </p>
           </div>
         </div>
+
+        {!isVerified ? (
+          <div className="mb-8 flex flex-col gap-3 rounded-2xl border border-warning/40 bg-warning/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm leading-6 text-foreground">
+              <span className="font-semibold">
+                This organization is not verified yet.
+              </span>{" "}
+              Members, capabilities, and transactions unlock once its business
+              verification is approved.
+            </p>
+            <button
+              className="min-h-11 shrink-0 rounded-xl bg-foreground px-5 text-sm font-semibold text-background transition hover:bg-foreground/90"
+              onClick={() => handleTabChange("verification")}
+              type="button"
+            >
+              Start verification
+            </button>
+          </div>
+        ) : null}
 
         <OrganizationSuspendedBanner />
 

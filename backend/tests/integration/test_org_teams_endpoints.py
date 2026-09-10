@@ -94,6 +94,8 @@ async def create_org(client: AsyncClient, token: str, prefix: str) -> dict[str, 
         headers=auth(token),
     )
     assert res.status_code == 201
+    # An unverified org is a shell; tests want a usable one.
+    await verify_org_kyb((res.json())["id"])
     return res.json()
 
 

@@ -103,6 +103,8 @@ async def _create_org(
     )
     assert response.status_code == 201
     body = response.json()
+    # An unverified org is a shell; tests want a usable one.
+    await verify_org_kyb(({"id": body["id"], "slug": body["slug"]})["id"])
     return {"id": body["id"], "slug": body["slug"]}
 
 

@@ -37,7 +37,8 @@ from app.modules.attestation.credential_service import (
     CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
     _safe_file_name,
 )
-from app.modules.organizations.models import Organization, OrgLegalProfile
+from app.modules.organizations.models import Organization, OrgLegalProfile, OrgMember
+from app.workers.tasks.project_notifications import dispatch_project_notification
 
 # Incorporation uploads reuse the shared private-bucket evidence limits.
 INCORPORATION_DOC_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
@@ -428,7 +429,53 @@ async def review_org_kyb(
             target_id=org_id,
             metadata={"verdict": verdict, "has_notes": bool(notes)},
         )
+    owner_ids = list(
+        (
+            await db.scalars(
+                select(OrgMember.user_id).where(
+                    OrgMember.org_id == org_id,
+                    OrgMember.role == "owner",
+                )
+            )
+        ).all()
+    )
     await db.refresh(profile)
+    # Dispatched after the commit so the worker reads the persisted verdict;
+    # a queue failure is logged, never raised — mail must not undo a review.
+    # The verification screen promises "we will let you know", so a verdict
+    # that was only audited would break that promise.
+    if verdict == "verified":
+        title = "Your organization is verified"
+        body = (
+            f"{organization.name} passed business verification. You can now "
+            "activate capabilities, invite members, and transact."
+        )
+    else:
+        title = "Your organization's verification needs changes"
+        body = (
+            f"{organization.name} was not verified: "
+            f"{profile.kyb_review_notes} Update the details and submit again."
+        )
+    for owner_id in owner_ids:
+        try:
+            dispatch_project_notification.delay(
+                user_id=str(owner_id),
+                notification_type=f"org_kyb_{verdict}",
+                title=title,
+                body=body,
+                payload={"org_id": str(org_id)},
+                link=f"/dashboard/organizations/{org_id}/verification",
+                dedupe_key=(
+                    f"org_kyb_{verdict}:{org_id}:{owner_id}:"
+                    f"{decided_at.isoformat()}"
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive queue guard
+            logger.bind(
+                module="organizations",
+                action="review_org_kyb",
+                org_id=str(org_id),
+            ).error("notification_dispatch_failed", error=str(exc))
     logger.bind(
         module="organizations",
         action="review_org_kyb",

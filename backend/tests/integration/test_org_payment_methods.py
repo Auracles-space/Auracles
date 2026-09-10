@@ -22,6 +22,7 @@ from app.modules.auth.models import User
 from app.modules.organizations import billing_service
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import verify_org_kyb
 from tests.integration.test_financials_payment_methods import (
     FakeRedis,
     FakeStripeCustomer,
@@ -169,6 +170,8 @@ async def _create_org(
         headers=_auth_headers(owner_id),
     )
     assert response.status_code == 201
+    # An unverified org is a shell; tests want a usable one.
+    await verify_org_kyb((response.json())["id"])
     return response.json()
 
 

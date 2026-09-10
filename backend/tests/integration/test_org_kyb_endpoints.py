@@ -192,6 +192,58 @@ async def test_verified_org_can_activate_a_capability(
     assert res.json()["status"] == "active"
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("post", "/invitations", {"email": "x@auracles.space", "role": "member"}),
+        ("post", "/teams", {"name": "Reviewers"}),
+        ("post", "/nda/sign", None),
+    ],
+)
+async def test_unverified_org_cannot_use_its_other_features(
+    client: AsyncClient,
+    clean_state: FakeRedis,
+    method: str,
+    path: str,
+    body: dict[str, str] | None,
+) -> None:
+    """An unverified organization is a shell: nothing works until it passes.
+
+    Gating only capability activation left the rest of the org — members,
+    teams, the NDA — usable by an organization whose legal identity had never
+    been checked.
+    """
+    del clean_state
+    owner_id = await _user("owner")
+    org_id = await _org(owner_id)
+
+    response = await client.request(
+        method.upper(),
+        f"/v1/orgs/{org_id}{path}",
+        json=body,
+        headers=_auth(owner_id),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "org_kyb_required"
+
+
+async def test_verification_itself_stays_reachable_when_unverified(
+    client: AsyncClient, clean_state: FakeRedis
+) -> None:
+    """The way out of the shell cannot be behind the gate it opens."""
+    del clean_state
+    owner_id = await _user("owner")
+    org_id = await _org(owner_id)
+
+    status_read = await client.get(
+        f"/v1/orgs/{org_id}/kyb", headers=_auth(owner_id)
+    )
+
+    assert status_read.status_code == 200
+    assert status_read.json()["kyb_status"] == "unverified"
+
+
 async def test_submit_requires_a_registration_number_and_document(
     client: AsyncClient, clean_state: FakeRedis
 ) -> None:
@@ -269,6 +321,51 @@ async def test_admin_rejection_requires_a_reason_and_is_not_terminal(
     )
     assert resubmitted.status_code == 200
     assert resubmitted.json()["kyb_status"] == "pending"
+
+
+async def test_verdict_notifies_the_org_owner(
+    client: AsyncClient, clean_state: FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The owner hears the verdict rather than polling the verification page.
+
+    The pending screen promises "we will let you know"; a review that only
+    wrote an audit row broke that promise — the same gap the KYC verdict email
+    fix closed for individuals.
+    """
+    del clean_state
+    from app.modules.organizations import kyb_service as _svc
+
+    sent: list[dict[str, object]] = []
+
+    class _RecordingDispatch:
+        def delay(self, **kwargs: object) -> None:
+            sent.append(kwargs)
+
+    monkeypatch.setattr(_svc, "dispatch_project_notification", _RecordingDispatch())
+    # Seeded doc keys have no object behind them; the existence gate is
+    # covered by its own test above.
+    from app.integrations import s3
+
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+
+    owner_id = await _user("owner")
+    admin_secret = pyotp.random_base32()
+    admin_id = await _user("admin", totp_secret=admin_secret)
+    org_id = await _org(owner_id)
+    await _profile(org_id, kyb_status="pending")
+
+    verdict = await client.post(
+        f"/v1/admin/orgs/{org_id}/kyb/review",
+        json={"verdict": "verified", "totp_code": pyotp.TOTP(admin_secret).now()},
+        headers=_auth(admin_id, ["admin"]),
+    )
+
+    assert verdict.status_code == 200
+    notification = next(
+        call for call in sent if call["notification_type"] == "org_kyb_verified"
+    )
+    assert notification["user_id"] == str(owner_id)
+    assert notification["link"] == f"/dashboard/organizations/{org_id}/verification"
 
 
 async def test_admin_cannot_verify_documents_that_were_never_uploaded(

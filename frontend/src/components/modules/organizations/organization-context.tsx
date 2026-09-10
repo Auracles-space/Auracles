@@ -8,6 +8,8 @@ type OrganizationContextType = {
   role: string;
   org: MyOrganizationResponse["org"];
   capabilities: MyOrganizationResponse["capabilities"];
+  /** Business-verification state; everything but verification waits on it. */
+  kybStatus: string;
   isSuspended: boolean;
   markSuspended: () => void;
   refreshOrganization: () => Promise<void>;
@@ -29,6 +31,7 @@ export function OrganizationProvider({
   role,
   org,
   capabilities,
+  kybStatus = "verified",
   refreshOrganization,
 }: {
   children: ReactNode;
@@ -36,6 +39,7 @@ export function OrganizationProvider({
   role: string;
   org: MyOrganizationResponse["org"];
   capabilities: MyOrganizationResponse["capabilities"];
+  kybStatus?: string;
   refreshOrganization?: () => Promise<void>;
 }) {
   // Seed from the org's persisted suspension state so the banner shows on load;
@@ -49,6 +53,7 @@ export function OrganizationProvider({
         role,
         org,
         capabilities,
+        kybStatus,
         isSuspended,
         markSuspended: () => setIsSuspended(true),
         refreshOrganization: refreshOrganization ?? (async () => {}),

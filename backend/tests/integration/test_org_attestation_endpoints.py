@@ -33,6 +33,7 @@ from app.modules.organizations.models import (
     OrgAttestorProfile,
     OrgCapability,
     OrgInvitation,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
 )
@@ -116,6 +117,18 @@ async def _attestor_org() -> tuple[UUID, UUID, UUID]:
             )
             session.add(org)
             await session.flush()
+            # Business-verified: an unverified org is a shell, so its
+            # attestation work would otherwise be refused.
+            session.add(
+                OrgLegalProfile(
+                    org_id=org.id,
+                    legal_name="Verified Test Org Ltd",
+                    registration_number="RC000000",
+                    incorporation_doc_keys=["org-incorporation-docs/c.pdf"],
+                    kyb_status="verified",
+                    kyb_verified_at=datetime.now(UTC),
+                )
+            )
             member = OrgMember(org_id=org.id, user_id=owner_id, role="owner")
             session.add(member)
             await session.flush()

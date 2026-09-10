@@ -311,6 +311,16 @@ export function OrgVerificationPanel() {
                 placeholder="123456"
                 value={totpCode}
               />
+              <span className="text-xs font-normal leading-5 text-foreground-muted">
+                Saving legal details requires two-factor authentication.{" "}
+                <a
+                  className="font-medium text-accent hover:underline"
+                  href="/2fa-setup"
+                >
+                  Set it up first
+                </a>{" "}
+                if you have not already.
+              </span>
             </label>
             <Button
               disabled={busy || legalName.trim().length < 2 || totpCode.length !== 6}

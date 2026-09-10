@@ -30,6 +30,7 @@ from app.modules.organizations.models import (
 )
 from app.modules.organizations.router import ORG_CREATE_LIMIT
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.support.db_cleanup import clear_identity_state_async
 
@@ -96,15 +97,30 @@ def auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def create_org(client: AsyncClient, token: str, prefix: str) -> dict[str, object]:
-    """Create an org via the API; return the response body."""
+async def create_org(
+    client: AsyncClient,
+    token: str,
+    prefix: str,
+    *,
+    verified: bool = True,
+) -> dict[str, object]:
+    """Create an org via the API; return the response body.
+
+    Business-verified by default. An unverified organization is a shell —
+    members, teams, capabilities and transactions are all refused — so a test
+    that wants a usable org wants a verified one. Pass ``verified=False`` to
+    exercise the gate itself.
+    """
     response = await client.post(
         "/v1/orgs",
         json={"slug": f"{prefix}-{uuid4().hex[:6]}", "name": prefix, "country": "GB"},
         headers=auth(token),
     )
     assert response.status_code == 201
-    return dict(response.json())
+    body = dict(response.json())
+    if verified:
+        await verify_org_kyb(body["id"])
+    return body
 
 
 async def add_member(org_id: str, user_id: UUID, role: str) -> UUID:

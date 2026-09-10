@@ -38,6 +38,7 @@ function setOrg(
   overrides: Partial<{
     role: string;
     capabilities: Record<string, string>;
+    kybStatus: string;
     isSuspended: boolean;
   }> = {},
 ) {
@@ -45,6 +46,8 @@ function setOrg(
     orgId: "org-1",
     role: "owner",
     capabilities: {},
+    // Verified: activation is only offered to a verified org.
+    kybStatus: "verified",
     isSuspended: false,
     refreshOrganization,
     ...overrides,
@@ -155,5 +158,24 @@ describe("OrganizationCapabilities", () => {
     expect(await screen.findByText("rate_limited")).toBeTruthy();
     expect(screen.getByText("Activate Operator capability?")).toBeTruthy();
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("OrganizationCapabilities on an unverified organization", () => {
+  it("offers verification instead of a live Activate button", () => {
+    // The API refuses activation until the org is business-verified, so an
+    // Activate button here could only ever manufacture a 403.
+    setOrg({ kybStatus: "unverified" });
+
+    render(<OrganizationCapabilities />);
+
+    expect(screen.queryByRole("button", { name: /Activate/i })).toBeNull();
+    const links = screen.getAllByRole("link", { name: /Verify to activate/i });
+    expect(links.length).toBeGreaterThan(0);
+    expect(links[0]).toHaveAttribute(
+      "href",
+      "/dashboard/organizations/org-1/verification",
+    );
   });
 });

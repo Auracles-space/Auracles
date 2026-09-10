@@ -40,6 +40,8 @@ beforeEach(() => {
       suspended_at: null,
     },
     capabilities: {},
+    // Verified: activation is only offered to a verified org.
+    kybStatus: "verified",
     isSuspended: false,
     refreshOrganization: vi.fn().mockResolvedValue(undefined),
   } as never);

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -29,6 +30,7 @@ from app.modules.frameworks.models_artifact import Artifact
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
+    OrgLegalProfile,
     OrgMember,
 )
 
@@ -189,6 +191,18 @@ async def seeded_trial_http(
                 )
                 session.add(org)
                 await session.flush()
+                # Business-verified: an unverified org is a shell, so its
+                # attestation work would otherwise be refused.
+                session.add(
+                    OrgLegalProfile(
+                        org_id=org.id,
+                        legal_name="Verified Test Org Ltd",
+                        registration_number="RC000000",
+                        incorporation_doc_keys=["org-incorporation-docs/c.pdf"],
+                        kyb_status="verified",
+                        kyb_verified_at=datetime.now(UTC),
+                    )
+                )
                 nominee_member = OrgMember(
                     org_id=org.id,
                     user_id=nominee_user.id,

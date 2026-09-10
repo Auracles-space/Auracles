@@ -37,6 +37,7 @@ function mockOrg(capabilities: Record<string, string>) {
         {
           org: { id: "org-1", name: "Test Org" },
           role: "member",
+          kyb_status: "verified",
           capabilities,
         },
       ],
@@ -66,6 +67,7 @@ describe("OrganizationShell contributor Frameworks tab", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "member",
+            kyb_status: "verified",
             capabilities: { contributor: "active" },
             grants: { contributor: true },
           },
@@ -88,6 +90,7 @@ describe("OrganizationShell contributor Frameworks tab", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "member",
+            kyb_status: "verified",
             capabilities: { contributor: "active" },
             grants: { contributor: false },
           },
@@ -111,6 +114,7 @@ describe("OrganizationShell contributor Frameworks tab", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "admin",
+            kyb_status: "verified",
             capabilities: { contributor: "active" },
           },
         ],
@@ -147,6 +151,7 @@ describe("OrganizationShell member Operator library access", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "member",
+            kyb_status: "verified",
             capabilities: { operator: "active" },
           },
         ],
@@ -266,6 +271,7 @@ describe("OrganizationShell action-count badges", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "owner",
+            kyb_status: "verified",
             capabilities: { attestor: "active" },
             counts: { offers: 0, queue: 1, invitations: 0 },
           },
@@ -291,6 +297,7 @@ describe("OrganizationShell action-count badges", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "owner",
+            kyb_status: "verified",
             capabilities: { attestor: "active" },
             counts: { offers: 2, queue: 3, invitations: 1 },
           },
@@ -313,6 +320,7 @@ describe("OrganizationShell action-count badges", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "owner",
+            kyb_status: "verified",
             capabilities: { attestor: "active" },
             counts: { offers: 0, queue: 0, invitations: 0 },
           },
@@ -339,6 +347,7 @@ describe("OrganizationShell action-count badges", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "member",
+            kyb_status: "verified",
             capabilities: { attestor: "active" },
             counts: { offers: 0, queue: 0, invitations: 0 },
           },
@@ -361,6 +370,7 @@ describe("OrganizationShell action-count badges", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "member",
+            kyb_status: "verified",
             capabilities: { attestor: "active" },
             counts: { offers: 0, queue: 2, invitations: 0 },
           },
@@ -381,6 +391,7 @@ describe("OrganizationShell action-count badges", () => {
           {
             org: { id: "org-1", name: "Test Org" },
             role: "owner",
+            kyb_status: "verified",
             capabilities: { attestor: "active" },
             counts: { offers: 0, queue: 0, invitations: 0 },
           },
@@ -413,6 +424,7 @@ describe("OrganizationShell capability activation refresh", () => {
             {
               org: { id: "org-1", name: "Test Org" },
               role: "owner",
+              kyb_status: "verified",
               capabilities: {},
               counts: { offers: 0, queue: 0, invitations: 0 },
             },
@@ -426,6 +438,7 @@ describe("OrganizationShell capability activation refresh", () => {
             {
               org: { id: "org-1", name: "Test Org" },
               role: "owner",
+              kyb_status: "verified",
               capabilities: { operator: "active" },
               counts: { offers: 0, queue: 0, invitations: 0 },
             },
@@ -451,5 +464,53 @@ describe("OrganizationShell capability activation refresh", () => {
     fireEvent.click(screen.getByRole("button", { name: "Activate Operator" }));
 
     expect(await screen.findByRole("tab", { name: /^Operator$/i })).toBeInTheDocument();
+  });
+});
+
+
+describe("OrganizationShell unverified organization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: {
+        required: true,
+        current_version: "1.0",
+        signed_version: null,
+        signed_at: null,
+      },
+    } as never);
+  });
+
+  it("collapses the shell to Profile and Verification only", async () => {
+    // Every other tab fronts an API the backend refuses for an unverified
+    // org, so offering them is offering a wall of 403s.
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "owner",
+            kyb_status: "unverified",
+            capabilities: { contributor: "active", operator: "active" },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">{null}</OrganizationShell>);
+
+    expect(await screen.findByText("Verification")).toBeInTheDocument();
+    expect(screen.getByText("Profile")).toBeInTheDocument();
+    expect(screen.queryByText("Members")).toBeNull();
+    expect(screen.queryByText("Teams")).toBeNull();
+    expect(screen.queryByText("Invitations")).toBeNull();
+    expect(screen.queryByText("Frameworks")).toBeNull();
+    expect(screen.queryByText("Operator")).toBeNull();
+    expect(screen.queryByText("NDA")).toBeNull();
+    expect(
+      screen.getByText(/not verified yet/i),
+    ).toBeInTheDocument();
   });
 });
