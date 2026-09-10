@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { STRIPE_CONNECT_COUNTRIES } from "@/lib/marketplace/countries";
+import { PAYOUT_COUNTRIES } from "@/lib/marketplace/countries";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 
 type CreateOrganizationDialogProps = {
@@ -162,7 +162,7 @@ export function CreateOrganizationDialog({
               value={formData.country}
               onChange={(e) => setFormData({ ...formData, country: e.target.value })}
             >
-              {STRIPE_CONNECT_COUNTRIES.map((c) => (
+              {PAYOUT_COUNTRIES.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.name}
                 </option>

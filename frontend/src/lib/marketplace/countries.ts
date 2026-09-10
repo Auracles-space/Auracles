@@ -2,10 +2,13 @@
  * Country lists for payout onboarding and checkout.
  *
  * Three questions need three lists. `STRIPE_CONNECT_COUNTRIES` is bounded by
- * Stripe Connect and stays authoritative for organization registration.
+ * Stripe Connect and is only about that rail — it is deliberately NOT the
+ * registration list, because Nigeria is not a Connect country and the pilot
+ * market could not have registered at all.
  * `CHECKOUT_COUNTRIES` answers "where is this buyer paying from", which routes
  * the charge. `PAYOUT_COUNTRIES` answers "where can we pay someone out", which
- * now spans both rails: Connect for its own countries, Paystack for Nigeria.
+ * spans both rails — Connect for its own countries, Paystack for Nigeria — and
+ * is what organization registration uses: an org that sells has to be payable.
  *
  * Codes are the value; names are display-only. Kept sorted by name so the
  * rendered dropdown reads alphabetically.
