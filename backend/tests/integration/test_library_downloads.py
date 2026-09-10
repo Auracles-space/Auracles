@@ -595,3 +595,52 @@ async def test_suspended_framework_download_still_works_for_existing_licensee(
 
     assert response.status_code == 200
     assert response.json()["download_url"].startswith("https://s3.test/")
+
+
+async def test_revoked_license_leaves_the_operator_library(
+    client: AsyncClient,
+    migrated_database: None,
+    library_test_context: dict[str, Any],
+) -> None:
+    """A revoked License must not be listed in the Operator's library.
+
+    Refunding a purchase revokes its License, and every other surface honours
+    that: downloads check `status == "active"`, and so does the guard that
+    blocks buying a Framework twice. The library did not, and the Explore
+    purchase CTA decides ownership by asking whether the library lists the
+    Framework. A refunded buyer was therefore shown "View in your library"
+    instead of a buy button, while the download that link leads to was denied
+    — no way back in, and no way to buy again.
+    """
+    contributor_id = await create_user("revoked-seller@auracles.space", ["contributor"])
+    operator_id = await create_user("revoked-buyer@auracles.space", ["operator"])
+    admin_id = await create_user("revoked-admin@auracles.space", ["admin"])
+    admin_totp = await enable_admin_totp(admin_id)
+    framework_id, _ = await create_published_framework_version(contributor_id)
+
+    await client.post(
+        "/v1/admin/licenses",
+        json={
+            "framework_id": str(framework_id),
+            "operator_id": str(operator_id),
+            "type": "team",
+            "totp_code": pyotp.TOTP(admin_totp).now(),
+        },
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    async with async_session_factory() as session:
+        await session.execute(
+            update(License)
+            .where(License.operator_id == operator_id)
+            .values(status="revoked")
+        )
+        await session.commit()
+
+    library = await client.get(
+        "/v1/library",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    assert library.status_code == 200
+    assert library.json()["items"] == []
+    assert library.json()["total"] == 0

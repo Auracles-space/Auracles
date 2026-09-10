@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir uv
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         fonts-dejavu-core \
+        fonts-inter \
         libgdk-pixbuf-2.0-0 \
         libpango-1.0-0 \
         libpangocairo-1.0-0 \

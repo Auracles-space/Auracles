@@ -3,14 +3,21 @@
 Renders sales invoices and earnings statements using only the immutable
 ``Invoice`` snapshot row plus a human line-item label supplied by the caller.
 Maps to: FR-FIN-003 and FR-FIN-004.
+
+The two documents share one stylesheet and one page frame, differing only in
+their body. They are the most formal artefacts Auracles produces — a buyer
+files the sales invoice with their accounts, and an Attestor's earnings
+statement is a record of income — so they carry the brand deliberately rather
+than defaulting to whatever the renderer picks.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 from typing import Final
 
-from jinja2 import Environment
+from jinja2 import Environment, Template
 
 from app.modules.invoicing.models import Invoice
 from app.modules.invoicing.service import DOC_EARNINGS_STATEMENT, DOC_SALES_INVOICE
@@ -18,131 +25,310 @@ from app.modules.invoicing.service import DOC_EARNINGS_STATEMENT, DOC_SALES_INVO
 _CENTS: Final[Decimal] = Decimal("0.01")
 _PERCENT: Final[Decimal] = Decimal("100")
 
+# Resolved relative to this module so WeasyPrint finds the wordmark wherever
+# the worker image places the package.
+_ASSET_DIR: Final[Path] = Path(__file__).parent / "assets"
+
 _TEMPLATE_ENV = Environment(autoescape=True)
 
-_SALES_TEMPLATE = _TEMPLATE_ENV.from_string(
+# Brand Book v1.0, light mode. The invoice is a printed document, so it commits
+# to the light palette rather than adapting: Background #FFFFFB, Surface 1
+# #F8F6F2, Accent #C74634.
+#
+# WeasyPrint renders through Pango, not a browser engine: no flexbox, no grid.
+# Every multi-column arrangement below is `display: table`, which is why this
+# stylesheet looks older than the rest of the codebase. It is not a stale file.
+_BASE_STYLES: Final[str] = """
+  @page {
+    size: A4;
+    margin: 18mm 16mm 22mm 16mm;
+    @bottom-left {
+      content: "Auracles \\2014 knowledge marketplace";
+      font-family: 'Inter', 'DejaVu Sans', sans-serif;
+      font-size: 7.5pt;
+      color: #8a8378;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-family: 'Inter', 'DejaVu Sans', sans-serif;
+      font-size: 7.5pt;
+      color: #8a8378;
+    }
+  }
+  body {
+    font-family: 'Inter', 'DejaVu Sans', sans-serif;
+    font-size: 9.5pt;
+    line-height: 1.6;
+    color: #171717;
+    background: #FFFFFB;
+    margin: 0;
+  }
+  .masthead { display: table; width: 100%; }
+  .masthead .mark { display: table-cell; vertical-align: top; width: 46%; }
+  .masthead .meta {
+    display: table-cell;
+    vertical-align: top;
+    text-align: right;
+  }
+  .mark img { width: 118px; }
+  .doc-type {
+    font-size: 15pt;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .doc-number {
+    font-family: 'DejaVu Sans Mono', monospace;
+    font-size: 10pt;
+    color: #C74634;
+    margin: 2px 0 0 0;
+  }
+  .rule {
+    height: 2px;
+    background: #171717;
+    margin: 14px 0 0 0;
+  }
+  .label {
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: #8a8378;
+    margin: 0 0 6px 0;
+  }
+  /* The cards are the table cells themselves, not boxes nested inside them.
+     Nested boxes size to their own content, so a three-line seller address
+     next to a two-line buyer leaves one card visibly short. As cells they
+     share the row's height, and border-spacing supplies the gutter that the
+     padding on a wrapper would otherwise have provided. */
+  .parties {
+    display: table;
+    width: 100%;
+    margin-top: 20px;
+    border-collapse: separate;
+    border-spacing: 14px 0;
+  }
+  .parties .card { display: table-cell; vertical-align: top; width: 50%; }
+  .parties { margin-left: -14px; margin-right: -14px; }
+  .card {
+    background: #F8F6F2;
+    border: 1px solid #E6E1D8;
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .card .name { font-weight: 700; margin: 0; }
+  .card p { margin: 0; }
+  .card .detail { color: #5f6368; }
+  .facts { display: table; width: 100%; margin-top: 14px; }
+  .facts .fact { display: table-cell; vertical-align: top; }
+  .facts .fact p { margin: 0; }
+  .facts .value { font-weight: 600; }
+  .items { width: 100%; border-collapse: collapse; margin-top: 26px; }
+  .items thead th {
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: #8a8378;
+    text-align: left;
+    padding: 0 0 8px 0;
+    border-bottom: 1.5px solid #171717;
+  }
+  .items tbody td {
+    padding: 13px 0;
+    border-bottom: 1px solid #E6E1D8;
+    vertical-align: top;
+  }
+  .items .amount { text-align: right; white-space: nowrap; }
+  .items .item-name { font-weight: 600; }
+  .summary { width: 260px; margin-left: auto; margin-top: 18px; }
+  .summary table { width: 100%; border-collapse: collapse; }
+  .summary td { padding: 5px 0; }
+  .summary .amount { text-align: right; white-space: nowrap; }
+  .summary .muted td { color: #5f6368; }
+  .summary .total td {
+    border-top: 2px solid #171717;
+    padding-top: 10px;
+    font-size: 12pt;
+    font-weight: 700;
+  }
+  .summary .total .amount { color: #C74634; }
+  .note {
+    margin-top: 34px;
+    padding-top: 12px;
+    border-top: 1px solid #E6E1D8;
+    font-size: 8pt;
+    line-height: 1.6;
+    color: #8a8378;
+  }
+"""
+
+
+def _template(body: str) -> Template:
+    """Compile one page template with the shared stylesheet already inlined.
+
+    The stylesheet is substituted before compilation rather than passed as a
+    render variable. This environment autoescapes — correctly, since invoice
+    rows carry user-supplied names — and escaping applies to every variable
+    equally, so a CSS payload would come through with its quotes turned into
+    entities. That breaks each `font-family` declaration silently: the document
+    still renders, just in the renderer's default serif with none of the brand
+    typography, and nothing in the output says why.
+    """
+    return _TEMPLATE_ENV.from_string(body.replace("/* STYLES */", _BASE_STYLES))
+
+
+_SALES_TEMPLATE = _template(
     """
     <!doctype html>
     <html>
       <head>
         <meta charset="utf-8">
-        <style>
-          @page { size: A4; margin: 24px; }
-          body { font-family: sans-serif; color: #171717; }
-          h1 { margin-bottom: 4px; }
-          .muted { color: #5f6368; }
-          .grid { display: table; width: 100%; margin-top: 18px; }
-          .col { display: table-cell; vertical-align: top; width: 50%; }
-          .card {
-            border: 1px solid #d7d3cc;
-            padding: 12px;
-            border-radius: 6px;
-          }
-          table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-          th, td {
-            text-align: left;
-            padding: 10px 0;
-            border-bottom: 1px solid #ece7df;
-          }
-          .amount { text-align: right; }
-          .summary { width: 320px; margin-left: auto; margin-top: 24px; }
-          .summary td { border-bottom: none; }
-          .summary .total td { border-top: 2px solid #171717; font-weight: 700; }
-        </style>
+        <style>/* STYLES */</style>
       </head>
       <body>
-        <h1>Auracles Sales Invoice</h1>
-        <p class="muted">{{ invoice_number }} · Issued {{ issue_date }}</p>
-        <div class="grid">
-          <div class="col">
-            <div class="card">
-              <strong>Seller</strong>
-              <p>{{ seller_name }}</p>
-              <p>{{ seller_tax_id }}</p>
-              <p>{{ seller_address }}</p>
-            </div>
+        <div class="masthead">
+          <div class="mark">
+            <img src="auracles-wordmark.png" alt="Auracles">
           </div>
-          <div class="col">
-            <div class="card">
-              <strong>Buyer</strong>
-              <p>{{ buyer_name }}</p>
-              <p>{{ buyer_email }}</p>
-            </div>
+          <div class="meta">
+            <p class="doc-type">Sales Invoice</p>
+            <p class="doc-number">{{ invoice_number }}</p>
           </div>
         </div>
-        <table>
+        <div class="rule"></div>
+
+        <div class="parties">
+          <div class="card">
+            <p class="label">Seller</p>
+            <p class="name">{{ seller_name }}</p>
+            {% if seller_tax_id %}
+              <p class="detail">Tax ID {{ seller_tax_id }}</p>
+            {% endif %}
+            {% if seller_address %}
+              <p class="detail">{{ seller_address }}</p>
+            {% endif %}
+          </div>
+          <div class="card">
+            <p class="label">Billed to</p>
+            <p class="name">{{ buyer_name }}</p>
+            <p class="detail">{{ buyer_email }}</p>
+          </div>
+        </div>
+
+        <div class="facts">
+          <div class="fact">
+            <p class="label">Issued</p>
+            <p class="value">{{ issue_date }}</p>
+          </div>
+          <div class="fact">
+            <p class="label">Currency</p>
+            <p class="value">{{ currency }}</p>
+          </div>
+          <div class="fact">
+            <p class="label">Amount due</p>
+            <p class="value">{{ total }}</p>
+          </div>
+        </div>
+
+        <table class="items">
           <thead>
             <tr>
-              <th>Item</th>
+              <th>Description</th>
               <th class="amount">Amount</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>{{ line_item_label }}</td>
+              <td class="item-name">{{ line_item_label }}</td>
               <td class="amount">{{ subtotal }}</td>
             </tr>
           </tbody>
         </table>
-        <table class="summary">
-          <tbody>
-            <tr>
-              <td>Subtotal</td>
-              <td class="amount">{{ subtotal }}</td>
-            </tr>
-            <tr>
-              <td>Tax ({{ tax_percent }})</td>
-              <td class="amount">{{ tax_amount }}</td>
-            </tr>
-            <tr class="total">
-              <td>Total</td>
-              <td class="amount">{{ total }}</td>
-            </tr>
-          </tbody>
-        </table>
+
+        <div class="summary">
+          <table>
+            <tbody>
+              <tr class="muted">
+                <td>Subtotal</td>
+                <td class="amount">{{ subtotal }}</td>
+              </tr>
+              <tr class="muted">
+                <td>Tax ({{ tax_percent }})</td>
+                <td class="amount">{{ tax_amount }}</td>
+              </tr>
+              <tr class="total">
+                <td>Total</td>
+                <td class="amount">{{ total }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="note">
+          This invoice is issued for a completed purchase on the Auracles
+          marketplace and is payable in {{ currency }}. Amounts are final as
+          recorded at the time of sale. Retain this document for your records.
+        </p>
       </body>
     </html>
     """
 )
 
-_EARNINGS_TEMPLATE = _TEMPLATE_ENV.from_string(
+_EARNINGS_TEMPLATE = _template(
     """
     <!doctype html>
     <html>
       <head>
         <meta charset="utf-8">
-        <style>
-          @page { size: A4; margin: 24px; }
-          body { font-family: sans-serif; color: #171717; }
-          h1 { margin-bottom: 4px; }
-          .muted { color: #5f6368; }
-          .card {
-            border: 1px solid #d7d3cc;
-            padding: 12px;
-            border-radius: 6px;
-            margin-top: 18px;
-          }
-          table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-          th, td {
-            text-align: left;
-            padding: 10px 0;
-            border-bottom: 1px solid #ece7df;
-          }
-          .amount { text-align: right; }
-          .summary { width: 360px; margin-left: auto; margin-top: 24px; }
-          .summary td { border-bottom: none; }
-          .summary .total td { border-top: 2px solid #171717; font-weight: 700; }
-        </style>
+        <style>/* STYLES */</style>
       </head>
       <body>
-        <h1>Auracles Earnings Statement</h1>
-        <p class="muted">{{ invoice_number }} · Issued {{ issue_date }}</p>
-        <div class="card">
-          <strong>Attestor</strong>
-          <p>{{ buyer_name }}</p>
-          <p>{{ buyer_email }}</p>
+        <div class="masthead">
+          <div class="mark">
+            <img src="auracles-wordmark.png" alt="Auracles">
+          </div>
+          <div class="meta">
+            <p class="doc-type">Earnings Statement</p>
+            <p class="doc-number">{{ invoice_number }}</p>
+          </div>
         </div>
-        <table>
+        <div class="rule"></div>
+
+        <div class="parties">
+          <div class="card">
+            <p class="label">Attestor</p>
+            <p class="name">{{ buyer_name }}</p>
+            <p class="detail">{{ buyer_email }}</p>
+          </div>
+          <div class="card">
+            <p class="label">Issued by</p>
+            <p class="name">{{ seller_name }}</p>
+            {% if seller_tax_id %}
+              <p class="detail">Tax ID {{ seller_tax_id }}</p>
+            {% endif %}
+            {% if seller_address %}
+              <p class="detail">{{ seller_address }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="facts">
+          <div class="fact">
+            <p class="label">Issued</p>
+            <p class="value">{{ issue_date }}</p>
+          </div>
+          <div class="fact">
+            <p class="label">Currency</p>
+            <p class="value">{{ currency }}</p>
+          </div>
+          <div class="fact">
+            <p class="label">Net earnings</p>
+            <p class="value">{{ net_amount }}</p>
+          </div>
+        </div>
+
+        <table class="items">
           <thead>
             <tr>
               <th>Engagement</th>
@@ -151,27 +337,36 @@ _EARNINGS_TEMPLATE = _TEMPLATE_ENV.from_string(
           </thead>
           <tbody>
             <tr>
-              <td>{{ line_item_label }}</td>
+              <td class="item-name">{{ line_item_label }}</td>
               <td class="amount">{{ subtotal }}</td>
             </tr>
           </tbody>
         </table>
-        <table class="summary">
-          <tbody>
-            <tr>
-              <td>Gross fee</td>
-              <td class="amount">{{ subtotal }}</td>
-            </tr>
-            <tr>
-              <td>Platform commission ({{ commission_percent }})</td>
-              <td class="amount">{{ commission_amount }}</td>
-            </tr>
-            <tr class="total">
-              <td>Net earnings</td>
-              <td class="amount">{{ net_amount }}</td>
-            </tr>
-          </tbody>
-        </table>
+
+        <div class="summary">
+          <table>
+            <tbody>
+              <tr class="muted">
+                <td>Gross fee</td>
+                <td class="amount">{{ subtotal }}</td>
+              </tr>
+              <tr class="muted">
+                <td>Commission ({{ commission_percent }})</td>
+                <td class="amount">&minus;{{ commission_amount }}</td>
+              </tr>
+              <tr class="total">
+                <td>Net earnings</td>
+                <td class="amount">{{ net_amount }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="note">
+          This statement records earnings from a completed Attestation
+          engagement, net of the platform commission in force at the time the
+          fee settled. It is a record of income, not a request for payment.
+        </p>
       </body>
     </html>
     """
@@ -179,8 +374,15 @@ _EARNINGS_TEMPLATE = _TEMPLATE_ENV.from_string(
 
 
 def _money(value: Decimal, currency: str) -> str:
-    """Format one money value from the frozen ledger row."""
-    return f"{value.quantize(_CENTS)} {currency}"
+    """Format one money value from the frozen ledger row.
+
+    The ISO code leads rather than a currency symbol. Symbols are ambiguous
+    across the rails Auracles settles on — a bare ``$`` says nothing about
+    which dollar — and the naira sign risks a missing glyph in whatever font
+    the renderer resolves. ``NGN 149,000.00`` survives both problems and is
+    what cross-border invoices conventionally carry.
+    """
+    return f"{currency} {value.quantize(_CENTS):,}"
 
 
 def _percent(value: Decimal | None) -> str:
@@ -191,7 +393,20 @@ def _percent(value: Decimal | None) -> str:
 
 
 def render_invoice_pdf(invoice: Invoice, *, line_item_label: str) -> bytes:
-    """Render one invoice or earnings statement PDF from a frozen row."""
+    """Render one invoice or earnings statement PDF from a frozen row.
+
+    Args:
+        invoice: The immutable ledger snapshot to render. Nothing outside this
+            row and ``line_item_label`` reaches the page, so a reissued PDF is
+            byte-comparable to the original.
+        line_item_label: Human description of what was sold or performed.
+
+    Returns:
+        The rendered PDF bytes.
+
+    Raises:
+        ValueError: If the row carries an unsupported ``doc_type``.
+    """
     # Imported at call time, not module scope: WeasyPrint dlopens pango/glib on
     # import, and this module is reachable from the API's import graph even
     # though only the Celery worker ever renders a PDF. A module-scope import
@@ -202,6 +417,7 @@ def render_invoice_pdf(invoice: Invoice, *, line_item_label: str) -> bytes:
     base_context = {
         "invoice_number": invoice.invoice_number,
         "issue_date": invoice.issue_date.date().isoformat(),
+        "currency": invoice.currency,
         "line_item_label": line_item_label,
         "seller_name": invoice.seller_name,
         "seller_tax_id": invoice.seller_tax_id,
@@ -227,4 +443,6 @@ def render_invoice_pdf(invoice: Invoice, *, line_item_label: str) -> bytes:
         html = _EARNINGS_TEMPLATE.render(**base_context)
     else:
         raise ValueError(f"Unsupported invoice doc_type: {invoice.doc_type}")
-    return bytes(HTML(string=html).write_pdf())
+    # base_url resolves the wordmark; without it the relative src is dropped
+    # and the document renders unbranded rather than failing loudly.
+    return bytes(HTML(string=html, base_url=str(_ASSET_DIR / "x")).write_pdf())
