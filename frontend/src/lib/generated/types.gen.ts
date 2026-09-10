@@ -732,8 +732,12 @@ export type AdminOrgResponse = {
     created_at: string;
     deactivated_at?: (string | null);
     id: string;
+    kyb_status?: string;
+    kyb_submitted_at?: (string | null);
+    legal_name?: (string | null);
     member_count: number;
     name: string;
+    registration_number?: (string | null);
     slug: string;
     suspended_at?: (string | null);
 };
@@ -3322,9 +3326,9 @@ export type OrgAttestorAdminListItem = {
     capability_status?: (string | null);
     created_at: string;
     id: string;
-    kyb_verified_at: (string | null);
-    legal_name: (string | null);
+    kyb_status?: (string | null);
     org_id: string;
+    org_name?: (string | null);
     reviewed_at: (string | null);
     status: string;
     trial_status?: (string | null);
@@ -3352,9 +3356,7 @@ export type OrgAttestorApplicationCreateRequest = {
     credentials_summary: string;
     functions: Array<(string)>;
     jurisdictions: Array<(string)>;
-    legal_name?: (string | null);
     professional_references: string;
-    registration_number?: (string | null);
     sample_work?: {
         [key: string]: unknown;
     };
@@ -3378,14 +3380,10 @@ export type OrgAttestorApplicationResponse = {
     functions: Array<(string)>;
     gate_checklist: OrgAttestorGateChecklist;
     id: string;
-    incorporation_doc_keys: Array<(string)>;
     jurisdictions: Array<(string)>;
-    kyb_verified_at: (string | null);
-    legal_name: (string | null);
     org_id: string;
     payout_account_id: (string | null);
     professional_references: string;
-    registration_number: (string | null);
     reviewed_at: (string | null);
     sample_work: {
         [key: string]: unknown;
@@ -3408,10 +3406,8 @@ export type OrgAttestorApplicationUpdateRequest = {
     credentials_summary?: (string | null);
     functions?: (Array<(string)> | null);
     jurisdictions?: (Array<(string)> | null);
-    legal_name?: (string | null);
     payout_account_id?: (string | null);
     professional_references?: (string | null);
-    registration_number?: (string | null);
     sample_work?: ({
     [key: string]: unknown;
 } | null);
@@ -3476,7 +3472,7 @@ export type OrgAttestorIncorporationDocumentDeleteRequest = {
  *
  * The org uploads incorporation documents (certificate of incorporation and
  * similar KYB evidence) to a private bucket; the returned S3 key is appended
- * to the application's ``incorporation_doc_keys`` list server-side.
+ * to the organization's ``incorporation_doc_keys`` list server-side.
  */
 export type OrgAttestorIncorporationDocumentRequest = {
     content_type: string;
@@ -3590,6 +3586,37 @@ export type OrgInvoiceListItem = {
  */
 export type OrgInvoicesResponse = {
     invoices: Array<OrgInvoiceListItem>;
+};
+
+/**
+ * Admin verdict on one organization's business verification.
+ */
+export type OrgKybReviewRequest = {
+    notes?: (string | null);
+    totp_code: string;
+    verdict: 'verified' | 'rejected';
+};
+
+export type verdict = 'verified' | 'rejected';
+
+/**
+ * An organization's business-verification state.
+ *
+ * Carries the identity under review alongside the verdict, so one call
+ * renders the whole verification surface. ``country`` is echoed because the
+ * document a registration number refers to is country-specific — an RC
+ * number and CAC certificate in Nigeria, a company number and certificate of
+ * incorporation elsewhere — and the label belongs with the reader.
+ */
+export type OrgKybStatusResponse = {
+    country: string;
+    incorporation_doc_keys?: Array<(string)>;
+    kyb_review_notes?: (string | null);
+    kyb_status: string;
+    kyb_submitted_at?: (string | null);
+    kyb_verified_at?: (string | null);
+    legal_name?: (string | null);
+    registration_number?: (string | null);
 };
 
 /**
@@ -5616,18 +5643,9 @@ export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDeci
 
 export type AdminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePostError = (HTTPValidationError);
 
-export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostData = {
-    path: {
-        application_id: string;
-    };
-};
-
-export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostResponse = (OrgAttestorApplicationResponse);
-
-export type AdminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPostError = (HTTPValidationError);
-
 export type AdminListOrgsV1AdminOrgsGetData = {
     query?: {
+        kyb_status?: ('unverified' | 'pending' | 'verified' | 'rejected' | null);
         page?: number;
         page_size?: number;
         query?: (string | null);
@@ -5697,6 +5715,17 @@ export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabili
 export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostResponse = (void);
 
 export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReviewOrgKybV1AdminOrgsOrgIdKybReviewPostData = {
+    body: OrgKybReviewRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReviewOrgKybV1AdminOrgsOrgIdKybReviewPostResponse = (OrgKybStatusResponse);
+
+export type AdminReviewOrgKybV1AdminOrgsOrgIdKybReviewPostError = (HTTPValidationError);
 
 export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostData = {
     path: {
@@ -6017,6 +6046,16 @@ export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifacts
 
 export type RequestAttestationArtifactAccessV1AttestationsAttestationIdArtifactsArtifactIdAccessPostError = (HTTPValidationError);
 
+export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostResponse = (AttestationRequestResponse);
+
+export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostError = (HTTPValidationError);
+
 export type ListAttestationClarificationsV1AttestationsAttestationIdClarificationsGetData = {
     path: {
         attestation_id: string;
@@ -6061,16 +6100,6 @@ export type RespondToAttestationClarificationV1AttestationsAttestationIdClarific
 export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostResponse = (ClarificationResponse);
 
 export type RespondToAttestationClarificationV1AttestationsAttestationIdClarificationsClarificationIdRespondPostError = (HTTPValidationError);
-
-export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostData = {
-    path: {
-        attestation_id: string;
-    };
-};
-
-export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostResponse = (AttestationRequestResponse);
-
-export type CancelAttestationRequestV1AttestationsAttestationIdCancelPostError = (HTTPValidationError);
 
 export type DecideOwnerConsentV1AttestationsAttestationIdConsentPostData = {
     body: AttestationConsentRequest;
@@ -7537,28 +7566,6 @@ export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostResponse 
 
 export type CreateAttestorApplicationV1OrgsOrgIdAttestorApplicationPostError = (HTTPValidationError);
 
-export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteData = {
-    body: OrgAttestorIncorporationDocumentDeleteRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteResponse = (OrgAttestorApplicationResponse);
-
-export type RemoveAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDeleteError = (HTTPValidationError);
-
-export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostData = {
-    body: OrgAttestorIncorporationDocumentRequest;
-    path: {
-        org_id: string;
-    };
-};
-
-export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
-
-export type AddAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPostError = (HTTPValidationError);
-
 export type NominateAttestorTrialMemberV1OrgsOrgIdAttestorApplicationNominateTrialMemberPostData = {
     body: OrgNominateTrialMemberRequest;
     path: {
@@ -8013,6 +8020,48 @@ export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
 export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteResponse = (void);
 
 export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteError = (HTTPValidationError);
+
+export type GetOrgKybV1OrgsOrgIdKybGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type GetOrgKybV1OrgsOrgIdKybGetResponse = (OrgKybStatusResponse);
+
+export type GetOrgKybV1OrgsOrgIdKybGetError = (HTTPValidationError);
+
+export type RemoveOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDeleteData = {
+    body: OrgAttestorIncorporationDocumentDeleteRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type RemoveOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDeleteResponse = (OrgKybStatusResponse);
+
+export type RemoveOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDeleteError = (HTTPValidationError);
+
+export type AddOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPostData = {
+    body: OrgAttestorIncorporationDocumentRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type AddOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPostResponse = (CredentialEvidenceUploadSessionResponse);
+
+export type AddOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPostError = (HTTPValidationError);
+
+export type SubmitOrgKybV1OrgsOrgIdKybSubmitPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type SubmitOrgKybV1OrgsOrgIdKybSubmitPostResponse = (OrgKybStatusResponse);
+
+export type SubmitOrgKybV1OrgsOrgIdKybSubmitPostError = (HTTPValidationError);
 
 export type GetLegalProfileV1OrgsOrgIdLegalProfileGetData = {
     path: {

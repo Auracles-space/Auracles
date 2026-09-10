@@ -207,3 +207,35 @@ def _restore_preserved_tables(
             sa.text(f'INSERT INTO "{name}" ({column_list}) VALUES ({placeholders})'),
             rows,
         )
+
+
+async def verify_org_kyb(org_id: object) -> None:
+    """Mark an organization business-verified so its capabilities can activate.
+
+    DESIGN-1 put business verification in front of every capability, so a test
+    that activates Contributor or Operator has to establish the org's legal
+    identity first. Seeded directly rather than driven through the submit →
+    admin-review endpoints, which have their own coverage in
+    ``test_org_kyb_endpoints`` and would otherwise be re-run by every caller.
+    """
+    from datetime import UTC, datetime
+    from uuid import UUID as _UUID
+
+    from sqlalchemy import select as _select
+
+    from app.core.database import async_session_factory as _factory
+    from app.modules.organizations.models import OrgLegalProfile as _Profile
+
+    resolved = org_id if isinstance(org_id, _UUID) else _UUID(str(org_id))
+    async with _factory() as session:
+        async with session.begin():
+            profile = await session.scalar(
+                _select(_Profile).where(_Profile.org_id == resolved)
+            )
+            if profile is None:
+                profile = _Profile(org_id=resolved, legal_name="Verified Test Org Ltd")
+                session.add(profile)
+            profile.registration_number = "RC000000"
+            profile.incorporation_doc_keys = ["org-incorporation-docs/test/cert.pdf"]
+            profile.kyb_status = "verified"
+            profile.kyb_verified_at = datetime.now(UTC)

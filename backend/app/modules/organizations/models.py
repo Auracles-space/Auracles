@@ -45,6 +45,14 @@ ORG_CAPABILITY_ENUM = ENUM(
     name="org_capability_enum",
     create_type=False,
 )
+ORG_KYB_STATUS_ENUM = ENUM(
+    "unverified",
+    "pending",
+    "verified",
+    "rejected",
+    name="org_kyb_status_enum",
+    create_type=False,
+)
 ORG_CAPABILITY_STATUS_ENUM = ENUM(
     "pending",
     "active",
@@ -316,22 +324,10 @@ class OrgAttestorApplication(UpdatedAtMixin, Base):
         nullable=False,
         server_default="draft",
     )
-    legal_name: Mapped[str | None] = mapped_column(Text, nullable=True)
-    registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)
-    incorporation_doc_keys: Mapped[list[str]] = mapped_column(
-        ARRAY(Text),
-        nullable=False,
-        server_default=text("'{}'::text[]"),
-    )
-    kyb_verified_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    kyb_verified_by: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("users.id"),
-        nullable=True,
-    )
+    # KYB identity (legal name, registration number, incorporation documents)
+    # lives on Organization: it is one legal identity per org, verified once and
+    # reused by every capability, so this row reads it rather than holding a
+    # second copy that could disagree.
     specializations: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     jurisdictions: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     sectors: Mapped[list[str]] = mapped_column(
@@ -581,3 +577,32 @@ class OrgLegalProfile(UpdatedAtMixin, Base):
         nullable=True,
     )
     tax_document_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Business verification (KYB) attaches to the legal identity it verifies,
+    # rather than to the organization or to the attestor application that used
+    # to own it. legal_name and registration_number above are two of the three
+    # facts an admin checks, so holding the verdict anywhere else would put the
+    # identity and its verification in different rows, free to disagree.
+    incorporation_doc_keys: Mapped[list[str]] = mapped_column(
+        ARRAY(Text),
+        nullable=False,
+        server_default=text("'{}'::text[]"),
+    )
+    kyb_status: Mapped[str] = mapped_column(
+        ORG_KYB_STATUS_ENUM,
+        nullable=False,
+        server_default="unverified",
+    )
+    kyb_submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    kyb_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    kyb_verified_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    kyb_review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)

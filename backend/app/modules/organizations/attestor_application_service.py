@@ -47,11 +47,13 @@ from app.modules.auth.models import User
 from app.modules.financials.models import PayoutAccount
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
-from app.modules.organizations import nda_service
+from app.modules.organizations import kyb_service, nda_service
 from app.modules.organizations.models import (
+    Organization,
     OrgAttestorApplication,
     OrgAttestorProfile,
     OrgCapability,
+    OrgLegalProfile,
     OrgMember,
 )
 from app.modules.organizations.schemas import (
@@ -59,7 +61,6 @@ from app.modules.organizations.schemas import (
     OrgAttestorApplicationUpdateRequest,
     OrgAttestorDocumentLink,
     OrgAttestorGateChecklist,
-    OrgAttestorIncorporationDocumentRequest,
     OrgAttestorTaxDocumentRequest,
     OrgUndertakingsSignRequest,
 )
@@ -159,7 +160,10 @@ async def _gate_checklist(
 ) -> OrgAttestorGateChecklist:
     """Derive the per-gate readiness flags for one application row."""
     return OrgAttestorGateChecklist(
-        kyb_verified=application.kyb_verified_at is not None,
+        # KYB is an organization-level fact now, established before any
+        # capability activates, so this gate reads the verdict rather than
+        # owning a second one scoped to this application.
+        kyb_verified=await kyb_service.org_kyb_verified(db, org_id=application.org_id),
         # Credentials count as reviewed once an admin has reviewed the
         # application and advanced it past the needs-info state.
         credentials_reviewed=(
@@ -222,10 +226,6 @@ async def create_application(
                 status="draft",
                 # Legacy NOT NULL column superseded by sectors/functions.
                 specializations=[],
-                legal_name=payload.legal_name,
-                registration_number=payload.registration_number,
-                # Incorporation docs are attached after creation via the
-                # dedicated upload endpoint; the column defaults to empty.
                 sectors=payload.sectors,
                 functions=payload.functions,
                 jurisdictions=payload.jurisdictions,
@@ -373,13 +373,15 @@ async def update_application(
     return application
 
 
-def _kyb_complete(application: OrgAttestorApplication) -> bool:
-    """True iff every KYB, matching, and credentials field is populated."""
+def _application_content_complete(application: OrgAttestorApplication) -> bool:
+    """True iff every matching and credentials field is populated.
+
+    KYB is no longer checked here: an org cannot reach an attestor application
+    without already being verified, so re-testing its identity fields would be
+    testing a precondition the flow guarantees.
+    """
     return bool(
-        application.legal_name
-        and application.registration_number
-        and application.incorporation_doc_keys
-        and application.sectors
+        application.sectors
         and application.functions
         and application.jurisdictions
         and application.credentials_summary
@@ -414,12 +416,12 @@ async def submit_application(
         application = await _load_live_locked(
             db, org_id, allowed_statuses=_EDITABLE_STATUSES
         )
-        if not _kyb_complete(application):
+        if not _application_content_complete(application):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
-                    "Complete all KYB, matching, and credentials fields "
-                    "before submitting."
+                    "Complete all matching and credentials fields before "
+                    "submitting."
                 ),
             )
         application.status = "submitted"
@@ -597,142 +599,6 @@ async def set_tax_document(
         scan_status="pending_scan",
     )
 
-
-async def add_incorporation_document(
-    db: AsyncSession,
-    *,
-    org_id: UUID,
-    actor_id: UUID,
-    payload: OrgAttestorIncorporationDocumentRequest,
-) -> CredentialEvidenceUploadSessionResponse:
-    """Create a presigned upload session for one incorporation document.
-
-    Appends a freshly minted S3 key to the application's
-    ``incorporation_doc_keys`` list, then returns a presigned POST so the org
-    can upload the document directly to the private bucket. The list is the
-    single source of truth for KYB documents, so keys are never supplied by the
-    create/update payload.
-
-    Args:
-        db: Async session.
-        org_id: Organization owning the application.
-        actor_id: Authenticated org owner/admin acting.
-        payload: Upload metadata (file name, content type, declared size).
-
-    Returns:
-        A presigned POST upload session response for the incorporation document.
-
-    Raises:
-        HTTPException(404): If no live application exists.
-        HTTPException(409): If the application is not gate-eligible, or already
-            holds the maximum number of incorporation documents.
-        HTTPException(413): If the upload exceeds the size limit.
-    """
-    if payload.size_bytes > INCORPORATION_DOC_MAX_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Incorporation document upload is too large.",
-        )
-    if db.in_transaction():
-        await db.rollback()
-
-    now = datetime.now(UTC)
-    expires_at = now + timedelta(seconds=INCORPORATION_DOC_UPLOAD_TTL_SECONDS)
-    async with db.begin():
-        application = await _load_live_locked(
-            db, org_id, allowed_statuses=_GATEABLE_STATUSES
-        )
-        if len(application.incorporation_doc_keys) >= MAX_INCORPORATION_DOCS:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "Maximum number of incorporation documents already attached."
-                ),
-            )
-        key = (
-            f"org-attestor-incorporation-docs/{org_id}/{application.id}/"
-            f"{uuid4()}-{_safe_file_name(payload.file_name)}"
-        )
-        # Reassign (not append) so SQLAlchemy detects the mutation on the
-        # ARRAY column and flushes the new key.
-        application.incorporation_doc_keys = [
-            *application.incorporation_doc_keys,
-            key,
-        ]
-        await write_audit(
-            db=db,
-            actor_id=actor_id,
-            action="org_attestor_incorporation_document_added",
-            target_type="org_attestor_application",
-            target_id=application.id,
-            metadata={"incorporation_doc_added": True},
-        )
-
-    settings = get_settings()
-    post = s3.storage.presigned_post(
-        settings.s3_artifacts_bucket,
-        key,
-        payload.content_type,
-        INCORPORATION_DOC_MAX_BYTES,
-        INCORPORATION_DOC_UPLOAD_TTL_SECONDS,
-    )
-    return CredentialEvidenceUploadSessionResponse(
-        id=uuid4(),
-        s3_key=key,
-        url=str(post["url"]),
-        fields={str(k): str(v) for k, v in post["fields"].items()},
-        expires_at=expires_at,
-        size_limit=INCORPORATION_DOC_MAX_BYTES,
-        scan_status="pending_scan",
-    )
-
-
-async def remove_incorporation_document(
-    db: AsyncSession,
-    *,
-    org_id: UUID,
-    actor_id: UUID,
-    s3_key: str,
-) -> OrgAttestorApplication:
-    """Remove one incorporation document key from the application.
-
-    Args:
-        db: Async session.
-        org_id: Organization owning the application.
-        actor_id: Authenticated org owner/admin acting.
-        s3_key: The incorporation-document key to detach.
-
-    Returns:
-        The application with the key removed.
-
-    Raises:
-        HTTPException(404): If no live application exists, or the key is not
-            attached to the application.
-        HTTPException(409): If the application is not gate-eligible.
-    """
-    if db.in_transaction():
-        await db.rollback()
-    async with db.begin():
-        application = await _load_live_locked(
-            db, org_id, allowed_statuses=_GATEABLE_STATUSES
-        )
-        if s3_key not in application.incorporation_doc_keys:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Incorporation document not found.",
-            )
-        application.incorporation_doc_keys = [
-            key for key in application.incorporation_doc_keys if key != s3_key
-        ]
-        await write_audit(
-            db=db,
-            actor_id=actor_id,
-            action="org_attestor_incorporation_document_removed",
-            target_type="org_attestor_application",
-            target_id=application.id,
-            metadata={"incorporation_doc_removed": True},
-        )
-    return application
 
 
 async def nominate_trial_member(
@@ -912,7 +778,16 @@ async def admin_list_documents(
     async with db.begin():
         application = await _load_admin_application(db, application_id)
         links: list[OrgAttestorDocumentLink] = []
-        for index, key in enumerate(application.incorporation_doc_keys, start=1):
+        # Incorporation documents belong to the org's legal profile now, and
+        # the attestor reviewer still needs to see them — read-only, since the
+        # KYB verdict is settled on the organization queue.
+        profile = await db.scalar(
+            select(OrgLegalProfile).where(
+                OrgLegalProfile.org_id == application.org_id
+            )
+        )
+        incorporation_keys = profile.incorporation_doc_keys if profile else []
+        for index, key in enumerate(incorporation_keys, start=1):
             links.append(_link(f"Incorporation document {index}", key))
         if application.tax_document_key is not None:
             tax_type = application.tax_document_type or "document"
@@ -1006,10 +881,19 @@ def _missing_approval_gates(
     application: OrgAttestorApplication,
     *,
     trial_passed: bool,
+    kyb_verified: bool,
 ) -> list[str]:
-    """Return any unsatisfied approval gates for an org application."""
+    """Return any unsatisfied approval gates for an org application.
+
+    Args:
+        application: The application under review.
+        trial_passed: Whether its calibration trial passed.
+        kyb_verified: Whether the owning organization passed business
+            verification. Read from the org rather than the application, which
+            no longer holds an identity of its own.
+    """
     missing: list[str] = []
-    if application.kyb_verified_at is None:
+    if not kyb_verified:
         missing.append("kyb_verified")
     if application.coi_signed_at is None:
         missing.append("undertakings_coi")
@@ -1107,6 +991,38 @@ async def admin_trial_states(
     return states
 
 
+async def admin_org_identities(
+    db: AsyncSession,
+    org_ids: Sequence[UUID],
+) -> dict[UUID, tuple[str, str]]:
+    """Return each org's display name and KYB status, keyed by org id.
+
+    The attestor queue shows the organization's verified identity read-only:
+    KYB is established and decided on the organization now, so this row reports
+    it rather than owning a verdict of its own.
+
+    Args:
+        db: Async session.
+        org_ids: Organizations to resolve.
+
+    Returns:
+        Mapping of org id to ``(org_name, kyb_status)``. Orgs with no legal
+        profile report ``"unverified"``.
+    """
+    if not org_ids:
+        return {}
+    result = await db.execute(
+        select(Organization.id, Organization.name, OrgLegalProfile.kyb_status)
+        .select_from(Organization)
+        .outerjoin(OrgLegalProfile, OrgLegalProfile.org_id == Organization.id)
+        .where(Organization.id.in_(org_ids))
+    )
+    return {
+        org_id: (name, kyb_status or "unverified")
+        for org_id, name, kyb_status in result
+    }
+
+
 async def admin_capability_states(
     db: AsyncSession,
     org_ids: Sequence[UUID],
@@ -1133,54 +1049,6 @@ async def admin_capability_states(
     )
     return {org_id: status for org_id, status in result}
 
-
-async def admin_verify_kyb(
-    db: AsyncSession,
-    *,
-    application_id: UUID,
-    admin_id: UUID,
-) -> OrgAttestorApplication:
-    """Stamp the KYB-verified gate on a submitted/needs-info application.
-
-    Raises:
-        HTTPException(404): If the application does not exist.
-        HTTPException(409): If the application is not under review.
-    """
-    if db.in_transaction():
-        await db.rollback()
-    settings = get_settings()
-    bucket = settings.s3_artifacts_bucket
-    async with db.begin():
-        application = await _load_admin_application(db, application_id)
-        if application.status not in ("submitted", "needs_info"):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Only applications under review can be KYB-verified.",
-            )
-        # Never certify KYB against documents that were reserved but never
-        # uploaded; the object must exist in storage before the gate can pass.
-        keys = [*application.incorporation_doc_keys]
-        if application.tax_document_key is not None:
-            keys.append(application.tax_document_key)
-        if any(not s3.storage.object_exists(bucket, key) for key in keys):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=(
-                    "One or more KYB/tax documents were not fully uploaded to "
-                    "storage. Ask the organization to re-upload before verifying."
-                ),
-            )
-        application.kyb_verified_at = datetime.now(UTC)
-        application.kyb_verified_by = admin_id
-        await write_audit(
-            db=db,
-            actor_id=admin_id,
-            action="org_attestor_kyb_verified",
-            target_type="org_attestor_application",
-            target_id=application.id,
-            metadata={"org_id": str(application.org_id)},
-        )
-    return application
 
 
 async def admin_needs_info(
@@ -1501,7 +1369,13 @@ async def admin_approve(
                 detail="Only submitted applications can be approved.",
             )
         trial_passed = await _trial_passed(db, application.id)
-        missing = _missing_approval_gates(application, trial_passed=trial_passed)
+        missing = _missing_approval_gates(
+            application,
+            trial_passed=trial_passed,
+            kyb_verified=await kyb_service.org_kyb_verified(
+                db, org_id=application.org_id
+            ),
+        )
         if missing:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

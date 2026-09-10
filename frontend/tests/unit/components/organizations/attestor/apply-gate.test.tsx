@@ -21,11 +21,20 @@ describe("ApplyGate", () => {
     vi.mocked(updateOrgAttestorApplication).mockResolvedValue(ok({ status: "draft" }) as unknown);
     const onChange = vi.fn();
     render(<ApplyGate orgId="org-1" onChange={onChange}
-      application={{ status: "needs_info", legal_name: "Audit Ltd", credentials_summary: "Sum" } as never} />);
-    fireEvent.change(screen.getByLabelText(/legal name/i), { target: { value: "Audit Ltd" } });
+      application={{ status: "needs_info", credentials_summary: "Sum" } as never} />);
+    // Legal identity is no longer edited here — it belongs to the org's
+    // verification page — so the draft is exercised through its own content.
+    fireEvent.change(screen.getByLabelText(/credentials summary/i), {
+      target: { value: "Two decades of compliance work." },
+    });
     fireEvent.click(screen.getByRole("button", { name: /save draft/i }));
     await waitFor(() => expect(vi.mocked(updateOrgAttestorApplication)).toHaveBeenCalledWith(
-      expect.objectContaining({ path: { org_id: "org-1" }, body: expect.objectContaining({ legal_name: "Audit Ltd" }) }),
+      expect.objectContaining({
+        path: { org_id: "org-1" },
+        body: expect.objectContaining({
+          credentials_summary: "Two decades of compliance work.",
+        }),
+      }),
     ));
     expect(onChange).toHaveBeenCalled();
   });

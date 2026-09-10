@@ -3,7 +3,7 @@
 Covers the review queue and gate-walk routes under
 /v1/admin/org-attestor-applications plus the capability suspend/reinstate/
 revoke routes under /v1/admin/orgs, including RBAC (401/403) and the full
-submit → verify-kyb → ... → approve walk.
+submit → start-trial → ... → approve walk.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ from app.modules.organizations.models import (
     OrgAttestorApplication,
     OrgAttestorProfile,
     OrgCapability,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
 )
@@ -197,14 +198,39 @@ async def _create_calibration_fixture(contributor_id: UUID) -> UUID:
             return framework.id
 
 
+async def _verify_org_kyb(org_id: UUID) -> None:
+    """Mark the organization business-verified.
+
+    KYB moved off the attestor application onto the org's legal profile, and
+    is decided on the organization queue, so the attestor gate walk starts
+    from an already-verified org rather than stamping KYB itself.
+    """
+    from datetime import UTC, datetime
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            profile = await session.scalar(
+                select(OrgLegalProfile).where(OrgLegalProfile.org_id == org_id)
+            )
+            if profile is None:
+                profile = OrgLegalProfile(
+                    org_id=org_id, legal_name="Acme Attestations Ltd"
+                )
+                session.add(profile)
+            profile.registration_number = "RC123456"
+            profile.incorporation_doc_keys = ["org-incorporation-docs/seed/cert.pdf"]
+            profile.kyb_status = "verified"
+            profile.kyb_verified_at = datetime.now(UTC)
+
+
 async def _gated_application(
     org_id: UUID, owner_id: UUID, *, seed_kyb_and_trial: bool = True
 ) -> UUID:
     """Create a submitted application with all gates satisfied; return its id.
 
-    With ``seed_kyb_and_trial=False`` the KYB stamp and passed trial are left
-    off, so a test can drive the verify-kyb → start-trial → approve walk
-    through the real endpoints.
+    With ``seed_kyb_and_trial=False`` the passed trial is left off, so a test
+    can drive the start-trial → approve walk through the real endpoints. KYB is
+    an organization-level fact now and is seeded by ``_verify_org_kyb``.
     """
     from datetime import UTC, datetime
 
@@ -230,16 +256,12 @@ async def _gated_application(
                 org_id=org_id,
                 status="submitted",
                 specializations=[],
-                legal_name="Acme Attestations Ltd",
-                registration_number="RC123456",
-                incorporation_doc_keys=["kyb/acme/cert.pdf"],
                 sectors=["PE"],
                 functions=["Compliance"],
                 jurisdictions=["US"],
                 credentials_summary="Two decades of PE compliance experience.",
                 sample_work={},
                 professional_references="Jane Roe, MD.",
-                kyb_verified_at=now if seed_kyb_and_trial else None,
                 coi_declarations=[],
                 coi_signed_at=now,
                 coi_expires_at=now,
@@ -260,7 +282,13 @@ async def _gated_application(
                         status="passed",
                     )
                 )
-            return application.id
+            application_id = application.id
+
+    if seed_kyb_and_trial:
+        # Approval now requires the organization to be business-verified, so a
+        # fully-gated fixture verifies the org as well as passing the trial.
+        await _verify_org_kyb(org_id)
+    return application_id
 
 
 async def test_queue_requires_admin(
@@ -325,11 +353,7 @@ async def test_full_gate_walk_to_approval(
         org_id, owner_id, seed_kyb_and_trial=False
     )
 
-    verified = await client.post(
-        f"{_QUEUE}/{application_id}/verify-kyb", headers=auth(admin_id, ["admin"])
-    )
-    assert verified.status_code == 200
-    assert verified.json()["gate_checklist"]["kyb_verified"] is True
+    await _verify_org_kyb(org_id)
 
     trial = await client.post(
         f"{_QUEUE}/{application_id}/start-trial",
@@ -415,10 +439,7 @@ async def test_admin_can_grade_and_decide_trial(
         org_id, owner_id, seed_kyb_and_trial=False
     )
 
-    await client.post(
-        f"{_QUEUE}/{application_id}/verify-kyb",
-        headers=auth(admin_id, ["admin"]),
-    )
+    await _verify_org_kyb(org_id)
     started = await client.post(
         f"{_QUEUE}/{application_id}/start-trial",
         headers=auth(admin_id, ["admin"]),
@@ -481,6 +502,9 @@ async def test_documents_returns_presigned_links(
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
     application_id = await _gated_application(org_id, owner_id)
+    # The incorporation document hangs off the org's legal profile now, so the
+    # attestor reviewer only sees one once the org has been through KYB.
+    await _verify_org_kyb(org_id)
 
     res = await client.get(
         f"{_QUEUE}/{application_id}/documents", headers=auth(admin_id, ["admin"])
@@ -517,28 +541,6 @@ async def test_documents_flag_missing_objects(
     assert documents
     assert all(doc["available"] is False for doc in documents)
     assert all(doc["url"] == "" for doc in documents)
-
-
-async def test_verify_kyb_blocked_when_document_missing(
-    client: AsyncClient,
-    migrated_database: None,
-    clean_state: FakeRedis,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """KYB cannot be verified while a reserved document has no stored object."""
-    from app.integrations import s3
-
-    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: False)
-
-    admin_id = await _new_user("admin", roles=["admin"])
-    owner_id = await _new_user("owner")
-    org_id = await _org(owner_id)
-    application_id = await _gated_application(org_id, owner_id)
-
-    res = await client.post(
-        f"{_QUEUE}/{application_id}/verify-kyb", headers=auth(admin_id, ["admin"])
-    )
-    assert res.status_code == 422
 
 
 async def test_documents_requires_admin(
@@ -840,9 +842,7 @@ async def test_start_trial_rejects_fixture_without_clean_artifact(
     application_id = await _gated_application(
         org_id, owner_id, seed_kyb_and_trial=False
     )
-    await client.post(
-        f"{_QUEUE}/{application_id}/verify-kyb", headers=auth(admin_id, ["admin"])
-    )
+    await _verify_org_kyb(org_id)
     res = await client.post(
         f"{_QUEUE}/{application_id}/start-trial",
         headers=auth(admin_id, ["admin"]),

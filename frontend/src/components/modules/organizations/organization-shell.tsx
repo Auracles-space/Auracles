@@ -125,6 +125,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 
   const tabs: TabItem[] = [
     { id: "", label: "Profile" },
+    // Business verification gates every capability, so it is the first thing a
+    // new org needs and stays visible afterwards as the record of its identity.
+    { id: "verification", label: "Verification" },
     { id: "members", label: "Members" },
     // Any member may be nominated for the attestor calibration trial; the page
     // resolves to a friendly "no active trial" state for non-nominees.

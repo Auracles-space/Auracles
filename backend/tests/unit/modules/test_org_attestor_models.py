@@ -114,7 +114,6 @@ async def test_org_attestor_application_round_trip(
         async with session.begin():
             row = OrgAttestorApplication(
                 org_id=org.id,
-                legal_name="Acme Audit Ltd",
                 specializations=["security"],
                 jurisdictions=["US"],
                 credentials_summary="ISO auditors",
@@ -125,12 +124,11 @@ async def test_org_attestor_application_round_trip(
             await session.flush()
             await session.refresh(row)
             assert row.status == "draft"
-            assert row.kyb_verified_at is None
             assert row.trial_member_id is None
             assert row.coi_declarations == []
             assert row.sectors == []
             assert row.functions == []
-            assert row.incorporation_doc_keys == []
+            # KYB identity now lives on the org's legal profile, not here.
 
 
 async def test_one_live_application_per_org(org_attestor_state: None) -> None:
@@ -141,7 +139,6 @@ async def test_one_live_application_per_org(org_attestor_state: None) -> None:
         """Build a minimal draft application row for the shared org."""
         return OrgAttestorApplication(
             org_id=org.id,
-            legal_name="Acme Audit Ltd",
             specializations=["security"],
             jurisdictions=["US"],
             credentials_summary="ISO auditors",
@@ -170,7 +167,6 @@ async def test_rejected_application_frees_live_slot(
                 OrgAttestorApplication(
                     org_id=org.id,
                     status="rejected",
-                    legal_name="Acme Audit Ltd",
                     specializations=["security"],
                     jurisdictions=["US"],
                     credentials_summary="ISO auditors",
@@ -183,7 +179,6 @@ async def test_rejected_application_frees_live_slot(
             session.add(
                 OrgAttestorApplication(
                     org_id=org.id,
-                    legal_name="Acme Audit Ltd",
                     specializations=["security"],
                     jurisdictions=["US"],
                     credentials_summary="ISO auditors",

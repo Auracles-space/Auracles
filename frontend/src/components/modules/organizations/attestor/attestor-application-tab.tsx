@@ -40,9 +40,9 @@ export function submissionReadiness(
   if (!app) {
     return { ready: false, hint: "Save a draft to start your application." };
   }
+  // Legal identity is not checked here: an org is business-verified before it
+  // can apply at all, so this covers only what the application itself owns.
   const detailsComplete =
-    isLengthBetween(app.legal_name ?? "", 2, 200) &&
-    isLengthBetween(app.registration_number ?? "", 1, 200) &&
     isLengthBetween(app.credentials_summary ?? "", 10, 5000) &&
     isLengthBetween(app.professional_references ?? "", 3, 5000) &&
     (app.sectors?.length ?? 0) > 0 &&
@@ -50,9 +50,6 @@ export function submissionReadiness(
     (app.jurisdictions?.length ?? 0) > 0;
   if (!detailsComplete) {
     return { ready: false, hint: "Complete the required application details." };
-  }
-  if ((app.incorporation_doc_keys?.length ?? 0) === 0) {
-    return { ready: false, hint: "Add at least one incorporation document." };
   }
   if (!app.payout_account_id) {
     return { ready: false, hint: "Set up a payout account to receive earnings." };

@@ -112,6 +112,9 @@ async def upsert_legal_profile(
             metadata={"legal_profile_set": True},
         )
 
+    # The commit above expires every loaded attribute, so the caller would
+    # lazy-load outside the async greenlet when it serialises this row.
+    await db.refresh(profile)
     return profile
 
 

@@ -58,6 +58,7 @@ from app.modules.projects.models import Deliverable, Milestone, Project, Proposa
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
+from tests.conftest import verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_organizations_endpoints import add_member, auth, create_org
 from tests.support.db_cleanup import clear_identity_state_async
@@ -574,6 +575,7 @@ async def test_org_contributor_full_lifecycle(
     monkeypatch.setattr(framework_service, "index_framework_artifacts", _noop_index)
 
     # --- Capability activation ------------------------------------------
+    await verify_org_kyb(org['id'])
     activated = await client.post(
         f"/v1/orgs/{org['id']}/contributor-capability/activate",
         headers=auth(owner_token),

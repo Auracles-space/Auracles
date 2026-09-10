@@ -9,6 +9,7 @@ application flow of docs/superpowers/specs/2026-07-04-org-attestor-design.md.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -39,13 +40,13 @@ from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
     OrgCapability,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
 )
 from app.modules.organizations.schemas import (
     OrgAttestorApplicationCreateRequest,
     OrgAttestorApplicationUpdateRequest,
-    OrgAttestorIncorporationDocumentRequest,
     OrgAttestorTaxDocumentRequest,
     OrgUndertakingsSignRequest,
 )
@@ -186,25 +187,30 @@ def _valid_create() -> OrgAttestorApplicationCreateRequest:
     )
 
 
-async def _add_incorporation_doc(org_id: UUID, actor_id: UUID) -> str:
-    """Attach one incorporation document via the service and return its key.
+async def _verify_org_kyb(org_id: UUID, actor_id: UUID) -> str:
+    """Business-verify the organization and return its document key.
 
-    Incorporation docs are no longer supplied on create; they are appended
-    through the dedicated upload endpoint, so submit-success paths must stamp
-    one this way first.
+    KYB moved off the attestor application onto the org's legal profile, and
+    an org is verified before it can apply, so gate-dependent paths seed a
+    verified profile rather than stamping the application.
     """
+    del actor_id
+    key = "org-incorporation-docs/seed/certificate.pdf"
     async with async_session_factory() as session:
-        session_result = await svc.add_incorporation_document(
-            session,
-            org_id=org_id,
-            actor_id=actor_id,
-            payload=OrgAttestorIncorporationDocumentRequest(
-                file_name="cert.pdf",
-                content_type="application/pdf",
-                size_bytes=1024,
-            ),
-        )
-    return session_result.s3_key
+        async with session.begin():
+            profile = await session.scalar(
+                select(OrgLegalProfile).where(OrgLegalProfile.org_id == org_id)
+            )
+            if profile is None:
+                profile = OrgLegalProfile(
+                    org_id=org_id, legal_name="Acme Attestations Ltd"
+                )
+                session.add(profile)
+            profile.registration_number = "RC123456"
+            profile.incorporation_doc_keys = [key]
+            profile.kyb_status = "verified"
+            profile.kyb_verified_at = datetime.now(UTC)
+    return key
 
 
 async def _load_user(user_id: UUID) -> User:
@@ -329,7 +335,7 @@ async def test_update_after_submit_rejected(app_state: None) -> None:
         await svc.create_application(
             session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
         )
-    await _add_incorporation_doc(org_id, owner.user_id)
+    await _verify_org_kyb(org_id, owner.user_id)
     async with async_session_factory() as session:
         await svc.submit_application(session, org_id=org_id, actor_id=owner.user_id)
     with pytest.raises(HTTPException) as exc:
@@ -343,16 +349,28 @@ async def test_update_after_submit_rejected(app_state: None) -> None:
     assert exc.value.status_code == 409
 
 
-async def test_submit_incomplete_kyb_rejected(app_state: None) -> None:
-    """Submitting without KYB fields raises 422."""
+async def test_submit_incomplete_content_rejected(app_state: None) -> None:
+    """Submitting without the matching/credentials content raises 422.
+
+    KYB is no longer checked here: an organization is business-verified before
+    it can open an attestor application at all, so this gate covers only the
+    content the application itself owns.
+    """
     org_id, owner = await _create_org()
     async with async_session_factory() as session:
         payload = _valid_create()
-        payload.legal_name = None
-        payload.registration_number = None
         await svc.create_application(
             session, org_id=org_id, actor_id=owner.user_id, payload=payload
         )
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(OrgAttestorApplication).where(
+                OrgAttestorApplication.org_id == org_id
+            )
+        )
+        assert application is not None
+        application.credentials_summary = ""
+        await session.commit()
     with pytest.raises(HTTPException) as exc:
         async with async_session_factory() as session:
             await svc.submit_application(
@@ -361,64 +379,14 @@ async def test_submit_incomplete_kyb_rejected(app_state: None) -> None:
     assert exc.value.status_code == 422
 
 
-async def test_add_incorporation_document_appends_key(app_state: None) -> None:
-    """Uploading an incorporation document appends its key to the application."""
+
+async def test_submit_succeeds_with_complete_content(app_state: None) -> None:
+    """A complete application submits cleanly."""
     org_id, owner = await _create_org()
     async with async_session_factory() as session:
         await svc.create_application(
             session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
         )
-    key = await _add_incorporation_doc(org_id, owner.user_id)
-    async with async_session_factory() as session:
-        application = await session.scalar(
-            select(OrgAttestorApplication).where(
-                OrgAttestorApplication.org_id == org_id
-            )
-        )
-    assert application is not None
-    assert application.incorporation_doc_keys == [key]
-
-
-async def test_remove_incorporation_document_detaches_key(app_state: None) -> None:
-    """Removing an incorporation document drops just that key from the list."""
-    org_id, owner = await _create_org()
-    async with async_session_factory() as session:
-        await svc.create_application(
-            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
-        )
-    key = await _add_incorporation_doc(org_id, owner.user_id)
-    async with async_session_factory() as session:
-        application = await svc.remove_incorporation_document(
-            session, org_id=org_id, actor_id=owner.user_id, s3_key=key
-        )
-    assert application.incorporation_doc_keys == []
-
-
-async def test_remove_incorporation_document_unknown_key_rejected(
-    app_state: None,
-) -> None:
-    """Removing a key not attached to the application raises 404."""
-    org_id, owner = await _create_org()
-    async with async_session_factory() as session:
-        await svc.create_application(
-            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
-        )
-    with pytest.raises(HTTPException) as exc:
-        async with async_session_factory() as session:
-            await svc.remove_incorporation_document(
-                session, org_id=org_id, actor_id=owner.user_id, s3_key="nope/x.pdf"
-            )
-    assert exc.value.status_code == 404
-
-
-async def test_submit_succeeds_with_full_kyb(app_state: None) -> None:
-    """A complete application with an incorporation document submits cleanly."""
-    org_id, owner = await _create_org()
-    async with async_session_factory() as session:
-        await svc.create_application(
-            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
-        )
-    await _add_incorporation_doc(org_id, owner.user_id)
     async with async_session_factory() as session:
         application = await svc.submit_application(
             session, org_id=org_id, actor_id=owner.user_id
@@ -440,7 +408,7 @@ async def test_needs_info_notifies_org_owner(
         await svc.create_application(
             session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
         )
-    await _add_incorporation_doc(org_id, owner.user_id)
+    await _verify_org_kyb(org_id, owner.user_id)
     async with async_session_factory() as session:
         await svc.submit_application(session, org_id=org_id, actor_id=owner.user_id)
 
@@ -486,7 +454,7 @@ async def test_reject_notifies_org_owner(
         await svc.create_application(
             session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
         )
-    await _add_incorporation_doc(org_id, owner.user_id)
+    await _verify_org_kyb(org_id, owner.user_id)
     async with async_session_factory() as session:
         await svc.submit_application(session, org_id=org_id, actor_id=owner.user_id)
 
@@ -692,11 +660,12 @@ async def test_gate_checklist_reflects_admin_and_trial_stamps(app_state: None) -
         )
         application_id = application.id
 
+    # KYB is verified on the organization now, not stamped on this row.
+    await _verify_org_kyb(org_id, owner.user_id)
     now = datetime.now(UTC)
     async with async_session_factory() as session:
         row = await session.get(OrgAttestorApplication, application_id)
         assert row is not None
-        row.kyb_verified_at = now
         row.reviewed_at = now
         row.status = "submitted"
         session.add(
@@ -1039,7 +1008,7 @@ async def test_admin_list_documents_returns_presigned_links(
             session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
         )
         application_id = application.id
-    await _add_incorporation_doc(org_id, owner.user_id)
+    await _verify_org_kyb(org_id, owner.user_id)
     async with async_session_factory() as session:
         await svc.set_tax_document(
             session,
@@ -1078,7 +1047,7 @@ async def test_admin_list_documents_returns_presigned_links(
     assert any("Incorporation" in label for label in labels)
     assert any("Tax" in label for label in labels)
     filenames = [doc.filename for doc in documents]
-    assert "cert.pdf" in filenames
+    assert "certificate.pdf" in filenames
     assert "w9.pdf" in filenames
     assert all(doc.available for doc in documents)
     assert all(doc.url.startswith("https://signed.example/") for doc in documents)
@@ -1098,7 +1067,7 @@ async def test_admin_list_documents_flags_missing_object(
             session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
         )
         application_id = application.id
-    await _add_incorporation_doc(org_id, owner.user_id)
+    await _verify_org_kyb(org_id, owner.user_id)
 
     def _boom_presigned_get(*args: object, **kwargs: object) -> str:
         raise AssertionError("must not sign a GET for a missing object")

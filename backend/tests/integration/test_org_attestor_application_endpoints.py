@@ -162,8 +162,6 @@ async def _add_member(org_id: UUID, user_id: UUID, role: str) -> UUID:
 def _create_body() -> dict[str, object]:
     """Return a complete create-request body."""
     return {
-        "legal_name": "Acme Attestations Ltd",
-        "registration_number": "RC123456",
         "sectors": ["private_equity"],
         "functions": ["compliance"],
         "jurisdictions": ["united_states"],
@@ -189,13 +187,18 @@ async def test_create_get_and_edit_flow(
 
     fetched = await client.get(path, headers=auth(owner_id))
     assert fetched.status_code == 200
-    assert fetched.json()["legal_name"] == "Acme Attestations Ltd"
+    assert fetched.json()["credentials_summary"].startswith("Two decades")
+    # The application no longer carries a legal identity of its own: KYB is
+    # established on the organization before it can apply at all.
+    assert "legal_name" not in fetched.json()
 
     edited = await client.patch(
-        path, json={"legal_name": "Acme Attestations PLC"}, headers=auth(owner_id)
+        path,
+        json={"credentials_summary": "Three decades of PE compliance work."},
+        headers=auth(owner_id),
     )
     assert edited.status_code == 200
-    assert edited.json()["legal_name"] == "Acme Attestations PLC"
+    assert edited.json()["credentials_summary"].startswith("Three decades")
 
 
 async def test_create_accepts_canonical_functions(
@@ -205,8 +208,6 @@ async def test_create_accepts_canonical_functions(
     owner_id = await _create_user("canonical-owner")
     org_id = await _create_org(owner_id)
     payload = {
-        "legal_name": "Canonical Attestors Ltd",
-        "registration_number": "RC654321",
         "sectors": ["private_equity"],
         "functions": ["compliance", "investment_management"],
         "jurisdictions": ["united_states", "nigeria"],
@@ -354,63 +355,6 @@ async def test_tax_document_upload_session(
     )
     assert res.status_code == 200
     assert res.json()["s3_key"].startswith("org-attestor-tax-documents/")
-
-
-async def test_incorporation_document_upload_and_remove(
-    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
-) -> None:
-    """Uploading appends a key; removing it detaches it from the application."""
-    owner_id = await _create_user("owner")
-    org_id = await _create_org(owner_id)
-    path = _APPLICATION_PATH.format(org_id=org_id)
-    await client.post(path, json=_create_body(), headers=auth(owner_id))
-
-    upload = await client.post(
-        f"{path}/incorporation-document",
-        json={
-            "file_name": "cert.pdf",
-            "content_type": "application/pdf",
-            "size_bytes": 2048,
-        },
-        headers=auth(owner_id),
-    )
-    assert upload.status_code == 200
-    key = upload.json()["s3_key"]
-    assert key.startswith("org-attestor-incorporation-docs/")
-
-    fetched = await client.get(path, headers=auth(owner_id))
-    assert fetched.json()["incorporation_doc_keys"] == [key]
-
-    removed = await client.request(
-        "DELETE",
-        f"{path}/incorporation-document",
-        json={"s3_key": key},
-        headers=auth(owner_id),
-    )
-    assert removed.status_code == 200
-    assert removed.json()["incorporation_doc_keys"] == []
-
-
-async def test_incorporation_document_requires_membership(
-    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
-) -> None:
-    """A non-member cannot open an incorporation-document upload session."""
-    owner_id = await _create_user("owner")
-    stranger_id = await _create_user("stranger")
-    org_id = await _create_org(owner_id)
-    path = _APPLICATION_PATH.format(org_id=org_id)
-    await client.post(path, json=_create_body(), headers=auth(owner_id))
-
-    res = await client.post(
-        f"{path}/incorporation-document",
-        json={
-            "file_name": "cert.pdf",
-            "content_type": "application/pdf",
-            "size_bytes": 2048,
-        },
-        headers=auth(stranger_id),
-    )
-    assert res.status_code == 403
 
 
 async def test_nominate_trial_member_requires_nda(

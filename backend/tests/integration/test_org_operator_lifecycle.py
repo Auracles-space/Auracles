@@ -60,6 +60,7 @@ from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import verify_org_kyb
 from tests.integration.test_financials_payment_methods import FakeRedis
 from tests.integration.test_org_proposal_endpoints import _project_payload
 from tests.integration.test_organizations_endpoints import (
@@ -484,6 +485,7 @@ async def test_org_operator_lifecycle_covers_library_and_project_money_path(
     team_id = await _create_org_team(str(org["id"]), team_member_row)
     framework_id, artifact_id = await _create_framework_snapshot(contributor_id)
 
+    await verify_org_kyb(org['id'])
     activated = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate",
         headers=auth(owner_token),

@@ -10,7 +10,6 @@ import {
   listOrgAttestorDocumentsForAdmin,
   orgAttestorNeedsInfo,
   startOrgAttestorTrial,
-  verifyOrgAttestorKyb,
 } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -25,7 +24,6 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   adminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGet: vi.fn(),
   listOrgAttestorApplicationsForAdmin: vi.fn(),
   listOrgAttestorDocumentsForAdmin: vi.fn(),
-  verifyOrgAttestorKyb: vi.fn(),
   orgAttestorNeedsInfo: vi.fn(),
   startOrgAttestorTrial: vi.fn(), 
   approveOrgAttestor: vi.fn(), 
@@ -50,33 +48,9 @@ describe("AdminOrgAttestorReviewPanel", () => {
     );
   });
 
-  it("verifies KYB and reflects the stamp plus a success notice", async () => {
-    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
-      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Audit Ltd", status: "submitted", kyb_verified_at: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
-      total: 1,
-      page: 1,
-      page_size: 10
-    }));
-    // verify_kyb leaves status put but stamps kyb_verified_at; the row and a
-    // notice must both reflect it, or the click looks like it did nothing.
-    vi.mocked(verifyOrgAttestorKyb).mockResolvedValue(
-      ok({ id: "app-1", status: "submitted", kyb_verified_at: "2026-07-15T09:00:00Z" }) as never,
-    );
-    render(<AdminOrgAttestorReviewPanel />);
-    await waitFor(() => screen.getByText(/Audit Ltd/));
-    const kybLine = () => screen.getByText(/KYB Verified:/i).closest("p");
-    expect(kybLine()?.textContent).toMatch(/Pending/i);
-    fireEvent.click(screen.getByRole("button", { name: /verify kyb/i }));
-    await waitFor(() => expect(vi.mocked(verifyOrgAttestorKyb)).toHaveBeenCalledWith(
-      expect.objectContaining({ path: { application_id: "app-1" } }),
-    ));
-    await screen.findByText(/KYB verified\./i);
-    expect(kybLine()?.textContent).not.toMatch(/Pending/i);
-  });
-
   it("loads and renders document links on view", async () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
-      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Audit Ltd", status: "submitted", kyb_verified_at: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
+      applications: [{ id: "app-1", org_id: "org-1", org_name: "Audit Ltd", status: "submitted", kyb_status: "unverified", created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
       total: 1,
       page: 1,
       page_size: 10
@@ -100,11 +74,11 @@ describe("AdminOrgAttestorReviewPanel", () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
       applications: [
         // Stage 1: nothing done → only Verify KYB active.
-        { id: "app-1", org_id: "org-1", legal_name: "Kyb Stage", status: "submitted", kyb_verified_at: null, trial_status: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
+        { id: "app-1", org_id: "org-1", org_name: "Kyb Stage", status: "submitted", kyb_status: "unverified", trial_status: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
         // Stage 2: KYB done, no trial → only Start Trial active.
-        { id: "app-2", org_id: "org-2", legal_name: "Trial Stage", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
+        { id: "app-2", org_id: "org-2", org_name: "Trial Stage", status: "submitted", kyb_status: "verified", trial_status: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
         // Stage 3: KYB done, trial passed → only Approve active.
-        { id: "app-3", org_id: "org-3", legal_name: "Approve Stage", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
+        { id: "app-3", org_id: "org-3", org_name: "Approve Stage", status: "submitted", kyb_status: "verified", trial_status: "passed", created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
       ],
       total: 3,
       page: 1,
@@ -113,20 +87,20 @@ describe("AdminOrgAttestorReviewPanel", () => {
     render(<AdminOrgAttestorReviewPanel />);
     await waitFor(() => screen.getByText(/Kyb Stage/));
 
-    const verify = screen.getAllByRole("button", { name: /verify kyb/i });
     const start = screen.getAllByRole("button", { name: /start trial/i });
     const approve = screen.getAllByRole("button", { name: /^approve$/i });
 
-    // app-1: KYB only.
-    expect(verify[0]).not.toBeDisabled();
+    // app-1: unverified, so this queue offers no action at all — the verdict
+    // is recorded on the organizations queue and only linked to from here.
+    expect(
+      screen.getAllByRole("link", { name: /verify in organizations/i }),
+    ).toHaveLength(1);
     expect(start[0]).toBeDisabled();
     expect(approve[0]).toBeDisabled();
-    // app-2: Trial only.
-    expect(verify[1]).toBeDisabled();
+    // app-2: verified, no trial → Start Trial is the live step.
     expect(start[1]).toBeDisabled();
     expect(approve[1]).toBeDisabled();
-    // app-3: Approve only.
-    expect(verify[2]).toBeDisabled();
+    // app-3: verified and trial passed → Approve.
     expect(start[2]).toBeDisabled();
     expect(approve[2]).not.toBeDisabled();
   });
@@ -137,14 +111,14 @@ describe("AdminOrgAttestorReviewPanel", () => {
     // re-enables and the admin can re-assign — the reported flicker.
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
       applications: [
-        { id: "app-1", org_id: "org-1", legal_name: "Ready Org", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
+        { id: "app-1", org_id: "org-1", org_name: "Ready Org", status: "submitted", kyb_status: "verified", trial_status: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
       ],
       total: 1,
       page: 1,
       page_size: 10
     }));
     vi.mocked(startOrgAttestorTrial).mockResolvedValue(
-      ok({ id: "app-1", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z" }) as never,
+      ok({ id: "app-1", status: "submitted", kyb_status: "verified" }) as never,
     );
     render(<AdminOrgAttestorReviewPanel />);
     await waitFor(() =>
@@ -177,9 +151,9 @@ describe("AdminOrgAttestorReviewPanel", () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
       applications: [
         // Trial assigned but not decided → Start Trial held.
-        { id: "app-1", org_id: "org-1", legal_name: "Pending Trial", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "assigned", created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
+        { id: "app-1", org_id: "org-1", org_name: "Pending Trial", status: "submitted", kyb_status: "verified", trial_status: "assigned", created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
         // Trial failed → Start Trial live again for a retry, Approve still blocked.
-        { id: "app-2", org_id: "org-2", legal_name: "Failed Trial", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "failed", created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
+        { id: "app-2", org_id: "org-2", org_name: "Failed Trial", status: "submitted", kyb_status: "verified", trial_status: "failed", created_at: "2026-07-07T12:00:00Z", reviewed_at: null },
       ],
       total: 2,
       page: 1,
@@ -201,7 +175,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
     // The preset must save the admin retyping the same send-back guidance and
     // reach the endpoint verbatim as the feedback body.
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
-      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Audit Ltd", status: "submitted", kyb_verified_at: null, created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
+      applications: [{ id: "app-1", org_id: "org-1", org_name: "Audit Ltd", status: "submitted", kyb_status: "unverified", created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
       total: 1,
       page: 1,
       page_size: 10,
@@ -240,9 +214,9 @@ describe("AdminOrgAttestorReviewPanel", () => {
           {
             id: "app-1",
             org_id: "org-1",
-            legal_name: "Review Org",
+            org_name: "Review Org",
             status: "submitted",
-            kyb_verified_at: "2026-07-07T12:00:00Z",
+            kyb_status: "verified",
             trial_status: "submitted",
             created_at: "2026-07-07T12:00:00Z",
             reviewed_at: null,
@@ -276,7 +250,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
       ok({
         id: "app-1",
         status: "submitted",
-        kyb_verified_at: "2026-07-07T12:00:00Z",
+        kyb_status: "verified",
       }) as never,
     );
 
@@ -310,7 +284,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
     // Active capability: suspend and revoke apply; reinstate does not. All three
     // must never be live at once.
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
-      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Active Org", status: "approved", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "active", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
+      applications: [{ id: "app-1", org_id: "org-1", org_name: "Active Org", status: "approved", kyb_status: "verified", trial_status: "passed", capability_status: "active", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
       total: 1, page: 1, page_size: 10,
     }) as never);
     render(<AdminOrgAttestorReviewPanel />);
@@ -323,7 +297,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
 
   it("enables reinstate and revoke, not suspend, for a suspended capability", async () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
-      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Suspended Org", status: "approved", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "suspended", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
+      applications: [{ id: "app-1", org_id: "org-1", org_name: "Suspended Org", status: "approved", kyb_status: "verified", trial_status: "passed", capability_status: "suspended", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
       total: 1, page: 1, page_size: 10,
     }) as never);
     render(<AdminOrgAttestorReviewPanel />);
@@ -339,7 +313,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
     // stale capability_status ("pending") must flip to "active" locally, or all
     // three controls stay disabled until the admin manually refetches.
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
-      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Fresh Org", status: "submitted", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "pending", created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
+      applications: [{ id: "app-1", org_id: "org-1", org_name: "Fresh Org", status: "submitted", kyb_status: "verified", trial_status: "passed", capability_status: "pending", created_at: "2026-07-07T12:00:00Z", reviewed_at: null }],
       total: 1, page: 1, page_size: 10,
     }) as never);
     vi.mocked(approveOrgAttestor).mockResolvedValue(
@@ -358,7 +332,7 @@ describe("AdminOrgAttestorReviewPanel", () => {
 
   it("disables every capability control once the capability is revoked", async () => {
     vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(ok({
-      applications: [{ id: "app-1", org_id: "org-1", legal_name: "Revoked Org", status: "approved", kyb_verified_at: "2026-07-07T12:00:00Z", trial_status: "passed", capability_status: "revoked", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
+      applications: [{ id: "app-1", org_id: "org-1", org_name: "Revoked Org", status: "approved", kyb_status: "verified", trial_status: "passed", capability_status: "revoked", created_at: "2026-07-07T12:00:00Z", reviewed_at: "2026-07-07T12:00:00Z" }],
       total: 1, page: 1, page_size: 10,
     }) as never);
     render(<AdminOrgAttestorReviewPanel />);

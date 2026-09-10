@@ -25,6 +25,7 @@ from app.modules.organizations.models import (
     OrgTeamMember,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 
 
@@ -318,6 +319,7 @@ async def test_list_teams_includes_enabled_capabilities(
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "teamcaps")
 
+    await verify_org_kyb(org['id'])
     activated = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate",
         headers=auth(owner_token),

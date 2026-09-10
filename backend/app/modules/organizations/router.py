@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, cast
-from uuid import UUID
+from typing import Annotated, Literal, cast
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from redis.asyncio import Redis
@@ -19,6 +19,7 @@ from app.modules.attestation.models import Attestation, AttestationOffer
 from app.modules.attestation.schemas import (
     CredentialEvidenceUploadSessionResponse,
 )
+from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import service as financials_service
 from app.modules.financials.schemas import (
@@ -44,6 +45,7 @@ from app.modules.organizations import (
     billing_service,
     contributor_directory_service,
     contributor_service,
+    kyb_service,
     legal_profile_service,
     library_service,
     nda_service,
@@ -56,6 +58,7 @@ from app.modules.organizations.dependencies import (
     require_org_role,
 )
 from app.modules.organizations.models import (
+    Organization,
     OrgAttestorApplication,
     OrgLegalProfile,
     OrgMember,
@@ -108,6 +111,8 @@ from app.modules.organizations.schemas import (
     OrgInvitationPreviewResponse,
     OrgInvitationResponse,
     OrgInvitationsResponse,
+    OrgKybReviewRequest,
+    OrgKybStatusResponse,
     OrgLegalProfileResponse,
     OrgLegalProfileUpdateRequest,
     OrgLibraryItem,
@@ -177,9 +182,6 @@ def _application_response(
         id=application.id,
         org_id=application.org_id,
         status=application.status,
-        legal_name=application.legal_name,
-        registration_number=application.registration_number,
-        incorporation_doc_keys=application.incorporation_doc_keys,
         sectors=application.sectors,
         functions=application.functions,
         jurisdictions=application.jurisdictions,
@@ -195,7 +197,6 @@ def _application_response(
         tax_document_key=application.tax_document_key,
         trial_member_id=application.trial_member_id,
         trial_attestation_id=application.trial_attestation_id,
-        kyb_verified_at=application.kyb_verified_at,
         admin_feedback=application.admin_feedback,
         reviewed_at=application.reviewed_at,
         created_at=application.created_at,
@@ -1181,51 +1182,132 @@ async def set_attestor_tax_document(
     )
 
 
+async def _kyb_status_response(
+    db: DatabaseSession,
+    org_id: UUID,
+    country: str,
+) -> OrgKybStatusResponse:
+    """Assemble the verification surface for one organization.
+
+    Takes plain values rather than the ORM row: callers reach here after a
+    service commit, which expires loaded instances, and touching an expired
+    attribute would lazy-load outside the async greenlet.
+    """
+    profile = await legal_profile_service.get_legal_profile(db, org_id=org_id)
+    if profile is None:
+        return OrgKybStatusResponse(kyb_status="unverified", country=country)
+    return OrgKybStatusResponse(
+        kyb_status=profile.kyb_status,
+        country=country,
+        legal_name=profile.legal_name,
+        registration_number=profile.registration_number,
+        incorporation_doc_keys=profile.incorporation_doc_keys,
+        kyb_submitted_at=profile.kyb_submitted_at,
+        kyb_verified_at=profile.kyb_verified_at,
+        kyb_review_notes=profile.kyb_review_notes,
+    )
+
+
+@router.get(
+    "/{org_id}/kyb",
+    response_model=OrgKybStatusResponse,
+    summary="Get the organization's verification status",
+    description=(
+        "Return the organization's business-verification state and the legal "
+        "identity under review. Any org member may read it."
+    ),
+)
+async def get_org_kyb(
+    org_id: UUID,
+    context: OrgMemberCtx,
+    db: DatabaseSession,
+) -> OrgKybStatusResponse:
+    """Return the org's business-verification state."""
+    del org_id
+    return await _kyb_status_response(db, context.org.id, context.org.country)
+
+
 @router.post(
-    "/{org_id}/attestor-application/incorporation-document",
+    "/{org_id}/kyb/incorporation-document",
     response_model=CredentialEvidenceUploadSessionResponse,
     summary="Create an incorporation-document upload session",
     description=(
         "Create a presigned upload session for one incorporation document and "
-        "append its S3 key to the application's KYB document list. Owner/admin "
-        "only."
+        "attach its S3 key to the organization. Owner/admin only."
     ),
 )
-async def add_attestor_incorporation_document(
+async def add_org_incorporation_document(
     org_id: UUID,
     payload: OrgAttestorIncorporationDocumentRequest,
     context: OrgAdmin,
     db: DatabaseSession,
 ) -> CredentialEvidenceUploadSessionResponse:
     """Create a presigned incorporation-document upload session."""
-    return await attestor_application_service.add_incorporation_document(
-        db, org_id=org_id, actor_id=context.user.id, payload=payload
+    del org_id
+    target = await kyb_service.add_incorporation_document(
+        db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        file_name=payload.file_name,
+        content_type=payload.content_type,
+        size_bytes=payload.size_bytes,
+    )
+    return CredentialEvidenceUploadSessionResponse(
+        id=uuid4(),
+        s3_key=target.s3_key,
+        url=target.url,
+        fields=target.fields,
+        expires_at=target.expires_at,
+        size_limit=kyb_service.INCORPORATION_DOC_MAX_BYTES,
+        scan_status="pending_scan",
     )
 
 
 @router.delete(
-    "/{org_id}/attestor-application/incorporation-document",
-    response_model=OrgAttestorApplicationResponse,
+    "/{org_id}/kyb/incorporation-document",
+    response_model=OrgKybStatusResponse,
     summary="Remove an incorporation document",
     description=(
-        "Detach one incorporation document from the application by its S3 key. "
-        "Owner/admin only."
+        "Detach one incorporation document from the organization by its S3 "
+        "key. Owner/admin only, and refused once verified."
     ),
 )
-async def remove_attestor_incorporation_document(
+async def remove_org_incorporation_document(
     org_id: UUID,
     payload: OrgAttestorIncorporationDocumentDeleteRequest,
     context: OrgAdmin,
     db: DatabaseSession,
-) -> OrgAttestorApplicationResponse:
-    """Detach one incorporation document from the application."""
-    await attestor_application_service.remove_incorporation_document(
-        db, org_id=org_id, actor_id=context.user.id, s3_key=payload.s3_key
+) -> OrgKybStatusResponse:
+    """Detach one incorporation document from the organization."""
+    del org_id
+    resolved_id, country = context.org.id, context.org.country
+    await kyb_service.remove_incorporation_document(
+        db, org_id=resolved_id, actor_id=context.user.id, s3_key=payload.s3_key
     )
-    application, checklist = await attestor_application_service.get_application(
-        db, org_id=org_id
+    return await _kyb_status_response(db, resolved_id, country)
+
+
+@router.post(
+    "/{org_id}/kyb/submit",
+    response_model=OrgKybStatusResponse,
+    summary="Submit the organization for verification",
+    description=(
+        "Send the organization's legal details and incorporation documents "
+        "for admin review. Owner/admin only."
+    ),
+)
+async def submit_org_kyb(
+    org_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+) -> OrgKybStatusResponse:
+    """Submit the organization's business details for verification."""
+    del org_id
+    resolved_id, country = context.org.id, context.org.country
+    await kyb_service.submit_for_verification(
+        db, org_id=resolved_id, actor_id=context.user.id
     )
-    return _application_response(application, checklist)
+    return await _kyb_status_response(db, resolved_id, country)
 
 
 @router.post(
@@ -1981,26 +2063,69 @@ admin_orgs_router = APIRouter(
 PlatformAdmin = Annotated[User, Depends(require_role("admin"))]
 
 
+@admin_orgs_router.post(
+    "/{org_id}/kyb/review",
+    response_model=OrgKybStatusResponse,
+    summary="Decide an organization's business verification",
+    description=(
+        "Record a verified/rejected verdict on an organization awaiting "
+        "business verification. Verifying unlocks every capability, so the "
+        "write is TOTP step-up gated. Rejection is not terminal: the "
+        "organization may correct its details and submit again."
+    ),
+)
+async def admin_review_org_kyb(
+    org_id: UUID,
+    payload: OrgKybReviewRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgKybStatusResponse:
+    """Record an admin's business-verification decision for one org."""
+    await auth_service.verify_totp_for_sensitive_action(
+        db=db, redis=redis, user=admin, code=payload.totp_code
+    )
+    await kyb_service.review_org_kyb(
+        db,
+        org_id=org_id,
+        admin_id=admin.id,
+        verdict=payload.verdict,
+        notes=payload.notes,
+    )
+    organization = await db.get(Organization, org_id)
+    if organization is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Organization not found.",
+        )
+    return await _kyb_status_response(db, org_id, organization.country)
+
+
 @admin_orgs_router.get(
     "",
     response_model=AdminOrgsResponse,
     summary="List organizations (platform admin)",
     description=(
         "Paginated organization directory for platform administrators, with "
-        "member counts, capability statuses, and slug/name search."
+        "member counts, capability statuses, business verification, and "
+        "slug/name search. Filter by kyb_status to read the pending-"
+        "verification queue."
     ),
 )
 async def admin_list_orgs(
     admin: PlatformAdmin,
     db: DatabaseSession,
     query: str | None = Query(default=None, max_length=120),
+    kyb_status: Literal["unverified", "pending", "verified", "rejected"] | None = Query(
+        default=None
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> AdminOrgsResponse:
     """List/search organizations for platform administration."""
     del admin
     return await service.admin_list_orgs(
-        db=db, query=query, page=page, page_size=page_size
+        db=db, query=query, kyb_status=kyb_status, page=page, page_size=page_size
     )
 
 
@@ -2237,11 +2362,17 @@ async def admin_list_org_attestor_applications(
     capability_states = await attestor_application_service.admin_capability_states(
         db, [row.org_id for row in rows]
     )
+    org_identities = await attestor_application_service.admin_org_identities(
+        db, [row.org_id for row in rows]
+    )
     items: list[OrgAttestorAdminListItem] = []
     for row in rows:
         item = OrgAttestorAdminListItem.model_validate(row)
         item.trial_status = trial_states.get(row.id)
         item.capability_status = capability_states.get(row.org_id)
+        org_name, kyb_status = org_identities.get(row.org_id, (None, "unverified"))
+        item.org_name = org_name
+        item.kyb_status = kyb_status
         items.append(item)
     return OrgAttestorAdminListResponse(
         applications=items,
@@ -2270,23 +2401,10 @@ async def admin_list_org_attestor_documents(
     return OrgAttestorDocumentsResponse(documents=documents)
 
 
-@admin_org_attestor_router.post(
-    "/{application_id}/verify-kyb",
-    response_model=OrgAttestorApplicationResponse,
-    summary="Verify KYB (platform admin)",
-    description="Stamp the KYB-verified gate on an application under review.",
-)
-async def admin_verify_kyb(
-    application_id: UUID, admin: PlatformAdmin, db: DatabaseSession
-) -> OrgAttestorApplicationResponse:
-    """Verify an application's KYB documents."""
-    await attestor_application_service.admin_verify_kyb(
-        db, application_id=application_id, admin_id=admin.id
-    )
-    application, checklist = await attestor_application_service.get_application_by_id(
-        db, application_id=application_id
-    )
-    return _admin_application_response(application, checklist)
+# KYB is decided on the organization, not here. This queue used to stamp the
+# KYB gate because an attestor application was the only place an org's legal
+# identity was ever checked. Verification now precedes every capability, so the
+# verdict is recorded once, on the organization, and this queue reads it.
 
 
 @admin_org_attestor_router.post(

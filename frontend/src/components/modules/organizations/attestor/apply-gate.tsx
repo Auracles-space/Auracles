@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import {
-  addAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPost as addIncorporationDocument,
   createOrgAttestorApplication,
-  removeAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDelete as removeIncorporationDocument,
   updateOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
@@ -28,22 +26,6 @@ function RequiredMark() {
   );
 }
 
-/**
- * Derive a human-readable file name from an incorporation-document S3 key.
- *
- * Keys are stored as `.../{uuid}-{original-file-name}`, so strip the path and
- * the generated UUID prefix to show the name the uploader recognizes.
- *
- * @param key - The stored S3 object key.
- * @returns The original file name, or the last path segment as a fallback.
- */
-function docLabel(key: string): string {
-  const segment = key.split("/").pop() ?? key;
-  const uuidPrefix =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i;
-  return segment.replace(uuidPrefix, "");
-}
-
 export function ApplyGate({
   orgId,
   application,
@@ -59,11 +41,8 @@ export function ApplyGate({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [docFile, setDocFile] = useState<File | null>(null);
 
   const [formData, setFormData] = useState({
-    legal_name: application?.legal_name || "",
-    registration_number: application?.registration_number || "",
     credentials_summary: application?.credentials_summary || "",
     professional_references: application?.professional_references || "",
     sample_work_url: (application?.sample_work as { url: string })?.url || "",
@@ -74,7 +53,6 @@ export function ApplyGate({
 
   // Incorporation docs are server-owned (attached via the dedicated endpoint),
   // so read them from the live application, not editable form state.
-  const incorporationDocs = application?.incorporation_doc_keys ?? [];
   const isNew = !application;
 
   // Creating the draft row only needs the columns the create endpoint marks
@@ -113,8 +91,6 @@ export function ApplyGate({
     setError(null);
     try {
       const body = {
-        legal_name: formData.legal_name,
-        registration_number: formData.registration_number,
         credentials_summary: formData.credentials_summary,
         professional_references: formData.professional_references,
         sample_work: { url: formData.sample_work_url },
@@ -149,72 +125,6 @@ export function ApplyGate({
   }
 
   /** Attach the selected incorporation document to the application. */
-  async function handleAddDoc() {
-    if (!docFile) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await addIncorporationDocument({
-        path: { org_id: orgId },
-        body: {
-          file_name: docFile.name,
-          content_type: docFile.type || "application/octet-stream",
-          size_bytes: docFile.size,
-        },
-        headers: getAccessTokenHeaders(),
-      });
-      if (res.error || !res.data) {
-        setError(describeGeneratedError(res.error));
-        return;
-      }
-
-      // The session only reserves the S3 key; the file must still be pushed to
-      // the bucket, or the admin download later resolves to a missing object.
-      const form = new FormData();
-      for (const [key, value] of Object.entries(res.data.fields)) {
-        form.append(key, String(value));
-      }
-      form.append("file", docFile);
-      const upload = await fetch(res.data.url, { method: "POST", body: form });
-      if (!upload.ok) {
-        setError("The upload could not be completed. Try again.");
-        return;
-      }
-
-      setDocFile(null);
-      onChange();
-    } catch {
-      setError("An unexpected error occurred.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  /**
-   * Detach one incorporation document from the application.
-   *
-   * @param key - S3 key of the document to remove.
-   */
-  async function handleRemoveDoc(key: string) {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await removeIncorporationDocument({
-        path: { org_id: orgId },
-        body: { s3_key: key },
-        headers: getAccessTokenHeaders(),
-      });
-      if (res.error) {
-        setError(describeGeneratedError(res.error));
-      } else {
-        onChange();
-      }
-    } catch {
-      setError("An unexpected error occurred.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <div className="rounded-xl border border-border-default bg-surface-1 p-5 shadow-sm">
@@ -232,39 +142,6 @@ export function ApplyGate({
       )}
 
       <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
-        <div>
-          <label htmlFor="legal_name" className="mb-1 block text-sm font-semibold text-foreground">
-            Legal Name
-            <RequiredMark />
-          </label>
-          <Input
-            id="legal_name"
-            disabled={!canEdit}
-            value={formData.legal_name}
-            onChange={(e) => setFormData({ ...formData, legal_name: e.target.value })}
-            placeholder="Audit Ltd."
-          />
-        </div>
-
-        <div>
-          <label
-            htmlFor="registration_number"
-            className="mb-1 block text-sm font-semibold text-foreground"
-          >
-            Registration Number
-            <RequiredMark />
-          </label>
-          <Input
-            id="registration_number"
-            disabled={!canEdit}
-            value={formData.registration_number}
-            onChange={(e) =>
-              setFormData({ ...formData, registration_number: e.target.value })
-            }
-            placeholder="RC123456"
-          />
-        </div>
-
         <div>
           <label
             htmlFor="credentials_summary"
@@ -309,76 +186,9 @@ export function ApplyGate({
           />
         </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-foreground">
-            Incorporation Documents
-            <RequiredMark />
-          </label>
-          <p className="mb-2 text-xs text-foreground-muted">
-            Attach your certificate of incorporation and related KYB evidence.
-          </p>
-
-          {incorporationDocs.length > 0 && (
-            <ul className="mb-3 grid gap-2">
-              {incorporationDocs.map((key) => (
-                <li
-                  key={key}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground"
-                >
-                  <span className="truncate">{docLabel(key)}</span>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveDoc(key)}
-                      disabled={loading}
-                      className="min-h-11 shrink-0 cursor-pointer text-xs font-semibold text-error hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {isNew ? (
-            <p className="text-xs text-foreground-muted">
-              Save a draft first to attach incorporation documents.
-            </p>
-          ) : (
-            canEdit && (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className="flex flex-1 items-center gap-3 rounded-xl border border-border-default bg-background px-3 py-2">
-                  <label
-                    htmlFor="incorporation_document_file"
-                    className="inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-lg bg-foreground px-4 text-sm font-semibold text-background transition-colors hover:bg-foreground/90"
-                  >
-                    Choose file
-                  </label>
-                  <span className="truncate text-sm text-foreground-muted">
-                    {docFile ? docFile.name : "No file selected"}
-                  </span>
-                  <input
-                    id="incorporation_document_file"
-                    aria-label="Incorporation document file"
-                    type="file"
-                    accept=".pdf,image/*"
-                    onChange={(e) => setDocFile(e.target.files?.[0] || null)}
-                    className="sr-only"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleAddDoc}
-                  disabled={loading || !docFile}
-                >
-                  Add document
-                </Button>
-              </div>
-            )
-          )}
-        </div>
+        {/* Incorporation documents moved to the organization's
+            verification page: they establish the org's legal identity for
+            every capability, not just this application. */}
 
         <MultiAddSelect
           label="Sectors"

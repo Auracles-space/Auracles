@@ -1,9 +1,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  addAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentPost as addIncorporationDocument,
   createOrgAttestorApplication,
-  removeAttestorIncorporationDocumentV1OrgsOrgIdAttestorApplicationIncorporationDocumentDelete as removeIncorporationDocument,
 } from "@/lib/generated/sdk.gen";
 import { ApplyGate } from "./apply-gate";
 
@@ -89,75 +87,6 @@ describe("ApplyGate specialisation controls", () => {
     });
 
     expect(saveDraft).toHaveProperty("disabled", false);
-  });
-
-  it("uploads the incorporation document to S3 after reserving the key", async () => {
-    // The endpoint only reserves the S3 key; the file itself must still be
-    // POSTed to the bucket, or the admin download later hits a missing object.
-    vi.mocked(addIncorporationDocument).mockResolvedValue({
-      data: {
-        s3_key: "kyb/org-1/app/uuid-cert.pdf",
-        url: "https://bucket.s3.amazonaws.com/",
-        fields: { key: "kyb/org-1/app/uuid-cert.pdf", policy: "abc" },
-      },
-    } as never);
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({ ok: true } as Response);
-    vi.stubGlobal("fetch", fetchMock);
-    const onChange = vi.fn();
-    render(
-      <ApplyGate
-        orgId="org-1"
-        onChange={onChange}
-        application={{ status: "draft", incorporation_doc_keys: [] } as never}
-      />,
-    );
-
-    const file = new File(["x"], "cert.pdf", { type: "application/pdf" });
-    fireEvent.change(screen.getByLabelText(/Incorporation document file/i), {
-      target: { files: [file] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Add document/i }));
-
-    await waitFor(() => expect(addIncorporationDocument).toHaveBeenCalled());
-    const arg = vi.mocked(addIncorporationDocument).mock.calls[0][0];
-    expect(arg.body.file_name).toBe("cert.pdf");
-    expect(arg.body.content_type).toBe("application/pdf");
-
-    // The file is pushed to the presigned URL as multipart form data.
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://bucket.s3.amazonaws.com/");
-    expect(init.method).toBe("POST");
-    expect(init.body).toBeInstanceOf(FormData);
-    expect((init.body as FormData).get("file")).toBeInstanceOf(File);
-    expect(onChange).toHaveBeenCalled();
-    vi.unstubAllGlobals();
-  });
-
-  it("removes an attached incorporation document", async () => {
-    vi.mocked(removeIncorporationDocument).mockResolvedValue({ data: {} } as never);
-    const onChange = vi.fn();
-    render(
-      <ApplyGate
-        orgId="org-1"
-        onChange={onChange}
-        application={
-          {
-            status: "draft",
-            incorporation_doc_keys: ["kyb/org-1/app/uuid-cert.pdf"],
-          } as never
-        }
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Remove/i }));
-
-    await waitFor(() => expect(removeIncorporationDocument).toHaveBeenCalled());
-    const arg = vi.mocked(removeIncorporationDocument).mock.calls[0][0];
-    expect(arg.body.s3_key).toBe("kyb/org-1/app/uuid-cert.pdf");
-    expect(onChange).toHaveBeenCalled();
   });
 
   it("submits the backend value while showing the friendly label as a chip", async () => {

@@ -18,6 +18,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.organizations import contributor_service, operator_service
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
+from tests.conftest import verify_org_kyb
 from tests.support.db_cleanup import clear_identity_state_async
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
@@ -102,7 +103,15 @@ async def _create_org_with_member(owner: User, member: User) -> Organization:
                 ]
             )
             await session.refresh(organization)
-            return organization
+            org_id = organization.id
+
+    # Capabilities are gated on business verification (DESIGN-1), so a fixture
+    # org that activates one has to be verified first.
+    await verify_org_kyb(org_id)
+    async with async_session_factory() as session:
+        refreshed = await session.get(Organization, org_id)
+        assert refreshed is not None
+        return refreshed
 
 
 async def _operator_roles(user_id: UUID) -> list[UserRole]:

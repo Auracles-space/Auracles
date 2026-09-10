@@ -35,6 +35,7 @@ from app.modules.organizations.models import (
     Organization,
     OrgCapability,
     OrgInvitation,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
     OrgTeam,
@@ -2297,11 +2298,39 @@ async def admin_list_orgs(
     db: AsyncSession,
     *,
     query: str | None = None,
+    kyb_status: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> AdminOrgsResponse:
-    """List/search organizations for platform administration."""
+    """List/search organizations for platform administration.
+
+    Args:
+        db: Async database session.
+        query: Optional name/slug search term.
+        kyb_status: Optional business-verification filter, which is what the
+            pending-verification queue is: orgs awaiting an admin decision.
+        page: 1-indexed page number.
+        page_size: Rows per page.
+
+    Returns:
+        One page of organizations with member counts, capabilities and KYB.
+    """
     filters = []
+    if kyb_status:
+        profile_match = select(OrgLegalProfile.org_id).where(
+            OrgLegalProfile.kyb_status == kyb_status
+        )
+        if kyb_status == "unverified":
+            # An org with no legal profile has not started verification, so it
+            # belongs in the unverified bucket rather than nowhere.
+            filters.append(
+                or_(
+                    Organization.id.in_(profile_match),
+                    ~Organization.id.in_(select(OrgLegalProfile.org_id)),
+                )
+            )
+        else:
+            filters.append(Organization.id.in_(profile_match))
     if query:
         filters.append(
             or_(
@@ -2351,6 +2380,17 @@ async def admin_list_orgs(
     for cap in capabilities_rows:
         capabilities_by_org.setdefault(cap.org_id, []).append(cap)
 
+    profiles = {
+        profile.org_id: profile
+        for profile in (
+            await db.execute(
+                select(OrgLegalProfile).where(OrgLegalProfile.org_id.in_(org_ids))
+            )
+        )
+        .scalars()
+        .all()
+    }
+
     results = []
     for org in orgs:
         caps = capabilities_by_org.get(org.id, [])
@@ -2363,6 +2403,20 @@ async def admin_list_orgs(
                 country=org.country,
                 member_count=member_counts.get(org.id, 0),
                 capabilities=cap_dict,
+                kyb_status=(
+                    profiles[org.id].kyb_status if org.id in profiles else "unverified"
+                ),
+                legal_name=(
+                    profiles[org.id].legal_name if org.id in profiles else None
+                ),
+                registration_number=(
+                    profiles[org.id].registration_number
+                    if org.id in profiles
+                    else None
+                ),
+                kyb_submitted_at=(
+                    profiles[org.id].kyb_submitted_at if org.id in profiles else None
+                ),
                 suspended_at=org.suspended_at,
                 deactivated_at=org.deactivated_at,
                 created_at=org.created_at,

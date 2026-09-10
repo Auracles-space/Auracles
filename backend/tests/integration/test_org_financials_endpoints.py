@@ -48,6 +48,7 @@ from app.modules.organizations.models import (
     OrgAttestorApplication,
     OrgAttestorProfile,
     OrgCapability,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
 )
@@ -190,7 +191,6 @@ async def _attestor_org(
                 OrgAttestorApplication(
                     org_id=org.id,
                     status="approved" if approved else "submitted",
-                    legal_name=legal_name,
                     specializations=["tax"],
                     jurisdictions=["US"],
                     sectors=["tax"],
@@ -199,6 +199,20 @@ async def _attestor_org(
                     professional_references="Available on request.",
                 )
             )
+            # The verified legal identity an invoice bills under. It lives on
+            # the org's legal profile now rather than on its attestor
+            # application, so an org that never applies to attest still
+            # invoices under a real name.
+            if legal_name is not None:
+                session.add(
+                    OrgLegalProfile(
+                        org_id=org.id,
+                        legal_name=legal_name,
+                        registration_number="RC000001",
+                        kyb_status="verified",
+                        kyb_verified_at=now,
+                    )
+                )
             return org.id, owner_id, secret
 
 

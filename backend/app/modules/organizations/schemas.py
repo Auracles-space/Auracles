@@ -555,6 +555,12 @@ class AdminOrgResponse(BaseModel):
     country: str
     member_count: int
     capabilities: dict[str, str]
+    # Business verification gates every capability, so the admin directory
+    # reports it alongside them and the queue filters on it.
+    kyb_status: str = "unverified"
+    legal_name: str | None = None
+    registration_number: str | None = None
+    kyb_submitted_at: datetime | None = None
     suspended_at: datetime | None = None
     deactivated_at: datetime | None = None
     created_at: datetime
@@ -593,8 +599,8 @@ class OrgAttestorApplicationCreateRequest(BaseModel):
     its NOT NULL columns.
     """
 
-    legal_name: str | None = Field(default=None, min_length=2, max_length=200)
-    registration_number: str | None = Field(default=None, min_length=1, max_length=200)
+    # No KYB fields: the organization's legal identity is established and
+    # verified before it can reach an attestor application at all.
     sectors: list[str] = Field(min_length=1, max_length=12)
     functions: list[str] = Field(min_length=1, max_length=14)
     jurisdictions: list[str] = Field(min_length=1, max_length=24)
@@ -620,7 +626,7 @@ class OrgAttestorApplicationCreateRequest(BaseModel):
         """Validate jurisdiction slugs against the canonical set."""
         return validate_jurisdictions(value)
 
-    @field_validator("legal_name", "credentials_summary", "professional_references")
+    @field_validator("credentials_summary", "professional_references")
     @classmethod
     def _clean_prose(cls, value: str | None) -> str | None:
         """Reject markup/control characters in prose fields."""
@@ -634,8 +640,8 @@ class OrgAttestorApplicationUpdateRequest(BaseModel):
     ``payout_account_id`` links an org-owned payout account to the gate.
     """
 
-    legal_name: str | None = Field(default=None, min_length=2, max_length=200)
-    registration_number: str | None = Field(default=None, min_length=1, max_length=200)
+    # No KYB fields: the organization's legal identity is established and
+    # verified before it can reach an attestor application at all.
     sectors: list[str] | None = Field(default=None, min_length=1, max_length=12)
     functions: list[str] | None = Field(default=None, min_length=1, max_length=14)
     jurisdictions: list[str] | None = Field(default=None, min_length=1, max_length=24)
@@ -666,7 +672,7 @@ class OrgAttestorApplicationUpdateRequest(BaseModel):
         """Validate jurisdiction slugs against the taxonomy when supplied."""
         return validate_jurisdictions(value) if value is not None else None
 
-    @field_validator("legal_name", "credentials_summary", "professional_references")
+    @field_validator("credentials_summary", "professional_references")
     @classmethod
     def _clean_prose(cls, value: str | None) -> str | None:
         """Reject markup/control characters in prose fields when supplied."""
@@ -700,12 +706,42 @@ class OrgAttestorIncorporationDocumentRequest(BaseModel):
 
     The org uploads incorporation documents (certificate of incorporation and
     similar KYB evidence) to a private bucket; the returned S3 key is appended
-    to the application's ``incorporation_doc_keys`` list server-side.
+    to the organization's ``incorporation_doc_keys`` list server-side.
     """
 
     file_name: str = Field(min_length=1, max_length=255)
     content_type: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(gt=0)
+
+
+class OrgKybStatusResponse(BaseModel):
+    """An organization's business-verification state.
+
+    Carries the identity under review alongside the verdict, so one call
+    renders the whole verification surface. ``country`` is echoed because the
+    document a registration number refers to is country-specific — an RC
+    number and CAC certificate in Nigeria, a company number and certificate of
+    incorporation elsewhere — and the label belongs with the reader.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    kyb_status: str
+    country: str
+    legal_name: str | None = None
+    registration_number: str | None = None
+    incorporation_doc_keys: list[str] = Field(default_factory=list)
+    kyb_submitted_at: datetime | None = None
+    kyb_verified_at: datetime | None = None
+    kyb_review_notes: str | None = None
+
+
+class OrgKybReviewRequest(BaseModel):
+    """Admin verdict on one organization's business verification."""
+
+    verdict: Literal["verified", "rejected"]
+    notes: str | None = Field(default=None, max_length=2000)
+    totp_code: str = Field(min_length=6, max_length=6)
 
 
 class OrgAttestorIncorporationDocumentDeleteRequest(BaseModel):
@@ -751,9 +787,8 @@ class OrgAttestorApplicationResponse(BaseModel):
     id: UUID
     org_id: UUID
     status: str
-    legal_name: str | None
-    registration_number: str | None
-    incorporation_doc_keys: list[str]
+    # KYB identity moved to the organization's legal profile; the attestor
+    # review reads it from there rather than through this application.
     sectors: list[str]
     functions: list[str]
     jurisdictions: list[str]
@@ -769,7 +804,6 @@ class OrgAttestorApplicationResponse(BaseModel):
     tax_document_key: str | None
     trial_member_id: UUID | None
     trial_attestation_id: UUID | None
-    kyb_verified_at: datetime | None
     admin_feedback: str | None
     reviewed_at: datetime | None
     created_at: datetime
@@ -951,8 +985,11 @@ class OrgAttestorAdminListItem(BaseModel):
     id: UUID
     org_id: UUID
     status: str
-    legal_name: str | None
-    kyb_verified_at: datetime | None
+    # Legal identity and its verdict are read from the organization now and
+    # settled on the organization queue; shown here read-only so a reviewer can
+    # see who they are approving without leaving the attestor queue.
+    org_name: str | None = None
+    kyb_status: str | None = None
     reviewed_at: datetime | None
     created_at: datetime
     admin_feedback: str | None

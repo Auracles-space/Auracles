@@ -16,6 +16,7 @@ from app.core.security import create_access_token
 from app.main import app
 from app.modules.auth.models import UserRole
 from app.modules.organizations.models import Organization, OrgCapability
+from tests.conftest import verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_org_admin_endpoints import create_platform_admin
 from tests.integration.test_organizations_endpoints import (
@@ -54,6 +55,7 @@ async def test_activate_operator_capability_happy_path(
     org = await create_org(client, owner_token, "operator-org")
     await add_member(str(org["id"]), member_id, "member")
 
+    await verify_org_kyb(org['id'])
     response = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate",
         headers=auth(owner_token),
@@ -99,9 +101,11 @@ async def test_activate_operator_capability_requires_auth_and_admin_role(
     org = await create_org(client, owner_token, "operator-org")
     await add_member(str(org["id"]), member_id, "member")
 
+    await verify_org_kyb(org['id'])
     unauthenticated = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate"
     )
+    await verify_org_kyb(org['id'])
     forbidden = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate",
         headers=auth(member_token),
@@ -132,6 +136,7 @@ async def test_activate_operator_capability_rejects_suspended_org(
                 .values(suspended_at=datetime.now(UTC))
             )
 
+    await verify_org_kyb(org['id'])
     response = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate",
         headers=auth(owner_token),
@@ -156,6 +161,7 @@ async def test_admin_operator_capability_status_routes(
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "operator-org")
 
+    await verify_org_kyb(org['id'])
     activated = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate",
         headers=auth(owner_token),

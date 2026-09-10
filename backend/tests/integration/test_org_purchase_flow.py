@@ -34,6 +34,7 @@ from app.modules.organizations.models import Organization, OrgCapability, OrgMem
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import verify_org_kyb
 from tests.integration.test_financials_payment_methods import FakeRedis
 
 pytestmark = pytest.mark.asyncio
@@ -206,6 +207,7 @@ async def _activate_operator_capability(
     client: AsyncClient, org_id: str, owner_id: UUID
 ) -> None:
     """Self-activate the org Operator capability via the API."""
+    await verify_org_kyb(org_id)
     response = await client.post(
         f"/v1/orgs/{org_id}/operator-capability/activate",
         headers=_auth_headers(owner_id),

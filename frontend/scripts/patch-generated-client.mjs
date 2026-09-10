@@ -31,6 +31,14 @@ const compatibilityAliases = {
   createFrameworkPurchase: "createFrameworkPurchaseV1FinancialsPurchaseFrameworkIdPost",
   createFrameworkReview: "createFrameworkReviewV1FrameworksFrameworkIdReviewsPost",
   createFrameworkVersion: "createNewVersionV1FrameworksFrameworkIdVersionsPost",
+  addOrgIncorporationDocument:
+    "addOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPost",
+  adminReviewOrgKyb: "adminReviewOrgKybV1AdminOrgsOrgIdKybReviewPost",
+  getOrgKyb: "getOrgKybV1OrgsOrgIdKybGet",
+  removeOrgIncorporationDocument:
+    "removeOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDelete",
+  submitOrgKyb: "submitOrgKybV1OrgsOrgIdKybSubmitPost",
+  upsertLegalProfile: "upsertLegalProfileV1OrgsOrgIdLegalProfilePut",
   cancelAcceptance: "cancelAcceptanceV1ProjectsProjectIdCancelAcceptancePost",
   cancelAttestationRequest:
     "cancelAttestationRequestV1AttestationsAttestationIdCancelPost",
@@ -153,7 +161,6 @@ const compatibilityAliases = {
   listOrgInvoices: "listOrgInvoicesV1OrgsOrgIdFinancialsInvoicesGet",
   listOrgAttestorApplicationsForAdmin: "adminListOrgAttestorApplicationsV1AdminOrgAttestorApplicationsGet",
   listOrgAttestorDocumentsForAdmin: "adminListOrgAttestorDocumentsV1AdminOrgAttestorApplicationsApplicationIdDocumentsGet",
-  verifyOrgAttestorKyb: "adminVerifyKybV1AdminOrgAttestorApplicationsApplicationIdVerifyKybPost",
   orgAttestorNeedsInfo: "adminNeedsInfoV1AdminOrgAttestorApplicationsApplicationIdNeedsInfoPost",
   startOrgAttestorTrial: "adminStartTrialV1AdminOrgAttestorApplicationsApplicationIdStartTrialPost",
   approveOrgAttestor: "adminApproveV1AdminOrgAttestorApplicationsApplicationIdApprovePost",

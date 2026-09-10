@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.modules.organizations import kyb_service
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 
 
@@ -75,6 +76,10 @@ async def activate_operator_capability(
                     "Organization is not eligible to activate operator capability."
                 ),
             )
+
+        # Business verification precedes every capability: before this
+        # gate a Operator org self-activated with no identity check.
+        await kyb_service.require_org_kyb_verified(db, org_id=org_id)
 
         capability = await db.scalar(
             select(OrgCapability)

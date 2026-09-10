@@ -14,7 +14,6 @@ import {
   adminListCalibrationFixturesV1AdminOrgAttestorApplicationsCalibrationFixturesGet as adminListCalibrationFixtures,
   listOrgAttestorApplicationsForAdmin,
   listOrgAttestorDocumentsForAdmin,
-  verifyOrgAttestorKyb,
   orgAttestorNeedsInfo,
   startOrgAttestorTrial,
   approveOrgAttestor,
@@ -194,7 +193,6 @@ export function AdminOrgAttestorReviewPanel() {
   // application's status unchanged, so without an explicit confirmation the
   // admin sees no feedback and assumes the click did nothing.
   const ACTION_SUCCESS: Record<string, string> = {
-    verify_kyb: "KYB verified.",
     start_trial: "Trial assigned to the nominated member.",
     approve: "Application approved and attestor capability activated.",
   };
@@ -207,12 +205,7 @@ export function AdminOrgAttestorReviewPanel() {
 
     try {
       let result;
-      if (actionName === "verify_kyb") {
-        result = await verifyOrgAttestorKyb({
-          headers: getAccessTokenHeaders(),
-          path: { application_id: applicationId },
-        });
-      } else if (actionName === "start_trial") {
+      if (actionName === "start_trial") {
         const frameworkId = selectedFixtureByApp[applicationId];
         if (!frameworkId) {
           setError("Select a calibration fixture before starting the trial.");
@@ -234,20 +227,13 @@ export function AdminOrgAttestorReviewPanel() {
       if (result && !result.response.ok) {
         setError(describeGeneratedError(result.error));
       } else if (result?.data) {
-        const data = result.data as {
-          status?: string;
-          kyb_verified_at?: string | null;
-        };
-        // Merge every field the row displays, not just status — verify_kyb
-        // updates kyb_verified_at while leaving status put. start_trial's
+        const data = result.data as { status?: string };
+        // Merge every field the row displays, not just status. start_trial's
         // response is the application (no trial_status), so reflect the
         // freshly-assigned trial here or the gate never advances and Start
         // Trial re-enables for a re-assign.
         applyUpdate(applicationId, {
           ...(data.status ? { status: data.status } : {}),
-          ...(data.kyb_verified_at !== undefined
-            ? { kyb_verified_at: data.kyb_verified_at }
-            : {}),
           ...(actionName === "start_trial" ? { trial_status: "assigned" } : {}),
           // Approve activates the attestor capability server-side; reflect it
           // here so the Capability Controls enable without a queue refetch.
@@ -464,11 +450,10 @@ export function AdminOrgAttestorReviewPanel() {
             // undone step is active; the rest stay disabled until their
             // predecessor completes.
             const underReview = UNDER_REVIEW.has(app.status);
-            const kybDone = Boolean(app.kyb_verified_at);
+            const kybDone = app.kyb_status === "verified";
             const trialPassed = app.trial_status === "passed";
             const trialAssigned = app.trial_status === "assigned";
             const trialSubmitted = app.trial_status === "submitted";
-            const canVerifyKyb = underReview && !kybDone;
             const canStartTrial =
               underReview && kybDone && !trialPassed && !trialAssigned && !trialSubmitted;
             const canApprove =
@@ -498,7 +483,7 @@ export function AdminOrgAttestorReviewPanel() {
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-default/45 pb-4">
                   <div className="min-w-0">
                     <h2 className="font-heading text-lg font-bold text-foreground">
-                      {app.legal_name || "Unknown Org"}
+                      {app.org_name || "Unknown Org"}
                     </h2>
                     <p className="mt-1 break-words text-xs font-mono text-foreground-muted">
                       App ID: {app.id} | Org ID: {app.org_id}
@@ -510,7 +495,7 @@ export function AdminOrgAttestorReviewPanel() {
                 </div>
 
                 <div className="mt-4 text-sm space-y-2">
-                  <p><span className="font-semibold">KYB Verified:</span> {app.kyb_verified_at ? new Date(app.kyb_verified_at).toLocaleString() : "Pending"}</p>
+                  <p><span className="font-semibold">Business verification:</span>{" "}{app.kyb_status === "verified" ? "Verified" : "Not verified — settled on the organization"}</p>
                   <p><span className="font-semibold">Created:</span> {new Date(app.created_at).toLocaleString()}</p>
                   <p><span className="font-semibold">Trial Status:</span> {app.trial_status ?? "not started"}</p>
                   {app.admin_feedback && (
@@ -584,9 +569,9 @@ export function AdminOrgAttestorReviewPanel() {
                   )}
                   {canStartTrial ? (
                     <label className="mb-3 grid gap-2 text-sm font-medium text-foreground">
-                      <span>Calibration fixture for {app.legal_name || "this organization"}</span>
+                      <span>Calibration fixture for {app.org_name || "this organization"}</span>
                       <select
-                        aria-label={`Calibration fixture for ${app.legal_name || "this organization"}`}
+                        aria-label={`Calibration fixture for ${app.org_name || "this organization"}`}
                         className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus:border-accent"
                         onChange={(event) =>
                           setSelectedFixtureByApp((current) => ({
@@ -606,12 +591,16 @@ export function AdminOrgAttestorReviewPanel() {
                     </label>
                   ) : null}
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      disabled={isBusy || !canVerifyKyb}
-                      onClick={() => handleAction(app.id, "verify_kyb")}
-                    >
-                      Verify KYB
-                    </Button>
+                    {/* KYB is decided on the organization now; this queue
+                        reads the verdict rather than recording it. */}
+                    {!kybDone ? (
+                      <a
+                        className="inline-flex min-h-12 items-center rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+                        href="/admin/organizations"
+                      >
+                        Verify in Organizations
+                      </a>
+                    ) : null}
                     <Button
                       disabled={isBusy || !canStartTrial || !selectedFixtureId}
                       onClick={() => handleAction(app.id, "start_trial")}

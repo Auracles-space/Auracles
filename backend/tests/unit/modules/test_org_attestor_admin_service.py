@@ -32,6 +32,7 @@ from app.modules.organizations.models import (
     OrgAttestorApplication,
     OrgAttestorProfile,
     OrgCapability,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
 )
@@ -42,8 +43,10 @@ pytestmark = pytest.mark.asyncio
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
 # The six approval gates, keyed by the attribute a test clears to omit each.
+# ``kyb_verified`` is now a fact about the organization rather than a stamp on
+# the application, so omitting it means leaving the org unverified.
 _GATE_FIELDS = (
-    "kyb_verified_at",
+    "kyb_verified",
     "coi_signed_at",
     "confidentiality_signed_at",
     "payout_account_id",
@@ -185,9 +188,6 @@ async def _gated_application(
                 org_id=org_id,
                 status="submitted",
                 specializations=[],
-                legal_name="Acme Attestations Ltd",
-                registration_number="RC123456",
-                incorporation_doc_keys=["kyb/acme/cert.pdf"],
                 sectors=["private_equity"],
                 functions=["compliance"],
                 jurisdictions=["united_states"],
@@ -196,8 +196,6 @@ async def _gated_application(
                 ),
                 sample_work={"portfolio": "https://example.com"},
                 professional_references="Jane Roe, MD.",
-                kyb_verified_at=None if omit == "kyb_verified_at" else now,
-                kyb_verified_by=None,
                 coi_declarations=[],
                 coi_signed_at=None if omit == "coi_signed_at" else now,
                 coi_expires_at=now,
@@ -224,7 +222,22 @@ async def _gated_application(
                         status="passed",
                     )
                 )
-            return application.id
+            application_id = application.id
+
+    if omit != "kyb_verified":
+        async with async_session_factory() as session:
+            async with session.begin():
+                session.add(
+                    OrgLegalProfile(
+                        org_id=org_id,
+                        legal_name="Acme Attestations Ltd",
+                        registration_number="RC123456",
+                        incorporation_doc_keys=["org-incorporation-docs/cert.pdf"],
+                        kyb_status="verified",
+                        kyb_verified_at=now,
+                    )
+                )
+    return application_id
 
 
 async def _role_count(user_id: UUID) -> int:
@@ -342,24 +355,14 @@ async def test_suspend_revokes_and_reinstate_regrants_roles(
     assert await _role_count(members[0]) == 1
 
 
-async def test_verify_kyb_and_needs_info_transitions(
-    admin_state: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """KYB verification stamps the row; needs-info moves submitted → needs_info."""
-    # Reserved doc keys have no uploaded object in tests; treat them as present
-    # so the KYB-verify existence gate does not block this transition test.
-    monkeypatch.setattr(svc.s3.storage, "object_exists", lambda bucket, key: True)
-    org_id, admin_id, members = await _org_with_members()
-    application_id = await _gated_application(
-        org_id, members[0], omit="kyb_verified_at"
-    )
+async def test_needs_info_transition(admin_state: None) -> None:
+    """Needs-info moves a submitted application to needs_info with feedback.
 
-    async with async_session_factory() as session:
-        verified = await svc.admin_verify_kyb(
-            session, application_id=application_id, admin_id=admin_id
-        )
-    assert verified.kyb_verified_at is not None
-    assert verified.kyb_verified_by == admin_id
+    KYB verification no longer belongs to this service: it is decided on the
+    organization, and its own coverage lives in the KYB service tests.
+    """
+    org_id, admin_id, members = await _org_with_members()
+    application_id = await _gated_application(org_id, members[0])
 
     async with async_session_factory() as session:
         held = await svc.admin_needs_info(

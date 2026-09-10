@@ -26,18 +26,14 @@ describe("submissionReadiness", () => {
   });
 
   it("flags missing application details", () => {
-    const r = submissionReadiness({ ...completeApp(), legal_name: "" } as never);
-    expect(r.ready).toBe(false);
-    expect(r.hint).toMatch(/application details/i);
-  });
-
-  it("flags a missing incorporation document once details are complete", () => {
+    // Legal identity is not among them: the org is business-verified before it
+    // can apply, so this checks only what the application itself owns.
     const r = submissionReadiness({
       ...completeApp(),
-      incorporation_doc_keys: [],
+      credentials_summary: "",
     } as never);
     expect(r.ready).toBe(false);
-    expect(r.hint).toMatch(/incorporation document/i);
+    expect(r.hint).toMatch(/application details/i);
   });
 
   it("flags a missing payout account once details and a document are present", () => {

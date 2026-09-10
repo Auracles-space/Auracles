@@ -2054,12 +2054,32 @@ components:
           format: uuid
           title: Id
           type: string
+        kyb_status:
+          default: unverified
+          title: Kyb Status
+          type: string
+        kyb_submitted_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Kyb Submitted At
+        legal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Name
         member_count:
           title: Member Count
           type: integer
         name:
           title: Name
           type: string
+        registration_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Registration Number
         slug:
           title: Slug
           type: string
@@ -9525,21 +9545,20 @@ components:
           format: uuid
           title: Id
           type: string
-        kyb_verified_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          title: Kyb Verified At
-        legal_name:
+        kyb_status:
           anyOf:
           - type: string
           - type: 'null'
-          title: Legal Name
+          title: Kyb Status
         org_id:
           format: uuid
           title: Org Id
           type: string
+        org_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Org Name
         reviewed_at:
           anyOf:
           - format: date-time
@@ -9558,8 +9577,6 @@ components:
       - id
       - org_id
       - status
-      - legal_name
-      - kyb_verified_at
       - reviewed_at
       - created_at
       - admin_feedback
@@ -9620,25 +9637,11 @@ components:
           minItems: 1
           title: Jurisdictions
           type: array
-        legal_name:
-          anyOf:
-          - maxLength: 200
-            minLength: 2
-            type: string
-          - type: 'null'
-          title: Legal Name
         professional_references:
           maxLength: 5000
           minLength: 3
           title: Professional References
           type: string
-        registration_number:
-          anyOf:
-          - maxLength: 200
-            minLength: 1
-            type: string
-          - type: 'null'
-          title: Registration Number
         sample_work:
           additionalProperties: true
           title: Sample Work
@@ -9713,27 +9716,11 @@ components:
           format: uuid
           title: Id
           type: string
-        incorporation_doc_keys:
-          items:
-            type: string
-          title: Incorporation Doc Keys
-          type: array
         jurisdictions:
           items:
             type: string
           title: Jurisdictions
           type: array
-        kyb_verified_at:
-          anyOf:
-          - format: date-time
-            type: string
-          - type: 'null'
-          title: Kyb Verified At
-        legal_name:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Legal Name
         org_id:
           format: uuid
           title: Org Id
@@ -9747,11 +9734,6 @@ components:
         professional_references:
           title: Professional References
           type: string
-        registration_number:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Registration Number
         reviewed_at:
           anyOf:
           - format: date-time
@@ -9796,9 +9778,6 @@ components:
       - id
       - org_id
       - status
-      - legal_name
-      - registration_number
-      - incorporation_doc_keys
       - sectors
       - functions
       - jurisdictions
@@ -9814,7 +9793,6 @@ components:
       - tax_document_key
       - trial_member_id
       - trial_attestation_id
-      - kyb_verified_at
       - admin_feedback
       - reviewed_at
       - created_at
@@ -9854,13 +9832,6 @@ components:
             type: array
           - type: 'null'
           title: Jurisdictions
-        legal_name:
-          anyOf:
-          - maxLength: 200
-            minLength: 2
-            type: string
-          - type: 'null'
-          title: Legal Name
         payout_account_id:
           anyOf:
           - format: uuid
@@ -9874,13 +9845,6 @@ components:
             type: string
           - type: 'null'
           title: Professional References
-        registration_number:
-          anyOf:
-          - maxLength: 200
-            minLength: 1
-            type: string
-          - type: 'null'
-          title: Registration Number
         sample_work:
           anyOf:
           - additionalProperties: true
@@ -10012,7 +9976,7 @@ components:
 
         similar KYB evidence) to a private bucket; the returned S3 key is appended
 
-        to the application''s ``incorporation_doc_keys`` list server-side.'
+        to the organization''s ``incorporation_doc_keys`` list server-side.'
       properties:
         content_type:
           maxLength: 255
@@ -10315,6 +10279,88 @@ components:
       required:
       - invoices
       title: OrgInvoicesResponse
+      type: object
+    OrgKybReviewRequest:
+      description: Admin verdict on one organization's business verification.
+      properties:
+        notes:
+          anyOf:
+          - maxLength: 2000
+            type: string
+          - type: 'null'
+          title: Notes
+        totp_code:
+          maxLength: 6
+          minLength: 6
+          title: Totp Code
+          type: string
+        verdict:
+          enum:
+          - verified
+          - rejected
+          title: Verdict
+          type: string
+      required:
+      - verdict
+      - totp_code
+      title: OrgKybReviewRequest
+      type: object
+    OrgKybStatusResponse:
+      description: 'An organization''s business-verification state.
+
+
+        Carries the identity under review alongside the verdict, so one call
+
+        renders the whole verification surface. ``country`` is echoed because the
+
+        document a registration number refers to is country-specific — an RC
+
+        number and CAC certificate in Nigeria, a company number and certificate of
+
+        incorporation elsewhere — and the label belongs with the reader.'
+      properties:
+        country:
+          title: Country
+          type: string
+        incorporation_doc_keys:
+          items:
+            type: string
+          title: Incorporation Doc Keys
+          type: array
+        kyb_review_notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Kyb Review Notes
+        kyb_status:
+          title: Kyb Status
+          type: string
+        kyb_submitted_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Kyb Submitted At
+        kyb_verified_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Kyb Verified At
+        legal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Name
+        registration_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Registration Number
+      required:
+      - kyb_status
+      - country
+      title: OrgKybStatusResponse
       type: object
     OrgLegalProfileResponse:
       description: Owner-visible shared legal identity for one organization.
@@ -16151,40 +16197,11 @@ paths:
       summary: Decide the calibration trial (platform admin)
       tags:
       - Admin Org Attestor
-  /v1/admin/org-attestor-applications/{application_id}/verify-kyb:
-    post:
-      description: Stamp the KYB-verified gate on an application under review.
-      operationId: admin_verify_kyb_v1_admin_org_attestor_applications__application_id__verify_kyb_post
-      parameters:
-      - in: path
-        name: application_id
-        required: true
-        schema:
-          format: uuid
-          title: Application Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - HTTPBearer: []
-      summary: Verify KYB (platform admin)
-      tags:
-      - Admin Org Attestor
   /v1/admin/orgs:
     get:
       description: Paginated organization directory for platform administrators, with
-        member counts, capability statuses, and slug/name search.
+        member counts, capability statuses, business verification, and slug/name search.
+        Filter by kyb_status to read the pending-verification queue.
       operationId: admin_list_orgs_v1_admin_orgs_get
       parameters:
       - in: query
@@ -16196,6 +16213,19 @@ paths:
             type: string
           - type: 'null'
           title: Query
+      - in: query
+        name: kyb_status
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - unverified
+            - pending
+            - verified
+            - rejected
+            type: string
+          - type: 'null'
+          title: Kyb Status
       - in: query
         name: page
         required: false
@@ -16391,6 +16421,45 @@ paths:
       security:
       - HTTPBearer: []
       summary: Suspend an org's contributor capability (platform admin)
+      tags:
+      - Admin Organizations
+  /v1/admin/orgs/{org_id}/kyb/review:
+    post:
+      description: 'Record a verified/rejected verdict on an organization awaiting
+        business verification. Verifying unlocks every capability, so the write is
+        TOTP step-up gated. Rejection is not terminal: the organization may correct
+        its details and submit again.'
+      operationId: admin_review_org_kyb_v1_admin_orgs__org_id__kyb_review_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgKybReviewRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgKybStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Decide an organization's business verification
       tags:
       - Admin Organizations
   /v1/admin/orgs/{org_id}/operator-capability/reinstate:
@@ -17498,6 +17567,39 @@ paths:
       summary: Request Attestation Artifact Access
       tags:
       - Attestation
+  /v1/attestations/{attestation_id}/cancel:
+    post:
+      description: Withdraw the caller's own Attestation request while it is still
+        awaiting the framework owner's consent, before any fee is charged. A request
+        that has reached fee payment cannot be withdrawn here, because a payment already
+        in flight would strand held funds.
+      operationId: cancel_attestation_request_v1_attestations__attestation_id__cancel_post
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationRequestResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Withdraw an unpaid attestation request
+      tags:
+      - Attestation
   /v1/attestations/{attestation_id}/clarifications:
     get:
       description: Return attestation clarification rows visible to the assigned attestor
@@ -17646,39 +17748,6 @@ paths:
       security:
       - HTTPBearer: []
       summary: Respond to a workspace clarification
-      tags:
-      - Attestation
-  /v1/attestations/{attestation_id}/cancel:
-    post:
-      description: Withdraw the caller's own Attestation request while it is still
-        awaiting the framework owner's consent, before any fee is charged. A request
-        that has reached fee payment cannot be withdrawn here, because a payment already
-        in flight would strand held funds.
-      operationId: cancel_attestation_request_v1_attestations__attestation_id__cancel_post
-      parameters:
-      - in: path
-        name: attestation_id
-        required: true
-        schema:
-          format: uuid
-          title: Attestation Id
-          type: string
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AttestationRequestResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - HTTPBearer: []
-      summary: Withdraw an unpaid attestation request
       tags:
       - Attestation
   /v1/attestations/{attestation_id}/consent:
@@ -22778,80 +22847,6 @@ paths:
       summary: Open an org attestor application
       tags:
       - Organizations
-  /v1/orgs/{org_id}/attestor-application/incorporation-document:
-    delete:
-      description: Detach one incorporation document from the application by its S3
-        key. Owner/admin only.
-      operationId: remove_attestor_incorporation_document_v1_orgs__org_id__attestor_application_incorporation_document_delete
-      parameters:
-      - in: path
-        name: org_id
-        required: true
-        schema:
-          format: uuid
-          title: Org Id
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrgAttestorIncorporationDocumentDeleteRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OrgAttestorApplicationResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - HTTPBearer: []
-      summary: Remove an incorporation document
-      tags:
-      - Organizations
-    post:
-      description: Create a presigned upload session for one incorporation document
-        and append its S3 key to the application's KYB document list. Owner/admin
-        only.
-      operationId: add_attestor_incorporation_document_v1_orgs__org_id__attestor_application_incorporation_document_post
-      parameters:
-      - in: path
-        name: org_id
-        required: true
-        schema:
-          format: uuid
-          title: Org Id
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OrgAttestorIncorporationDocumentRequest'
-        required: true
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
-          description: Successful Response
-        '422':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-          description: Validation Error
-      security:
-      - HTTPBearer: []
-      summary: Create an incorporation-document upload session
-      tags:
-      - Organizations
   /v1/orgs/{org_id}/attestor-application/nominate-trial-member:
     post:
       description: Nominate the org member who performs the calibration trial; the
@@ -24421,6 +24416,141 @@ paths:
       security:
       - HTTPBearer: []
       summary: Revoke an organization invitation
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/kyb:
+    get:
+      description: Return the organization's business-verification state and the legal
+        identity under review. Any org member may read it.
+      operationId: get_org_kyb_v1_orgs__org_id__kyb_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgKybStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Get the organization's verification status
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/kyb/incorporation-document:
+    delete:
+      description: Detach one incorporation document from the organization by its
+        S3 key. Owner/admin only, and refused once verified.
+      operationId: remove_org_incorporation_document_v1_orgs__org_id__kyb_incorporation_document_delete
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorIncorporationDocumentDeleteRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgKybStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Remove an incorporation document
+      tags:
+      - Organizations
+    post:
+      description: Create a presigned upload session for one incorporation document
+        and attach its S3 key to the organization. Owner/admin only.
+      operationId: add_org_incorporation_document_v1_orgs__org_id__kyb_incorporation_document_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgAttestorIncorporationDocumentRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceUploadSessionResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Create an incorporation-document upload session
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/kyb/submit:
+    post:
+      description: Send the organization's legal details and incorporation documents
+        for admin review. Owner/admin only.
+      operationId: submit_org_kyb_v1_orgs__org_id__kyb_submit_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgKybStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Submit the organization for verification
       tags:
       - Organizations
   /v1/orgs/{org_id}/legal-profile:

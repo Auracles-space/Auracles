@@ -21,7 +21,6 @@ from app.modules.invoicing import service as invoicing_service
 from app.modules.invoicing.models import Invoice
 from app.modules.organizations.models import (
     Organization,
-    OrgAttestorApplication,
     OrgLegalProfile,
 )
 
@@ -58,24 +57,14 @@ async def org_invoice_seller_identity(
             address=_format_address(profile.address),
         )
 
-    application = await db.scalar(
-        select(OrgAttestorApplication)
-        .where(
-            OrgAttestorApplication.org_id == org_id,
-            OrgAttestorApplication.status == "approved",
-        )
-        .limit(1)
-    )
-    if application is None:
-        return invoicing_service.SellerIdentity(
-            name=organization.name,
-            tax_id="",
-            address="",
-        )
-
+    # No legal profile means no KYB, and KYB now precedes every capability, so
+    # a selling org reaches this only through data predating that rule. The
+    # display name is the honest fallback; it previously read an approved
+    # attestor application, which gave a Contributor org that never applied to
+    # attest exactly this same result by a longer route.
     return invoicing_service.SellerIdentity(
-        name=application.legal_name or organization.name,
-        tax_id=application.registration_number or "",
+        name=organization.name,
+        tax_id="",
         address="",
     )
 

@@ -35,6 +35,7 @@ from app.modules.organizations import operator_service
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.modules.webhooks import service as webhooks_service
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import verify_org_kyb
 from tests.support.db_cleanup import clear_identity_state_async
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
@@ -133,7 +134,12 @@ async def _create_org(
 
 
 async def _activate_operator_capability(org_id: UUID, owner_id: UUID) -> None:
-    """Self-activate the org Operator capability."""
+    """Self-activate the org Operator capability.
+
+    Activation is gated on business verification (DESIGN-1), so the org is
+    verified first; the gate itself is covered in test_org_kyb_endpoints.
+    """
+    await verify_org_kyb(org_id)
     async with async_session_factory() as session:
         await operator_service.activate_operator_capability(
             session,
