@@ -291,6 +291,16 @@ async def list_my_organizations(
         user_id=user.id,
         org_ids=org_ids,
     )
+    kyb_by_org = {
+        org_id: kyb_status
+        for org_id, kyb_status in (
+            await db.execute(
+                select(OrgLegalProfile.org_id, OrgLegalProfile.kyb_status).where(
+                    OrgLegalProfile.org_id.in_(org_ids)
+                )
+            )
+        ).all()
+    }
     return MyOrganizationsResponse(
         organizations=[
             MyOrganizationResponse(
@@ -305,6 +315,7 @@ async def list_my_organizations(
                     for capability in grants_by_org.get(organization.id, set())
                 },
                 counts=counts_by_org.get(organization.id, OrgActionCounts()),
+                kyb_status=kyb_by_org.get(organization.id, "unverified"),
             )
             for organization, role, capabilities in organizations
         ]

@@ -30,6 +30,7 @@ from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
     OrgCapability,
+    OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
 )
@@ -124,8 +125,14 @@ async def _create_org(
     *,
     attestor_status: str | None = "pending",
     suspended: bool = False,
+    kyb_verified: bool = True,
 ) -> UUID:
-    """Insert org + owner member (+ attestor capability); return org id."""
+    """Insert org + owner member (+ attestor capability); return org id.
+
+    Business-verified by default: an organization cannot open an attestor
+    application until it is, so every other case in this file starts from a
+    verified org.
+    """
     async with async_session_factory() as session:
         async with session.begin():
             org = Organization(
@@ -144,6 +151,17 @@ async def _create_org(
                         org_id=org.id,
                         capability="attestor",
                         status=attestor_status,
+                    )
+                )
+            if kyb_verified:
+                session.add(
+                    OrgLegalProfile(
+                        org_id=org.id,
+                        legal_name="Org Attestor Endpoint Ltd",
+                        registration_number="RC123456",
+                        incorporation_doc_keys=["org-incorporation-docs/c.pdf"],
+                        kyb_status="verified",
+                        kyb_verified_at=datetime.now(UTC),
                     )
                 )
             return org.id
@@ -169,6 +187,28 @@ def _create_body() -> dict[str, object]:
         "sample_work": {"portfolio": "https://example.com/samples"},
         "professional_references": "Jane Roe, MD of Example Capital.",
     }
+
+
+async def test_unverified_org_cannot_open_an_attestor_application(
+    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+) -> None:
+    """Attestor onboarding is behind business verification like everything else.
+
+    Verification precedes every capability, so an unverified organization must
+    not be able to start the attestor gate walk either — otherwise the flow has
+    to carry a KYB step of its own, which is what it used to do.
+    """
+    owner_id = await _create_user("unverified-owner")
+    org_id = await _create_org(owner_id, kyb_verified=False)
+
+    response = await client.post(
+        _APPLICATION_PATH.format(org_id=org_id),
+        json=_create_body(),
+        headers=auth(owner_id),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "org_kyb_required"
 
 
 async def test_create_get_and_edit_flow(

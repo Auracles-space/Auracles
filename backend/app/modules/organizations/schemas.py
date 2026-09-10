@@ -164,6 +164,10 @@ class MyOrganizationResponse(BaseModel):
     org: OrganizationResponse
     role: str
     capabilities: dict[str, str]
+    # Business verification gates every capability, so the shell and the
+    # become-attestor entry need it here to route an unverified org to
+    # verification rather than into a flow that will refuse it.
+    kyb_status: str = "unverified"
     grants: dict[str, bool] = Field(default_factory=dict)
     # True when the org's attestor capability is pending/active, so the
     # frontend can chain invitation acceptance straight into NDA signing.

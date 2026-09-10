@@ -151,6 +151,19 @@ async def _create_org(
             member = OrgMember(org_id=org.id, user_id=user.id, role="owner")
             session.add(member)
             await session.flush()
+            # Business-verified: an org cannot open an attestor application
+            # until it is, so every case here starts from a verified org. The
+            # gate itself is covered in test_org_attestor_application_endpoints.
+            session.add(
+                OrgLegalProfile(
+                    org_id=org.id,
+                    legal_name="Org Attestor Test Ltd",
+                    registration_number="RC123456",
+                    incorporation_doc_keys=["org-incorporation-docs/c.pdf"],
+                    kyb_status="verified",
+                    kyb_verified_at=datetime.now(UTC),
+                )
+            )
             if attestor_status is not None:
                 session.add(
                     OrgCapability(

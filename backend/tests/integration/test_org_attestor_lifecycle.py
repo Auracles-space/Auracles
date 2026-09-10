@@ -441,6 +441,50 @@ async def test_org_attestor_full_lifecycle(
     admin_headers = {
         "Authorization": f"Bearer {create_access_token(admin_id, ['admin'])}"
     }
+    # --- Business verification (KYB) --------------------------------------
+    # Precedes every capability now, so the org establishes and verifies its
+    # legal identity before the attestor gate walk can approve anything.
+    legal = await client.put(
+        f"/v1/orgs/{org_id}/legal-profile",
+        json={
+            "legal_name": "Auracles Attestations Ltd",
+            "registration_number": "RC123456",
+            # TOTP is single-use (M4) and only ±1 step is accepted, so the
+            # three owner step-ups in this test take one step each: undertakings
+            # spends `now`, the payout below spends `+30`, and this takes `-30`.
+            "totp_code": pyotp.TOTP(owner_secret).at(
+                datetime.now(UTC) - timedelta(seconds=30)
+            ),
+        },
+        headers=_auth(owner_id),
+    )
+    assert legal.status_code in (200, 201), legal.text
+    doc = await client.post(
+        f"/v1/orgs/{org_id}/kyb/incorporation-document",
+        json={
+            "file_name": "certificate.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 4096,
+        },
+        headers=_auth(owner_id),
+    )
+    assert doc.status_code == 200
+    submitted_kyb = await client.post(
+        f"/v1/orgs/{org_id}/kyb/submit", headers=_auth(owner_id)
+    )
+    assert submitted_kyb.status_code == 200, submitted_kyb.text
+    assert submitted_kyb.json()["kyb_status"] == "pending"
+    reviewed = await client.post(
+        f"/v1/admin/orgs/{org_id}/kyb/review",
+        json={
+            "verdict": "verified",
+            "totp_code": pyotp.TOTP(admin_secret).now(),
+        },
+        headers=admin_headers,
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["kyb_status"] == "verified"
+
     app_base = f"/v1/orgs/{org_id}/attestor-application"
 
     # --- Activation: owner-driven gates ----------------------------------
@@ -503,50 +547,6 @@ async def test_org_attestor_full_lifecycle(
     submitted = await client.post(f"{app_base}/submit", headers=_auth(owner_id))
     assert submitted.status_code == 200
     assert submitted.json()["status"] == "submitted"
-
-    # --- Business verification (KYB) --------------------------------------
-    # Precedes every capability now, so the org establishes and verifies its
-    # legal identity before the attestor gate walk can approve anything.
-    legal = await client.put(
-        f"/v1/orgs/{org_id}/legal-profile",
-        json={
-            "legal_name": "Auracles Attestations Ltd",
-            "registration_number": "RC123456",
-            # TOTP is single-use (M4) and only ±1 step is accepted, so the
-            # three owner step-ups in this test take one step each: undertakings
-            # spends `now`, the payout below spends `+30`, and this takes `-30`.
-            "totp_code": pyotp.TOTP(owner_secret).at(
-                datetime.now(UTC) - timedelta(seconds=30)
-            ),
-        },
-        headers=_auth(owner_id),
-    )
-    assert legal.status_code in (200, 201), legal.text
-    doc = await client.post(
-        f"/v1/orgs/{org_id}/kyb/incorporation-document",
-        json={
-            "file_name": "certificate.pdf",
-            "content_type": "application/pdf",
-            "size_bytes": 4096,
-        },
-        headers=_auth(owner_id),
-    )
-    assert doc.status_code == 200
-    submitted_kyb = await client.post(
-        f"/v1/orgs/{org_id}/kyb/submit", headers=_auth(owner_id)
-    )
-    assert submitted_kyb.status_code == 200, submitted_kyb.text
-    assert submitted_kyb.json()["kyb_status"] == "pending"
-    reviewed = await client.post(
-        f"/v1/admin/orgs/{org_id}/kyb/review",
-        json={
-            "verdict": "verified",
-            "totp_code": pyotp.TOTP(admin_secret).now(),
-        },
-        headers=admin_headers,
-    )
-    assert reviewed.status_code == 200, reviewed.text
-    assert reviewed.json()["kyb_status"] == "verified"
 
     # --- Activation: admin gate walk -------------------------------------
     admin_base = f"/v1/admin/org-attestor-applications/{application_id}"

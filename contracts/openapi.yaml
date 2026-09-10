@@ -9063,6 +9063,10 @@ components:
             type: boolean
           title: Grants
           type: object
+        kyb_status:
+          default: unverified
+          title: Kyb Status
+          type: string
         nda_required:
           default: false
           title: Nda Required

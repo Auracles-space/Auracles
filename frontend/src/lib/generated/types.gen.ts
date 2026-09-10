@@ -3095,6 +3095,7 @@ export type MyOrganizationResponse = {
     grants?: {
         [key: string]: (boolean);
     };
+    kyb_status?: string;
     nda_required?: boolean;
     org: OrganizationResponse;
     role: string;

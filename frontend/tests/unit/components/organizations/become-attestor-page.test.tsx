@@ -33,6 +33,9 @@ const fail = () => ({
 
 const org = (id: string, role: string, capabilities = {}) => ({
   org: { id, name: `Org ${id}`, slug: id, country: "US" },
+  // Verified: an unverified org cannot open an attestor application, so it is
+  // deliberately not offered as an entry point.
+  kyb_status: "verified",
   role,
   capabilities,
 });

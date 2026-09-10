@@ -41,17 +41,35 @@ describe("AttestorApplicationTab", () => {
     );
   });
 
-  it("renders the 8 activation gates with per-gate status", async () => {
+  it("renders the activation gates with per-gate status", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue(
-      ok({ status: "submitted", kyb_verified_at: "2026-07-01T00:00:00Z", admin_feedback: null }) as never,
+      ok({ status: "submitted", admin_feedback: null }) as never,
     );
     render(<AttestorApplicationTab />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: /KYB verification/i })).toBeInTheDocument());
-    expect(screen.getByRole("heading", { name: /Apply/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /Trial attestation/i })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /Apply/i })).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("heading", { name: /Trial attestation/i }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Activation/i })).toBeInTheDocument();
-    // KYB gate shows verified
-    expect(screen.getByText(/verified/i)).toBeInTheDocument();
+  });
+
+  it("does not carry a KYB gate of its own", async () => {
+    // Business verification happens on the organization before it can open an
+    // application at all, so a KYB step here would be permanently complete and
+    // would imply the flow still does the checking.
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue(
+      ok({ status: "submitted", admin_feedback: null }) as never,
+    );
+    render(<AttestorApplicationTab />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: /Apply/i })).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("heading", { name: /KYB verification/i }),
+    ).toBeNull();
   });
 
   it("renders the unstarted Apply gate when no application exists (404)", async () => {

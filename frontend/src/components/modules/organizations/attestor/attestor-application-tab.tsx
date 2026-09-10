@@ -25,8 +25,9 @@ import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
 
 /**
  * Readiness for submitting the application, mirroring the backend
- * `_kyb_complete` rule so the sticky submit bar can gate the action and
- * explain what is still missing.
+ * `_application_content_complete` rule so the sticky submit bar can gate the
+ * action and explain what is still missing. Business verification is not part
+ * of it — an organization is verified before it can open an application.
  *
  * @param app - The live application, or null before it exists.
  * @returns Whether the application can be submitted and a one-line hint.
@@ -224,7 +225,6 @@ export function AttestorApplicationTab() {
         : "complete"
       : "not_started";
       
-  const kybStatus = checklist?.kyb_verified ? "complete" : "not_started";
   const credentialsStatus = checklist?.credentials_reviewed ? "complete" : "not_started";
 
   const activationStatus = app?.status === "approved" ? "complete" : "not_started";
@@ -250,18 +250,13 @@ export function AttestorApplicationTab() {
       <div className="space-y-4">
         <GateCard
           title="Apply"
-          description="Submit your organization's legal details, references, and credential summary for review."
+          description="Submit your organization's references and credential summary for review."
           status={applyStatus}
           statusLabel={applyStatus === "complete" ? "Submitted" : undefined}
           feedback={applyStatus === "needs_info" ? app?.admin_feedback : undefined}
         >
           <ApplyGate application={app} orgId={orgId} onChange={reload} />
         </GateCard>
-        <GateCard
-          title="KYB verification"
-          description="An admin verifies your organization's legal entity and beneficial owners during review."
-          status={kybStatus}
-        />
         <GateCard
           title="Org credentials"
           description="Admin review of your submitted credentials, licenses, and references."

@@ -35,7 +35,11 @@ export function eligibleAttestorOrgs(
     .filter(
       (item) =>
         ATTESTOR_ENTRY_ROLES.has(item.role) &&
-        item.capabilities?.attestor !== "active",
+        item.capabilities?.attestor !== "active" &&
+        // Business verification precedes every capability, so an unverified
+        // org cannot open an application. Offering it here would walk the user
+        // into a 403 instead of to the verification page that unblocks them.
+        item.kyb_status === "verified",
     )
     .map((item) => ({
       id: item.org.id,

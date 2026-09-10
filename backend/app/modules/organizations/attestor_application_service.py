@@ -193,7 +193,8 @@ async def create_application(
         db: Async session.
         org_id: Organization opening the application.
         actor_id: Authenticated org owner/admin acting.
-        payload: Matching and credentials content, plus optional KYB fields.
+        payload: Matching and credentials content. KYB is not part of it:
+            the organization is verified before it can reach this call.
 
     Returns:
         The newly created draft application.
@@ -209,6 +210,10 @@ async def create_application(
     # backstop for two concurrent creates that both pass the checks below.
     try:
         async with db.begin():
+            # Business verification precedes every capability, attestor
+            # included. Gating here is what lets this flow drop its own KYB
+            # step: an org reaching the gate walk is already checked.
+            await kyb_service.require_org_kyb_verified(db, org_id=org_id)
             active_capability = await db.scalar(
                 select(OrgCapability).where(
                     OrgCapability.org_id == org_id,

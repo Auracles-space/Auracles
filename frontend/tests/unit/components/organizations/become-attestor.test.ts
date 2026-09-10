@@ -10,11 +10,15 @@ function org(
   id: string,
   role: string,
   capabilities: Record<string, string> = {},
+  kybStatus = "verified",
 ): MyOrganizationResponse {
   return {
     org: { id, name: `Org ${id}`, slug: id, country: "US" },
     role,
     capabilities,
+    // Verified by default: an org cannot open an attestor application until
+    // it is, so every other case here starts from a verified org.
+    kyb_status: kybStatus,
   } as MyOrganizationResponse;
 }
 
@@ -28,6 +32,19 @@ describe("eligibleAttestorOrgs", () => {
     ];
 
     expect(eligibleAttestorOrgs(orgs).map((item) => item.id)).toEqual(["a", "b"]);
+  });
+
+  it("excludes an organization that has not been business-verified", () => {
+    // Offering it would walk the user into a 403 rather than to the
+    // verification page that actually unblocks them.
+    const orgs = [
+      org("a", "owner"),
+      org("b", "owner", {}, "pending"),
+      org("c", "owner", {}, "unverified"),
+      org("d", "owner", {}, "rejected"),
+    ];
+
+    expect(eligibleAttestorOrgs(orgs).map((item) => item.id)).toEqual(["a"]);
   });
 
   it("carries the attestor capability status for display", () => {
