@@ -117,6 +117,7 @@ const compatibilityAliases = {
   requestPayout: "requestPayoutV1FinancialsPayoutsPost",
   resetPassword: "resetPasswordV1AuthResetPasswordPost",
   resolveArtifactPiiReview: "resolvePiiReviewV1FrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPost",
+  listAdminAttestationDisputes: "listAdminAttestationDisputesV1AdminAttestationDisputesGet",
   resolveAttestationDispute: "resolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePost",
   listAdminProjectDisputes: "listProjectDisputesV1AdminProjectsDisputesGet",
   resolveAdminProjectDispute: "resolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePost",

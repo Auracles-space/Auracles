@@ -6,22 +6,17 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
   listAdminAttestations,
   listAttestorOrgs,
   listOrgAttestorApplicationsForAdmin,
-  resolveAttestationDispute,
 } from "@/lib/generated/sdk.gen";
 import type {
   AttestationRequestResponse,
   AttestorDirectoryEntry,
   OrgAttestorApplicationResponse,
 } from "@/lib/generated/types.gen";
-import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
-import { currencySymbol } from "@/lib/marketplace/currency";
 import {
   ErrorMessage,
   HeaderCard,
@@ -31,6 +26,7 @@ import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
 import { AttestorApplicationRow } from "@/components/modules/admin/attestor-application-row";
 import { emitNeedsAdminChanged } from "@/components/modules/admin/admin-events";
 import { AttestationDetailModal } from "@/components/modules/admin/attestation-detail-modal";
+import { AdminAttestationDisputesPanel } from "@/components/modules/admin/admin-attestation-disputes-panel";
 
 export function AdminAttestationPanel() {
   const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
@@ -38,22 +34,7 @@ export function AdminAttestationPanel() {
   const [queueStatus, setQueueStatus] = useState("needs_admin");
   const [attestorOrgs, setAttestorOrgs] = useState<AttestorDirectoryEntry[]>([]);
   const [detailId, setDetailId] = useState<string | null>(null);
-  const [disputeId, setDisputeId] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [refundAmount, setRefundAmount] = useState("");
-  const [releaseAmount, setReleaseAmount] = useState("");
-  const [resolutionType, setResolutionType] =
-    useState<"release" | "refund" | "split">("release");
-  const [disputeReason, setDisputeReason] = useState("");
-  const [disputeTotp, setDisputeTotp] = useState("");
-
-  const canResolveDispute = allValid(
-    isNonEmpty(disputeId),
-    isNonEmpty(disputeReason),
-    disputeTotp.trim().length >= 6,
-    resolutionType !== "split" ||
-      allValid(isPositiveNumber(releaseAmount), isPositiveNumber(refundAmount)),
-  );
 
   useEffect(() => {
     void loadApplications();
@@ -114,23 +95,6 @@ export function AdminAttestationPanel() {
     );
     // Let the workspace shell refresh its needs-admin count badge.
     emitNeedsAdminChanged();
-  }
-
-  async function handleResolveDispute() {
-    setError(null);
-    configureBrowserClient();
-    const result = await resolveAttestationDispute({
-      body: {
-        outcome: resolutionType === "refund" ? "upheld_refund" : "rejected",
-        resolution_notes: disputeReason,
-        totp_code: disputeTotp,
-      },
-      headers: getAccessTokenHeaders(),
-      path: { dispute_id: disputeId },
-    });
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
-    }
   }
 
   return (
@@ -226,89 +190,7 @@ export function AdminAttestationPanel() {
         </div>
       </div>
 
-      <div className="grid gap-6">
-        <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="font-heading text-xl font-bold text-foreground mb-2">
-              Dispute Resolution
-            </h3>
-            <p className="text-xs text-foreground-muted mb-4 leading-relaxed">
-              Resolve formal quality or service disputes by releasing funds to the contributor, refunding the operator, or dividing the escrow.
-            </p>
-            <div className="grid gap-4 mb-6">
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Dispute ID
-                <Input 
-                  onChange={(event) => setDisputeId(event.target.value)} 
-                  placeholder="e.g. dsp-18a7b" 
-                  value={disputeId} 
-                />
-              </label>
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Resolution Strategy
-                <Select 
-                  onChange={(event) => setResolutionType(event.target.value as "release" | "refund" | "split")} 
-                  value={resolutionType}
-                >
-                  <option value="release">Release (Pay Contributor)</option>
-                  <option value="refund">Refund (Pay Operator)</option>
-                  <option value="split">Split Escrow Funds</option>
-                </Select>
-              </label>
-              
-              {resolutionType === "split" && (
-                <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-surface-2 p-3 border border-border-default">
-                  <label className="grid gap-1.5 text-xs font-semibold text-foreground">
-                    Release to Contributor ({currencySymbol()})
-                    <Input 
-                      className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
-                      onChange={(event) => setReleaseAmount(event.target.value)} 
-                      placeholder="Amount" 
-                      value={releaseAmount} 
-                    />
-                  </label>
-                  <label className="grid gap-1.5 text-xs font-semibold text-foreground">
-                    Refund to Operator ({currencySymbol()})
-                    <Input 
-                      className="min-h-11 rounded-lg border border-border-default bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent" 
-                      onChange={(event) => setRefundAmount(event.target.value)} 
-                      placeholder="Amount" 
-                      value={refundAmount} 
-                    />
-                  </label>
-                </div>
-              )}
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Resolution notes
-                <Input
-                  onChange={(event) => setDisputeReason(event.target.value)}
-                  placeholder="Explain this resolution for audit logs"
-                  value={disputeReason}
-                />
-              </label>
-              <label className="grid gap-2 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-                Admin 2FA code
-                <Input
-                  inputMode="numeric"
-                  onChange={(event) => setDisputeTotp(event.target.value)}
-                  placeholder="6-digit code"
-                  value={disputeTotp}
-                />
-              </label>
-            </div>
-          </div>
-          <div className="pt-4 border-t border-border-default/40">
-            <Button
-              className="w-full sm:w-auto"
-              disabled={!canResolveDispute}
-              onClick={handleResolveDispute}
-              type="button"
-            >
-              Resolve dispute
-            </Button>
-          </div>
-        </div>
-      </div>
+      <AdminAttestationDisputesPanel />
 
       {detailId ? (
         <AttestationDetailModal

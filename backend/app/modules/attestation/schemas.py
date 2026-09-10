@@ -317,6 +317,43 @@ class AttestationDisputeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AdminAttestationDisputeListItem(BaseModel):
+    """One Attestation dispute in the admin triage queue.
+
+    Carries the attestation context an admin needs to judge the dispute in
+    place — which org attested, what the request was, and how much escrow is at
+    stake — so the queue does not force a second lookup per row. The requester's
+    identity is deliberately absent: the verdict turns on the report, and list
+    endpoints do not carry user PII.
+    """
+
+    id: UUID
+    attestation_id: UUID
+    category: str
+    reason: str
+    status: str
+    outcome: str | None
+    is_complex: bool
+    resolution_due_at: datetime | None
+    escalated_at: datetime | None
+    resolved_at: datetime | None
+    created_at: datetime
+    attestation_status: str
+    review_type: str | None
+    fee_amount: Decimal | None
+    currency: str | None
+    attestor_org_id: UUID | None
+    attestor_org_name: str | None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminAttestationDisputesResponse(BaseModel):
+    """Admin triage queue of Attestation disputes."""
+
+    disputes: list[AdminAttestationDisputeListItem]
+
+
 class AdminAttestationDisputeResolveRequest(BaseModel):
     """Admin request body for resolving an Attestation dispute.
 

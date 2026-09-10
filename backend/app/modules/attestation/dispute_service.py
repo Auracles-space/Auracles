@@ -25,12 +25,15 @@ from app.modules.attestation.models import (
     AttestationOffer,
     AttestorWarning,
 )
-from app.modules.attestation.schemas import AttestationDisputeCreateRequest
+from app.modules.attestation.schemas import (
+    AdminAttestationDisputeListItem,
+    AttestationDisputeCreateRequest,
+)
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
-from app.modules.organizations.models import OrgMember
+from app.modules.organizations.models import Organization, OrgMember
 from app.shared.business_days import add_business_days
 
 
@@ -126,6 +129,83 @@ async def create_dispute(
         attestation, recipient_id=recipient_id
     )
     return dispute
+
+
+async def list_admin_disputes(
+    db: AsyncSession,
+    *,
+    status_value: str = "active",
+) -> list[AdminAttestationDisputeListItem]:
+    """Return Attestation disputes in one status for the admin triage queue.
+
+    ``active`` covers both unresolved statuses (``open`` and ``under_review``),
+    which is the queue that actually needs a verdict; the individual statuses
+    and ``resolved`` are available for narrowing and for history.
+
+    Ordered by resolution deadline, soonest first, so the dispute closest to
+    breaching its SLA sits at the top. Creation order would not do it: a complex
+    dispute carries a 15-business-day SLA against a standard one's 5, so an
+    older dispute is often due later.
+
+    Args:
+        db: Async database session.
+        status_value: ``active``, ``open``, ``under_review``, or ``resolved``.
+
+    Returns:
+        Queue rows joined to their attestation and attestor organization.
+
+    Raises:
+        HTTPException(422): If ``status_value`` is not a recognised filter. The
+            router constrains this already; the check stays because returning an
+            empty list for a typo would read as "nothing needs attention".
+    """
+    if status_value == "active":
+        statuses = list(ACTIVE_DISPUTE_STATUSES)
+    elif status_value in ("open", "under_review", "resolved"):
+        statuses = [status_value]
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Unknown dispute status filter.",
+        )
+
+    rows = (
+        await db.execute(
+            select(AttestationDispute, Attestation, Organization.name)
+            .join(Attestation, Attestation.id == AttestationDispute.attestation_id)
+            .outerjoin(
+                Organization, Organization.id == Attestation.attestor_org_id
+            )
+            .where(AttestationDispute.status.in_(statuses))
+            .order_by(
+                AttestationDispute.resolution_due_at.asc().nulls_last(),
+                AttestationDispute.created_at,
+            )
+        )
+    ).all()
+
+    return [
+        AdminAttestationDisputeListItem(
+            id=dispute.id,
+            attestation_id=dispute.attestation_id,
+            category=dispute.category,
+            reason=dispute.reason,
+            status=dispute.status,
+            outcome=dispute.outcome,
+            is_complex=dispute.is_complex,
+            resolution_due_at=dispute.resolution_due_at,
+            escalated_at=dispute.escalated_at,
+            resolved_at=dispute.resolved_at,
+            created_at=dispute.created_at,
+            attestation_status=attestation.status,
+            review_type=attestation.review_type,
+            fee_amount=attestation.fee_amount,
+            currency=attestation.currency,
+            attestor_org_id=attestation.attestor_org_id,
+            attestor_org_name=org_name,
+        )
+        for dispute, attestation, org_name in rows
+    ]
 
 
 async def resolve_dispute(

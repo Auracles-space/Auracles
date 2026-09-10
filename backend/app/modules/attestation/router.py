@@ -36,6 +36,7 @@ from app.modules.attestation.schemas import (
     AdminAttestationAssignRequest,
     AdminAttestationDetailResponse,
     AdminAttestationDisputeResolveRequest,
+    AdminAttestationDisputesResponse,
     AdminAttestationRefundRequest,
     AnnotationCreateRequest,
     AnnotationResponse,
@@ -746,6 +747,33 @@ async def create_attestation_dispute(
         payload=payload,
     )
     return AttestationDisputeResponse.model_validate(dispute)
+
+
+@router.get(
+    "/admin/attestation-disputes",
+    response_model=AdminAttestationDisputesResponse,
+    summary="List Attestation disputes for admin triage",
+    description=(
+        "List Attestation disputes in a given status for admin action. Defaults "
+        "to the active queue (open and under_review) — the disputes still "
+        "awaiting a verdict. Admin only."
+    ),
+)
+async def list_admin_attestation_disputes(
+    admin: AdminUser,
+    db: DatabaseSession,
+    status_value: Literal[
+        "active", "open", "under_review", "resolved"
+    ] = Query(default="active", alias="status"),
+) -> AdminAttestationDisputesResponse:
+    """List Attestation disputes in a given status for admin triage."""
+    del admin
+    return AdminAttestationDisputesResponse(
+        disputes=await dispute_service.list_admin_disputes(
+            db=db,
+            status_value=status_value,
+        )
+    )
 
 
 @router.post(

@@ -322,6 +322,118 @@ components:
       - offers
       title: AdminAttestationDetailResponse
       type: object
+    AdminAttestationDisputeListItem:
+      description: One Attestation dispute in the admin triage queue, carrying the
+        attestation context an admin needs to judge it without a second lookup.
+      properties:
+        attestation_id:
+          format: uuid
+          title: Attestation Id
+          type: string
+        attestation_status:
+          title: Attestation Status
+          type: string
+        attestor_org_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Attestor Org Id
+        attestor_org_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Attestor Org Name
+        category:
+          title: Category
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        currency:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Currency
+        escalated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Escalated At
+        fee_amount:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Fee Amount
+        id:
+          format: uuid
+          title: Id
+          type: string
+        is_complex:
+          title: Is Complex
+          type: boolean
+        outcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Outcome
+        reason:
+          title: Reason
+          type: string
+        resolution_due_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Resolution Due At
+        resolved_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Resolved At
+        review_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Review Type
+        status:
+          title: Status
+          type: string
+      required:
+      - id
+      - attestation_id
+      - category
+      - reason
+      - status
+      - outcome
+      - is_complex
+      - resolution_due_at
+      - escalated_at
+      - resolved_at
+      - created_at
+      - attestation_status
+      - review_type
+      - fee_amount
+      - currency
+      - attestor_org_id
+      - attestor_org_name
+      title: AdminAttestationDisputeListItem
+      type: object
+    AdminAttestationDisputesResponse:
+      description: Admin triage queue of Attestation disputes.
+      properties:
+        disputes:
+          items:
+            $ref: '#/components/schemas/AdminAttestationDisputeListItem'
+          title: Disputes
+          type: array
+      required:
+      - disputes
+      title: AdminAttestationDisputesResponse
+      type: object
     AdminAttestationDisputeResolveRequest:
       description: 'Admin request body for resolving an Attestation dispute.
 
@@ -14520,6 +14632,43 @@ paths:
       summary: Export admin analytics as CSV
       tags:
       - Admin
+  /v1/admin/attestation-disputes:
+    get:
+      description: List Attestation disputes in a given status for admin action.
+        Defaults to the active queue (open and under_review) — the disputes still
+        awaiting a verdict. Admin only.
+      operationId: list_admin_attestation_disputes_v1_admin_attestation_disputes_get
+      parameters:
+      - in: query
+        name: status
+        required: false
+        schema:
+          default: active
+          enum:
+          - active
+          - open
+          - under_review
+          - resolved
+          title: Status
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAttestationDisputesResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List Attestation disputes for admin triage
+      tags:
+      - Attestation
   /v1/admin/attestation-disputes/{dispute_id}/resolve:
     post:
       description: Resolve an Attestation dispute through a 2FA-gated admin action.

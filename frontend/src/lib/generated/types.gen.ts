@@ -139,6 +139,29 @@ export type AdminAttestationDetailResponse = {
 };
 
 /**
+ * One Attestation dispute in the admin triage queue, carrying the attestation context an admin needs to judge it without a second lookup.
+ */
+export type AdminAttestationDisputeListItem = {
+    attestation_id: string;
+    attestation_status: string;
+    attestor_org_id: (string | null);
+    attestor_org_name: (string | null);
+    category: string;
+    created_at: string;
+    currency: (string | null);
+    escalated_at: (string | null);
+    fee_amount: (string | null);
+    id: string;
+    is_complex: boolean;
+    outcome: (string | null);
+    reason: string;
+    resolution_due_at: (string | null);
+    resolved_at: (string | null);
+    review_type: (string | null);
+    status: string;
+};
+
+/**
  * Admin request body for resolving an Attestation dispute.
  *
  * Module 5 replaces the old release/refund/split money-split model with a
@@ -153,6 +176,13 @@ export type AdminAttestationDisputeResolveRequest = {
 };
 
 export type outcome = 'rejected' | 'upheld_refund' | 'upheld_revise';
+
+/**
+ * Admin triage queue of Attestation disputes.
+ */
+export type AdminAttestationDisputesResponse = {
+    disputes: Array<AdminAttestationDisputeListItem>;
+};
 
 /**
  * One offer made for an Attestation, with the recipient org's name.
@@ -5171,6 +5201,16 @@ export type ExportAdminAnalyticsV1AdminAnalyticsExportGetData = {
 export type ExportAdminAnalyticsV1AdminAnalyticsExportGetResponse = (unknown);
 
 export type ExportAdminAnalyticsV1AdminAnalyticsExportGetError = (HTTPValidationError);
+
+export type ListAdminAttestationDisputesV1AdminAttestationDisputesGetData = {
+    query?: {
+        status?: 'active' | 'open' | 'under_review' | 'resolved';
+    };
+};
+
+export type ListAdminAttestationDisputesV1AdminAttestationDisputesGetResponse = (AdminAttestationDisputesResponse);
+
+export type ListAdminAttestationDisputesV1AdminAttestationDisputesGetError = (HTTPValidationError);
 
 export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostData = {
     body: AdminAttestationDisputeResolveRequest;

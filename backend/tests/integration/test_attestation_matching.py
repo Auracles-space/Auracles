@@ -1987,3 +1987,227 @@ async def test_escalate_attestation_disputes_flags_overdue_resolutions(
     assert dispute.status != "resolved"  # never auto-resolved
     assert dispute.status == "under_review"
     assert audit is not None
+
+
+async def test_admin_lists_active_attestation_disputes(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """An admin can enumerate the disputes still awaiting a verdict.
+
+    Without a list an admin can only resolve a dispute whose UUID they already
+    hold, which no surface hands them — so an open dispute is unreachable.
+    """
+    del migrated_database, matching_context
+    requestor_id = await create_user("dispute-queue@auracles.space", ["operator"])
+    admin_id, _secret = await create_admin_user()
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="dqueue",
+    )
+    attestation_id, _, _ = await create_report_submitted_attestation(
+        requestor_id,
+        org_id,
+        member_id,
+    )
+    raised = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={
+            "category": "material_inaccuracy",
+            "reason": "The report cites a control we never implemented.",
+        },
+    )
+
+    response = await client.get(
+        "/v1/admin/attestation-disputes",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert raised.status_code == 201
+    assert response.status_code == 200
+    disputes = response.json()["disputes"]
+    assert [item["id"] for item in disputes] == [raised.json()["id"]]
+    listed = disputes[0]
+    assert listed["status"] == "open"
+    assert listed["attestation_id"] == str(attestation_id)
+    assert listed["category"] == "material_inaccuracy"
+    # The queue must carry enough context to judge the dispute in place.
+    assert listed["attestor_org_id"] == str(org_id)
+    assert listed["attestor_org_name"]
+    assert listed["attestation_status"] == "disputed"
+
+
+async def test_dispute_queue_is_admin_only(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """The dispute queue exposes every requester's grievance, so admins only."""
+    del migrated_database, matching_context
+    operator_id = await create_user("dispute-nosy@auracles.space", ["operator"])
+
+    unauthenticated = await client.get("/v1/admin/attestation-disputes")
+    wrong_role = await client.get(
+        "/v1/admin/attestation-disputes",
+        headers=auth_headers(operator_id, ["operator"]),
+    )
+
+    assert unauthenticated.status_code == 401
+    assert wrong_role.status_code == 403
+
+
+async def test_resolved_dispute_leaves_the_active_queue(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resolved dispute drops out of the active queue and into the history.
+
+    The active queue is what an admin works from, so a verdict must clear the
+    row; ``status=resolved`` keeps it reachable for audit.
+    """
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return the Redis test double used for admin TOTP verification."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+
+    requestor_id = await create_user("queue-filter@auracles.space", ["operator"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="qfilter",
+    )
+    admin_id, totp_secret = await create_admin_user()
+    attestation_id, _, _escrow_id = await create_report_submitted_attestation(
+        requestor_id, org_id, member_id
+    )
+    raised = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={
+            "category": "process_violation",
+            "reason": "The reviewer never held the required scoping call.",
+        },
+    )
+    dispute_id = raised.json()["id"]
+
+    before = await client.get(
+        "/v1/admin/attestation-disputes",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    await client.post(
+        f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "outcome": "upheld_revise",
+            "resolution_notes": "Scoping call missing; revise after holding it.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+    after = await client.get(
+        "/v1/admin/attestation-disputes",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    history = await client.get(
+        "/v1/admin/attestation-disputes",
+        headers=auth_headers(admin_id, ["admin"]),
+        params={"status": "resolved"},
+    )
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert [item["id"] for item in before.json()["disputes"]] == [dispute_id]
+    assert dispute_id not in [item["id"] for item in after.json()["disputes"]]
+    resolved_ids = [item["id"] for item in history.json()["disputes"]]
+    assert dispute_id in resolved_ids
+    listed = next(
+        item for item in history.json()["disputes"] if item["id"] == dispute_id
+    )
+    assert listed["outcome"] == "upheld_revise"
+    assert listed["resolved_at"] is not None
+
+
+async def test_dispute_queue_rejects_unknown_status_filter(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """An unrecognised filter is refused rather than silently returning nothing.
+
+    Returning an empty list would read as "no disputes need attention", which is
+    the opposite of the truth when the filter is simply misspelt.
+    """
+    del migrated_database, matching_context
+    admin_id, _secret = await create_admin_user()
+
+    response = await client.get(
+        "/v1/admin/attestation-disputes",
+        headers=auth_headers(admin_id, ["admin"]),
+        params={"status": "pending"},
+    )
+
+    assert response.status_code == 422
+
+
+async def test_dispute_queue_orders_by_resolution_deadline(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """The dispute due soonest leads the queue, regardless of when it was raised.
+
+    A complex dispute carries a 15-business-day SLA against a standard one's 5,
+    so ordering by creation time would bury the dispute about to breach.
+    """
+    del migrated_database, matching_context
+    admin_id, _secret = await create_admin_user()
+    raised_ids: list[str] = []
+    for index in range(2):
+        requestor_id = await create_user(
+            f"sla-order-{index}@auracles.space", ["operator"]
+        )
+        org_id, _attestor_id, member_id = await create_org_attestor(
+            specializations=["healthcare"],
+            jurisdictions=["US"],
+            slug_prefix=f"slaorder{index}",
+        )
+        attestation_id, _, _ = await create_report_submitted_attestation(
+            requestor_id, org_id, member_id
+        )
+        raised = await client.post(
+            f"/v1/attestations/{attestation_id}/disputes",
+            headers=auth_headers(requestor_id, ["operator"]),
+            json={
+                "category": "scope_error",
+                "reason": f"Scope disagreement number {index} needs review.",
+            },
+        )
+        raised_ids.append(raised.json()["id"])
+
+    # Push the first-raised dispute's deadline out past the second's.
+    async with async_session_factory() as session:
+        async with session.begin():
+            first = await session.get(AttestationDispute, UUID(raised_ids[0]))
+            assert first is not None
+            first.resolution_due_at = datetime.now(UTC) + timedelta(days=30)
+
+    response = await client.get(
+        "/v1/admin/attestation-disputes",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 200
+    listed = [item["id"] for item in response.json()["disputes"]]
+    assert listed == [raised_ids[1], raised_ids[0]]
