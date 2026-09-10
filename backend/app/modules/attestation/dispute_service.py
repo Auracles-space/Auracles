@@ -815,6 +815,38 @@ async def _load_escrow_transaction(
     return transaction
 
 
+async def refund_orphaned_fee_escrow(
+    db: AsyncSession,
+    *,
+    attestation: Attestation,
+    escrow: Escrow,
+    transaction: Transaction,
+) -> None:
+    """Return a fee that settled against an Attestation already closed.
+
+    The unpaid-fee sweep closes a checkout that went cold days ago, so a
+    payment can still — rarely — settle afterwards. Raising in the webhook
+    would retry forever and leave the money held against a dead request, so
+    the escrow goes straight back to the payer on the rail it arrived on.
+
+    Reuses the dispute refund leg rather than repeating it: two refund
+    implementations are how Stripe and Paystack drift apart.
+
+    Args:
+        db: Session inside the caller's open transaction.
+        attestation: The closed Attestation the payment arrived for.
+        escrow: The freshly funded escrow to return.
+        transaction: The funding transaction the refund is issued against.
+    """
+    await _refund_escrow_at_provider(
+        db=db,
+        escrow=escrow,
+        transaction=transaction,
+        actor_id=attestation.requestor_id,
+        idempotency_prefix="attestation_orphaned_fee_refund",
+    )
+
+
 async def _refund_escrow_at_provider(
     *,
     db: AsyncSession,

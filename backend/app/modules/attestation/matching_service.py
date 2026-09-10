@@ -25,7 +25,7 @@ from app.modules.attestation.models import (
     Credential,
 )
 from app.modules.auth.models import User, UserRole
-from app.modules.financials.models import PlatformConfig
+from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.organizations.models import (
     Organization,
@@ -643,6 +643,75 @@ async def expire_owner_consent(
             cancelled.append(attestation)
     for attestation in cancelled:
         attestation_notifications.notify_consent_declined(attestation)
+    return len(cancelled)
+
+
+async def expire_unpaid_attestation_fees(
+    db: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Close Attestation requests whose fee was never paid.
+
+    Nothing closed these before, so an abandoned hosted checkout left a
+    permanent ``pending_fee`` row the requestor could neither pay nor dismiss.
+
+    The window is what keeps this sweep clear of live money. It only touches
+    checkouts that went cold days ago, so it cannot close a request while the
+    requestor's own payment is still in flight — which is exactly why the
+    requestor has no button of their own here. A payment that somehow lands
+    later is refunded by the webhook rather than raising.
+
+    Args:
+        db: Async database session.
+        now: Optional current timestamp override for deterministic tests.
+
+    Returns:
+        The number of attestation requests cancelled.
+    """
+    current_time = now or datetime.now(UTC)
+    unpaid_days = await _platform_int_config(
+        db,
+        key="attestation_unpaid_fee_days",
+        default=7,
+        minimum=1,
+    )
+    cutoff = current_time - timedelta(days=unpaid_days)
+    cancelled: list[Attestation] = []
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        rows = await db.execute(
+            select(Attestation)
+            .where(
+                Attestation.status == "pending_fee",
+                Attestation.created_at <= cutoff,
+            )
+            .with_for_update(skip_locked=True)
+        )
+        for attestation in rows.scalars().all():
+            attestation.status = "cancelled"
+            attestation.closed_at = current_time
+            # Void the pending charge alongside the request. Leaving it open
+            # would let a stale checkout settle against a closed attestation.
+            transactions = await db.execute(
+                select(Transaction).where(
+                    Transaction.ref_type == "attestation",
+                    Transaction.ref_id == attestation.id,
+                    Transaction.status == "pending",
+                )
+            )
+            for transaction in transactions.scalars().all():
+                transaction.status = "failed"
+            await write_audit(
+                db=db,
+                actor_id=None,
+                action="attestation_unpaid_fee_expired",
+                target_type="attestation",
+                target_id=attestation.id,
+                metadata={"unpaid_fee_days": unpaid_days},
+            )
+            cancelled.append(attestation)
     return len(cancelled)
 
 

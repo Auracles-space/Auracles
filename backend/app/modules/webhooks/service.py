@@ -33,6 +33,7 @@ from app.integrations.paystack import PaystackProviderError
 from app.integrations.persona import PersonaProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.admin.notifications import notify_admins_review_pending
+from app.modules.attestation import dispute_service as attestation_dispute_service
 from app.modules.attestation import matching_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import Attestation
@@ -908,6 +909,34 @@ async def _mark_attestation_fee_funded(
     if attestation is None:
         raise WebhookProcessingError("attestation not found for escrow funding")
     if attestation.status == "matching" and attestation.escrow_id == escrow.id:
+        return []
+    if attestation.status == "cancelled":
+        # The unpaid-fee sweep closed this checkout days ago and a payment
+        # settled anyway. Raising would retry forever and hold the money
+        # against a dead request, so the fee goes straight back.
+        await attestation_dispute_service.refund_orphaned_fee_escrow(
+            db,
+            attestation=attestation,
+            escrow=escrow,
+            transaction=transaction,
+        )
+        logger.bind(
+            module="webhooks",
+            action="attestation_fee_funded",
+            attestation_id=str(attestation.id),
+            transaction_id=str(transaction.id),
+        ).critical("attestation_fee_paid_after_expiry_refunded")
+        await write_audit(
+            db=db,
+            actor_id=transaction.payer_id,
+            action="attestation_orphaned_fee_refunded",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={
+                "escrow_id": str(escrow.id),
+                "transaction_id": str(transaction.id),
+            },
+        )
         return []
     if attestation.status != "pending_fee":
         raise WebhookProcessingError("attestation is not pending fee funding")

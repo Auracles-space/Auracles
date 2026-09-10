@@ -46,6 +46,7 @@ from app.workers.tasks.attestation_beat import (
     expire_attestation_clarifications,
     expire_attestation_offers,
     expire_owner_consent,
+    expire_unpaid_attestation_fees,
     revoke_overdue_attestations,
     send_coi_resign_reminders,
 )
@@ -157,6 +158,103 @@ async def _seed_pending_owner_consent(*, created_at: datetime) -> UUID:
             session.add(attestation)
             await session.flush()
             return attestation.id
+
+
+async def _seed_pending_fee(*, created_at: datetime) -> UUID:
+    """Create one unpaid attestation stuck at pending_fee."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            requestor = User(
+                email=f"fee-{uuid4().hex[:8]}@auracles.space",
+                password_hash="x",
+                display_name="Fee Requestor",
+                email_verified=True,
+            )
+            session.add(requestor)
+            await session.flush()
+            framework = Framework(
+                contributor_id=requestor.id,
+                title="Unpaid Fee Framework",
+                description="Published framework for unpaid-fee expiry tests.",
+                status="published",
+                category="compliance",
+                tags=["fee"],
+                price=Decimal("199.00"),
+                license_types=["single_user"],
+                published_at=datetime.now(UTC),
+            )
+            session.add(framework)
+            await session.flush()
+            attestation = Attestation(
+                target_type="framework",
+                target_id=framework.id,
+                requestor_id=requestor.id,
+                status="pending_fee",
+                review_type="quality",
+                fee_amount=Decimal("500.00"),
+                currency="USD",
+                created_at=created_at,
+            )
+            session.add(attestation)
+            await session.flush()
+            return attestation.id
+
+
+def test_expire_unpaid_fees_task_is_registered_in_beat_schedule() -> None:
+    """Celery Beat includes the hourly unpaid-fee expiry task."""
+    schedule = BEAT_SCHEDULE["expire-unpaid-attestation-fees-hourly"]
+
+    assert schedule["task"] == (
+        "app.workers.tasks.attestation_beat.expire_unpaid_attestation_fees"
+    )
+    assert schedule["schedule"] == 3600.0
+
+
+async def test_expire_unpaid_fees_closes_abandoned_requests(
+    migrated_database: None,
+    empty_attestation_state: None,
+) -> None:
+    """An unpaid fee past the window closes instead of sitting forever.
+
+    Nothing used to close these, so an abandoned checkout left a permanent
+    pending_fee row on the requestor's dashboard with no way to act on it.
+    """
+    del migrated_database, empty_attestation_state
+    attestation_id = await _seed_pending_fee(
+        created_at=datetime.now(UTC) - timedelta(days=8)
+    )
+
+    result = await _run_beat(expire_unpaid_attestation_fees)
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+
+    assert result == {"cancelled_count": 1}
+    assert attestation is not None
+    assert attestation.status == "cancelled"
+    assert attestation.closed_at is not None
+
+
+async def test_expire_unpaid_fees_leaves_a_live_checkout_alone(
+    migrated_database: None,
+    empty_attestation_state: None,
+) -> None:
+    """A recent request is left alone while its payment could still land.
+
+    The window is what keeps this sweep away from in-flight money: it only
+    ever touches checkouts that went cold days ago.
+    """
+    del migrated_database, empty_attestation_state
+    attestation_id = await _seed_pending_fee(created_at=datetime.now(UTC))
+
+    result = await _run_beat(expire_unpaid_attestation_fees)
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+
+    assert result == {"cancelled_count": 0}
+    assert attestation is not None
+    assert attestation.status == "pending_fee"
 
 
 def test_expire_owner_consent_task_is_registered_in_beat_schedule() -> None:

@@ -82,6 +82,12 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.attestation_beat.expire_attestation_clarifications",
         "schedule": 3600.0,
     },
+    # Nothing else closes an unpaid fee, so an abandoned checkout would sit on
+    # the requestor's dashboard forever.
+    "expire-unpaid-attestation-fees-hourly": {
+        "task": "app.workers.tasks.attestation_beat.expire_unpaid_attestation_fees",
+        "schedule": 3600.0,
+    },
     "auto-release-attestations-hourly": {
         "task": "app.workers.tasks.attestation_beat.auto_release_attestations",
         "schedule": 3600.0,

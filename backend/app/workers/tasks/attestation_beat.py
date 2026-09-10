@@ -41,6 +41,12 @@ async def _expire_owner_consent() -> int:
         return await matching_service.expire_owner_consent(db)
 
 
+async def _expire_unpaid_attestation_fees() -> int:
+    """Close Attestation requests whose fee went unpaid past the window."""
+    async with async_session_factory() as db:
+        return await matching_service.expire_unpaid_attestation_fees(db)
+
+
 async def _auto_release_attestations() -> int:
     """Release report-submitted Attestations past their dispute window."""
     async with async_session_factory() as db:
@@ -114,6 +120,21 @@ def expire_owner_consent(self: Any) -> dict[str, int]:
     )
     log.info("task_started")
     cancelled_count = run_async(_expire_owner_consent())
+    result = {"cancelled_count": cancelled_count}
+    log.info("task_completed", result=result)
+    return result
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def expire_unpaid_attestation_fees(self: Any) -> dict[str, int]:
+    """Celery wrapper for hourly unpaid-fee expiry."""
+    log = logger.bind(
+        module="attestation",
+        action="expire_unpaid_attestation_fees",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    cancelled_count = run_async(_expire_unpaid_attestation_fees())
     result = {"cancelled_count": cancelled_count}
     log.info("task_completed", result=result)
     return result
