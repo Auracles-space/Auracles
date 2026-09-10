@@ -21,7 +21,9 @@ from httpx import AsyncClient
 from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
+from app.main import app
 from app.modules.auth.models import User
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Transaction
@@ -29,6 +31,7 @@ from app.modules.frameworks.models import Framework, License
 from app.modules.invoicing.models import Invoice, InvoiceCounter
 from app.modules.organizations.models import Organization, OrgMember
 from app.shared.models.audit_log import AuditLog
+from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_organizations_endpoints import (
     add_member,
     auth,
@@ -161,6 +164,11 @@ async def org_invoice_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[dict[str, Any]]:
     """Reset invoice/purchase rows and patch the storage + invoice task edges."""
+    # Org creation is rate-limited, so the endpoint reaches Redis. A fake
+    # keeps the counter in-process and per-test rather than leaking a real
+    # one across the suite, where a later test would start throttled.
+    _fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: _fake_redis
     from app.integrations import s3
 
     fake_storage = FakeReportStorage()

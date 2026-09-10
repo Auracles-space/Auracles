@@ -14,7 +14,9 @@ from httpx import AsyncClient
 from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
+from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.frameworks.models import (
     Framework,
@@ -38,6 +40,7 @@ from app.modules.organizations.models import (
     OrgTeamMember,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.integration.test_auth_sessions import FakeRedis
 
 pytestmark = pytest.mark.asyncio
 
@@ -72,6 +75,11 @@ def migrated_database() -> Iterator[None]:
 @pytest.fixture
 async def org_library_context() -> AsyncIterator[dict[str, object]]:
     """Reset org-library rows and install fake S3 storage for each test."""
+    # Org creation is rate-limited, so the endpoint reaches Redis. A fake
+    # keeps the counter in-process and per-test rather than leaking a real
+    # one across the suite, where a later test would start throttled.
+    _fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: _fake_redis
     from app.integrations import s3
 
     fake_storage = FakeDownloadStorage()

@@ -14,8 +14,10 @@ from sqlalchemy import delete, select
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.integrations import s3
+from app.main import app
 from app.modules.auth.models import User
 from app.modules.organizations.models import (
     Organization,
@@ -26,7 +28,9 @@ from app.modules.organizations.models import (
     OrgTeamCapability,
     OrgTeamMember,
 )
+from app.modules.organizations.router import ORG_CREATE_LIMIT
 from app.shared.models.audit_log import AuditLog
+from tests.integration.test_auth_sessions import FakeRedis
 from tests.support.db_cleanup import clear_identity_state_async
 
 
@@ -56,11 +60,17 @@ async def clean_orgs() -> AsyncIterator[None]:
     leftover org rows break the `delete(User)` cleanup other test files
     rely on.
     """
+    # Org creation is rate-limited, so the endpoint reaches Redis. A fake keeps
+    # the counter in-process and per-test rather than leaking a real one across
+    # the suite, where a later test would start already throttled.
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
     await engine.dispose()
     await _reset_org_state()
     try:
         yield
     finally:
+        app.dependency_overrides.pop(get_redis, None)
         await _reset_org_state()
         await engine.dispose()
 
@@ -158,6 +168,35 @@ async def test_create_org_duplicate_slug_conflicts(
     )
 
     assert second.status_code == 409
+
+
+async def test_create_org_is_rate_limited_per_user(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """A user cannot mint organizations without limit.
+
+    Every organization now needs an admin to verify it before it can do
+    anything, so unbounded creation is a way to flood the review queue.
+    """
+    del migrated_database, clean_orgs
+    user_id = await create_user("org-flood")
+    token = create_access_token(user_id, [])
+
+    statuses = []
+    for index in range(ORG_CREATE_LIMIT + 1):
+        response = await client.post(
+            "/v1/orgs",
+            json={
+                "slug": f"flood-{uuid4().hex[:8]}",
+                "name": f"Flood Org {index}",
+                "country": "GB",
+            },
+            headers=auth(token),
+        )
+        statuses.append(response.status_code)
+
+    assert statuses[:ORG_CREATE_LIMIT] == [201] * ORG_CREATE_LIMIT
+    assert statuses[-1] == 429
 
 
 async def test_create_org_requires_auth(

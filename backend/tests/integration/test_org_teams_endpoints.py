@@ -36,9 +36,14 @@ def migrated_database() -> Iterator[None]:
     yield
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def override_redis() -> Iterator[FakeRedis]:
-    """Install a fake Redis for org capability activation rate limits."""
+    """Install a fake Redis for org rate limits.
+
+    Autouse because org creation is rate-limited too, so every test in this
+    file reaches Redis through the shared create-org helper, not just the ones
+    that activate a capability.
+    """
     fake_redis = FakeRedis()
     app.dependency_overrides[get_redis] = lambda: fake_redis
     yield fake_redis

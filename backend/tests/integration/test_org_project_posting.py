@@ -18,10 +18,13 @@ from httpx import AsyncClient
 from sqlalchemy import delete
 
 from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
 from app.core.security import create_access_token
+from app.main import app
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.modules.projects.models import Deliverable, Milestone, Project, Proposal
 from app.shared.models.audit_log import AuditLog
+from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_org_proposal_endpoints import (
     _activate_contributor_capability,
     _org_proposal_payload,
@@ -44,6 +47,11 @@ __all__ = ["migrated_database"]
 @pytest.fixture
 async def org_project_context() -> AsyncIterator[None]:
     """Reset Project and org rows around org Project posting tests."""
+    # Org creation is rate-limited, so the endpoint reaches Redis. A fake
+    # keeps the counter in-process and per-test rather than leaking a real
+    # one across the suite, where a later test would start throttled.
+    _fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: _fake_redis
     await engine.dispose()
 
     async def cleanup() -> None:

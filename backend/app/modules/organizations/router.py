@@ -155,6 +155,14 @@ OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
 
+# Every organization created needs an admin to verify it before it can do
+# anything, so unbounded creation floods the review queue. A day's allowance is
+# well above what a real operator needs and well below what makes flooding
+# worthwhile.
+ORG_CREATE_LIMIT = 5
+ORG_CREATE_RATE_LIMITER = RateLimiter(
+    namespace="org_create", limit=ORG_CREATE_LIMIT, window=86400
+)
 NDA_SIGN_RATE_LIMITER = RateLimiter(namespace="org_nda_sign", limit=5, window=3600)
 ORG_ATTESTOR_APPLY_RATE_LIMITER = RateLimiter(
     namespace="org_attestor_apply", limit=3, window=86400
@@ -229,8 +237,10 @@ async def create_organization(
     payload: OrganizationCreateRequest,
     user: CurrentUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> OrganizationResponse:
     """Create an organization for the authenticated user."""
+    await ORG_CREATE_RATE_LIMITER.check(cast(RedisCounter, redis), str(user.id))
     organization = await service.create_organization(db=db, user=user, payload=payload)
     return OrganizationResponse.model_validate(organization)
 
