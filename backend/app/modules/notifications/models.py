@@ -88,6 +88,8 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "org_attestor_needs_info",
     "org_attestor_approved",
     "org_attestor_rejected",
+    "developer_application_approved",
+    "developer_application_rejected",
     "admin_review_pending",
     name="notification_type_enum",
     create_type=False,

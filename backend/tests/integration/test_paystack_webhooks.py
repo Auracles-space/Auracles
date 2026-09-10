@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.database import async_session_factory, engine
 from app.core.security import (
@@ -1694,3 +1694,80 @@ async def test_refund_event_for_an_unknown_reference_is_acknowledged(
     response = await post_webhook(client)
 
     assert response.status_code == 200
+
+
+async def test_repurchase_after_refund_revives_the_revoked_license(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Buying again after a refund restores access on the same License row.
+
+    A refund revokes the License but leaves the row, which the unique
+    constraint on (framework_id, operator_id) requires: a second row for the
+    same buyer cannot exist. Settlement must therefore revive the revoked row
+    rather than mint a new one, or the repurchase fails at the database and the
+    buyer is charged for access they never get back.
+    """
+    transaction_id, framework_id, operator_id = await create_pending_paystack_purchase()
+    paystack_context["event"] = charge_event(
+        "charge.success",
+        transaction_id=transaction_id,
+        framework_id=framework_id,
+    )
+    await post_webhook(client)
+
+    # Stand in for the refund: the purchase reverses and its License is revoked.
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(License)
+                .where(License.framework_id == framework_id)
+                .values(status="revoked")
+            )
+            await session.execute(
+                update(Transaction)
+                .where(Transaction.id == transaction_id)
+                .values(status="refunded")
+            )
+            second = Transaction(
+                payer_id=operator_id,
+                payee_id=(await session.get(Framework, framework_id)).contributor_id,
+                amount=Decimal("149.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("149.00"),
+                transaction_type="purchase",
+                status="pending",
+                provider="paystack",
+                provider_ref="auracles_ref_ngn_002",
+                ref_id=framework_id,
+                ref_type="framework",
+            )
+            session.add(second)
+            await session.flush()
+            second_id = second.id
+
+    paystack_context["event"] = charge_event(
+        "charge.success",
+        transaction_id=second_id,
+        framework_id=framework_id,
+        reference="auracles_ref_ngn_002",
+    )
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        licenses = (
+            (
+                await session.execute(
+                    select(License).where(License.framework_id == framework_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert response.status_code == 200
+    assert len(licenses) == 1
+    assert licenses[0].status == "active"
+    assert licenses[0].operator_id == operator_id
+    assert licenses[0].transaction_id == second_id

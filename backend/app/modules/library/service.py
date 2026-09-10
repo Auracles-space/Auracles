@@ -58,11 +58,21 @@ async def list_operator_library(
     page: int,
     page_size: int,
 ) -> LibraryResponse:
-    """Return active Framework licenses held by an Operator."""
+    """Return active Framework licenses held by an Operator.
+
+    Revoked Licenses are excluded, and not only because a revoked License
+    grants nothing: the Explore purchase CTA decides ownership by asking
+    whether this library lists the Framework. Listing a refunded purchase here
+    hides the buy button behind "View in your library" while the download it
+    points at is denied, stranding the buyer between the two.
+    """
     base_query = (
         select(License, Framework)
         .join(Framework, Framework.id == License.framework_id)
-        .where(License.operator_id == operator.id)
+        .where(
+            License.operator_id == operator.id,
+            License.status == "active",
+        )
         .order_by(License.granted_at.desc())
     )
     total = int(

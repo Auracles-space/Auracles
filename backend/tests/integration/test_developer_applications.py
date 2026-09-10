@@ -26,6 +26,7 @@ from app.core.security import (
 )
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.developer import application_service
 from app.modules.developer.models import (
     ApiKey,
     ApiRequestLog,
@@ -1079,3 +1080,105 @@ async def test_developer_manually_retries_own_dead_webhook_delivery(
     assert delivery.attempts == 0
     assert delivery.response_code is None
     assert audit is not None
+
+
+class FakeNotificationTask:
+    """Celery-task-shaped double capturing developer decision notifications."""
+
+    def __init__(self, calls: list[dict[str, object]]) -> None:
+        """Store delayed notification dispatches in the provided list."""
+        self.calls = calls
+
+    def delay(self, **kwargs: object) -> None:
+        """Capture notification dispatch parameters without Redis or email."""
+        self.calls.append(kwargs)
+
+
+async def test_developer_application_decision_notifies_the_applicant(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Approving or rejecting an application must tell the applicant.
+
+    The submission notifies admins, but the verdict reached nobody: the review
+    wrote its decision and audit row and returned. An applicant had no signal
+    that anyone had looked, and on approval no signal that the Developer
+    Platform had opened to them — the only way to find out was to go back and
+    check the page.
+    """
+    del migrated_database, developer_application_context
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        application_service,
+        "dispatch_project_notification",
+        FakeNotificationTask(calls),
+    )
+    candidate_id = await create_user("notified-developer@auracles.space", ["operator"])
+    admin_id, totp_secret = await create_admin_user()
+    submitted = await client.post(
+        "/v1/developer/applications",
+        headers=auth_headers(candidate_id, ["operator"]),
+        json=application_payload(),
+    )
+
+    approved = await client.post(
+        f"/v1/admin/developer/applications/{submitted.json()['id']}/review",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "decision": "approved",
+            "feedback": "Partner API use case is clear.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    assert approved.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == str(candidate_id)
+    assert calls[0]["notification_type"] == "developer_application_approved"
+    assert calls[0]["link"] == "/dashboard/developer"
+
+
+async def test_rejected_developer_application_notifies_with_feedback(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejection carries the admin's feedback to the applicant.
+
+    Rejection already requires feedback, so withholding it from the notice
+    would leave the applicant knowing only that they were turned down and not
+    what to change before reapplying.
+    """
+    del migrated_database, developer_application_context
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        application_service,
+        "dispatch_project_notification",
+        FakeNotificationTask(calls),
+    )
+    candidate_id = await create_user("declined-developer@auracles.space", ["operator"])
+    admin_id, totp_secret = await create_admin_user()
+    submitted = await client.post(
+        "/v1/developer/applications",
+        headers=auth_headers(candidate_id, ["operator"]),
+        json=application_payload(),
+    )
+
+    rejected = await client.post(
+        f"/v1/admin/developer/applications/{submitted.json()['id']}/review",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={
+            "decision": "rejected",
+            "feedback": "Please provide a production integration plan.",
+            "totp_code": pyotp.TOTP(totp_secret).now(),
+        },
+    )
+
+    assert rejected.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == str(candidate_id)
+    assert calls[0]["notification_type"] == "developer_application_rejected"
+    assert "production integration plan" in str(calls[0]["body"])

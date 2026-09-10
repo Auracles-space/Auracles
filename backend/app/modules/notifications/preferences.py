@@ -104,6 +104,8 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "org_attestor_needs_info": "account",
     "org_attestor_approved": "account",
     "org_attestor_rejected": "account",
+    "developer_application_approved": "account",
+    "developer_application_rejected": "account",
     "admin_review_pending": "account",
 }
 NOTIFICATION_TYPE_LABELS: Final[dict[str, str]] = {

@@ -13,6 +13,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from loguru import logger
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,7 @@ from app.modules.developer.schemas import (
     DeveloperApplicationCreateRequest,
     DeveloperApplicationReviewRequest,
 )
+from app.workers.tasks.project_notifications import dispatch_project_notification
 
 
 async def submit_application(
@@ -218,7 +220,67 @@ async def review_application(
                 "status": application.status,
             },
         )
+    _notify_applicant(
+        application_id=application_id,
+        user_id=application.user_id,
+        decision=payload.decision,
+        feedback=feedback,
+        reviewed_at=now,
+    )
     return application
+
+
+def _notify_applicant(
+    *,
+    application_id: UUID,
+    user_id: UUID,
+    decision: str,
+    feedback: str | None,
+    reviewed_at: datetime,
+) -> None:
+    """Tell the applicant how their Developer application was decided.
+
+    Queued after the review transaction commits so the worker reads persisted
+    state, and a queue failure is logged rather than raised: a notification
+    that cannot be sent must not roll back a verdict an admin already gave
+    under 2FA.
+    """
+    approved = decision == "approved"
+    if approved:
+        title = "Your Developer application was approved"
+        body = (
+            "The Developer Platform is now open to you. Generate an API key "
+            "to start integrating."
+        )
+    else:
+        title = "Your Developer application was not approved"
+        # Rejection already requires feedback, so it is always carried here:
+        # knowing only that they were declined tells an applicant nothing
+        # about what to change before reapplying.
+        body = feedback or "Your Developer application was not approved."
+    try:
+        dispatch_project_notification.delay(
+            user_id=str(user_id),
+            notification_type=(
+                "developer_application_approved"
+                if approved
+                else "developer_application_rejected"
+            ),
+            title=title,
+            body=body,
+            payload={"application_id": str(application_id), "decision": decision},
+            link="/dashboard/developer",
+            dedupe_key=(
+                f"developer_application_{decision}:{application_id}"
+                f":{reviewed_at.isoformat()}"
+            ),
+        )
+    except Exception as exc:  # pragma: no cover - defensive queue guard
+        logger.bind(
+            module="developer",
+            action="notify_developer_application_decision",
+            user_id=user_id,
+        ).error("notification_dispatch_failed", error=str(exc))
 
 
 async def _approve_developer_account_and_role(
