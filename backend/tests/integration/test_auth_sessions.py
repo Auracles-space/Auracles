@@ -16,6 +16,7 @@ from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import hash_password
 from app.main import app
+from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
 from app.shared.models.audit_log import AuditLog
 
@@ -403,6 +404,43 @@ async def test_login_rejects_unverified_and_deactivated_accounts(
 
     assert unverified.status_code == 403
     assert deactivated.status_code == 403
+
+
+async def test_login_hashes_even_when_the_email_is_unknown(
+    client: AsyncClient,
+    migrated_database: None,
+    session_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unknown email must cost the same as a known one.
+
+    Argon2id is deliberately slow, so short-circuiting before it when no user
+    row exists made a registered address answer ~28ms slower than an
+    unregistered one — an enumeration oracle that needs no password at all.
+    Asserting the verification runs is the honest check: the mitigation *is*
+    paying that cost on both paths.
+    """
+    del migrated_database, session_test_context
+    await create_user("known-timing@auracles.space", "CorrectHorse9")
+
+    verifications: list[str] = []
+    real_verify = auth_service.verify_password
+
+    def counting_verify(plain: str, password_hash: str) -> bool:
+        """Record each hash verification the login path performs."""
+        verifications.append(password_hash)
+        return real_verify(plain, password_hash)
+
+    monkeypatch.setattr(auth_service, "verify_password", counting_verify)
+
+    unknown = await client.post(
+        "/v1/auth/login",
+        json={"email": "no-such-user@auracles.space", "password": "WrongPass9"},
+    )
+
+    assert unknown.status_code == 401
+    assert unknown.json()["detail"] == "Incorrect email or password."
+    assert len(verifications) == 1
 
 
 async def test_login_rate_limits_failed_password_attempts(
