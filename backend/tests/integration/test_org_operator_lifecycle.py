@@ -60,7 +60,7 @@ from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.shared.models.audit_log import AuditLog
-from tests.conftest import verify_org_kyb
+from tests.conftest import open_step_up_window, verify_org_kyb
 from tests.integration.test_financials_payment_methods import FakeRedis
 from tests.integration.test_org_proposal_endpoints import _project_payload
 from tests.integration.test_organizations_endpoints import (
@@ -458,10 +458,12 @@ async def test_org_operator_lifecycle_covers_library_and_project_money_path(
 ) -> None:
     """Org operator flow works end-to-end and keeps the individual path intact."""
     del migrated_database
-    owner_id, owner_totp_secret = await _create_user(
+    owner_id, _owner_totp_secret = await _create_user(
         "org-operator-owner",
         enable_totp=True,
     )
+    # Payment-method setup below reads the owner's step-up window.
+    await open_step_up_window(org_operator_lifecycle_context["redis"], owner_id)
     team_member_user_id, _ = await _create_user("org-operator-team-member")
     direct_member_user_id, _ = await _create_user("org-operator-direct-member")
     ungranted_user_id, _ = await _create_user("org-operator-ungranted")
@@ -485,7 +487,7 @@ async def test_org_operator_lifecycle_covers_library_and_project_money_path(
     team_id = await _create_org_team(str(org["id"]), team_member_row)
     framework_id, artifact_id = await _create_framework_snapshot(contributor_id)
 
-    await verify_org_kyb(org['id'])
+    await verify_org_kyb(org["id"])
     activated = await client.post(
         f"/v1/orgs/{org['id']}/operator-capability/activate",
         headers=auth(owner_token),
@@ -497,7 +499,7 @@ async def test_org_operator_lifecycle_covers_library_and_project_money_path(
     setup = await client.post(
         f"/v1/orgs/{org['id']}/financials/payment-methods/setup",
         headers=auth(owner_token),
-        json={"totp_code": pyotp.TOTP(owner_totp_secret).now()},
+        json={},
     )
     assert setup.status_code == 200
     assert setup.json()["client_secret"] == "seti_org_secret"
@@ -636,12 +638,9 @@ async def test_org_operator_lifecycle_covers_library_and_project_money_path(
     )
     assert funded.status_code == 200
     assert funded.json()["client_secret"]
-    assert (
-        org_operator_lifecycle_context["payment_intent_calls"][1]["metadata"][
-            "payer_org_id"
-        ]
-        == str(org["id"])
-    )
+    assert org_operator_lifecycle_context["payment_intent_calls"][1]["metadata"][
+        "payer_org_id"
+    ] == str(org["id"])
 
     async with async_session_factory() as session:
         funding_txn = await session.scalar(

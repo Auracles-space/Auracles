@@ -111,15 +111,15 @@ class SessionsResponse(BaseModel):
 class EmailChangeRequest(BaseModel):
     """Request body for starting a verified account email change.
 
-    Password accounts re-authenticate with the account password and, when 2FA is
-    enabled, step up with a TOTP/backup code. Passwordless (e.g. Google) accounts
-    omit the password; the new-address verification link is the proof of intent
-    and TOTP still applies when enabled.
+    Password accounts re-authenticate with the account password. Passwordless
+    (e.g. Google) accounts omit the password; the new-address verification link
+    is the proof of intent. Accounts with 2FA enabled must additionally hold an
+    open step-up window (``require_step_up_if_enrolled`` on the route); no code
+    travels in the body.
     """
 
     new_email: EmailStr
     password: SecretStr | None = None
-    totp_code: str | None = Field(default=None, min_length=6, max_length=16)
 
 
 class EmailChangeConfirmRequest(BaseModel):

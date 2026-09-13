@@ -10,7 +10,6 @@ from cryptography.fernet import InvalidToken
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
-from redis.asyncio import Redis
 from sqlalchemy import exists, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +26,6 @@ from app.integrations import paystack, s3, stripe
 from app.integrations.payment_router import PaymentProvider, select_provider
 from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.collections.models import CollectionEarningAllocation
 from app.modules.developer.models import PartnerCommission
@@ -404,22 +402,6 @@ async def _count_license_downloads(db: AsyncSession, license_id: UUID) -> int:
     )
 
 
-async def _verify_sensitive_payment_method_change(
-    db: AsyncSession,
-    redis: Redis,
-    operator: User,
-    totp_code: str,
-) -> None:
-    """Require a valid TOTP or backup code before changing payment methods."""
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=operator,
-        code=totp_code,
-    )
-    await db.commit()
-
-
 async def _has_active_payout_account(db: AsyncSession, user_id: UUID) -> bool:
     """Return whether the Contributor has any non-deleted payout account."""
     existing_id = await db.scalar(
@@ -435,21 +417,14 @@ async def _has_active_payout_account(db: AsyncSession, user_id: UUID) -> bool:
 
 async def create_payment_method_setup(
     db: AsyncSession,
-    redis: Redis,
     operator: User,
-    *,
-    totp_code: str,
 ) -> PaymentMethodSetupResponse:
-    """Create/reuse a Stripe Customer and return a SetupIntent client secret."""
+    """Create/reuse a Stripe Customer and return a SetupIntent client secret.
+
+    The route requires an open step-up window; no factor is checked here.
+    """
     operator_id = operator.id
     customer_id = operator.stripe_customer_id
-
-    await _verify_sensitive_payment_method_change(
-        db=db,
-        redis=redis,
-        operator=operator,
-        totp_code=totp_code,
-    )
 
     try:
         if customer_id is None:
@@ -474,8 +449,11 @@ async def create_payment_method_setup(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        if operator.stripe_customer_id is None:
-            operator.stripe_customer_id = customer_id
+        # The rollback expired ``operator``; reload the row inside this
+        # transaction rather than lazy-loading from the expired instance.
+        operator_row = await db.get(User, operator_id, with_for_update=True)
+        if operator_row is not None and operator_row.stripe_customer_id is None:
+            operator_row.stripe_customer_id = customer_id
         await write_audit(
             db=db,
             actor_id=operator_id,
@@ -814,26 +792,21 @@ async def get_org_framework_purchase_invoice(
 
 async def delete_payment_method(
     db: AsyncSession,
-    redis: Redis,
     operator: User,
     *,
     payment_method_id: str,
-    totp_code: str,
 ) -> PaymentMethodDeleteResponse:
-    """Detach a provider-held payment method after TOTP and ownership checks."""
+    """Detach a provider-held payment method after the ownership check.
+
+    The route requires an open step-up window; no factor is checked here.
+    """
+    operator_id = operator.id
     customer_id = operator.stripe_customer_id
     if customer_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment method not found.",
         )
-
-    await _verify_sensitive_payment_method_change(
-        db=db,
-        redis=redis,
-        operator=operator,
-        totp_code=totp_code,
-    )
 
     try:
         owned_methods = await stripe.list_payment_methods(customer_id=customer_id)
@@ -851,7 +824,7 @@ async def delete_payment_method(
         logger.bind(
             module="financials",
             action="delete_payment_method",
-            user_id=operator.id,
+            user_id=operator_id,
         ).error("stripe_payment_method_detach_failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -863,10 +836,10 @@ async def delete_payment_method(
     async with db.begin():
         await write_audit(
             db=db,
-            actor_id=operator.id,
+            actor_id=operator_id,
             action="payment_method_removed",
             target_type="user",
-            target_id=operator.id,
+            target_id=operator_id,
             metadata={
                 "provider": "stripe",
                 "payment_method_ref": _masked_provider_ref(detached_id),
@@ -876,7 +849,7 @@ async def delete_payment_method(
     logger.bind(
         module="financials",
         action="delete_payment_method",
-        user_id=operator.id,
+        user_id=operator_id,
     ).info("payment_method_removed")
     return PaymentMethodDeleteResponse(
         provider="stripe",
@@ -2896,7 +2869,6 @@ async def _org_is_payout_eligible(
 
 async def request_org_payout(
     db: AsyncSession,
-    redis: Redis,
     *,
     org_id: UUID,
     actor: User,
@@ -2904,9 +2876,9 @@ async def request_org_payout(
 ) -> PayoutResponse:
     """Create a pending org payout and queue provider transfer processing.
 
-    The acting org owner/admin steps up with their own TOTP. Gates: the org
-    owns a verified payout account and satisfies at least one eligible
-    capability payout path.
+    The route requires an open step-up window for the acting org owner/admin.
+    Gates: the org owns a verified payout account and satisfies at least one
+    eligible capability payout path.
     """
     actor_id = actor.id
     currency = payload.currency.upper()
@@ -2964,18 +2936,6 @@ async def request_org_payout(
                 detail="Requested payout exceeds available balance.",
             )
 
-        actor_for_2fa = await db.get(User, actor_id, with_for_update=True)
-        if actor_for_2fa is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token.",
-            )
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=actor_for_2fa,
-            code=payload.totp_code,
-        )
         gross_drawdown = _normalise_money(
             requested_net / (Decimal("1") - commission_rate)
         )
@@ -3031,11 +2991,13 @@ async def request_org_payout(
 
 async def request_payout(
     db: AsyncSession,
-    redis: Redis,
     contributor: User,
     payload: PayoutRequest,
 ) -> PayoutResponse:
-    """Create a pending payout request and queue provider transfer processing."""
+    """Create a pending payout request and queue provider transfer processing.
+
+    The route requires an open step-up window; no factor is checked here.
+    """
     contributor_id = contributor.id
     currency = payload.currency.upper()
     if currency != platform_currency():
@@ -3087,18 +3049,6 @@ async def request_payout(
                 detail="Requested payout exceeds available balance.",
             )
 
-        contributor_for_2fa = await db.get(User, contributor_id, with_for_update=True)
-        if contributor_for_2fa is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token.",
-            )
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=contributor_for_2fa,
-            code=payload.totp_code,
-        )
         gross_drawdown = _normalise_money(
             requested_net / (Decimal("1") - commission_rate)
         )
@@ -3526,13 +3476,14 @@ async def list_payout_accounts(
 
 async def delete_payout_account(
     db: AsyncSession,
-    redis: Redis,
     contributor: User,
     *,
     payout_account_id: UUID,
-    totp_code: str,
 ) -> PayoutAccountDeleteResponse:
-    """Soft-delete an owned payout account after TOTP confirmation."""
+    """Soft-delete an owned payout account.
+
+    The route requires an open step-up window; no factor is checked here.
+    """
     contributor_id = contributor.id
     payout_account = await db.scalar(
         select(PayoutAccount).where(
@@ -3564,18 +3515,6 @@ async def delete_payout_account(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Payout account not found.",
             )
-        contributor_for_2fa = await db.get(User, contributor_id, with_for_update=True)
-        if contributor_for_2fa is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token.",
-            )
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=contributor_for_2fa,
-            code=totp_code,
-        )
         payout_account.deleted_at = datetime.now(UTC)
         payout_account.is_default = False
         await write_audit(

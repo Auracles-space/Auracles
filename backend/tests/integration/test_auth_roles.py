@@ -26,6 +26,7 @@ from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PlatformConfig
 from app.modules.gdpr.models import ConsentLog
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
@@ -145,9 +146,12 @@ async def role_test_context() -> AsyncIterator[dict[str, Any]]:
                 config.value = value
         await session.commit()
 
-    app.dependency_overrides[get_redis] = lambda: FakeRedis()
+    # One shared double: the step-up window seeded before a request must be
+    # the instance the dependency reads during it.
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
     try:
-        yield {}
+        yield {"redis": fake_redis}
     finally:
         app.dependency_overrides.pop(get_redis, None)
         await engine.dispose()
@@ -285,12 +289,13 @@ async def test_admin_can_approve_attestor_role(
     role_test_context: dict[str, Any],
 ) -> None:
     """Admins can assign and approve the Attestor role for another user."""
-    admin_id, admin_totp = await _create_admin_with_totp("admin@auracles.space")
+    admin_id, _ = await _create_admin_with_totp("admin@auracles.space")
+    await open_step_up_window(role_test_context["redis"], admin_id)
     target_id = await create_user_with_roles("target@auracles.space", ["operator"])
 
     response = await client.patch(
         f"/v1/admin/users/{target_id}/roles",
-        json={"role": "attestor", "totp_code": pyotp.TOTP(admin_totp).now()},
+        json={"role": "attestor"},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -317,8 +322,20 @@ async def test_non_admin_admin_role_assignment_is_denied_and_audited(
     migrated_database: None,
     role_test_context: dict[str, Any],
 ) -> None:
-    """RBAC dependency denies non-admin calls and writes access_denied audit."""
+    """RBAC dependency denies non-admin calls and writes access_denied audit.
+
+    The caller is enrolled in 2FA with an open step-up window, so the step-up
+    gate (which runs first) passes and the 403 and audit row are the role
+    gate's.
+    """
     user_id = await create_user_with_roles("operator2@auracles.space", ["operator"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            assert user is not None
+            user.totp_enabled = True
+            user.totp_secret = encrypt_totp_secret(pyotp.random_base32())
+    await open_step_up_window(role_test_context["redis"], user_id)
     target_id = await create_user_with_roles("target2@auracles.space", ["operator"])
 
     response = await client.patch(

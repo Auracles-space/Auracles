@@ -16,7 +16,6 @@ class AdminRoleAssignmentRequest(BaseModel):
     """Request body for assigning or approving a user role."""
 
     role: Literal["contributor", "operator", "attestor", "admin"]
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminRoleAssignmentResponse(BaseModel):
@@ -32,7 +31,6 @@ class AdminKycReviewRequest(BaseModel):
 
     status: Literal["verified", "rejected"]
     notes: str | None = None
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminKycReviewResponse(BaseModel):
@@ -81,18 +79,15 @@ class AdminFrameworkSuspendRequest(BaseModel):
     """Request body for post-publish Framework suspension."""
 
     reason: str = Field(min_length=1)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminFrameworkReinstateRequest(BaseModel):
     """Request body for reversing a Framework takedown.
 
-    Carries only the step-up factor: reinstatement takes no other input, but
-    returning a suspended Framework to the public catalog is a trust decision
-    and is gated like its sibling takedown.
+    Intentionally empty: reinstatement takes no input, but returning a
+    suspended Framework to the public catalog is a trust decision and the
+    endpoint is step-up gated like its sibling takedown.
     """
-
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminFrameworkStatusResponse(BaseModel):
@@ -141,13 +136,14 @@ class AdminUserSuspendRequest(BaseModel):
     """Request body for suspending a user account."""
 
     reason: str = Field(min_length=1, max_length=1000)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminUserUnsuspendRequest(BaseModel):
-    """Request body for unsuspending a user account."""
+    """Request body for unsuspending a user account.
 
-    totp_code: str = Field(min_length=6, max_length=16)
+    Intentionally empty: the endpoint is step-up gated at the router and
+    takes no other input.
+    """
 
 
 class AdminUserSuspensionResponse(BaseModel):
@@ -187,7 +183,6 @@ class AdminRarityBlockOverrideRequest(BaseModel):
     """Request body for overriding a near-duplicate rarity hard block."""
 
     reason: str = Field(min_length=5, max_length=1000)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminLicenseGrantRequest(BaseModel):
@@ -198,7 +193,6 @@ class AdminLicenseGrantRequest(BaseModel):
     type: Literal["single_user", "team", "organizational", "enterprise"]
     expires_at: datetime | None = None
     seats_total: int | None = Field(default=None, ge=1)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminLicenseGrantResponse(BaseModel):
@@ -219,7 +213,6 @@ class AdminEscrowOverrideRequest(BaseModel):
     """Request body for admin escrow release or refund overrides."""
 
     reason: str = Field(min_length=1)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminEscrowResponse(BaseModel):
@@ -253,7 +246,6 @@ class AdminDisputeResolveRequest(BaseModel):
         decimal_places=2,
     )
     resolution_notes: str = Field(min_length=5, max_length=4000)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminConfigItem(BaseModel):
@@ -314,7 +306,6 @@ class AdminConfigPatchRequest(BaseModel):
     """Request body for audited platform configuration changes."""
 
     reason: str = Field(min_length=1, max_length=500)
-    totp_code: str = Field(min_length=6, max_length=16)
     updates: list[AdminConfigUpdateItem] = Field(min_length=1, max_length=10)
 
 
@@ -324,7 +315,6 @@ class AdminReputationRecomputeRequest(BaseModel):
     subject_type: Literal["framework", "contributor", "operator", "attestor_org"]
     subject_id: UUID
     reason: str = Field(min_length=1, max_length=500)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminReputationRecomputeResponse(BaseModel):

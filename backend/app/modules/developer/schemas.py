@@ -48,11 +48,13 @@ class DeveloperApplicationsResponse(BaseModel):
 
 
 class DeveloperApplicationReviewRequest(BaseModel):
-    """Admin request body for approving or rejecting a Developer application."""
+    """Admin request body for approving or rejecting a Developer application.
+
+    The route requires an open step-up 2FA window; no code travels in the body.
+    """
 
     decision: Literal["approved", "rejected"]
     feedback: str | None = Field(default=None, max_length=5000)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class ApiKeyCreateRequest(BaseModel):
@@ -137,7 +139,6 @@ class PartnerPayoutRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
     payout_account_id: UUID
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class PartnerPayoutResponse(BaseModel):

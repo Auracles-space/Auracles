@@ -6,12 +6,15 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_kyc_verified, require_role
-from app.core.redis import get_redis
+from app.core.dependencies import (
+    get_current_user,
+    require_kyc_verified,
+    require_role,
+    require_step_up_after,
+)
 from app.modules.auth.models import User
 from app.modules.developer import (
     analytics_service,
@@ -47,7 +50,6 @@ from app.modules.developer.schemas import (
 
 router = APIRouter(tags=["Developer"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
-RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
 KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
@@ -156,18 +158,20 @@ async def list_developer_applications_for_admin(
 @router.post(
     "/admin/developer/applications/{application_id}/review",
     response_model=DeveloperApplicationResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def review_developer_application(
     application_id: UUID,
     payload: DeveloperApplicationReviewRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> DeveloperApplicationResponse:
-    """Approve or reject a Developer application as a 2FA-confirmed admin."""
+    """Approve or reject a Developer application.
+
+    Requires an open step-up 2FA window (``POST /v1/auth/step-up``).
+    """
     application = await application_service.review_application(
         db=db,
-        redis=redis,
         admin=admin,
         application_id=application_id,
         payload=payload,
@@ -224,19 +228,24 @@ async def get_developer_tier_progress(
     )
 
 
-@router.post("/developer/payouts", response_model=PartnerPayoutResponse)
+@router.post(
+    "/developer/payouts",
+    response_model=PartnerPayoutResponse,
+    dependencies=[Depends(require_step_up_after(require_kyc_verified))],
+)
 async def request_partner_payout(
     payload: PartnerPayoutRequest,
     user: CurrentUser,
     _: KycVerifiedUser,
     developer_account: ActiveDeveloperAccount,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> PartnerPayoutResponse:
-    """Request withdrawal of cleared Partner commission balance."""
+    """Request withdrawal of cleared Partner commission balance.
+
+    Requires an open step-up 2FA window (``POST /v1/auth/step-up``).
+    """
     return await commission_service.request_partner_payout(
         db,
-        redis,
         developer_account=developer_account,
         user=user,
         payload=payload,

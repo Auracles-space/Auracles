@@ -43,6 +43,7 @@ from app.modules.projects.models import (
     ProposalAmendment,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
@@ -679,7 +680,7 @@ async def test_attestor_withdraws_attestation_earnings_at_ten_percent_gross_up(
     payout's commission bookkeeping reflects the 10% attestation rate.
     """
     del migrated_database
-    attestor_id, totp_secret = await create_user_with_roles(
+    attestor_id, _ = await create_user_with_roles(
         "attestor-withdraw@auracles.space",
         ["contributor", "attestor"],
     )
@@ -689,8 +690,7 @@ async def test_attestor_withdraws_attestation_earnings_at_ten_percent_gross_up(
         amount=Decimal("600.00"),
         created_at=datetime.now(UTC),
     )
-    assert totp_secret is not None
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(payout_context["redis"], attestor_id)
 
     response = await client.post(
         "/v1/financials/payouts",
@@ -699,7 +699,6 @@ async def test_attestor_withdraws_attestation_earnings_at_ten_percent_gross_up(
             "amount": "100.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": code,
         },
     )
 
@@ -724,7 +723,7 @@ async def test_contributor_requests_payout_with_kyc_totp_and_minimum(
 ) -> None:
     """A verified Contributor can request an available payout once."""
     del migrated_database
-    contributor_id, totp_secret = await create_user_with_roles(
+    contributor_id, _ = await create_user_with_roles(
         "request-payout@auracles.space",
         ["contributor"],
     )
@@ -734,8 +733,7 @@ async def test_contributor_requests_payout_with_kyc_totp_and_minimum(
         amount=Decimal("100.00"),
         created_at=datetime.now(UTC) - timedelta(days=3),
     )
-    assert totp_secret is not None
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(payout_context["redis"], contributor_id)
 
     response = await client.post(
         "/v1/financials/payouts",
@@ -744,7 +742,6 @@ async def test_contributor_requests_payout_with_kyc_totp_and_minimum(
             "amount": "50.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": code,
         },
     )
     history = await client.get(
@@ -774,14 +771,55 @@ async def test_contributor_requests_payout_with_kyc_totp_and_minimum(
     assert audit.target_id == payout.id
 
 
+async def test_payout_request_requires_open_step_up_window(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_context: dict[str, Any],
+) -> None:
+    """A payout request without an open step-up window answers 403.
+
+    Enrolled Contributors must confirm with their authenticator first; no
+    payout row is written and nothing is queued for transfer.
+    """
+    del migrated_database
+    contributor_id, _ = await create_user_with_roles(
+        "no-window-payout@auracles.space",
+        ["contributor"],
+    )
+    payout_account_id = await create_verified_payout_account(contributor_id)
+    await create_sale(
+        contributor_id,
+        amount=Decimal("100.00"),
+        created_at=datetime.now(UTC) - timedelta(days=3),
+    )
+
+    response = await client.post(
+        "/v1/financials/payouts",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "amount": "50.00",
+            "currency": "USD",
+            "payout_account_id": str(payout_account_id),
+        },
+    )
+
+    async with async_session_factory() as session:
+        payout = await session.scalar(select(Payout))
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "step_up_required"
+    assert payout is None
+    assert payout_context["payout_task"].dispatched == []
+
+
 async def test_payout_request_rejects_below_minimum_and_unavailable_balance(
     client: AsyncClient,
     migrated_database: None,
     payout_context: dict[str, Any],
 ) -> None:
     """Payout requests enforce minimum and available-balance limits."""
-    del migrated_database, payout_context
-    contributor_id, totp_secret = await create_user_with_roles(
+    del migrated_database
+    contributor_id, _ = await create_user_with_roles(
         "low-payout@auracles.space",
         ["contributor"],
     )
@@ -791,8 +829,7 @@ async def test_payout_request_rejects_below_minimum_and_unavailable_balance(
         amount=Decimal("100.00"),
         created_at=datetime.now(UTC) - timedelta(days=3),
     )
-    assert totp_secret is not None
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(payout_context["redis"], contributor_id)
 
     too_small = await client.post(
         "/v1/financials/payouts",
@@ -801,7 +838,6 @@ async def test_payout_request_rejects_below_minimum_and_unavailable_balance(
             "amount": "49.99",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": code,
         },
     )
     too_large = await client.post(
@@ -811,7 +847,6 @@ async def test_payout_request_rejects_below_minimum_and_unavailable_balance(
             "amount": "90.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": code,
         },
     )
 

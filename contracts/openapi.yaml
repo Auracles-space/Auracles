@@ -37,13 +37,6 @@ components:
             writeOnly: true
           - type: 'null'
           title: Password
-        totp_code:
-          anyOf:
-          - maxLength: 16
-            minLength: 6
-            type: string
-          - type: 'null'
-          title: Totp Code
       title: AccountDeletionRequestBody
       type: object
     AccountDeletionStatusResponse:
@@ -296,15 +289,9 @@ components:
           minLength: 5
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - attestor_org_id
       - reason
-      - totp_code
       title: AdminAttestationAssignRequest
       type: object
     AdminAttestationDetailResponse:
@@ -460,15 +447,9 @@ components:
           minLength: 5
           title: Resolution Notes
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - outcome
       - resolution_notes
-      - totp_code
       title: AdminAttestationDisputeResolveRequest
       type: object
     AdminAttestationOfferItem:
@@ -528,14 +509,8 @@ components:
           minLength: 5
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - reason
-      - totp_code
       title: AdminAttestationRefundRequest
       type: object
     AdminAuditLogItem:
@@ -646,11 +621,6 @@ components:
           minLength: 1
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
         updates:
           items:
             $ref: '#/components/schemas/AdminConfigUpdateItem'
@@ -660,7 +630,6 @@ components:
           type: array
       required:
       - reason
-      - totp_code
       - updates
       title: AdminConfigPatchRequest
       type: object
@@ -816,14 +785,8 @@ components:
           minLength: 1
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - reason
-      - totp_code
       title: AdminCredentialRejectRequest
       type: object
     AdminCredentialResponse:
@@ -942,14 +905,7 @@ components:
         is a trust decision that feeds attestor eligibility, so it is gated like
 
         the sibling rejection.'
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: AdminCredentialVerifyRequest
       type: object
     AdminCredentialsResponse:
@@ -1074,15 +1030,9 @@ components:
           - split
           title: Resolution Type
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - resolution_type
       - resolution_notes
-      - totp_code
       title: AdminDisputeResolveRequest
       type: object
     AdminDisputeResponse:
@@ -1333,14 +1283,8 @@ components:
           minLength: 1
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - reason
-      - totp_code
       title: AdminEscrowOverrideRequest
       type: object
     AdminEscrowResponse:
@@ -1656,14 +1600,7 @@ components:
         returning a suspended Framework to the public catalog is a trust decision
 
         and is gated like its sibling takedown.'
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: AdminFrameworkReinstateRequest
       type: object
     AdminFrameworkStatusResponse:
@@ -1693,14 +1630,8 @@ components:
           minLength: 1
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - reason
-      - totp_code
       title: AdminFrameworkSuspendRequest
       type: object
     AdminInvoiceItem:
@@ -1907,14 +1838,8 @@ components:
           - rejected
           title: Status
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - status
-      - totp_code
       title: AdminKycReviewRequest
       type: object
     AdminKycReviewResponse:
@@ -1955,11 +1880,6 @@ components:
             type: integer
           - type: 'null'
           title: Seats Total
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
         type:
           enum:
           - single_user
@@ -1972,7 +1892,6 @@ components:
       - framework_id
       - operator_id
       - type
-      - totp_code
       title: AdminLicenseGrantRequest
       type: object
     AdminLicenseGrantResponse:
@@ -2350,14 +2269,8 @@ components:
           minLength: 5
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - reason
-      - totp_code
       title: AdminRarityBlockOverrideRequest
       type: object
     AdminReputationRecomputeRequest:
@@ -2380,16 +2293,10 @@ components:
           - attestor_org
           title: Subject Type
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - subject_type
       - subject_id
       - reason
-      - totp_code
       title: AdminReputationRecomputeRequest
       type: object
     AdminReputationRecomputeResponse:
@@ -2422,14 +2329,8 @@ components:
           - admin
           title: Role
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - role
-      - totp_code
       title: AdminRoleAssignmentRequest
       type: object
     AdminRoleAssignmentResponse:
@@ -2836,14 +2737,8 @@ components:
           minLength: 1
           title: Reason
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - reason
-      - totp_code
       title: AdminUserSuspendRequest
       type: object
     AdminUserSuspensionResponse:
@@ -2883,14 +2778,7 @@ components:
       type: object
     AdminUserUnsuspendRequest:
       description: Request body for unsuspending a user account.
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: AdminUserUnsuspendRequest
       type: object
     AdminWaitlistItem:
@@ -5994,14 +5882,8 @@ components:
             type: string
           - type: 'null'
           title: Feedback
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - decision
-      - totp_code
       title: DeveloperApplicationReviewRequest
       type: object
     DeveloperApplicationsResponse:
@@ -6414,13 +6296,6 @@ components:
             writeOnly: true
           - type: 'null'
           title: Password
-        totp_code:
-          anyOf:
-          - maxLength: 16
-            minLength: 6
-            type: string
-          - type: 'null'
-          title: Totp Code
       required:
       - new_email
       title: EmailChangeRequest
@@ -10405,11 +10280,6 @@ components:
             type: string
           - type: 'null'
           title: Notes
-        totp_code:
-          maxLength: 6
-          minLength: 6
-          title: Totp Code
-          type: string
         verdict:
           enum:
           - verified
@@ -10418,7 +10288,6 @@ components:
           type: string
       required:
       - verdict
-      - totp_code
       title: OrgKybReviewRequest
       type: object
     OrgKybStatusResponse:
@@ -10547,14 +10416,8 @@ components:
             type: string
           - type: 'null'
           title: Registration Number
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - legal_name
-      - totp_code
       title: OrgLegalProfileUpdateRequest
       type: object
     OrgLibraryItem:
@@ -10840,27 +10703,14 @@ components:
           format: uuid
           title: New Owner Member Id
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - new_owner_member_id
-      - totp_code
       title: OrgOwnershipTransferRequest
       type: object
     OrgPaymentMethodDeleteRequest:
       additionalProperties: false
       description: Request body for removing a provider-held org payment method.
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: OrgPaymentMethodDeleteRequest
       type: object
     OrgPaymentMethodDeleteResponse:
@@ -10928,14 +10778,7 @@ components:
     OrgPaymentMethodSetupRequest:
       additionalProperties: false
       description: Request body for starting organization payment-method setup.
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: OrgPaymentMethodSetupRequest
       type: object
     OrgPaymentMethodSetupResponse:
@@ -11185,16 +11028,10 @@ components:
             $ref: '#/components/schemas/CoiEntry'
           title: Declarations
           type: array
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - declarations
       - accept_policy
       - accept_confidentiality
-      - totp_code
       title: OrgUndertakingsSignRequest
       type: object
     OrganizationCreateRequest:
@@ -11531,16 +11368,10 @@ components:
           format: uuid
           title: Payout Account Id
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - amount
       - currency
       - payout_account_id
-      - totp_code
       title: PartnerPayoutRequest
       type: object
     PartnerPayoutResponse:
@@ -11914,14 +11745,7 @@ components:
     PaymentMethodDeleteRequest:
       additionalProperties: false
       description: Request body for removing a provider-held payment method.
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: PaymentMethodDeleteRequest
       type: object
     PaymentMethodDeleteResponse:
@@ -11989,14 +11813,7 @@ components:
     PaymentMethodSetupRequest:
       additionalProperties: false
       description: Request body for starting a provider-hosted payment method setup.
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: PaymentMethodSetupRequest
       type: object
     PaymentMethodSetupResponse:
@@ -12033,14 +11850,7 @@ components:
     PayoutAccountDeleteRequest:
       additionalProperties: false
       description: Request body for soft-deleting a payout account.
-      properties:
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
-      required:
-      - totp_code
+      properties: {}
       title: PayoutAccountDeleteRequest
       type: object
     PayoutAccountDeleteResponse:
@@ -12242,16 +12052,10 @@ components:
           format: uuid
           title: Payout Account Id
           type: string
-        totp_code:
-          maxLength: 16
-          minLength: 6
-          title: Totp Code
-          type: string
       required:
       - amount
       - currency
       - payout_account_id
-      - totp_code
       title: PayoutRequest
       type: object
     PayoutResponse:

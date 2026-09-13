@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from uuid import UUID
 
-import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -20,6 +19,10 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.settings import service as settings_service
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
+
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+"""Placeholder enrolled-2FA secret; step-up windows are seeded, never verified."""
 
 
 class FakeRedis:
@@ -170,9 +173,8 @@ async def create_verified_user(
     password: str,
     *,
     enable_totp: bool = False,
-) -> tuple[UUID, str | None]:
-    """Create a verified operator user and optional TOTP secret."""
-    secret = pyotp.random_base32() if enable_totp else None
+) -> UUID:
+    """Create a verified operator user, optionally enrolled in 2FA."""
     async with async_session_factory() as session:
         async with session.begin():
             user = User(
@@ -181,12 +183,12 @@ async def create_verified_user(
                 display_name="Settings User",
                 email_verified=True,
                 totp_enabled=enable_totp,
-                totp_secret=encrypt_totp_secret(secret) if secret else None,
+                totp_secret=encrypt_totp_secret(TOTP_SECRET) if enable_totp else None,
             )
             session.add(user)
             await session.flush()
             session.add(UserRole(user_id=user.id, role="operator"))
-        return user.id, secret
+        return user.id
 
 
 async def login_user(
@@ -237,33 +239,36 @@ async def test_sessions_list_marks_current_and_can_revoke_current_refresh(
     assert refreshed_after_revoke.status_code == 401
 
 
-async def test_email_change_requires_totp_and_confirmation_swaps_email(
+async def test_email_change_requires_step_up_and_confirmation_swaps_email(
     client: AsyncClient,
     migrated_database: None,
     settings_account_context: dict[str, Any],
 ) -> None:
-    """Email change keeps the old email until a new-address token is confirmed."""
-    user_id, totp_secret = await create_verified_user(
+    """An enrolled account needs a step-up window; the old email stays until confirmed.
+
+    ``require_step_up_if_enrolled`` gates the route: without an open window the
+    request is refused with 403 ``step_up_required`` and no verification mail
+    is sent. With one open, the same request proceeds and the address only
+    swaps once the new-address token is confirmed.
+    """
+    user_id = await create_verified_user(
         "email-change@auracles.space",
         "CorrectHorse9",
         enable_totp=True,
     )
     access_token = create_access_token(user_id=user_id, roles=["operator"])
-    code = pyotp.TOTP(totp_secret).now()
 
-    missing_totp = await client.post(
+    missing_step_up = await client.post(
         "/v1/settings/account/email-change",
         headers={"Authorization": f"Bearer {access_token}"},
         json={"new_email": "next@auracles.space", "password": "CorrectHorse9"},
     )
+    assert settings_account_context["sent_email_changes"] == []
+    await open_step_up_window(settings_account_context["redis"], user_id)
     requested = await client.post(
         "/v1/settings/account/email-change",
         headers={"Authorization": f"Bearer {access_token}"},
-        json={
-            "new_email": "next@auracles.space",
-            "password": "CorrectHorse9",
-            "totp_code": code,
-        },
+        json={"new_email": "next@auracles.space", "password": "CorrectHorse9"},
     )
     sent = settings_account_context["sent_email_changes"]
     confirmed = await client.post(
@@ -281,7 +286,8 @@ async def test_email_change_requires_totp_and_confirmation_swaps_email(
             select(AuditLog).where(AuditLog.action == "email_changed")
         )
 
-    assert missing_totp.status_code == 403
+    assert missing_step_up.status_code == 403
+    assert missing_step_up.json()["detail"]["error_code"] == "step_up_required"
     assert requested.status_code == 200
     assert sent[0][0] == "next@auracles.space"
     # The old address is alerted that a change was requested.
@@ -299,12 +305,13 @@ async def test_email_change_without_2fa_uses_password_only(
     migrated_database: None,
     settings_account_context: dict[str, Any],
 ) -> None:
-    """An account without 2FA changes email with password re-auth and no TOTP.
+    """An account without 2FA changes email with password re-auth and no window.
 
-    Regression: previously the unconditional TOTP gate locked no-2FA accounts
-    out of email change entirely (403 "2FA not enabled").
+    ``require_step_up_if_enrolled`` must not demand a factor the account does
+    not possess. Regression: previously the unconditional TOTP gate locked
+    no-2FA accounts out of email change entirely (403 "2FA not enabled").
     """
-    user_id, _ = await create_verified_user(
+    user_id = await create_verified_user(
         "no2fa-change@auracles.space",
         "CorrectHorse9",
         enable_totp=False,

@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -39,6 +38,10 @@ from app.modules.developer.models import (
 from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
+
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+"""Placeholder enrolled-2FA secret; step-up windows are seeded, never verified."""
 
 
 class FakeRedis:
@@ -174,9 +177,8 @@ async def create_user(email: str, roles: list[str]) -> UUID:
         return user.id
 
 
-async def create_admin_user() -> tuple[UUID, str]:
-    """Create an admin user with TOTP enabled for sensitive review routes."""
-    secret = pyotp.random_base32()
+async def create_admin_user() -> UUID:
+    """Create a 2FA-enrolled admin; review routes need an open step-up window."""
     async with async_session_factory() as session:
         async with session.begin():
             user = User(
@@ -185,7 +187,7 @@ async def create_admin_user() -> tuple[UUID, str]:
                 display_name="Developer Review Admin",
                 email_verified=True,
                 totp_enabled=True,
-                totp_secret=encrypt_totp_secret(secret),
+                totp_secret=encrypt_totp_secret(TOTP_SECRET),
             )
             session.add(user)
             await session.flush()
@@ -196,7 +198,7 @@ async def create_admin_user() -> tuple[UUID, str]:
                     approved_at=datetime.now(UTC),
                 )
             )
-        return user.id, secret
+        return user.id
 
 
 async def create_developer_user(email: str) -> tuple[UUID, UUID]:
@@ -555,9 +557,10 @@ async def test_admin_approves_developer_application_with_account_and_role(
     developer_application_context: FakeRedis,
 ) -> None:
     """Admin approval creates the Developer account and approves role access."""
-    del migrated_database, developer_application_context
+    del migrated_database
     candidate_id = await create_user("approved-developer@auracles.space", ["operator"])
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(developer_application_context, admin_id)
     submitted = await client.post(
         "/v1/developer/applications",
         headers=auth_headers(candidate_id, ["operator"]),
@@ -574,7 +577,6 @@ async def test_admin_approves_developer_application_with_account_and_role(
         json={
             "decision": "approved",
             "feedback": "Partner API use case is clear.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 
@@ -615,9 +617,10 @@ async def test_admin_rejects_developer_application_with_feedback(
     developer_application_context: FakeRedis,
 ) -> None:
     """Admin rejection stores feedback but does not approve Developer access."""
-    del migrated_database, developer_application_context
+    del migrated_database
     candidate_id = await create_user("rejected-developer@auracles.space", ["operator"])
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(developer_application_context, admin_id)
     submitted = await client.post(
         "/v1/developer/applications",
         headers=auth_headers(candidate_id, ["operator"]),
@@ -627,10 +630,7 @@ async def test_admin_rejects_developer_application_with_feedback(
     missing_feedback = await client.post(
         f"/v1/admin/developer/applications/{submitted.json()['id']}/review",
         headers=auth_headers(admin_id, ["admin"]),
-        json={
-            "decision": "rejected",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
-        },
+        json={"decision": "rejected"},
     )
     rejected = await client.post(
         f"/v1/admin/developer/applications/{submitted.json()['id']}/review",
@@ -638,7 +638,6 @@ async def test_admin_rejects_developer_application_with_feedback(
         json={
             "decision": "rejected",
             "feedback": "Please provide a production integration plan.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 
@@ -667,6 +666,46 @@ async def test_admin_rejects_developer_application_with_feedback(
     assert account is None
     assert role is None
     assert audit is not None
+
+
+async def test_admin_review_requires_open_step_up_window(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_application_context: FakeRedis,
+) -> None:
+    """Reviewing a Developer application is refused without a step-up window.
+
+    The review route is gated by ``require_step_up``: no code travels in the
+    body, and an enrolled admin who has not recently confirmed with their
+    authenticator gets 403 ``step_up_required``. Opening the window unlocks
+    the same request unchanged.
+    """
+    del migrated_database
+    candidate_id = await create_user("gated-developer@auracles.space", ["operator"])
+    admin_id = await create_admin_user()
+    submitted = await client.post(
+        "/v1/developer/applications",
+        headers=auth_headers(candidate_id, ["operator"]),
+        json=application_payload(),
+    )
+    payload = {"decision": "approved", "feedback": "Partner API use case is clear."}
+
+    refused = await client.post(
+        f"/v1/admin/developer/applications/{submitted.json()['id']}/review",
+        headers=auth_headers(admin_id, ["admin"]),
+        json=payload,
+    )
+    await open_step_up_window(developer_application_context, admin_id)
+    approved = await client.post(
+        f"/v1/admin/developer/applications/{submitted.json()['id']}/review",
+        headers=auth_headers(admin_id, ["admin"]),
+        json=payload,
+    )
+
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["error_code"] == "step_up_required"
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
 
 
 async def test_developer_generates_key_raw_once_and_lists_masked_metadata(
@@ -1108,7 +1147,7 @@ async def test_developer_application_decision_notifies_the_applicant(
     Platform had opened to them — the only way to find out was to go back and
     check the page.
     """
-    del migrated_database, developer_application_context
+    del migrated_database
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(
         application_service,
@@ -1116,7 +1155,8 @@ async def test_developer_application_decision_notifies_the_applicant(
         FakeNotificationTask(calls),
     )
     candidate_id = await create_user("notified-developer@auracles.space", ["operator"])
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(developer_application_context, admin_id)
     submitted = await client.post(
         "/v1/developer/applications",
         headers=auth_headers(candidate_id, ["operator"]),
@@ -1129,7 +1169,6 @@ async def test_developer_application_decision_notifies_the_applicant(
         json={
             "decision": "approved",
             "feedback": "Partner API use case is clear.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 
@@ -1152,7 +1191,7 @@ async def test_rejected_developer_application_notifies_with_feedback(
     would leave the applicant knowing only that they were turned down and not
     what to change before reapplying.
     """
-    del migrated_database, developer_application_context
+    del migrated_database
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(
         application_service,
@@ -1160,7 +1199,8 @@ async def test_rejected_developer_application_notifies_with_feedback(
         FakeNotificationTask(calls),
     )
     candidate_id = await create_user("declined-developer@auracles.space", ["operator"])
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(developer_application_context, admin_id)
     submitted = await client.post(
         "/v1/developer/applications",
         headers=auth_headers(candidate_id, ["operator"]),
@@ -1173,7 +1213,6 @@ async def test_rejected_developer_application_notifies_with_feedback(
         json={
             "decision": "rejected",
             "feedback": "Please provide a production integration plan.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 

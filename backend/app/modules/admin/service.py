@@ -1617,20 +1617,17 @@ async def list_admin_waitlist(
 
 async def assign_user_role(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     target_user_id: UUID,
     role: str,
-    totp_code: str,
 ) -> UserRole:
     """Assign a user role, approving Attestor when an admin performs it.
 
-    Role assignment is a sensitive admin write and requires a valid TOTP
-    (M2). Granting the ``admin`` role is privilege escalation reserved for the
-    bootstrap super-admin (H1): a plain admin cannot mint new admins, so a
-    single compromised admin cannot seed replacements.
+    Role assignment is a sensitive admin write; the router requires an open
+    step-up window (M2). Granting the ``admin`` role is privilege escalation
+    reserved for the bootstrap super-admin (H1): a plain admin cannot mint new
+    admins, so a single compromised admin cannot seed replacements.
     """
-    await _verify_admin_2fa(db, redis, admin.id, totp_code)
     if role == "admin" and not admin.is_superadmin:
         await write_audit(
             db=db,
@@ -1688,12 +1685,10 @@ async def assign_user_role(
 
 async def review_user_kyc(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     target_user_id: UUID,
     review_status: str,
     notes: str | None,
-    totp_code: str,
 ) -> User:
     """Record an admin's identity-verification decision for a user.
 
@@ -1712,23 +1707,17 @@ async def review_user_kyc(
 
     Args:
         db: Async DB session.
-        redis: Redis client backing admin TOTP verification.
         admin: The acting admin (audited as actor and stamped as reviewer).
         target_user_id: The user whose status is decided.
         review_status: ``verified`` or ``rejected``.
         notes: Optional reason, recorded on the documents and in the audit.
-        totp_code: The admin's current TOTP code.
 
     Returns:
         The updated User.
 
     Raises:
-        HTTPException(401/403): If the admin TOTP is missing or invalid.
         HTTPException(404): If the target user does not exist.
     """
-    # Marking an account KYC-verified unlocks payout eligibility, so the
-    # override is a sensitive write and requires a valid admin TOTP (M2).
-    await _verify_admin_2fa(db, redis, admin.id, totp_code)
     target = await db.scalar(select(User).where(User.id == target_user_id))
     if target is None:
         raise HTTPException(
@@ -1898,8 +1887,7 @@ async def get_kyc_document_download_url(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "This document has not cleared the virus scan and cannot be "
-                "opened."
+                "This document has not cleared the virus scan and cannot be opened."
             ),
         )
 
@@ -2035,25 +2023,17 @@ async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
 
 async def suspend_framework(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     framework_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> Framework:
     """Suspend a published Framework after admin moderation review.
 
-    Step-up verified before anything is read or written, matching the other
-    admin trust actions: removing a Framework from the catalog cuts off a
+    The router requires an open step-up window, matching the other admin
+    trust actions: removing a Framework from the catalog cuts off a
     contributor's income and must not be reachable from a stolen session
     alone.
     """
-    await _verify_admin_2fa(
-        db=db,
-        redis=redis,
-        admin_id=admin.id,
-        totp_code=totp_code,
-    )
     framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
     if framework is None:
         raise HTTPException(
@@ -2093,10 +2073,8 @@ async def suspend_framework(
 
 async def reinstate_framework(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     framework_id: UUID,
-    totp_code: str,
 ) -> Framework:
     """Reverse an admin takedown, returning a suspended Framework to the catalog.
 
@@ -2108,26 +2086,17 @@ async def reinstate_framework(
 
     Args:
         db: Async database session.
-        redis: Redis client used by the step-up factor check.
         admin: Acting admin user (RBAC enforced at the router).
         framework_id: UUID of the suspended Framework to reinstate.
-        totp_code: Admin TOTP or backup code authorising the change.
 
     Returns:
         The reinstated Framework with status ``published``.
 
     Raises:
-        HTTPException(401): If the step-up factor is missing or invalid.
         HTTPException(404): If the Framework does not exist.
         HTTPException(409): If the Framework is not suspended, or an Artifact
             now fails a trust gate.
     """
-    await _verify_admin_2fa(
-        db=db,
-        redis=redis,
-        admin_id=admin.id,
-        totp_code=totp_code,
-    )
     framework = await db.scalar(select(Framework).where(Framework.id == framework_id))
     if framework is None:
         raise HTTPException(
@@ -2175,28 +2144,20 @@ async def reinstate_framework(
 
 async def override_rarity_block(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     framework_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> Framework:
     """Override near-duplicate rarity hard blocks for one Framework.
 
-    Step-up verified inside the transaction, before the Framework is read:
-    overriding the duplicate block publishes work the pipeline flagged as
-    near-identical to existing material.
+    The router requires an open step-up window: overriding the duplicate
+    block publishes work the pipeline flagged as near-identical to existing
+    material.
     """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         framework = await db.scalar(
             select(Framework).where(Framework.id == framework_id)
         )
@@ -2296,7 +2257,6 @@ async def suspend_user(
     admin: User,
     target_user_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> User:
     """Suspend one user, revoke sessions, and revoke developer API keys."""
     admin_id = admin.id
@@ -2304,12 +2264,6 @@ async def suspend_user(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         target = await db.get(User, target_user_id, with_for_update=True)
         if target is None:
             raise HTTPException(
@@ -2389,22 +2343,14 @@ async def suspend_user(
 
 async def unsuspend_user(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     target_user_id: UUID,
-    totp_code: str,
 ) -> User:
     """Clear suspension state for one user without restoring revoked keys."""
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         target = await db.get(User, target_user_id, with_for_update=True)
         if target is None:
             raise HTTPException(
@@ -2445,31 +2391,23 @@ async def unsuspend_user(
 
 async def grant_license(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     framework_id: UUID,
     operator_id: UUID,
     license_type: str,
     expires_at: datetime | None,
     seats_total: int | None,
-    totp_code: str,
 ) -> License:
     """Grant an Operator license to a Framework for Phase 2 admin flows.
 
-    Step-up verified inside the transaction, before anything is read: minting
-    a licence hands out paid access for free and is the money-adjacent sibling
-    of the escrow overrides, which are already gated.
+    The router requires an open step-up window: minting a licence hands out
+    paid access for free and is the money-adjacent sibling of the escrow
+    overrides, which are gated the same way.
     """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         framework = await db.scalar(
             select(Framework).where(Framework.id == framework_id)
         )
@@ -2738,11 +2676,9 @@ def _normalise_platform_config_value(key: str, raw_value: str) -> str:
 
 async def update_platform_config(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     updates: list[tuple[str, str]],
     reason: str,
-    totp_code: str,
 ) -> list[PlatformConfig]:
     """Apply audited admin platform configuration changes."""
     admin_id = admin.id
@@ -2762,12 +2698,6 @@ async def update_platform_config(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         for key, value in normalised_updates:
             config = await db.get(PlatformConfig, key)
             if config is None:
@@ -2797,46 +2727,17 @@ async def update_platform_config(
     return await list_platform_config(db)
 
 
-async def _verify_admin_2fa(
-    db: AsyncSession,
-    redis: Redis,
-    admin_id: UUID,
-    totp_code: str,
-) -> None:
-    """Require a valid admin TOTP or backup code before sensitive admin writes."""
-    admin = await db.get(User, admin_id, with_for_update=True)
-    if admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid access token.",
-        )
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=admin,
-        code=totp_code,
-    )
-
-
 async def release_escrow_override(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     escrow_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> Escrow:
     """Release held escrow funds through an audited admin override."""
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         escrow = await escrow_service.release(
             db,
             escrow_id=escrow_id,
@@ -2849,11 +2750,9 @@ async def release_escrow_override(
 
 async def refund_escrow_override(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     escrow_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> Escrow:
     """Refund held escrow funds through an audited admin override."""
     admin_id = admin.id
@@ -2861,12 +2760,6 @@ async def refund_escrow_override(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         escrow = await db.get(Escrow, escrow_id, with_for_update=True)
         if escrow is None:
             raise HTTPException(
@@ -2909,27 +2802,24 @@ async def refund_escrow_override(
 
 async def recompute_reputation_subject(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     subject_type: str,
     subject_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> None:
-    """Queue a single-subject reputation recompute behind an audited 2FA gate.
+    """Queue a single-subject reputation recompute behind an audited step-up gate.
 
-    Verifies the admin's TOTP, confirms the subject exists, records an audit
-    entry, then dispatches the idempotent Celery recompute task. Raises before
-    dispatch on any failure so a denied request never enqueues work.
+    The router requires an open step-up window. Confirms the subject exists,
+    records an audit entry, then dispatches the idempotent Celery recompute
+    task. Raises before dispatch on any failure so a denied request never
+    enqueues work.
 
     Args:
         db: Async session.
-        redis: Redis client for the TOTP rate-limit guard.
         admin: The authenticated admin user.
         subject_type: One of ``framework``, ``contributor``, ``operator``.
         subject_id: UUID of the subject to recompute.
         reason: Human-readable justification, recorded in the audit log.
-        totp_code: Admin TOTP or backup code.
 
     Raises:
         HTTPException(404): Subject type unknown or subject does not exist.
@@ -2946,12 +2836,6 @@ async def recompute_reputation_subject(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         if not await reputation_service.subject_exists(
             db, subject_type=subject_type, subject_id=subject_id
         ):

@@ -1,7 +1,7 @@
 """Integration tests for org attestor application endpoints.
 
 Covers the seven /v1/orgs/{org_id}/attestor-application routes: create, read,
-edit, submit (rate-limited), owner-signed undertakings (TOTP), tax-document
+edit, submit (rate-limited), owner-signed undertakings (step-up), tax-document
 upload session, and trial-member nomination — with RBAC (401/403), suspended
 org, and NDA gating.
 """
@@ -35,6 +35,7 @@ from app.modules.organizations.models import (
     OrgMemberNda,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.integration.test_auth_sessions import FakeRedis
 
 pytestmark = pytest.mark.asyncio
@@ -55,6 +56,7 @@ def _stub_trial_notification(monkeypatch: pytest.MonkeyPatch) -> None:
             return None
 
     monkeypatch.setattr(_svc, "dispatch_project_notification", _NoDispatch())
+
 
 _APPLICATION_PATH = "/v1/orgs/{org_id}/attestor-application"
 
@@ -342,10 +344,10 @@ async def test_submit_rate_limited(
     assert limited.status_code == 429
 
 
-async def test_sign_undertakings_owner_only_and_totp(
+async def test_sign_undertakings_owner_only_and_step_up(
     client: AsyncClient, migrated_database: None, clean_state: FakeRedis
 ) -> None:
-    """Admins cannot sign; the owner signs with a valid TOTP code."""
+    """Admins cannot sign; the owner signs only inside an open step-up window."""
     secret = pyotp.random_base32()
     owner_id = await _create_user("owner", totp_secret=secret)
     admin_id = await _create_user("admin")
@@ -358,17 +360,21 @@ async def test_sign_undertakings_owner_only_and_totp(
         "declarations": [],
         "accept_policy": True,
         "accept_confidentiality": True,
-        "totp_code": pyotp.TOTP(secret).now(),
     }
     denied = await client.post(
         f"{path}/sign-undertakings", json=body, headers=auth(admin_id)
     )
     assert denied.status_code == 403
 
+    no_window = await client.post(
+        f"{path}/sign-undertakings", json=body, headers=auth(owner_id)
+    )
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
+
+    await open_step_up_window(clean_state, owner_id)
     signed = await client.post(
-        f"{path}/sign-undertakings",
-        json={**body, "totp_code": pyotp.TOTP(secret).now()},
-        headers=auth(owner_id),
+        f"{path}/sign-undertakings", json=body, headers=auth(owner_id)
     )
     assert signed.status_code == 200
     assert signed.json()["gate_checklist"]["undertakings_signed"] is True

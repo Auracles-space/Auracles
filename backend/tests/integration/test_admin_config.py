@@ -21,6 +21,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import PlatformConfig
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 DEFAULT_PLATFORM_CONFIG = {
     "commission_rate": "0.15",
@@ -267,16 +268,16 @@ async def test_non_super_admin_cannot_update_platform_config(
     Enforces that platform configuration changes are reserved for the protected
     super-admin account, while ordinary admins retain read access.
     """
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user(is_superadmin=False)
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     forbidden = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Ordinary admin should not be able to do this.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "commission_rate", "value": "0.10"}],
         },
     )
@@ -290,22 +291,22 @@ async def test_non_super_admin_cannot_update_platform_config(
     assert readable.status_code == 200
 
 
-async def test_admin_updates_editable_config_with_totp_reason_and_audit(
+async def test_admin_updates_editable_config_with_step_up_reason_and_audit(
     client: AsyncClient,
     migrated_database: None,
     admin_config_context: FakeRedis,
 ) -> None:
-    """Admin config changes require 2FA and audit each changed key."""
-    del migrated_database, admin_config_context
+    """Admin config changes require an open step-up window and audit each key."""
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     response = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Lower initial launch commission and extend refund window.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [
                 {"key": "commission_rate", "value": "0.12"},
                 {"key": "refund_window_hours", "value": "72"},
@@ -362,16 +363,16 @@ async def test_admin_updates_ngn_payout_floor_within_range(
     typo cannot set it below Paystack's own transfer fee, or so high that no
     Contributor can ever withdraw.
     """
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     accepted = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Raise the NGN withdrawal floor for the pilot.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "min_payout_ngn", "value": "75000"}],
         },
     )
@@ -380,7 +381,6 @@ async def test_admin_updates_ngn_payout_floor_within_range(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "min_payout_ngn", "value": "100"}],
         },
     )
@@ -395,31 +395,30 @@ async def test_admin_updates_ngn_payout_floor_within_range(
     assert stored.updated_by == admin_id
 
 
-async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
+async def test_admin_config_rejects_missing_step_up_ranges_and_uneditable_keys(
     client: AsyncClient,
     migrated_database: None,
     admin_config_context: FakeRedis,
 ) -> None:
     """Rejected config changes do not mutate config or create audit rows."""
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
 
-    invalid_2fa = await client.patch(
+    no_step_up = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": "000000",
             "updates": [{"key": "commission_rate", "value": "0.10"}],
         },
     )
+    await open_step_up_window(admin_config_context, admin_id)
     out_of_range = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "commission_rate", "value": "0.75"}],
         },
     )
@@ -428,7 +427,6 @@ async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
         headers=auth_headers(admin_id),
         json={
             "reason": "Reputation decay is not admin-tunable.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "reputation_decay_halflife_days", "value": "90"}],
         },
     )
@@ -448,7 +446,8 @@ async def test_admin_config_rejects_invalid_2fa_ranges_and_uneditable_keys(
             .all()
         )
 
-    assert invalid_2fa.status_code == 422
+    assert no_step_up.status_code == 403
+    assert no_step_up.json()["detail"]["error_code"] == "step_up_required"
     assert out_of_range.status_code == 422
     assert uneditable_key.status_code == 422
     assert commission_rate is not None
@@ -464,16 +463,16 @@ async def test_admin_updates_attestation_config_with_range_validation(
     admin_config_context: FakeRedis,
 ) -> None:
     """Attestation config values are admin-editable only within locked ranges."""
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     valid_update = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Tune attestation launch defaults.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [
                 {"key": "attestation_fee_framework", "value": "275"},
                 {"key": "attestation_cohort_size", "value": "5"},
@@ -487,7 +486,6 @@ async def test_admin_updates_attestation_config_with_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "attestation_fee_credential", "value": "5"}],
         },
     )
@@ -496,7 +494,6 @@ async def test_admin_updates_attestation_config_with_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "attestation_cohort_size", "value": "11"}],
         },
     )
@@ -525,16 +522,16 @@ async def test_admin_updates_saved_search_alert_cadence_with_range_validation(
     admin_config_context: FakeRedis,
 ) -> None:
     """Saved-search alert cadence is admin-editable within the 1-168h range."""
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     valid_update = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Run saved search alerts every six hours.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "saved_search_alert_cadence_hours", "value": "6"}],
         },
     )
@@ -543,7 +540,6 @@ async def test_admin_updates_saved_search_alert_cadence_with_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "saved_search_alert_cadence_hours", "value": "0"}],
         },
     )
@@ -552,7 +548,6 @@ async def test_admin_updates_saved_search_alert_cadence_with_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "saved_search_alert_cadence_hours", "value": "169"}],
         },
     )
@@ -578,16 +573,16 @@ async def test_admin_updates_gdpr_config_with_range_validation(
     admin_config_context: FakeRedis,
 ) -> None:
     """GDPR consent and retention knobs are admin-editable within safe ranges."""
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     valid_update = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Update legal versions and deletion/export windows.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [
                 {"key": "consent_version_terms_of_service", "value": "2026.06"},
                 {"key": "consent_version_privacy_policy", "value": "2026.06"},
@@ -601,7 +596,6 @@ async def test_admin_updates_gdpr_config_with_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "account_deletion_grace_days", "value": "31"}],
         },
     )
@@ -610,7 +604,6 @@ async def test_admin_updates_gdpr_config_with_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "data_export_expiry_days", "value": "0"}],
         },
     )
@@ -619,7 +612,6 @@ async def test_admin_updates_gdpr_config_with_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "consent_version_privacy_policy", "value": " "}],
         },
     )
@@ -649,16 +641,16 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
     admin_config_context: FakeRedis,
 ) -> None:
     """Reputation config updates enforce valid factor shapes and scalar bounds."""
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     valid_update = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Tune reputation scoring launch defaults.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [
                 {
                     "key": "reputation_weights_framework",
@@ -679,7 +671,6 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [
                 {
                     "key": "reputation_weights_framework",
@@ -693,7 +684,6 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Should not pass.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "reputation_prior", "value": "1.2"}],
         },
     )
@@ -702,7 +692,6 @@ async def test_admin_updates_reputation_config_with_shape_and_range_validation(
         headers=auth_headers(admin_id),
         json={
             "reason": "Decay is not wired into the engine yet.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [{"key": "reputation_decay_halflife_days", "value": "365"}],
         },
     )
@@ -738,16 +727,16 @@ async def test_admin_updates_attestor_reputation_weight_config(
     admin_config_context: FakeRedis,
 ) -> None:
     """Super-admins can patch the attestor reputation weight map with valid 2FA."""
-    del migrated_database, admin_config_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
 
     response = await client.patch(
         "/v1/admin/config",
         headers=auth_headers(admin_id),
         json={
             "reason": "Enable attestor reputation tuning before launch.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "updates": [
                 {
                     "key": "reputation_weights_attestor",

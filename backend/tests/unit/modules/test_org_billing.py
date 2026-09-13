@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -145,7 +144,7 @@ async def test_create_org_payment_method_setup_creates_customer_once_and_reuses_
     del migrated_database
     import app.modules.organizations.billing_service as billing_service
 
-    owner, totp_secret = await _create_user("org-billing-owner")
+    owner, _totp_secret = await _create_user("org-billing-owner")
     org = await _create_org(owner)
     calls: dict[str, list[Any]] = {"customers": [], "setup_intents": []}
 
@@ -176,14 +175,11 @@ async def test_create_org_payment_method_setup_creates_customer_once_and_reuses_
         fake_create_setup_intent,
     )
 
-    first_code = pyotp.TOTP(totp_secret).now()
     async with async_session_factory() as session:
         first = await billing_service.create_org_payment_method_setup(
             session,
-            org_billing_state["redis"],
             org_id=org.id,
             actor=owner,
-            totp_code=first_code,
         )
 
     async with async_session_factory() as session:
@@ -192,18 +188,11 @@ async def test_create_org_payment_method_setup_creates_customer_once_and_reuses_
     assert stored_org.stripe_customer_id == "cus_org_test_123"
     assert first.setup_intent_id == "seti_org_123"
 
-    # A fresh code from the next time step: the first setup consumed the
-    # current one, and TOTP codes are single-use now (M4).
-    second_code = pyotp.TOTP(totp_secret).at(
-        datetime.now(UTC) + timedelta(seconds=30)
-    )
     async with async_session_factory() as session:
         second = await billing_service.create_org_payment_method_setup(
             session,
-            org_billing_state["redis"],
             org_id=org.id,
             actor=owner,
-            totp_code=second_code,
         )
 
     assert second.client_secret == "seti_org_secret_123"
@@ -281,7 +270,7 @@ async def test_delete_org_payment_method_rejects_method_not_owned_by_org_custome
     del migrated_database
     import app.modules.organizations.billing_service as billing_service
 
-    owner, totp_secret = await _create_user("org-billing-owner")
+    owner, _totp_secret = await _create_user("org-billing-owner")
     org = await _create_org(owner)
     async with async_session_factory() as session:
         async with session.begin():
@@ -319,11 +308,9 @@ async def test_delete_org_payment_method_rejects_method_not_owned_by_org_custome
         async with async_session_factory() as session:
             await billing_service.delete_org_payment_method(
                 session,
-                org_billing_state["redis"],
                 org_id=org.id,
                 actor=owner,
                 payment_method_id="pm_org_missing_123",
-                totp_code=pyotp.TOTP(totp_secret).now(),
             )
 
     assert exc_info.value.status_code == 404
@@ -378,47 +365,3 @@ async def test_transaction_payer_xor_rejects_neither_and_both_payer_shapes(
                     )
                 )
                 await session.flush()
-
-
-@pytest.mark.asyncio
-async def test_create_org_payment_method_setup_requires_actor_totp(
-    migrated_database: None,
-    org_billing_state: dict[str, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Org payment-method setup is blocked when the admin has not enabled 2FA."""
-    del migrated_database
-    import app.modules.organizations.billing_service as billing_service
-
-    owner, _unused_secret = await _create_user(
-        "org-billing-owner",
-        enable_totp=False,
-    )
-    org = await _create_org(owner)
-    customer_calls: list[str] = []
-
-    async def fake_create_customer(
-        *,
-        email: str,
-        name: str | None = None,
-        idempotency_key: str | None = None,
-    ) -> FakeStripeCustomer:
-        """Record unexpected customer creation attempts."""
-        del email, name, idempotency_key
-        customer_calls.append("called")
-        return FakeStripeCustomer("cus_should_not_be_created")
-
-    monkeypatch.setattr(billing_service.stripe, "create_customer", fake_create_customer)
-
-    with pytest.raises(HTTPException) as exc_info:
-        async with async_session_factory() as session:
-            await billing_service.create_org_payment_method_setup(
-                session,
-                org_billing_state["redis"],
-                org_id=org.id,
-                actor=owner,
-                totp_code="123456",
-            )
-
-    assert exc_info.value.status_code == 403
-    assert customer_calls == []

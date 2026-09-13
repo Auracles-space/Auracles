@@ -288,58 +288,6 @@ async def _seed_org_milestone_escrow(
             return escrow.id, transaction.id
 
 
-class _FakeRedis:
-    """Async Redis double supporting TOTP-sensitive payout checks."""
-
-    def __init__(self) -> None:
-        self.values: dict[str, str] = {}
-        self.counters: dict[str, int] = {}
-        self.ttls: dict[str, int] = {}
-
-    async def get(self, key: str) -> str | None:
-        if key in self.values:
-            return self.values[key]
-        if key in self.counters:
-            return str(self.counters[key])
-        return None
-
-    async def set(
-        self, key: str, value: str, ex: int | None = None, nx: bool = False
-    ) -> bool:
-        """Store a string value, optionally respecting NX semantics."""
-        if ex is not None:
-            self.ttls[key] = ex
-        if nx and key in self.values:
-            return False
-        self.values[key] = value
-        return True
-
-    async def setex(self, key: str, seconds: int, value: str) -> None:
-        """Store a string value with a TTL."""
-        self.values[key] = value
-        self.ttls[key] = seconds
-
-    async def ttl(self, key: str) -> int:
-        """Return a recorded TTL or Redis' no-expiry sentinel."""
-        return self.ttls.get(key, -1)
-
-    async def incr(self, key: str) -> int:
-        self.counters[key] = int(await self.get(key) or "0") + 1
-        return self.counters[key]
-
-    async def expire(self, key: str, seconds: int) -> None:
-        self.ttls[key] = seconds
-
-    async def delete(self, *keys: str) -> int:
-        removed = 0
-        for key in keys:
-            removed += int(key in self.values or key in self.counters)
-            self.values.pop(key, None)
-            self.counters.pop(key, None)
-            self.ttls.pop(key, None)
-        return removed
-
-
 async def _seed_contributor_org_financials(
     *,
     org_id: UUID,
@@ -604,14 +552,12 @@ async def test_request_org_payout_allows_active_contributor_org_with_tax_documen
     async with async_session_factory() as session:
         payout = await financials_service.request_org_payout(
             session,
-            _FakeRedis(),
             org_id=organization.id,
             actor=owner,
             payload=PayoutRequest(
                 amount=Decimal("100.00"),
                 currency="USD",
                 payout_account_id=payout_account_id,
-                totp_code=pyotp.TOTP(owner_secret).now(),
             ),
         )
 
@@ -645,14 +591,12 @@ async def test_request_org_payout_blocks_contributor_org_without_tax_document(
         with pytest.raises(Exception) as excinfo:
             await financials_service.request_org_payout(
                 session,
-                _FakeRedis(),
                 org_id=organization.id,
                 actor=owner,
                 payload=PayoutRequest(
                     amount=Decimal("100.00"),
                     currency="USD",
                     payout_account_id=payout_account_id,
-                    totp_code=pyotp.TOTP(owner_secret).now(),
                 ),
             )
 
@@ -660,11 +604,14 @@ async def test_request_org_payout_blocks_contributor_org_without_tax_document(
 
 
 @pytest.mark.asyncio
-async def test_upsert_legal_profile_requires_valid_totp_and_persists_profile(
+async def test_upsert_legal_profile_persists_profile(
     migrated_database: None,
     settlement_state: None,
 ) -> None:
-    """Upserting the shared legal profile must require TOTP and persist values."""
+    """Upserting the shared legal profile persists every submitted value.
+
+    The step-up window is enforced by the router dependency, not here.
+    """
     del migrated_database, settlement_state
     owner_secret = pyotp.random_base32()
     owner = await _create_user("org-owner", totp_secret=owner_secret)
@@ -673,10 +620,8 @@ async def test_upsert_legal_profile_requires_valid_totp_and_persists_profile(
     async with async_session_factory() as session:
         profile = await legal_profile_service.upsert_legal_profile(
             session,
-            _FakeRedis(),
             org_id=organization.id,
             actor_id=owner.id,
-            totp_code=pyotp.TOTP(owner_secret).now(),
             legal_name="Settlement Org LLC",
             registration_number="RC-123456",
             address={"country": "US", "city": "New York"},

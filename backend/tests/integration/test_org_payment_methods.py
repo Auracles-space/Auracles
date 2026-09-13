@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -22,7 +21,7 @@ from app.modules.auth.models import User
 from app.modules.organizations import billing_service
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
 from app.shared.models.audit_log import AuditLog
-from tests.conftest import verify_org_kyb
+from tests.conftest import open_step_up_window, verify_org_kyb
 from tests.integration.test_financials_payment_methods import (
     FakeRedis,
     FakeStripeCustomer,
@@ -169,7 +168,7 @@ async def _create_org(
         json={"slug": f"{prefix}-{uuid4().hex[:6]}", "name": prefix, "country": "US"},
         headers=_auth_headers(owner_id),
     )
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     # An unverified org is a shell; tests want a usable one.
     await verify_org_kyb((response.json())["id"])
     return response.json()
@@ -185,14 +184,14 @@ async def _add_member(org_id: UUID, user_id: UUID, *, role: str = "member") -> U
             return member.id
 
 
-async def test_org_payment_method_setup_route_enforces_admin_auth_and_totp(
+async def test_org_payment_method_setup_route_enforces_admin_auth_and_step_up(
     client: AsyncClient,
     migrated_database: None,
     org_payment_method_context: dict[str, Any],
 ) -> None:
-    """Only org admins can start org payment-method setup, and 2FA is required."""
+    """Only org admins can start setup, and only inside an open step-up window."""
     del migrated_database
-    owner_id, owner_totp_secret = await _create_user("org-payments-owner")
+    owner_id, _owner_totp_secret = await _create_user("org-payments-owner")
     member_user_id, _member_secret = await _create_user("org-payments-member")
     no_totp_owner_id, _unused_secret = await _create_user(
         "org-payments-no-totp",
@@ -204,22 +203,28 @@ async def test_org_payment_method_setup_route_enforces_admin_auth_and_totp(
 
     unauthenticated = await client.post(
         f"/v1/orgs/{org['id']}/financials/payment-methods/setup",
-        json={"totp_code": pyotp.TOTP(owner_totp_secret).now()},
+        json={},
     )
     forbidden = await client.post(
         f"/v1/orgs/{org['id']}/financials/payment-methods/setup",
         headers=_auth_headers(member_user_id),
-        json={"totp_code": pyotp.TOTP(owner_totp_secret).now()},
+        json={},
     )
     no_totp = await client.post(
         f"/v1/orgs/{no_totp_org['id']}/financials/payment-methods/setup",
         headers=_auth_headers(no_totp_owner_id),
-        json={"totp_code": "123456"},
+        json={},
     )
+    no_window = await client.post(
+        f"/v1/orgs/{org['id']}/financials/payment-methods/setup",
+        headers=_auth_headers(owner_id),
+        json={},
+    )
+    await open_step_up_window(org_payment_method_context["redis"], owner_id)
     allowed = await client.post(
         f"/v1/orgs/{org['id']}/financials/payment-methods/setup",
         headers=_auth_headers(owner_id),
-        json={"totp_code": pyotp.TOTP(owner_totp_secret).now()},
+        json={},
     )
 
     async with async_session_factory() as session:
@@ -231,6 +236,9 @@ async def test_org_payment_method_setup_route_enforces_admin_auth_and_totp(
     assert unauthenticated.status_code == 401
     assert forbidden.status_code == 403
     assert no_totp.status_code == 403
+    assert no_totp.json()["detail"]["error_code"] == "totp_setup_required"
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
     assert allowed.status_code == 200
     assert allowed.json() == {
         "provider": "stripe",
@@ -257,8 +265,9 @@ async def test_org_payment_method_list_and_delete_routes_enforce_org_scope(
 ) -> None:
     """Org admins can list/delete their methods; members cannot and unknown ids 404."""
     del migrated_database
-    owner_id, owner_totp_secret = await _create_user("org-payments-owner")
+    owner_id, _owner_totp_secret = await _create_user("org-payments-owner")
     member_user_id, _member_secret = await _create_user("org-payments-member")
+    await open_step_up_window(org_payment_method_context["redis"], owner_id)
     org = await _create_org(client, owner_id, "org-payments")
     await _add_member(UUID(org["id"]), member_user_id)
     async with async_session_factory() as session:
@@ -279,25 +288,19 @@ async def test_org_payment_method_list_and_delete_routes_enforce_org_scope(
         "DELETE",
         f"/v1/orgs/{org['id']}/financials/payment-methods/pm_missing_123",
         headers=_auth_headers(owner_id),
-        json={"totp_code": pyotp.TOTP(owner_totp_secret).now()},
+        json={},
     )
     removed = await client.request(
         "DELETE",
         f"/v1/orgs/{org['id']}/financials/payment-methods/pm_org_test_123",
         headers=_auth_headers(owner_id),
-        # Fresh code from the next step: the prior delete consumed the current
-        # one, and TOTP codes are single-use now (M4).
-        json={
-            "totp_code": pyotp.TOTP(owner_totp_secret).at(
-                datetime.now(UTC) + timedelta(seconds=30)
-            )
-        },
+        json={},
     )
     forbidden_delete = await client.request(
         "DELETE",
         f"/v1/orgs/{org['id']}/financials/payment-methods/pm_org_test_123",
         headers=_auth_headers(member_user_id),
-        json={"totp_code": pyotp.TOTP(owner_totp_secret).now()},
+        json={},
     )
 
     async with async_session_factory() as session:

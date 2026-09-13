@@ -31,6 +31,7 @@ from app.modules.organizations.models import (
     OrgMember,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_organizations_endpoints import (
     add_member,
@@ -188,13 +189,14 @@ async def _seed_contributor_org_financial_rows(
 async def test_owner_can_upsert_and_read_shared_legal_profile(
     client: AsyncClient,
     migrated_database: None,
-    clean_state: None,
+    clean_state: FakeRedis,
 ) -> None:
     """The org owner can PUT then GET the shared legal profile."""
-    del migrated_database, clean_state
+    del migrated_database
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
     owner_token = create_access_token(owner_id, [])
+    await open_step_up_window(clean_state, owner_id)
     # Pre-verification: identity fields are still ordinary data entry. Once
     # verified they lock, which is its own test below.
     org = await create_org(client, owner_token, "org-legal-profile", verified=False)
@@ -206,7 +208,6 @@ async def test_owner_can_upsert_and_read_shared_legal_profile(
             "legal_name": "Shared Legal Name LLC",
             "registration_number": "RC-123456",
             "address": {"country": "US", "city": "New York"},
-            "totp_code": pyotp.TOTP(owner_secret).now(),
         },
     )
 
@@ -227,7 +228,7 @@ async def test_owner_can_upsert_and_read_shared_legal_profile(
 async def test_verified_identity_cannot_be_renamed(
     client: AsyncClient,
     migrated_database: None,
-    clean_state: None,
+    clean_state: FakeRedis,
 ) -> None:
     """A verified org cannot change the name an admin verified.
 
@@ -236,10 +237,11 @@ async def test_verified_identity_cannot_be_renamed(
     fields (address) stay editable: they are invoice data, not what the
     reviewer checked.
     """
-    del migrated_database, clean_state
+    del migrated_database
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner-lock", totp_secret=owner_secret)
     owner_token = create_access_token(owner_id, [])
+    await open_step_up_window(clean_state, owner_id)
     org = await create_org(client, owner_token, "org-legal-lock")
 
     renamed = await client.put(
@@ -248,7 +250,6 @@ async def test_verified_identity_cannot_be_renamed(
         json={
             "legal_name": "Entirely Different Entity Ltd",
             "registration_number": "RC-999999",
-            "totp_code": pyotp.TOTP(owner_secret).now(),
         },
     )
     assert renamed.status_code == 409
@@ -260,22 +261,19 @@ async def test_verified_identity_cannot_be_renamed(
             "legal_name": "Verified Test Org Ltd",
             "registration_number": "RC000000",
             "address": {"country": "NG", "city": "Lagos"},
-            "totp_code": pyotp.TOTP(owner_secret).at(
-                datetime.now(UTC) + timedelta(seconds=30)
-            ),
         },
     )
     assert address_only.status_code == 200
     assert address_only.json()["address"] == {"country": "NG", "city": "Lagos"}
 
 
-async def test_legal_profile_endpoints_require_owner_and_valid_totp(
+async def test_legal_profile_endpoints_require_owner_and_step_up(
     client: AsyncClient,
     migrated_database: None,
-    clean_state: None,
+    clean_state: FakeRedis,
 ) -> None:
-    """Legal profile reads are owner-only and writes reject bad TOTP codes."""
-    del migrated_database, clean_state
+    """Legal profile reads are owner-only and writes need an open step-up window."""
+    del migrated_database
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
     admin_id = await _create_user("org-admin")
@@ -293,29 +291,30 @@ async def test_legal_profile_endpoints_require_owner_and_valid_totp(
     )
     assert forbidden.status_code == 403
 
-    wrong_totp = await client.put(
+    no_window = await client.put(
         f"/v1/orgs/{org['id']}/legal-profile",
         headers=auth(owner_token),
         json={
             "legal_name": "Shared Legal Name LLC",
             "registration_number": "RC-123456",
             "address": {"country": "US", "city": "New York"},
-            "totp_code": "000000",
         },
     )
-    assert wrong_totp.status_code == 422
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
 
 
 async def test_owner_can_create_legal_profile_tax_document_upload_session(
     client: AsyncClient,
     migrated_database: None,
-    clean_state: None,
+    clean_state: FakeRedis,
 ) -> None:
     """The org owner can create a presigned upload session for the tax document."""
-    del migrated_database, clean_state
+    del migrated_database
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
     owner_token = create_access_token(owner_id, [])
+    await open_step_up_window(clean_state, owner_id)
     # Identity is entered before verification; once verified it locks, and
     # this test is about the tax-document session, not the lock.
     org = await create_org(client, owner_token, "org-legal-tax-doc", verified=False)
@@ -327,7 +326,6 @@ async def test_owner_can_create_legal_profile_tax_document_upload_session(
             "legal_name": "Shared Legal Name LLC",
             "registration_number": "RC-123456",
             "address": {"country": "US", "city": "New York"},
-            "totp_code": pyotp.TOTP(owner_secret).now(),
         },
     )
     assert updated.status_code == 200
@@ -352,11 +350,11 @@ async def test_owner_can_create_legal_profile_tax_document_upload_session(
 async def test_contributor_org_financial_routes_use_shared_identity_and_hide_pii(
     client: AsyncClient,
     migrated_database: None,
-    clean_state: None,
+    clean_state: FakeRedis,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Contributor org earnings, invoices, and payout reuse org financial routes."""
-    del migrated_database, clean_state
+    del migrated_database
     fake_task = SimpleNamespace(dispatched=[])
 
     def _delay(payout_id: str) -> None:
@@ -370,6 +368,7 @@ async def test_contributor_org_financial_routes_use_shared_identity_and_hide_pii
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
     owner_token = create_access_token(owner_id, [])
+    await open_step_up_window(clean_state, owner_id)
     org = await create_org(client, owner_token, "org-contributor-financials")
     payout_account_id, transaction_id = await _seed_contributor_org_financial_rows(
         org_id=UUID(str(org["id"])),
@@ -405,7 +404,6 @@ async def test_contributor_org_financial_routes_use_shared_identity_and_hide_pii
             "amount": "100.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": pyotp.TOTP(owner_secret).now(),
         },
     )
     assert payout.status_code == 200
@@ -422,13 +420,14 @@ async def test_contributor_org_financial_routes_use_shared_identity_and_hide_pii
 async def test_contributor_org_payout_requires_tax_document(
     client: AsyncClient,
     migrated_database: None,
-    clean_state: None,
+    clean_state: FakeRedis,
 ) -> None:
     """Contributor org payouts are blocked until the shared tax document exists."""
-    del migrated_database, clean_state
+    del migrated_database
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
     owner_token = create_access_token(owner_id, [])
+    await open_step_up_window(clean_state, owner_id)
     org = await create_org(client, owner_token, "org-contributor-no-tax")
     payout_account_id, _transaction_id = await _seed_contributor_org_financial_rows(
         org_id=UUID(str(org["id"])),
@@ -443,7 +442,6 @@ async def test_contributor_org_payout_requires_tax_document(
             "amount": "100.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": pyotp.TOTP(owner_secret).now(),
         },
     )
 

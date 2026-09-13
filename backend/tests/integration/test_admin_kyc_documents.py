@@ -32,11 +32,12 @@ from app.main import app
 from app.modules.admin import service as admin_service
 from app.modules.auth.models import KycDocument, User, UserRole
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.support.db_cleanup import clear_identity_state_async
 
 
 class FakeTotpRedis:
-    """In-memory Redis double so admin TOTP verification is deterministic."""
+    """In-memory Redis double holding the admin step-up window."""
 
     def __init__(self) -> None:
         """Create empty in-memory Redis-like state."""
@@ -127,13 +128,21 @@ async def admin_kyc_context(
         return f"https://downloads.example.test/{key}?signed=1"
 
     monkeypatch.setattr(admin_service.s3.storage, "presigned_get", fake_presigned_get)
-    app.dependency_overrides[get_redis] = lambda: FakeTotpRedis()
+    # One shared double: the step-up window seeded before a request must be
+    # the instance the dependency reads during it.
+    fake_redis = FakeTotpRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
     try:
         yield signed_keys
     finally:
         app.dependency_overrides.pop(get_redis, None)
         await cleanup()
         await engine.dispose()
+
+
+async def _open_step_up(admin_id: UUID) -> None:
+    """Seed a step-up window on the Redis double installed by the fixture."""
+    await open_step_up_window(app.dependency_overrides[get_redis](), admin_id)
 
 
 async def _create_admin_with_totp(email: str) -> tuple[UUID, str]:
@@ -374,14 +383,14 @@ async def test_review_decision_settles_submitted_documents(
     unable to distinguish reviewed applicants from waiting ones.
     """
     user_id, document_id = await _create_applicant("decide@auracles.space")
-    admin_id, admin_totp = await _create_admin_with_totp("doc-admin6@auracles.space")
+    admin_id, _ = await _create_admin_with_totp("doc-admin6@auracles.space")
+    await _open_step_up(admin_id)
 
     response = await client.patch(
         f"/v1/admin/users/{user_id}/kyc",
         json={
             "status": "verified",
             "notes": "NIN slip matches the account name.",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
         },
         headers=auth_headers(admin_id, ["admin"]),
     )
@@ -416,17 +425,12 @@ async def test_review_decision_emails_the_applicant(
         lambda **kwargs: queued.append(kwargs),
     )
     user_id, _document_id = await _create_applicant("emailed@auracles.space")
-    admin_id, admin_totp = await _create_admin_with_totp(
-        "doc-admin9@auracles.space"
-    )
+    admin_id, _ = await _create_admin_with_totp("doc-admin9@auracles.space")
+    await _open_step_up(admin_id)
 
     response = await client.patch(
         f"/v1/admin/users/{user_id}/kyc",
-        json={
-            "status": "verified",
-            "notes": None,
-            "totp_code": pyotp.TOTP(admin_totp).now(),
-        },
+        json={"status": "verified", "notes": None},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -441,15 +445,12 @@ async def test_rejection_settles_documents_as_rejected(
 ) -> None:
     """Rejecting a user marks their pending documents rejected."""
     user_id, document_id = await _create_applicant("reject@auracles.space")
-    admin_id, admin_totp = await _create_admin_with_totp("doc-admin7@auracles.space")
+    admin_id, _ = await _create_admin_with_totp("doc-admin7@auracles.space")
+    await _open_step_up(admin_id)
 
     response = await client.patch(
         f"/v1/admin/users/{user_id}/kyc",
-        json={
-            "status": "rejected",
-            "notes": "Document is not legible.",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
-        },
+        json={"status": "rejected", "notes": "Document is not legible."},
         headers=auth_headers(admin_id, ["admin"]),
     )
 

@@ -20,7 +20,7 @@ from sqlalchemy import delete, select
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.main import app
 from app.modules.attestation import rubrics
 from app.modules.attestation.models import (
@@ -45,6 +45,7 @@ from app.modules.organizations.models import (
     OrgMemberNda,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.integration.test_auth_sessions import FakeRedis
 
 pytestmark = pytest.mark.asyncio
@@ -96,8 +97,14 @@ def auth(user_id: UUID, roles: list[str] | None = None) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token(user_id, roles or [])}"}
 
 
-async def _new_user(prefix: str, *, roles: list[str] | None = None) -> UUID:
-    """Create a verified user with optional platform roles; return its id."""
+async def _new_user(
+    prefix: str, *, roles: list[str] | None = None, totp_enabled: bool = False
+) -> UUID:
+    """Create a verified user with optional platform roles; return its id.
+
+    ``totp_enabled`` enrols the user in 2FA so step-up gated admin writes can
+    be reached once ``open_step_up_window`` seeds a window.
+    """
     async with async_session_factory() as session:
         async with session.begin():
             user = User(
@@ -105,6 +112,10 @@ async def _new_user(prefix: str, *, roles: list[str] | None = None) -> UUID:
                 password_hash=hash_password("CorrectHorse9"),
                 display_name=prefix,
                 email_verified=True,
+                totp_enabled=totp_enabled,
+                totp_secret=(
+                    encrypt_totp_secret("JBSWY3DPEHPK3PXP") if totp_enabled else None
+                ),
             )
             session.add(user)
             await session.flush()
@@ -345,7 +356,8 @@ async def test_full_gate_walk_to_approval(
 
     monkeypatch.setattr(attestor_svc, "dispatch_project_notification", _FakeTask())
 
-    admin_id = await _new_user("admin", roles=["admin"])
+    admin_id = await _new_user("admin", roles=["admin"], totp_enabled=True)
+    await open_step_up_window(clean_state, admin_id)
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
     fixture_id = await _create_calibration_fixture(owner_id)
@@ -397,9 +409,7 @@ async def test_full_gate_walk_to_approval(
 
     # The owner must be told the outcome so they can start attesting.
     approved_notes = [
-        n
-        for n in notifications
-        if n["notification_type"] == "org_attestor_approved"
+        n for n in notifications if n["notification_type"] == "org_attestor_approved"
     ]
     assert len(approved_notes) == 1
     assert approved_notes[0]["user_id"] == str(owner_id)
@@ -426,12 +436,16 @@ async def test_admin_can_grade_and_decide_trial(
     clean_state: FakeRedis,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An admin loads the grade view and decides a submitted trial."""
+    """An admin loads the grade view and decides a submitted trial.
+
+    The decision is a trust grant, so it needs an open step-up window; the
+    grade view and trial start do not.
+    """
     from app.integrations import s3
 
     monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
 
-    admin_id = await _new_user("admin", roles=["admin"])
+    admin_id = await _new_user("admin", roles=["admin"], totp_enabled=True)
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
     fixture_id = await _create_calibration_fixture(owner_id)
@@ -473,6 +487,15 @@ async def test_admin_can_grade_and_decide_trial(
     assert grade.status_code == 200
     assert grade.json()["status"] == "submitted"
 
+    no_window = await client.post(
+        f"{_QUEUE}/{application_id}/trial/decide",
+        headers=auth(admin_id, ["admin"]),
+        json={"result": "pass", "feedback": "Solid calibration."},
+    )
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
+
+    await open_step_up_window(clean_state, admin_id)
     decided = await client.post(
         f"{_QUEUE}/{application_id}/trial/decide",
         headers=auth(admin_id, ["admin"]),
@@ -480,6 +503,29 @@ async def test_admin_can_grade_and_decide_trial(
     )
     assert decided.status_code == 200
     assert decided.json()["gate_checklist"]["trial_passed"] is True
+
+
+async def test_approve_requires_step_up(
+    client: AsyncClient, migrated_database: None, clean_state: FakeRedis
+) -> None:
+    """Approval activates a trust capability: 403 without a window, 200 with one."""
+    admin_id = await _new_user("admin", roles=["admin"], totp_enabled=True)
+    owner_id = await _new_user("owner")
+    org_id = await _org(owner_id)
+    application_id = await _gated_application(org_id, owner_id)
+
+    no_window = await client.post(
+        f"{_QUEUE}/{application_id}/approve", headers=auth(admin_id, ["admin"])
+    )
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
+
+    await open_step_up_window(clean_state, admin_id)
+    approved = await client.post(
+        f"{_QUEUE}/{application_id}/approve", headers=auth(admin_id, ["admin"])
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
 
 
 async def test_documents_returns_presigned_links(
@@ -560,7 +606,8 @@ async def test_needs_info_and_reject(
     client: AsyncClient, migrated_database: None, clean_state: FakeRedis
 ) -> None:
     """Needs-info transitions the application; reject terminates it."""
-    admin_id = await _new_user("admin", roles=["admin"])
+    admin_id = await _new_user("admin", roles=["admin"], totp_enabled=True)
+    await open_step_up_window(clean_state, admin_id)
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
     application_id = await _gated_application(org_id, owner_id)
@@ -599,7 +646,8 @@ async def test_capability_suspend_reinstate_revoke(
     client: AsyncClient, migrated_database: None, clean_state: FakeRedis
 ) -> None:
     """Suspend/reinstate/revoke drive the derived role and profile state."""
-    admin_id = await _new_user("admin", roles=["admin"])
+    admin_id = await _new_user("admin", roles=["admin"], totp_enabled=True)
+    await open_step_up_window(clean_state, admin_id)
     owner_id = await _new_user("owner")
     org_id = await _org(owner_id)
     application_id = await _gated_application(org_id, owner_id)

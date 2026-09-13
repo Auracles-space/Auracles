@@ -34,6 +34,7 @@ from app.modules.organizations.models import (
     OrgMember,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.integration.test_auth_sessions import FakeRedis
 
 pytestmark = pytest.mark.asyncio
@@ -81,9 +82,7 @@ async def clean_state(migrated_database: None) -> AsyncIterator[FakeRedis]:
 
 def _auth(user_id: UUID, roles: list[str] | None = None) -> dict[str, str]:
     """Build a bearer Authorization header for one user."""
-    return {
-        "Authorization": f"Bearer {create_access_token(user_id, roles or [])}"
-    }
+    return {"Authorization": f"Bearer {create_access_token(user_id, roles or [])}"}
 
 
 async def _user(prefix: str, *, totp_secret: str | None = None) -> UUID:
@@ -96,9 +95,7 @@ async def _user(prefix: str, *, totp_secret: str | None = None) -> UUID:
                 display_name=prefix,
                 email_verified=True,
                 totp_enabled=totp_secret is not None,
-                totp_secret=(
-                    encrypt_totp_secret(totp_secret) if totp_secret else None
-                ),
+                totp_secret=(encrypt_totp_secret(totp_secret) if totp_secret else None),
             )
             session.add(user)
             await session.flush()
@@ -236,9 +233,7 @@ async def test_verification_itself_stays_reachable_when_unverified(
     owner_id = await _user("owner")
     org_id = await _org(owner_id)
 
-    status_read = await client.get(
-        f"/v1/orgs/{org_id}/kyb", headers=_auth(owner_id)
-    )
+    status_read = await client.get(f"/v1/orgs/{org_id}/kyb", headers=_auth(owner_id))
 
     assert status_read.status_code == 200
     assert status_read.json()["kyb_status"] == "unverified"
@@ -285,7 +280,6 @@ async def test_admin_rejection_requires_a_reason_and_is_not_terminal(
     client: AsyncClient, clean_state: FakeRedis
 ) -> None:
     """A rejected org learns why and may fix it and resubmit."""
-    del clean_state
     owner_id = await _user("owner")
     admin_secret = pyotp.random_base32()
     admin_id = await _user("admin", totp_secret=admin_secret)
@@ -293,22 +287,25 @@ async def test_admin_rejection_requires_a_reason_and_is_not_terminal(
     await _profile(org_id, kyb_status="pending")
     review_path = f"/v1/admin/orgs/{org_id}/kyb/review"
 
+    no_window = await client.post(
+        review_path,
+        json={"verdict": "rejected", "notes": "The certificate is unreadable."},
+        headers=_auth(admin_id, ["admin"]),
+    )
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
+
+    await open_step_up_window(clean_state, admin_id)
     silent = await client.post(
         review_path,
-        json={"verdict": "rejected", "totp_code": pyotp.TOTP(admin_secret).now()},
+        json={"verdict": "rejected"},
         headers=_auth(admin_id, ["admin"]),
     )
     assert silent.status_code == 422
 
     rejected = await client.post(
         review_path,
-        json={
-            "verdict": "rejected",
-            "notes": "The certificate is unreadable.",
-            "totp_code": pyotp.TOTP(admin_secret).at(
-                datetime.now(UTC).timestamp() + 30
-            ),
-        },
+        json={"verdict": "rejected", "notes": "The certificate is unreadable."},
         headers=_auth(admin_id, ["admin"]),
     )
     assert rejected.status_code == 200
@@ -332,7 +329,6 @@ async def test_verdict_notifies_the_org_owner(
     wrote an audit row broke that promise — the same gap the KYC verdict email
     fix closed for individuals.
     """
-    del clean_state
     from app.modules.organizations import kyb_service as _svc
 
     sent: list[dict[str, object]] = []
@@ -353,10 +349,11 @@ async def test_verdict_notifies_the_org_owner(
     admin_id = await _user("admin", totp_secret=admin_secret)
     org_id = await _org(owner_id)
     await _profile(org_id, kyb_status="pending")
+    await open_step_up_window(clean_state, admin_id)
 
     verdict = await client.post(
         f"/v1/admin/orgs/{org_id}/kyb/review",
-        json={"verdict": "verified", "totp_code": pyotp.TOTP(admin_secret).now()},
+        json={"verdict": "verified"},
         headers=_auth(admin_id, ["admin"]),
     )
 
@@ -376,7 +373,6 @@ async def test_admin_cannot_verify_documents_that_were_never_uploaded(
     Certifying against a document nobody could read would make the verdict
     meaningless.
     """
-    del clean_state
     from app.integrations import s3
 
     monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: False)
@@ -385,10 +381,11 @@ async def test_admin_cannot_verify_documents_that_were_never_uploaded(
     admin_id = await _user("admin", totp_secret=admin_secret)
     org_id = await _org(owner_id)
     await _profile(org_id, kyb_status="pending")
+    await open_step_up_window(clean_state, admin_id)
 
     res = await client.post(
         f"/v1/admin/orgs/{org_id}/kyb/review",
-        json={"verdict": "verified", "totp_code": pyotp.TOTP(admin_secret).now()},
+        json={"verdict": "verified"},
         headers=_auth(admin_id, ["admin"]),
     )
 

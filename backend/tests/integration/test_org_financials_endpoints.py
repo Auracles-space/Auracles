@@ -297,9 +297,7 @@ async def _org_attestation_report_submitted(
                 amount=fee,
                 currency="USD",
                 # Stamped at the 10% attestation rate, as settlement writes it.
-                platform_commission=(fee * Decimal("0.10")).quantize(
-                    Decimal("0.01")
-                ),
+                platform_commission=(fee * Decimal("0.10")).quantize(Decimal("0.01")),
                 net_amount=fee - (fee * Decimal("0.10")).quantize(Decimal("0.01")),
                 transaction_type="attestation_fee",
                 status="completed",
@@ -424,7 +422,7 @@ async def test_unreleased_fee_is_not_org_earnings(db_session) -> None:
 
 async def test_request_org_payout_requires_approved_application(db_session) -> None:
     """An org without an approved attestor application cannot request payout."""
-    org_id, owner_id, secret = await _attestor_org(approved=False)
+    org_id, owner_id, _secret = await _attestor_org(approved=False)
     member_id, _ = await _add_member(org_id)
     requestor_id, attestation_id = await _org_attestation_report_submitted(
         org_id, member_id
@@ -438,69 +436,15 @@ async def test_request_org_payout_requires_approved_application(db_session) -> N
     with pytest.raises(Exception) as excinfo:
         await financials_service.request_org_payout(
             db_session,
-            _FakeRedis(),
             org_id=org_id,
             actor=owner,
             payload=PayoutRequest(
                 amount=Decimal("100.00"),
                 currency="USD",
                 payout_account_id=account_id,
-                totp_code=pyotp.TOTP(secret).now(),
             ),
         )
     assert getattr(excinfo.value, "status_code", None) == 403
-
-
-class _FakeRedis:
-    """Async Redis double supporting the TOTP-sensitive verify path."""
-
-    def __init__(self) -> None:
-        self.values: dict[str, str] = {}
-        self.counters: dict[str, int] = {}
-        self.ttls: dict[str, int] = {}
-
-    async def get(self, key: str) -> str | None:
-        if key in self.values:
-            return self.values[key]
-        if key in self.counters:
-            return str(self.counters[key])
-        return None
-
-    async def set(
-        self, key: str, value: str, ex: int | None = None, nx: bool = False
-    ) -> bool:
-        """Store a string value, optionally respecting NX semantics."""
-        if ex is not None:
-            self.ttls[key] = ex
-        if nx and key in self.values:
-            return False
-        self.values[key] = value
-        return True
-
-    async def setex(self, key: str, seconds: int, value: str) -> None:
-        """Store a string value with a TTL."""
-        self.values[key] = value
-        self.ttls[key] = seconds
-
-    async def ttl(self, key: str) -> int:
-        """Return a recorded TTL or Redis' no-expiry sentinel."""
-        return self.ttls.get(key, -1)
-
-    async def incr(self, key: str) -> int:
-        self.counters[key] = int(await self.get(key) or "0") + 1
-        return self.counters[key]
-
-    async def expire(self, key: str, seconds: int) -> None:
-        self.ttls[key] = seconds
-
-    async def delete(self, *keys: str) -> int:
-        removed = 0
-        for key in keys:
-            removed += int(key in self.values or key in self.counters)
-            self.values.pop(key, None)
-            self.counters.pop(key, None)
-            self.ttls.pop(key, None)
-        return removed
 
 
 async def test_request_org_payout_creates_org_keyed_payout(
@@ -509,7 +453,7 @@ async def test_request_org_payout_creates_org_keyed_payout(
     """A valid org payout is created against the org, not any user."""
     fake_task = _FakePayoutTask()
     monkeypatch.setattr(financials_service, "process_payout", fake_task, raising=False)
-    org_id, owner_id, secret = await _attestor_org()
+    org_id, owner_id, _secret = await _attestor_org()
     member_id, _ = await _add_member(org_id)
     requestor_id, attestation_id = await _org_attestation_report_submitted(
         org_id, member_id
@@ -522,14 +466,12 @@ async def test_request_org_payout_creates_org_keyed_payout(
 
     result = await financials_service.request_org_payout(
         db_session,
-        _FakeRedis(),
         org_id=org_id,
         actor=owner,
         payload=PayoutRequest(
             amount=Decimal("100.00"),
             currency="USD",
             payout_account_id=account_id,
-            totp_code=pyotp.TOTP(secret).now(),
         ),
     )
 

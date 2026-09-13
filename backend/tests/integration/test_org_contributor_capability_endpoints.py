@@ -22,7 +22,10 @@ from app.modules.organizations.models import (
 )
 from tests.conftest import verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
-from tests.integration.test_org_admin_endpoints import create_platform_admin
+from tests.integration.test_org_admin_endpoints import (
+    create_platform_admin,
+    step_up_platform_admin,
+)
 from tests.integration.test_organizations_endpoints import (
     add_member,
     auth,
@@ -59,7 +62,7 @@ async def test_activate_contributor_capability_happy_path(
     org = await create_org(client, owner_token, "contributor-org")
     await add_member(str(org["id"]), member_id, "member")
 
-    await verify_org_kyb(org['id'])
+    await verify_org_kyb(org["id"])
     response = await client.post(
         f"/v1/orgs/{org['id']}/contributor-capability/activate",
         headers=auth(owner_token),
@@ -105,11 +108,11 @@ async def test_activate_contributor_capability_requires_auth_and_admin_role(
     org = await create_org(client, owner_token, "contributor-org")
     await add_member(str(org["id"]), member_id, "member")
 
-    await verify_org_kyb(org['id'])
+    await verify_org_kyb(org["id"])
     unauthenticated = await client.post(
         f"/v1/orgs/{org['id']}/contributor-capability/activate"
     )
-    await verify_org_kyb(org['id'])
+    await verify_org_kyb(org["id"])
     forbidden = await client.post(
         f"/v1/orgs/{org['id']}/contributor-capability/activate",
         headers=auth(member_token),
@@ -140,7 +143,7 @@ async def test_activate_contributor_capability_rejects_suspended_org(
                 .values(suspended_at=datetime.now(UTC))
             )
 
-    await verify_org_kyb(org['id'])
+    await verify_org_kyb(org["id"])
     response = await client.post(
         f"/v1/orgs/{org['id']}/contributor-capability/activate",
         headers=auth(owner_token),
@@ -156,16 +159,16 @@ async def test_admin_contributor_capability_status_routes(
     clean_orgs: None,
     migrated_database: None,
 ) -> None:
-    """Platform admins can suspend, reinstate, and revoke contributor capability."""
+    """Platform admins suspend, reinstate, and revoke inside a step-up window."""
     del override_redis, clean_orgs, migrated_database
-    _platform_admin_id, admin_headers = await create_platform_admin()
+    platform_admin_id, admin_headers = await create_platform_admin(step_up=False)
     plain_user_id = await create_user("plain-user")
     plain_headers = auth(create_access_token(plain_user_id, []))
     owner_id = await create_user("owner")
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "contributor-org")
 
-    await verify_org_kyb(org['id'])
+    await verify_org_kyb(org["id"])
     activated = await client.post(
         f"/v1/orgs/{org['id']}/contributor-capability/activate",
         headers=auth(owner_token),
@@ -179,6 +182,11 @@ async def test_admin_contributor_capability_status_routes(
         f"/v1/admin/orgs/{org['id']}/contributor-capability/suspend",
         headers=plain_headers,
     )
+    suspend_no_window = await client.post(
+        f"/v1/admin/orgs/{org['id']}/contributor-capability/suspend",
+        headers=admin_headers,
+    )
+    await step_up_platform_admin(platform_admin_id)
     suspended = await client.post(
         f"/v1/admin/orgs/{org['id']}/contributor-capability/suspend",
         headers=admin_headers,
@@ -194,6 +202,8 @@ async def test_admin_contributor_capability_status_routes(
 
     assert suspend_unauthenticated.status_code == 401
     assert suspend_forbidden.status_code == 403
+    assert suspend_no_window.status_code == 403
+    assert suspend_no_window.json()["detail"]["error_code"] == "step_up_required"
     assert suspended.status_code == 204
     assert reinstated.status_code == 204
     assert revoked.status_code == 204

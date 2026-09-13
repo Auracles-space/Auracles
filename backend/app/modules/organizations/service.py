@@ -27,7 +27,6 @@ from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import hash_token
 from app.integrations import s3
 from app.modules.auth.models import User
-from app.modules.auth.service import verify_totp_for_sensitive_action
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.notifications.service import create_notification
 from app.modules.organizations.dependencies import OrgContext
@@ -246,8 +245,7 @@ async def caller_capability_grants(
         )
     )
     memberships = {
-        org_id: (member_id, role)
-        for org_id, member_id, role in member_rows.all()
+        org_id: (member_id, role) for org_id, member_id, role in member_rows.all()
     }
     member_ids = [member_id for member_id, _role in memberships.values()]
     team_caps_by_member: dict[UUID, set[str]] = defaultdict(set)
@@ -364,9 +362,7 @@ async def count_org_actions(
                 Attestation.reviewing_member_id.in_(member_ids),
                 Attestation.status.in_(_IN_FLIGHT_REVIEW_STATUSES),
             )
-            .group_by(
-                Attestation.attestor_org_id, Attestation.reviewing_member_id
-            )
+            .group_by(Attestation.attestor_org_id, Attestation.reviewing_member_id)
         )
         for org_id, member_id, count in member_queue_rows.all():
             # Only count rows assigned to *this* caller's membership in that org.
@@ -1152,24 +1148,21 @@ async def change_member_role(
 
 async def transfer_ownership(
     db: AsyncSession,
-    redis: Redis,
     *,
     context: OrgContext,
     new_owner_member_id: UUID,
-    totp_code: str,
 ) -> None:
     """Transfer organization ownership to another existing member.
 
+    The router requires an open step-up 2FA window (``require_step_up``)
+    before this runs; no code is verified here.
+
     Args:
         db: Async database session.
-        redis: Redis client used for TOTP verification state.
         context: Resolved organization/member/user context from RBAC dependency.
         new_owner_member_id: Target membership row that should become owner.
-        totp_code: TOTP or backup code provided by the current owner.
 
     Raises:
-        HTTPException(401): The authenticated owner row can no longer be loaded.
-        HTTPException(403): The sensitive-action TOTP check fails.
         HTTPException(404): The target membership does not belong to this organization.
         HTTPException(409): The transfer target already owns the organization.
     """
@@ -1180,19 +1173,6 @@ async def transfer_ownership(
         await db.rollback()
 
     async with db.begin():
-        locked_user = await db.get(User, actor_id, with_for_update=True)
-        if locked_user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required.",
-            )
-        await verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=locked_user,
-            code=totp_code,
-        )
-
         target = await _get_member_row(
             db,
             org_id=org_id,
@@ -1846,7 +1826,6 @@ async def decline_invitation(
         organization=organization,
     )
 
- 
 
 async def accept_invitation_by_id(
     db: AsyncSession,
@@ -2410,9 +2389,7 @@ async def admin_list_orgs(
                     profiles[org.id].legal_name if org.id in profiles else None
                 ),
                 registration_number=(
-                    profiles[org.id].registration_number
-                    if org.id in profiles
-                    else None
+                    profiles[org.id].registration_number if org.id in profiles else None
                 ),
                 kyb_submitted_at=(
                     profiles[org.id].kyb_submitted_at if org.id in profiles else None

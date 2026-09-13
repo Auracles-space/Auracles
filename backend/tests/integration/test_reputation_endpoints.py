@@ -37,34 +37,37 @@ from app.modules.organizations.models import (
 from app.modules.projects.models import Project, Proposal
 from app.modules.reputation.models import ReputationScore
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
-    """Redis double for the TOTP rate-limit guard used by sensitive admin ops."""
+    """Redis double holding the step-up window read by sensitive admin ops."""
 
     async def set(
         self, key: str, value: str, ex: int | None = None, nx: bool = False
     ) -> bool:
         """Store a string value, optionally respecting NX semantics."""
         del ex
-        store = self.__dict__.setdefault("values", {})
-        if nx and key in store:
+        if nx and key in self.values:
             return False
-        store[key] = value
+        self.values[key] = value
         return True
 
     async def setex(self, key: str, seconds: int, value: str) -> None:
         """Store a string value with a TTL (test double ignores expiry)."""
         del seconds
-        self.__dict__.setdefault("values", {})[key] = value
+        self.values[key] = value
 
     def __init__(self) -> None:
-        """Create empty in-memory counter state."""
+        """Create empty in-memory value and counter state."""
+        self.values: dict[str, str] = {}
         self.counters: dict[str, int] = {}
         self.ttls: dict[str, int] = {}
 
     async def get(self, key: str) -> str | None:
-        """Return a stored counter value as a string, if present."""
+        """Return a stored string value or counter, if present."""
+        if key in self.values:
+            return self.values[key]
         return None if key not in self.counters else str(self.counters[key])
 
     async def incr(self, key: str) -> int:
@@ -451,8 +454,16 @@ async def test_admin_recompute_requires_admin(
     migrated_database: None,
     reputation_api_context: FakeRedis,
 ) -> None:
-    """A non-admin cannot trigger a reputation recompute."""
-    contributor_id = await _create_user("rep-noadmin@example.com", ["contributor"])
+    """A non-admin cannot trigger a reputation recompute.
+
+    The caller holds an open step-up window so the 403 is the role gate's.
+    """
+    contributor_id = await _create_user(
+        "rep-noadmin@example.com",
+        ["contributor"],
+        totp_secret=pyotp.random_base32(),
+    )
+    await open_step_up_window(reputation_api_context, contributor_id)
     framework_id = await _create_framework(contributor_id)
 
     response = await client.post(
@@ -462,23 +473,51 @@ async def test_admin_recompute_requires_admin(
             "subject_type": "framework",
             "subject_id": str(framework_id),
             "reason": "manual refresh",
-            "totp_code": "000000",
         },
     )
     assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "role_required"
 
 
 @pytest.mark.asyncio
-async def test_admin_recompute_queues_with_valid_2fa(
+async def test_admin_recompute_requires_step_up(
     client: AsyncClient,
     migrated_database: None,
     reputation_api_context: FakeRedis,
 ) -> None:
-    """An admin with valid 2FA queues a single-subject recompute (202)."""
+    """An admin with no open step-up window is refused before anything queues."""
+    del reputation_api_context
+    admin_id = await _create_user(
+        "rep-admin-nowindow@example.com", ["admin"], totp_secret=pyotp.random_base32()
+    )
+    contributor_id = await _create_user("rep-subject-nw@example.com", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+
+    response = await client.post(
+        "/v1/admin/reputation/recompute",
+        headers=_auth(admin_id, ["admin"]),
+        json={
+            "subject_type": "framework",
+            "subject_id": str(framework_id),
+            "reason": "manual refresh",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "step_up_required"
+
+
+@pytest.mark.asyncio
+async def test_admin_recompute_queues_with_step_up(
+    client: AsyncClient,
+    migrated_database: None,
+    reputation_api_context: FakeRedis,
+) -> None:
+    """An admin inside a step-up window queues a single-subject recompute (202)."""
     secret = pyotp.random_base32()
     admin_id = await _create_user(
         "rep-admin2fa@example.com", ["admin"], totp_secret=secret
     )
+    await open_step_up_window(reputation_api_context, admin_id)
     contributor_id = await _create_user("rep-subject@example.com", ["contributor"])
     framework_id = await _create_framework(contributor_id)
 
@@ -499,7 +538,6 @@ async def test_admin_recompute_queues_with_valid_2fa(
                 "subject_type": "framework",
                 "subject_id": str(framework_id),
                 "reason": "manual refresh",
-                "totp_code": pyotp.TOTP(secret).now(),
             },
         )
     finally:
@@ -510,18 +548,19 @@ async def test_admin_recompute_queues_with_valid_2fa(
 
 
 @pytest.mark.asyncio
-async def test_admin_recompute_queues_attestor_subject_with_valid_2fa(
+async def test_admin_recompute_queues_attestor_subject_with_step_up(
     client: AsyncClient,
     migrated_database: None,
     reputation_api_context: FakeRedis,
 ) -> None:
-    """An admin with valid 2FA can queue a single attestor-org reputation recompute."""
+    """An admin inside a step-up window can queue an attestor-org recompute."""
     secret = pyotp.random_base32()
     admin_id = await _create_user(
         "rep-attestor-admin2fa@example.com",
         ["admin"],
         totp_secret=secret,
     )
+    await open_step_up_window(reputation_api_context, admin_id)
     owner_id = await _create_user(
         "rep-attestor-owner@example.com",
         ["attestor"],
@@ -546,7 +585,6 @@ async def test_admin_recompute_queues_attestor_subject_with_valid_2fa(
                 "subject_type": "attestor_org",
                 "subject_id": str(org_id),
                 "reason": "manual refresh",
-                "totp_code": pyotp.TOTP(secret).now(),
             },
         )
     finally:

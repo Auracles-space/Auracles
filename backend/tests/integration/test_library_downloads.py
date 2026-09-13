@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -39,6 +39,7 @@ from app.modules.frameworks.models_artifact import (
     ArtifactRarityAudit,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
@@ -161,11 +162,14 @@ async def library_test_context() -> AsyncIterator[dict[str, Any]]:
             await session.commit()
 
     await cleanup()
-    app.dependency_overrides[get_redis] = lambda: FakeRedis()
+    # One shared double: the step-up window seeded before a request must be
+    # the instance the dependency reads during it.
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
     original_s3_storage = s3.storage
     s3.storage = fake_storage
     try:
-        yield {"storage": fake_storage}
+        yield {"storage": fake_storage, "redis": fake_redis}
     finally:
         s3.storage = original_s3_storage
         app.dependency_overrides.pop(get_redis, None)
@@ -173,20 +177,20 @@ async def library_test_context() -> AsyncIterator[dict[str, Any]]:
         await engine.dispose()
 
 
-async def enable_admin_totp(user_id: UUID) -> str:
-    """Enable TOTP on a user and return the raw secret for code generation.
+async def enable_admin_totp(user_id: UUID) -> None:
+    """Enrol a user in TOTP.
 
-    Admin licence grants are step-up gated, so the test admin needs a real
-    authenticator secret rather than a bare role row.
+    Admin licence grants are step-up gated, and the gate refuses admins who
+    never enrolled, so the test admin needs an authenticator secret rather
+    than a bare role row. The window itself is seeded with
+    ``open_step_up_window``.
     """
     async with async_session_factory() as session:
         async with session.begin():
             user = await session.get(User, user_id)
             assert user is not None
-            secret = pyotp.random_base32()
-            user.totp_secret = encrypt_totp_secret(secret)
+            user.totp_secret = encrypt_totp_secret(pyotp.random_base32())
             user.totp_enabled = True
-    return secret
 
 
 async def create_user(
@@ -394,7 +398,8 @@ async def test_admin_can_grant_team_license_and_operator_library_lists_it(
     contributor_id = await create_user("licensor@auracles.space", ["contributor"])
     operator_id = await create_user("operator-library@auracles.space", ["operator"])
     admin_id = await create_user("admin-license@auracles.space", ["admin"])
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(library_test_context["redis"], admin_id)
     framework_id, _ = await create_published_framework_version(contributor_id)
 
     grant = await client.post(
@@ -403,7 +408,6 @@ async def test_admin_can_grant_team_license_and_operator_library_lists_it(
             "framework_id": str(framework_id),
             "operator_id": str(operator_id),
             "type": "team",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
         },
         headers=auth_headers(admin_id, ["admin"]),
     )
@@ -467,31 +471,60 @@ async def test_admin_duplicate_license_grant_returns_409(
     )
     operator_id = await create_user("duplicate-operator@auracles.space", ["operator"])
     admin_id = await create_user("duplicate-admin@auracles.space", ["admin"])
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(library_test_context["redis"], admin_id)
     framework_id, _ = await create_published_framework_version(contributor_id)
     payload = {
         "framework_id": str(framework_id),
         "operator_id": str(operator_id),
         "type": "single_user",
     }
-    # Step-up codes are single-use, so the retry needs a different one. The
-    # previous step is still inside the accepted +/-1 window.
-    totp = pyotp.TOTP(admin_totp)
-    now = datetime.now(UTC)
 
     first = await client.post(
         "/v1/admin/licenses",
-        json={**payload, "totp_code": totp.at(now)},
+        json=payload,
         headers=auth_headers(admin_id, ["admin"]),
     )
     duplicate = await client.post(
         "/v1/admin/licenses",
-        json={**payload, "totp_code": totp.at(now - timedelta(seconds=30))},
+        json=payload,
         headers=auth_headers(admin_id, ["admin"]),
     )
 
     assert first.status_code == 201
     assert duplicate.status_code == 409
+
+
+async def test_admin_license_grant_requires_step_up(
+    client: AsyncClient,
+    migrated_database: None,
+    library_test_context: dict[str, Any],
+) -> None:
+    """Minting a licence hands out paid access, so it needs an open window."""
+    del library_test_context
+    contributor_id = await create_user("gate-seller@auracles.space", ["contributor"])
+    operator_id = await create_user("gate-operator@auracles.space", ["operator"])
+    admin_id = await create_user("gate-admin@auracles.space", ["admin"])
+    await enable_admin_totp(admin_id)
+    framework_id, _ = await create_published_framework_version(contributor_id)
+
+    response = await client.post(
+        "/v1/admin/licenses",
+        json={
+            "framework_id": str(framework_id),
+            "operator_id": str(operator_id),
+            "type": "team",
+        },
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "step_up_required"
+    async with async_session_factory() as session:
+        granted = await session.scalar(
+            select(License).where(License.framework_id == framework_id)
+        )
+    assert granted is None
 
 
 async def test_operator_download_requires_license_and_verified_kyc(
@@ -615,7 +648,8 @@ async def test_revoked_license_leaves_the_operator_library(
     contributor_id = await create_user("revoked-seller@auracles.space", ["contributor"])
     operator_id = await create_user("revoked-buyer@auracles.space", ["operator"])
     admin_id = await create_user("revoked-admin@auracles.space", ["admin"])
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(library_test_context["redis"], admin_id)
     framework_id, _ = await create_published_framework_version(contributor_id)
 
     await client.post(
@@ -624,7 +658,6 @@ async def test_revoked_license_leaves_the_operator_library(
             "framework_id": str(framework_id),
             "operator_id": str(operator_id),
             "type": "team",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
         },
         headers=auth_headers(admin_id, ["admin"]),
     )

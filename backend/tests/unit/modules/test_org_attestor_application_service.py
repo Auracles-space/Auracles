@@ -50,7 +50,6 @@ from app.modules.organizations.schemas import (
     OrgAttestorTaxDocumentRequest,
     OrgUndertakingsSignRequest,
 )
-from tests.integration.test_auth_sessions import FakeRedis
 from tests.support.db_cleanup import clear_identity_state_async
 
 pytestmark = pytest.mark.asyncio
@@ -386,11 +385,8 @@ async def test_submit_incomplete_content_rejected(app_state: None) -> None:
         await session.commit()
     with pytest.raises(HTTPException) as exc:
         async with async_session_factory() as session:
-            await svc.submit_application(
-                session, org_id=org_id, actor_id=owner.user_id
-            )
+            await svc.submit_application(session, org_id=org_id, actor_id=owner.user_id)
     assert exc.value.status_code == 422
-
 
 
 async def test_submit_succeeds_with_complete_content(app_state: None) -> None:
@@ -500,31 +496,6 @@ async def test_reject_notifies_org_owner(
     assert str(org_id) in str(calls[0]["link"])
 
 
-async def test_sign_undertakings_wrong_totp_rejected(app_state: None) -> None:
-    """Signing undertakings with an invalid TOTP code raises 422."""
-    org_id, owner = await _create_org(attestor_status="pending", totp=True)
-    async with async_session_factory() as session:
-        await svc.create_application(
-            session, org_id=org_id, actor_id=owner.user_id, payload=_valid_create()
-        )
-    user = await _load_user(owner.user_id)
-    with pytest.raises(HTTPException) as exc:
-        async with async_session_factory() as session:
-            await svc.sign_undertakings(
-                session,
-                FakeRedis(),
-                org_id=org_id,
-                user=user,
-                payload=OrgUndertakingsSignRequest(
-                    declarations=[],
-                    accept_policy=True,
-                    accept_confidentiality=True,
-                    totp_code="000000",
-                ),
-            )
-    assert exc.value.status_code == 422
-
-
 async def test_nominate_unsigned_member_rejected(app_state: None) -> None:
     """Nominating a member without a current NDA signature raises 422."""
     org_id, owner = await _create_org(attestor_status="pending")
@@ -606,18 +577,15 @@ async def test_gate_checklist_reflects_service_stamps(app_state: None) -> None:
     assert checklist.tax_document_uploaded is False
 
     user = await _load_user(owner.user_id)
-    code = pyotp.TOTP(owner.totp_secret).now()
     async with async_session_factory() as session:
         await svc.sign_undertakings(
             session,
-            FakeRedis(),
             org_id=org_id,
             user=user,
             payload=OrgUndertakingsSignRequest(
                 declarations=[],
                 accept_policy=True,
                 accept_confidentiality=True,
-                totp_code=code,
             ),
         )
 

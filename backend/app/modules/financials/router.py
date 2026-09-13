@@ -4,12 +4,14 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_kyc_verified, require_role
-from app.core.redis import get_redis
+from app.core.dependencies import (
+    require_kyc_verified,
+    require_role,
+    require_step_up_after,
+)
 from app.modules.auth.models import User
 from app.modules.collections import service as collections_service
 from app.modules.financials import service
@@ -37,28 +39,30 @@ from app.modules.financials.schemas import (
 
 router = APIRouter(prefix="/financials", tags=["Financials"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
-RedisClient = Annotated[Redis, Depends(get_redis)]
 OperatorUser = Annotated[User, Depends(require_role("operator"))]
 # Query-token auth is reserved for browser-navigated redirect downloads.
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
 KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
 
 
-@router.post("/payment-methods", response_model=PaymentMethodSetupResponse)
+@router.post(
+    "/payment-methods",
+    response_model=PaymentMethodSetupResponse,
+    dependencies=[Depends(require_step_up_after(require_role("operator")))],
+)
 async def create_payment_method_setup(
-    payload: PaymentMethodSetupRequest,
     operator: OperatorUser,
     _: KycVerifiedUser,
     db: DatabaseSession,
-    redis: RedisClient,
+    payload: PaymentMethodSetupRequest | None = None,
 ) -> PaymentMethodSetupResponse:
-    """Start provider-hosted setup for an Operator payment method."""
-    return await service.create_payment_method_setup(
-        db=db,
-        redis=redis,
-        operator=operator,
-        totp_code=payload.totp_code,
-    )
+    """Start provider-hosted setup for an Operator payment method.
+
+    Requires an open step-up window. The body carries no fields; it is
+    declared only so stray fields such as a raw card number are rejected.
+    """
+    del payload
+    return await service.create_payment_method_setup(db=db, operator=operator)
 
 
 @router.get("/payment-methods", response_model=PaymentMethodsResponse)
@@ -89,21 +93,24 @@ async def list_framework_purchases(
 @router.delete(
     "/payment-methods/{payment_method_id}",
     response_model=PaymentMethodDeleteResponse,
+    dependencies=[Depends(require_step_up_after(require_role("operator")))],
 )
 async def delete_payment_method(
     payment_method_id: str,
-    payload: PaymentMethodDeleteRequest,
     operator: OperatorUser,
     db: DatabaseSession,
-    redis: RedisClient,
+    payload: PaymentMethodDeleteRequest | None = None,
 ) -> PaymentMethodDeleteResponse:
-    """Remove a provider-held payment method for the authenticated Operator."""
+    """Remove a provider-held payment method for the authenticated Operator.
+
+    Requires an open step-up window. The body carries no fields; it is
+    declared only so stray fields are rejected.
+    """
+    del payload
     return await service.delete_payment_method(
         db=db,
-        redis=redis,
         operator=operator,
         payment_method_id=payment_method_id,
-        totp_code=payload.totp_code,
     )
 
 
@@ -225,18 +232,24 @@ async def list_payout_accounts(
     return await service.list_payout_accounts(db=db, contributor=contributor)
 
 
-@router.post("/payouts", response_model=PayoutResponse, status_code=201)
+@router.post(
+    "/payouts",
+    response_model=PayoutResponse,
+    status_code=201,
+    dependencies=[Depends(require_step_up_after(require_role("contributor")))],
+)
 async def request_payout(
     payload: PayoutRequest,
     contributor: ContributorUser,
     _: KycVerifiedUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> PayoutResponse:
-    """Request payout of available Contributor earnings after 2FA."""
+    """Request payout of available Contributor earnings.
+
+    Requires an open step-up window.
+    """
     return await service.request_payout(
         db=db,
-        redis=redis,
         contributor=contributor,
         payload=payload,
     )
@@ -254,19 +267,22 @@ async def list_payouts(
 @router.delete(
     "/payout-accounts/{payout_account_id}",
     response_model=PayoutAccountDeleteResponse,
+    dependencies=[Depends(require_step_up_after(require_role("contributor")))],
 )
 async def delete_payout_account(
     payout_account_id: UUID,
-    payload: PayoutAccountDeleteRequest,
     contributor: ContributorUser,
     db: DatabaseSession,
-    redis: RedisClient,
+    payload: PayoutAccountDeleteRequest | None = None,
 ) -> PayoutAccountDeleteResponse:
-    """Soft-delete an owned payout account after 2FA confirmation."""
+    """Soft-delete an owned payout account.
+
+    Requires an open step-up window. The body carries no fields; it is
+    declared only so stray fields are rejected.
+    """
+    del payload
     return await service.delete_payout_account(
         db=db,
-        redis=redis,
         contributor=contributor,
         payout_account_id=payout_account_id,
-        totp_code=payload.totp_code,
     )

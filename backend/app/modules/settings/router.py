@@ -13,7 +13,7 @@ from app.core.cookies import (
     clear_session_hint_cookie,
 )
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_step_up_if_enrolled
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.auth.schemas import RegisterResponse
@@ -218,14 +218,22 @@ async def revoke_other_sessions(
     return RegisterResponse(message=f"Revoked {revoked_count} sessions.")
 
 
-@router.post("/account/email-change", response_model=RegisterResponse)
+@router.post(
+    "/account/email-change",
+    response_model=RegisterResponse,
+    dependencies=[Depends(require_step_up_if_enrolled)],
+)
 async def request_email_change(
     payload: EmailChangeRequest,
     current_user: CurrentUser,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> RegisterResponse:
-    """Start a verified account email change."""
+    """Start a verified account email change.
+
+    Accounts with 2FA enabled must hold an open step-up window
+    (``POST /v1/auth/step-up``); unenrolled accounts are not gated.
+    """
     await service.request_email_change(
         db=db,
         redis=redis,
@@ -236,7 +244,6 @@ async def request_email_change(
             if payload.password is not None
             else None
         ),
-        totp_code=payload.totp_code,
     )
     return RegisterResponse(message="Email change verification sent.")
 

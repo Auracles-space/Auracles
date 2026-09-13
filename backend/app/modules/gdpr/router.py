@@ -9,7 +9,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, require_step_up_if_enrolled
 from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.gdpr import consent_service, deletion_service, export_service
@@ -146,10 +146,12 @@ async def download_data_export(
     "/account-deletion",
     response_model=AccountDeletionStatusResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_step_up_if_enrolled)],
     summary="Request account deletion",
     description=(
         "Schedule GDPR account deletion after password confirmation and the "
-        "configured cooling-off period."
+        "configured cooling-off period. Accounts with 2FA enabled must hold an "
+        "open step-up window."
     ),
     responses={
         status.HTTP_202_ACCEPTED: {
@@ -165,12 +167,14 @@ async def request_account_deletion(
     payload: AccountDeletionRequestBody,
     current_user: CurrentUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> Response:
-    """Schedule account deletion for the current user."""
+    """Schedule account deletion for the current user.
+
+    Accounts with 2FA enabled must hold an open step-up window
+    (``POST /v1/auth/step-up``); unenrolled accounts are not gated.
+    """
     result, status_code = await deletion_service.request_account_deletion(
         db=db,
-        redis=redis,
         user=current_user,
         payload=payload,
     )

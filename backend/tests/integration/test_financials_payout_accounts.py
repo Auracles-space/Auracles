@@ -30,6 +30,7 @@ from app.modules.financials import service as financials_service
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
@@ -339,13 +340,60 @@ async def test_payout_account_onboarding_requires_contributor_and_kyc(
     assert wrong_role.status_code == 403
 
 
-async def test_contributor_lists_and_soft_deletes_payout_account_with_totp(
+async def test_delete_payout_account_requires_open_step_up_window(
     client: AsyncClient,
     migrated_database: None,
     payout_account_context: dict[str, Any],
 ) -> None:
-    """Contributor can list active payout accounts and soft-delete with 2FA."""
-    contributor_id, totp_secret = await create_user_with_roles(
+    """Deleting a payout account without an open step-up window answers 403.
+
+    The account stays active so the Contributor can retry after confirming.
+    """
+    del migrated_database, payout_account_context
+    contributor_id, _ = await create_user_with_roles(
+        "delete-no-window@auracles.space",
+        ["contributor"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            payout_account = PayoutAccount(
+                user_id=contributor_id,
+                provider="stripe",
+                provider_account_id=encrypt_payout_provider_account_id(
+                    "acct_no_window_123"
+                ),
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    "acct_no_window_123"
+                ),
+                account_type="express",
+                is_default=True,
+            )
+            session.add(payout_account)
+            await session.flush()
+            account_id = payout_account.id
+
+    blocked = await client.request(
+        "DELETE",
+        f"/v1/financials/payout-accounts/{account_id}",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.get(PayoutAccount, account_id)
+
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["error_code"] == "step_up_required"
+    assert stored is not None
+    assert stored.deleted_at is None
+
+
+async def test_contributor_lists_and_soft_deletes_payout_account_with_step_up(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Contributor lists active payout accounts and soft-deletes inside a window."""
+    contributor_id, _ = await create_user_with_roles(
         "delete-payout@auracles.space",
         ["contributor"],
     )
@@ -365,7 +413,7 @@ async def test_contributor_lists_and_soft_deletes_payout_account_with_totp(
                     is_default=True,
                 )
             )
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(payout_account_context["redis"], contributor_id)
 
     listed = await client.get(
         "/v1/financials/payout-accounts",
@@ -376,7 +424,6 @@ async def test_contributor_lists_and_soft_deletes_payout_account_with_totp(
         "DELETE",
         f"/v1/financials/payout-accounts/{account_id}",
         headers=auth_headers(contributor_id, ["contributor"]),
-        json={"totp_code": code},
     )
     listed_after_delete = await client.get(
         "/v1/financials/payout-accounts",

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -23,6 +23,7 @@ from app.modules.auth.models import User, UserRole
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.support.db_cleanup import clear_identity_state_async
 
 
@@ -223,38 +224,29 @@ def auth_headers(user_id: UUID) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def test_admin_releases_held_escrow_with_totp_reason_and_idempotency(
+async def test_admin_releases_held_escrow_with_step_up_reason_and_idempotency(
     client: AsyncClient,
     migrated_database: None,
     admin_escrow_context: dict[str, Any],
 ) -> None:
     """Admin override can release held escrow once and records the reason."""
-    del migrated_database, admin_escrow_context
+    del migrated_database
     admin_id, totp_secret = await create_admin_user()
     escrow_id = await create_held_escrow()
     assert totp_secret is not None
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(admin_escrow_context["redis"], admin_id)
 
     first = await client.post(
         f"/v1/admin/escrows/{escrow_id}/release",
         headers=auth_headers(admin_id),
-        json={
-            "reason": "Operator approval confirmed by support.",
-            "totp_code": code,
-        },
+        json={"reason": "Operator approval confirmed by support."},
     )
-    # A genuine retry re-reads the authenticator: TOTP codes are single-use
-    # now (M4), so the repeat uses a fresh code from the next time step. The
-    # escrow is already released, so this still exercises idempotency.
+    # The step-up window still covers the retry; the escrow is already
+    # released, so this exercises idempotency rather than the gate.
     second = await client.post(
         f"/v1/admin/escrows/{escrow_id}/release",
         headers=auth_headers(admin_id),
-        json={
-            "reason": "Repeated support action.",
-            "totp_code": pyotp.TOTP(totp_secret).at(
-                datetime.now(UTC) + timedelta(seconds=30)
-            ),
-        },
+        json={"reason": "Repeated support action."},
     )
 
     async with async_session_factory() as session:
@@ -282,30 +274,27 @@ async def test_admin_releases_held_escrow_with_totp_reason_and_idempotency(
     assert audits[0].metadata_["admin_override"] is True
 
 
-async def test_admin_refunds_held_escrow_and_totp_is_required(
+async def test_admin_refunds_held_escrow_and_step_up_is_required(
     client: AsyncClient,
     migrated_database: None,
     admin_escrow_context: dict[str, Any],
 ) -> None:
-    """Admin override refunds held escrow only after TOTP confirmation."""
+    """Admin override refunds held escrow only inside a step-up window."""
     del migrated_database
     admin_id, totp_secret = await create_admin_user()
     escrow_id = await create_held_escrow()
     assert totp_secret is not None
 
-    missing_totp = await client.post(
+    no_step_up = await client.post(
         f"/v1/admin/escrows/{escrow_id}/refund",
         headers=auth_headers(admin_id),
-        json={
-            "reason": "Dispute resolved in Operator favor.",
-            "totp_code": "000000",
-        },
+        json={"reason": "Dispute resolved in Operator favor."},
     )
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(admin_escrow_context["redis"], admin_id)
     refunded = await client.post(
         f"/v1/admin/escrows/{escrow_id}/refund",
         headers=auth_headers(admin_id),
-        json={"reason": "Dispute resolved in Operator favor.", "totp_code": code},
+        json={"reason": "Dispute resolved in Operator favor."},
     )
 
     async with async_session_factory() as session:
@@ -319,7 +308,8 @@ async def test_admin_refunds_held_escrow_and_totp_is_required(
             select(AuditLog).where(AuditLog.action == "escrow_refunded")
         )
 
-    assert missing_totp.status_code == 422
+    assert no_step_up.status_code == 403
+    assert no_step_up.json()["detail"]["error_code"] == "step_up_required"
     assert refunded.status_code == 200
     assert refunded.json()["status"] == "refunded"
     assert escrow is not None

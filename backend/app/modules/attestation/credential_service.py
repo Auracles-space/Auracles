@@ -13,7 +13,6 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
-from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,7 +27,6 @@ from app.modules.attestation.schemas import (
     CredentialEvidenceUploadSessionResponse,
     CredentialUpdateRequest,
 )
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
 from app.workers.tasks.project_notifications import dispatch_project_notification
@@ -521,59 +519,33 @@ async def _load_credential_for_review(
     return credential
 
 
-async def _verify_admin_step_up(
-    db: AsyncSession,
-    redis: Redis,
-    admin_id: UUID,
-    totp_code: str,
-) -> None:
-    """Require a valid admin TOTP or backup code before a credential decision."""
-    admin = await db.get(User, admin_id, with_for_update=True)
-    if admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid access token.",
-        )
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=admin,
-        code=totp_code,
-    )
-
-
 async def verify_credential(
     db: AsyncSession,
-    redis: Redis,
     admin_id: UUID,
     credential_id: UUID,
-    totp_code: str,
 ) -> Credential:
     """Mark a pending Credential verified (Admin action).
 
-    Step-up verified before the Credential is read: verification feeds attestor
-    eligibility, so it is a trust decision rather than a routine edit and is
-    gated like the admin suspensions.
+    Verification feeds attestor eligibility, so it is a trust decision rather
+    than a routine edit: the route requires an open step-up window
+    (``require_step_up``), gated like the admin suspensions.
 
     Args:
         db: Async database session.
-        redis: Redis client used by the step-up factor check.
         admin_id: UUID of the acting admin.
         credential_id: UUID of the credential under review.
-        totp_code: Admin TOTP or backup code authorising the decision.
 
     Returns:
         The verified Credential.
 
     Raises:
-        HTTPException(401): Step-up factor missing or invalid.
+        HTTPException(403): Admin is reviewing their own credential.
         HTTPException(404): Credential not found.
         HTTPException(422): Credential is not pending.
     """
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_step_up(db, redis, admin_id, totp_code)
         credential = await _load_credential_for_review(db, credential_id)
         if credential.user_id == admin_id:
             raise HTTPException(
@@ -606,38 +578,33 @@ async def verify_credential(
 
 async def reject_credential(
     db: AsyncSession,
-    redis: Redis,
     admin_id: UUID,
     credential_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> Credential:
     """Reject a pending Credential with a reason (Admin action).
 
-    Step-up verified before the Credential is read, matching
+    Gated by an open step-up window on the route, matching
     :func:`verify_credential`: a rejection blocks an attestor's eligibility and
     must not be reachable from a stolen admin session alone.
 
     Args:
         db: Async database session.
-        redis: Redis client used by the step-up factor check.
         admin_id: UUID of the acting admin.
         credential_id: UUID of the credential under review.
         reason: Required non-empty rejection reason.
-        totp_code: Admin TOTP or backup code authorising the decision.
 
     Returns:
         The rejected Credential.
 
     Raises:
-        HTTPException(401): Step-up factor missing or invalid.
+        HTTPException(403): Admin is reviewing their own credential.
         HTTPException(404): Credential not found.
         HTTPException(422): Credential is not pending.
     """
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_step_up(db, redis, admin_id, totp_code)
         credential = await _load_credential_for_review(db, credential_id)
         if credential.user_id == admin_id:
             raise HTTPException(

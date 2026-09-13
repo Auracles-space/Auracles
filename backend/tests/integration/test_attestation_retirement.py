@@ -114,7 +114,7 @@ async def test_individual_attestor_admin_endpoints_removed(
 
     activate = await client.post(
         f"/v1/admin/attestor/applications/{application_id}/activate",
-        json={"totp_code": "123456"},
+        json={},
         headers=_auth(admin_id, ["admin"]),
     )
     assert activate.status_code == 404

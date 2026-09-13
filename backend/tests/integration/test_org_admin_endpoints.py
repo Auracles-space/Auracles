@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from app.core.redis import get_redis
 from app.core.security import create_access_token
 from app.main import app
+from tests.conftest import open_step_up_window
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_organizations_endpoints import (
     add_member,
@@ -35,9 +36,26 @@ def override_redis() -> Iterator[FakeRedis]:
     app.dependency_overrides.pop(get_redis, None)
 
 
-async def create_platform_admin() -> tuple[UUID, dict[str, str]]:
-    """Create a platform admin and return their headers."""
-    admin_id = await create_user("admin")
+async def step_up_platform_admin(admin_id: UUID) -> None:
+    """Open a step-up window for ``admin_id`` on the Redis the app resolves.
+
+    Admin org writes sit in the step-up registry, so they read a window rather
+    than a code. The window is seeded on whichever fake Redis is currently
+    installed for ``get_redis`` — these suites stack more than one override
+    fixture, and only the last one installed is the one the route sees.
+    """
+    await open_step_up_window(app.dependency_overrides[get_redis](), admin_id)
+
+
+async def create_platform_admin(*, step_up: bool = True) -> tuple[UUID, dict[str, str]]:
+    """Create a 2FA-enrolled platform admin and return their headers.
+
+    Opens the admin's step-up window by default so tests reach the write
+    itself; pass ``step_up=False`` to exercise the gate.
+    """
+    admin_id = await create_user("admin", totp_enabled=True)
+    if step_up:
+        await step_up_platform_admin(admin_id)
     token = create_access_token(admin_id, ["admin"])
     return admin_id, auth(token)
 
@@ -90,8 +108,12 @@ async def test_admin_suspend_org(
     clean_orgs: None,
     migrated_database: None,
 ) -> None:
-    """Suspending an org returns 204 and blocks org-admin actions."""
-    admin_id, admin_headers = await create_platform_admin()
+    """Suspending an org needs an open step-up window, then returns 204.
+
+    Suspension removes every member's org access at once, so it sits in the
+    step-up registry alongside the other privilege changes.
+    """
+    admin_id, admin_headers = await create_platform_admin(step_up=False)
 
     owner_id = await create_user("owner")
     owner_token = create_access_token(owner_id, [])
@@ -99,6 +121,13 @@ async def test_admin_suspend_org(
     org = await create_org(client, owner_token, "targetorg")
     org_id = org["id"]
 
+    no_window = await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers
+    )
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
+
+    await step_up_platform_admin(admin_id)
     res = await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
     assert res.status_code == 204
 
@@ -156,9 +185,7 @@ async def test_admin_reinstate_org_lifts_suspension(
 
     await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
 
-    res = await client.post(
-        f"/v1/admin/orgs/{org_id}/reinstate", headers=admin_headers
-    )
+    res = await client.post(f"/v1/admin/orgs/{org_id}/reinstate", headers=admin_headers)
     assert res.status_code == 204
 
     # Idempotent: reinstating an active org is a no-op.

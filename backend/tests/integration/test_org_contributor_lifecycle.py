@@ -58,7 +58,7 @@ from app.modules.projects.models import Deliverable, Milestone, Project, Proposa
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
-from tests.conftest import verify_org_kyb
+from tests.conftest import open_step_up_window, verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_organizations_endpoints import add_member, auth, create_org
 from tests.support.db_cleanup import clear_identity_state_async
@@ -414,10 +414,11 @@ async def test_org_contributor_full_lifecycle(
     show only the org identity, and project delivery releases milestone funds
     to the organization rather than a member.
     """
-    del lifecycle_context
-
     owner_secret = pyotp.random_base32()
     owner_id = await _create_user("org-owner", totp_secret=owner_secret)
+    # The legal-profile write and the payout below read the owner's step-up
+    # window instead of a per-request code.
+    await open_step_up_window(lifecycle_context["redis"], owner_id)
     member_id = await _create_user("org-member")
     operator_id = await _create_user("operator", roles=["operator"])
     owner_token = create_access_token(owner_id, [])
@@ -575,7 +576,7 @@ async def test_org_contributor_full_lifecycle(
     monkeypatch.setattr(framework_service, "index_framework_artifacts", _noop_index)
 
     # --- Capability activation ------------------------------------------
-    await verify_org_kyb(org['id'])
+    await verify_org_kyb(org["id"])
     activated = await client.post(
         f"/v1/orgs/{org['id']}/contributor-capability/activate",
         headers=auth(owner_token),
@@ -721,7 +722,6 @@ async def test_org_contributor_full_lifecycle(
             "legal_name": "Verified Test Org Ltd",
             "registration_number": "RC000000",
             "address": {"country": "GB", "city": "London"},
-            "totp_code": pyotp.TOTP(owner_secret).now(),
         },
     )
     assert legal_profile.status_code == 200
@@ -760,11 +760,6 @@ async def test_org_contributor_full_lifecycle(
             "amount": "100.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            # Fresh code from the next step: the legal-profile update already
-            # consumed the current one, and codes are single-use now (M4).
-            "totp_code": pyotp.TOTP(owner_secret).at(
-                datetime.now(UTC) + timedelta(seconds=30)
-            ),
         },
     )
     assert payout.status_code == 200
@@ -780,9 +775,7 @@ async def test_org_contributor_full_lifecycle(
     catalog = await client.get("/v1/explore/frameworks")
     assert catalog.status_code == 200
     catalog_item = next(
-        item
-        for item in catalog.json()["items"]
-        if item["id"] == str(framework_id)
+        item for item in catalog.json()["items"] if item["id"] == str(framework_id)
     )
     assert catalog_item["contributor_org_id"] == str(org_id)
     assert catalog_item["contributor_name"] == org["name"]

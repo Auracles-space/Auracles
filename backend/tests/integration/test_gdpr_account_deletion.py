@@ -8,7 +8,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -60,6 +59,10 @@ from app.modules.organizations.models import (
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import gdpr_beat
+from tests.conftest import open_step_up_window
+
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+"""Placeholder enrolled-2FA secret; step-up windows are seeded, never verified."""
 
 
 class FakeRedis:
@@ -248,9 +251,8 @@ async def create_verified_user(
     *,
     roles: list[str] | None = None,
     enable_totp: bool = False,
-) -> tuple[UUID, str | None]:
-    """Create a verified user and optional TOTP secret for GDPR tests."""
-    secret = pyotp.random_base32() if enable_totp else None
+) -> UUID:
+    """Create a verified user, optionally enrolled in 2FA, for GDPR tests."""
     async with async_session_factory() as session:
         async with session.begin():
             user = User(
@@ -259,7 +261,7 @@ async def create_verified_user(
                 display_name=email.split("@")[0],
                 email_verified=True,
                 totp_enabled=enable_totp,
-                totp_secret=encrypt_totp_secret(secret) if secret else None,
+                totp_secret=encrypt_totp_secret(TOTP_SECRET) if enable_totp else None,
             )
             session.add(user)
             await session.flush()
@@ -271,7 +273,7 @@ async def create_verified_user(
                         approved_at=datetime.now(UTC),
                     )
                 )
-        return user.id, secret
+        return user.id
 
 
 def auth_headers(user_id: UUID, roles: list[str] | None = None) -> dict[str, str]:
@@ -416,7 +418,7 @@ async def seed_scrub_state(
 
 async def seed_blocking_state(user_id: UUID) -> None:
     """Create one instance of every Slice 5 deletion-blocking obligation."""
-    counterpart_id, _secret = await create_verified_user(
+    counterpart_id = await create_verified_user(
         f"counterparty-{uuid4()}@auracles.space",
         roles=["contributor", "attestor", "operator"],
     )
@@ -640,9 +642,7 @@ async def clear_blocking_state(user_id: UUID) -> None:
             attestations = list(
                 (
                     await session.execute(
-                        select(Attestation).where(
-                            Attestation.requestor_id == user_id
-                        )
+                        select(Attestation).where(Attestation.requestor_id == user_id)
                     )
                 ).scalars()
             )
@@ -657,12 +657,12 @@ async def test_request_account_deletion_schedules_cooling_off_and_status_reads_i
 ) -> None:
     """A valid password-confirmed request schedules GDPR deletion."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user("delete-me@auracles.space")
+    user_id = await create_verified_user("delete-me@auracles.space")
 
     created = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
     listed = await client.get(
         "/v1/gdpr/account-deletion",
@@ -708,12 +708,12 @@ async def test_request_account_deletion_notifies_admins(
         "notify_admins_review_pending",
         lambda **kwargs: calls.append(kwargs),
     )
-    user_id, _secret = await create_verified_user("notify-delete@auracles.space")
+    user_id = await create_verified_user("notify-delete@auracles.space")
 
     created = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
 
     async with async_session_factory() as session:
@@ -739,7 +739,7 @@ async def test_request_account_deletion_passwordless_account_skips_password(
     """A passwordless (Google) account schedules deletion without a password.
 
     The grace period is the safety net; no password is demanded of an account
-    that has none. TOTP would still apply if the account had enabled it.
+    that has none. The step-up gate would still apply if the account had 2FA.
     """
     del account_deletion_test_context
     async with async_session_factory() as session:
@@ -776,7 +776,7 @@ async def test_get_account_deletion_status_returns_empty_state_without_request(
 ) -> None:
     """Status returns an empty state before any deletion request exists."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user("delete-status@auracles.space")
+    user_id = await create_verified_user("delete-status@auracles.space")
 
     response = await client.get(
         "/v1/gdpr/account-deletion",
@@ -801,7 +801,7 @@ async def test_request_account_deletion_blocks_when_unsettled_obligations_exist(
 ) -> None:
     """Deletion is blocked when any Slice 5 obligation still exists."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user(
+    user_id = await create_verified_user(
         "blocked-delete@auracles.space",
         roles=["operator", "contributor"],
     )
@@ -810,7 +810,7 @@ async def test_request_account_deletion_blocks_when_unsettled_obligations_exist(
     response = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id, ["operator", "contributor"]),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
 
     async with async_session_factory() as session:
@@ -847,10 +847,10 @@ async def test_active_reviewing_member_blocks_deletion_until_resolved(
 ) -> None:
     """A member staffing an in-flight org review cannot delete until it closes."""
     del client, migrated_database, account_deletion_test_context
-    member_user_id, _secret = await create_verified_user(
+    member_user_id = await create_verified_user(
         "reviewing-member-delete@auracles.space",
     )
-    requestor_id, _r = await create_verified_user(
+    requestor_id = await create_verified_user(
         "reviewing-req@auracles.space",
     )
     async with async_session_factory() as session:
@@ -863,9 +863,7 @@ async def test_active_reviewing_member_blocks_deletion_until_resolved(
             )
             session.add(org)
             await session.flush()
-            member = OrgMember(
-                org_id=org.id, user_id=member_user_id, role="member"
-            )
+            member = OrgMember(org_id=org.id, user_id=member_user_id, role="member")
             session.add(member)
             await session.flush()
             attestation = Attestation(
@@ -908,10 +906,10 @@ async def test_started_org_delivery_blocks_member_deletion_until_resolution(
 ) -> None:
     """A staffed member cannot delete their account mid-delivery for an org."""
     del client, migrated_database, account_deletion_test_context
-    member_user_id, _secret = await create_verified_user(
+    member_user_id = await create_verified_user(
         "delivering-member-delete@auracles.space",
     )
-    operator_id, _r = await create_verified_user(
+    operator_id = await create_verified_user(
         "delivery-operator@auracles.space",
     )
     async with async_session_factory() as session:
@@ -942,9 +940,7 @@ async def test_started_org_delivery_blocks_member_deletion_until_resolution(
                 title="Started Org Delivery",
                 description="Started work should block deletion.",
                 category="framework_customization",
-                required_deliverables=[
-                    {"name": "Memo", "description": "One memo"}
-                ],
+                required_deliverables=[{"name": "Memo", "description": "One memo"}],
                 budget_min=Decimal("900.00"),
                 budget_max=Decimal("1200.00"),
                 currency="USD",
@@ -1015,10 +1011,8 @@ async def test_org_operator_activity_does_not_block_deletion_and_clears_access_r
 ) -> None:
     """Org-operator activity is non-blocking and deletion strips access rows."""
     del migrated_database
-    user_id, _secret = await create_verified_user("org-operator-delete@auracles.space")
-    contributor_id, _other_secret = await create_verified_user(
-        "org-operator-seller@auracles.space"
-    )
+    user_id = await create_verified_user("org-operator-delete@auracles.space")
+    contributor_id = await create_verified_user("org-operator-seller@auracles.space")
     async with async_session_factory() as session:
         async with session.begin():
             organization = Organization(
@@ -1092,9 +1086,7 @@ async def test_org_operator_activity_does_not_block_deletion_and_clears_access_r
                     title="Deletion Coverage Project",
                     description="Org posting should not block account deletion.",
                     category="framework_customization",
-                    required_deliverables=[
-                        {"name": "Memo", "description": "One memo"}
-                    ],
+                    required_deliverables=[{"name": "Memo", "description": "One memo"}],
                     budget_min=Decimal("900.00"),
                     budget_max=Decimal("1200.00"),
                     currency="USD",
@@ -1152,29 +1144,47 @@ async def test_org_operator_activity_does_not_block_deletion_and_clears_access_r
     assert remaining_team_links == []
 
 
-async def test_request_account_deletion_requires_totp_when_enabled(
+async def test_request_account_deletion_requires_step_up_when_enrolled(
     client: AsyncClient,
     migrated_database: None,
     account_deletion_test_context: dict[str, Any],
 ) -> None:
-    """TOTP-enabled users must confirm deletion requests with a 2FA code."""
-    del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user(
+    """An enrolled user needs an open step-up window to request deletion.
+
+    ``require_step_up_if_enrolled`` gates the route: without a window the
+    request is refused with 403 ``step_up_required`` and nothing is scheduled;
+    with one open, the same request is accepted. Unenrolled users are covered
+    by the cooling-off test above, which opens no window.
+    """
+    del migrated_database
+    user_id = await create_verified_user(
         "delete-totp@auracles.space",
         enable_totp=True,
     )
 
-    response = await client.post(
+    refused = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
+    )
+    async with async_session_factory() as session:
+        pending = await session.scalar(
+            select(AccountDeletionRequest).where(
+                AccountDeletionRequest.user_id == user_id
+            )
+        )
+    await open_step_up_window(account_deletion_test_context["redis"], user_id)
+    accepted = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id),
+        json={"password": "CorrectHorse9"},
     )
 
-    assert response.status_code == 403
-    assert (
-        response.json()["detail"]
-        == "Confirm with your authenticator app before continuing."
-    )
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["error_code"] == "step_up_required"
+    assert pending is None
+    assert accepted.status_code == 202
+    assert accepted.json()["status"] == "scheduled"
 
 
 async def test_request_account_deletion_blocks_when_partner_payout_is_pending(
@@ -1184,7 +1194,7 @@ async def test_request_account_deletion_blocks_when_partner_payout_is_pending(
 ) -> None:
     """Pending Partner payouts block GDPR deletion for Developer users."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user(
+    user_id = await create_verified_user(
         "partner-payout-block@auracles.space",
         roles=["developer"],
     )
@@ -1193,7 +1203,7 @@ async def test_request_account_deletion_blocks_when_partner_payout_is_pending(
     response = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id, ["developer"]),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
 
     assert response.status_code == 409
@@ -1203,9 +1213,7 @@ async def test_request_account_deletion_blocks_when_partner_payout_is_pending(
     }
 
 
-async def _seed_owned_org(
-    user_id: UUID, *, capability_status: str = "active"
-) -> UUID:
+async def _seed_owned_org(user_id: UUID, *, capability_status: str = "active") -> UUID:
     """Create an org owned by the user with one attestor capability row."""
     async with async_session_factory() as session:
         async with session.begin():
@@ -1237,13 +1245,13 @@ async def test_request_account_deletion_blocks_sole_org_owner(
 ) -> None:
     """Sole ownership of an org with an active capability blocks deletion."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user("org-owner-delete@auracles.space")
+    user_id = await create_verified_user("org-owner-delete@auracles.space")
     await _seed_owned_org(user_id)
 
     response = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
 
     assert response.status_code == 409
@@ -1260,8 +1268,8 @@ async def test_request_account_deletion_allows_former_org_owner(
 ) -> None:
     """After transferring ownership away, orgs no longer block deletion."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user("org-exowner-delete@auracles.space")
-    new_owner_id, _ = await create_verified_user("org-newowner@auracles.space")
+    user_id = await create_verified_user("org-exowner-delete@auracles.space")
+    new_owner_id = await create_verified_user("org-newowner@auracles.space")
     org_id = await _seed_owned_org(user_id)
     async with async_session_factory() as session:
         async with session.begin():
@@ -1272,14 +1280,12 @@ async def test_request_account_deletion_allows_former_org_owner(
             )
             assert member is not None
             member.role = "member"
-            session.add(
-                OrgMember(org_id=org_id, user_id=new_owner_id, role="owner")
-            )
+            session.add(OrgMember(org_id=org_id, user_id=new_owner_id, role="owner"))
 
     response = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
 
     assert response.status_code == 202
@@ -1293,12 +1299,12 @@ async def test_cancel_account_deletion_marks_scheduled_request_cancelled(
 ) -> None:
     """Scheduled deletion requests remain cancellable during cooling-off."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user("delete-cancel@auracles.space")
+    user_id = await create_verified_user("delete-cancel@auracles.space")
 
     created = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
     cancelled = await client.post(
         "/v1/gdpr/account-deletion/cancel",
@@ -1339,7 +1345,7 @@ async def test_blocked_deletion_can_be_re_requested_after_obligations_clear(
 ) -> None:
     """A blocked user can schedule and cancel deletion after clearing blockers."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user(
+    user_id = await create_verified_user(
         "delete-retry@auracles.space",
         roles=["operator", "contributor"],
     )
@@ -1348,7 +1354,7 @@ async def test_blocked_deletion_can_be_re_requested_after_obligations_clear(
     blocked = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id, ["operator", "contributor"]),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
 
     await clear_blocking_state(user_id)
@@ -1356,7 +1362,7 @@ async def test_blocked_deletion_can_be_re_requested_after_obligations_clear(
     scheduled = await client.post(
         "/v1/gdpr/account-deletion",
         headers=auth_headers(user_id, ["operator", "contributor"]),
-        json={"password": "CorrectHorse9", "totp_code": None},
+        json={"password": "CorrectHorse9"},
     )
     cancelled = await client.post(
         "/v1/gdpr/account-deletion/cancel",
@@ -1390,7 +1396,7 @@ async def test_legacy_settings_deactivate_endpoint_is_removed(
 ) -> None:
     """The old settings deactivation endpoint is retired in favor of GDPR deletion."""
     del migrated_database, account_deletion_test_context
-    user_id, _secret = await create_verified_user("legacy-delete@auracles.space")
+    user_id = await create_verified_user("legacy-delete@auracles.space")
 
     response = await client.post(
         "/v1/settings/account/deactivate",
@@ -1407,7 +1413,7 @@ async def test_process_account_deletions_scrubs_due_scheduled_user_state(
 ) -> None:
     """The hourly worker anonymises a due scheduled request and revokes access."""
     del migrated_database
-    user_id, _secret = await create_verified_user(
+    user_id = await create_verified_user(
         "worker-delete@auracles.space",
         roles=["operator", "developer"],
         enable_totp=True,
@@ -1527,7 +1533,7 @@ async def test_process_account_deletions_skips_due_requests_with_live_obligation
 ) -> None:
     """The hourly worker re-checks obligations before completing deletion."""
     del migrated_database
-    user_id, _secret = await create_verified_user(
+    user_id = await create_verified_user(
         "worker-blocked@auracles.space",
         roles=["operator", "contributor"],
     )
@@ -1586,7 +1592,7 @@ async def test_process_account_deletions_defers_side_effects_until_final_recheck
 ) -> None:
     """Late blockers must prevent pre-commit KYC deletion and session revocation."""
     del migrated_database
-    user_id, _secret = await create_verified_user(
+    user_id = await create_verified_user(
         "worker-race@auracles.space",
         roles=["operator", "developer"],
         enable_totp=True,

@@ -4,8 +4,8 @@ Maintains the one-per-org legal profile used by contributor and attestor
 commercial flows: legal name, registration number, billing address, and the
 private tax-document upload pointer.
 
-RBAC is enforced by router dependencies; this layer assumes an authorized org
-owner actor and performs the TOTP step-up for sensitive writes.
+RBAC and the step-up 2FA window are enforced by router dependencies; this
+layer assumes an authorized, stepped-up org owner actor.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,15 +27,11 @@ from app.modules.attestation.credential_service import (
     _safe_file_name,
 )
 from app.modules.attestation.schemas import CredentialEvidenceUploadSessionResponse
-from app.modules.auth import service as auth_service
-from app.modules.auth.models import User
 from app.modules.organizations.models import OrgLegalProfile
 from app.modules.organizations.schemas import OrgAttestorTaxDocumentRequest
 
 LEGAL_PROFILE_TAX_DOCUMENT_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
-LEGAL_PROFILE_TAX_DOCUMENT_UPLOAD_TTL_SECONDS = (
-    CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
-)
+LEGAL_PROFILE_TAX_DOCUMENT_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
 
 
 async def get_legal_profile(
@@ -55,33 +50,21 @@ async def get_legal_profile(
 
 async def upsert_legal_profile(
     db: AsyncSession,
-    redis: Redis,
     *,
     org_id: UUID,
     actor_id: UUID,
-    totp_code: str,
     legal_name: str,
     registration_number: str | None,
     address: dict[str, Any] | None,
 ) -> OrgLegalProfile:
-    """Create or update the org's shared legal profile after TOTP step-up."""
+    """Create or update the org's shared legal profile.
+
+    The router requires an open step-up 2FA window before this runs.
+    """
     if db.in_transaction():
         await db.rollback()
 
     async with db.begin():
-        actor = await db.get(User, actor_id, with_for_update=True)
-        if actor is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token.",
-            )
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=actor,
-            code=totp_code,
-        )
-
         profile = await db.scalar(
             select(OrgLegalProfile)
             .where(OrgLegalProfile.org_id == org_id)

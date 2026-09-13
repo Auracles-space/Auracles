@@ -15,13 +15,11 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from redis.asyncio import Redis
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.currency import platform_currency
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.developer import webhooks_service
 from app.modules.developer.models import (
@@ -496,13 +494,16 @@ def _partner_payout_response(payout: PartnerPayout) -> PartnerPayoutResponse:
 
 async def request_partner_payout(
     db: AsyncSession,
-    redis: Redis,
     *,
     developer_account: DeveloperAccount,
     user: User,
     payload: PartnerPayoutRequest,
 ) -> PartnerPayoutResponse:
-    """Create a pending Partner payout from cleared commission balance."""
+    """Create a pending Partner payout from cleared commission balance.
+
+    The route gate (``require_step_up``) has already confirmed the Developer
+    holds an open step-up 2FA window; this service performs no factor check.
+    """
     developer_account_id = developer_account.id
     user_id = user.id
     currency = payload.currency.upper()
@@ -557,19 +558,6 @@ async def request_partner_payout(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Partner payout amount must equal available balance.",
             )
-
-        developer_user = await db.get(User, user_id, with_for_update=True)
-        if developer_user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token.",
-            )
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=developer_user,
-            code=payload.totp_code,
-        )
 
         commissions = (
             (

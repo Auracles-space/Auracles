@@ -281,7 +281,6 @@ class OrgLegalProfileUpdateRequest(BaseModel):
     legal_name: str = Field(min_length=2, max_length=200)
     registration_number: str | None = Field(default=None, min_length=1, max_length=200)
     address: dict[str, Any] | None = None
-    totp_code: str = Field(min_length=6, max_length=16)
 
     @field_validator("legal_name", "registration_number")
     @classmethod
@@ -306,11 +305,13 @@ class OrgLegalProfileResponse(BaseModel):
 
 
 class OrgPaymentMethodSetupRequest(BaseModel):
-    """Request body for starting organization payment-method setup."""
+    """Request body for starting organization payment-method setup.
+
+    Intentionally empty: the step-up 2FA window is checked by the router
+    dependency, so the body carries no fields yet and rejects unknown ones.
+    """
 
     model_config = ConfigDict(extra="forbid")
-
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class OrgPaymentMethodSetupResponse(BaseModel):
@@ -340,11 +341,13 @@ class OrgPaymentMethodsResponse(BaseModel):
 
 
 class OrgPaymentMethodDeleteRequest(BaseModel):
-    """Request body for removing a provider-held org payment method."""
+    """Request body for removing a provider-held org payment method.
+
+    Intentionally empty: the step-up 2FA window is checked by the router
+    dependency, so the body carries no fields yet and rejects unknown ones.
+    """
 
     model_config = ConfigDict(extra="forbid")
-
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class OrgPaymentMethodDeleteResponse(BaseModel):
@@ -385,10 +388,9 @@ class OrgMemberRoleUpdateRequest(BaseModel):
 
 
 class OrgOwnershipTransferRequest(BaseModel):
-    """TOTP-gated request to transfer organization ownership."""
+    """Request to transfer organization ownership (step-up gated at the router)."""
 
     new_owner_member_id: UUID
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class OrgInvitationCreateRequest(BaseModel):
@@ -686,14 +688,13 @@ class OrgAttestorApplicationUpdateRequest(BaseModel):
 class OrgUndertakingsSignRequest(BaseModel):
     """Owner-signed conflict-of-interest and confidentiality undertakings.
 
-    TOTP-gated: signing stamps the CoI and confidentiality timestamps and
-    sets the CoI expiry one validity period out.
+    Step-up gated at the router: signing stamps the CoI and confidentiality
+    timestamps and sets the CoI expiry one validity period out.
     """
 
     declarations: list[CoiEntry]
     accept_policy: bool
     accept_confidentiality: bool
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class OrgAttestorTaxDocumentRequest(BaseModel):
@@ -745,7 +746,6 @@ class OrgKybReviewRequest(BaseModel):
 
     verdict: Literal["verified", "rejected"]
     notes: str | None = Field(default=None, max_length=2000)
-    totp_code: str = Field(min_length=6, max_length=6)
 
 
 class OrgAttestorIncorporationDocumentDeleteRequest(BaseModel):

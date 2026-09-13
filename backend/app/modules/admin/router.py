@@ -10,7 +10,11 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_role, require_superadmin
+from app.core.dependencies import (
+    require_role,
+    require_step_up_after,
+    require_superadmin,
+)
 from app.core.redis import get_redis
 from app.modules.admin import service
 from app.modules.admin.schemas import (
@@ -211,44 +215,49 @@ async def list_moderation_queue(
     return AdminModerationQueueResponse.model_validate(queue)
 
 
-@router.patch("/config", response_model=AdminConfigResponse)
+@router.patch(
+    "/config",
+    response_model=AdminConfigResponse,
+    dependencies=[Depends(require_step_up_after(require_superadmin))],
+)
 async def update_platform_config(
     payload: AdminConfigPatchRequest,
     admin: SuperAdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminConfigResponse:
-    """Update editable platform configuration. Super-admin only, with 2FA."""
+    """Update editable platform configuration.
+
+    Super-admin only; requires an open step-up window.
+    """
     items = await service.update_platform_config(
         db=db,
-        redis=redis,
         admin=admin,
         updates=[(item.key, item.value) for item in payload.updates],
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return _config_response(items)
 
 
-@router.patch("/users/{user_id}/roles", response_model=AdminRoleAssignmentResponse)
+@router.patch(
+    "/users/{user_id}/roles",
+    response_model=AdminRoleAssignmentResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
+)
 async def assign_role(
     user_id: UUID,
     payload: AdminRoleAssignmentRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminRoleAssignmentResponse:
     """Assign or approve a user role.
 
-    Requires a valid admin TOTP; granting the admin role is super-admin only.
+    Requires an open step-up window; granting the admin role is super-admin only.
     """
     assigned_role = await service.assign_user_role(
         db=db,
-        redis=redis,
         admin=admin,
         target_user_id=user_id,
         role=payload.role,
-        totp_code=payload.totp_code,
     )
     return AdminRoleAssignmentResponse(
         user_id=user_id,
@@ -481,6 +490,7 @@ async def list_admin_export_requests(
 @router.post(
     "/users/{user_id}/suspend",
     response_model=AdminUserSuspensionResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def suspend_user(
     user_id: UUID,
@@ -496,7 +506,6 @@ async def suspend_user(
         admin=admin,
         target_user_id=user_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return AdminUserSuspensionResponse(
         user_id=user.id,
@@ -510,21 +519,19 @@ async def suspend_user(
 @router.post(
     "/users/{user_id}/unsuspend",
     response_model=AdminUserSuspensionResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def unsuspend_user(
     user_id: UUID,
     payload: AdminUserUnsuspendRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminUserSuspensionResponse:
     """Restore a previously suspended user account."""
     user = await service.unsuspend_user(
         db=db,
-        redis=redis,
         admin=admin,
         target_user_id=user_id,
-        totp_code=payload.totp_code,
     )
     return AdminUserSuspensionResponse(
         user_id=user.id,
@@ -535,26 +542,27 @@ async def unsuspend_user(
     )
 
 
-@router.patch("/users/{user_id}/kyc", response_model=AdminKycReviewResponse)
+@router.patch(
+    "/users/{user_id}/kyc",
+    response_model=AdminKycReviewResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
+)
 async def review_kyc(
     user_id: UUID,
     payload: AdminKycReviewRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminKycReviewResponse:
     """Manually override a user's identity-verification status.
 
-    Requires a valid admin TOTP: the verified status unlocks payouts.
+    Requires an open step-up window: the verified status unlocks payouts.
     """
     user = await service.review_user_kyc(
         db=db,
-        redis=redis,
         admin=admin,
         target_user_id=user_id,
         review_status=payload.status,
         notes=payload.notes,
-        totp_code=payload.totp_code,
     )
     return AdminKycReviewResponse(
         user_id=user_id,
@@ -644,21 +652,19 @@ async def list_credential_review_queue(
 @router.post(
     "/credentials/{credential_id}/verify",
     response_model=AdminCredentialResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def verify_credential(
     credential_id: UUID,
     payload: AdminCredentialVerifyRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminCredentialResponse:
-    """Mark a pending Credential verified. Requires an admin step-up code."""
+    """Mark a pending Credential verified. Requires an open step-up window."""
     credential = await credential_service.verify_credential(
         db=db,
-        redis=redis,
         admin_id=admin.id,
         credential_id=credential_id,
-        totp_code=payload.totp_code,
     )
     return AdminCredentialResponse.model_validate(credential)
 
@@ -666,22 +672,20 @@ async def verify_credential(
 @router.post(
     "/credentials/{credential_id}/reject",
     response_model=AdminCredentialResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def reject_credential(
     credential_id: UUID,
     payload: AdminCredentialRejectRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminCredentialResponse:
-    """Reject a pending Credential with a reason. Requires an admin step-up code."""
+    """Reject a pending Credential with a reason. Requires an open step-up window."""
     credential = await credential_service.reject_credential(
         db=db,
-        redis=redis,
         admin_id=admin.id,
         credential_id=credential_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return AdminCredentialResponse.model_validate(credential)
 
@@ -745,22 +749,20 @@ async def list_suspended_frameworks(
 @router.post(
     "/frameworks/{framework_id}/suspend",
     response_model=AdminFrameworkStatusResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def suspend_framework(
     framework_id: UUID,
     payload: AdminFrameworkSuspendRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminFrameworkStatusResponse:
-    """Suspend a published Framework from discovery. Requires a step-up code."""
+    """Suspend a published Framework from discovery. Requires a step-up window."""
     framework = await service.suspend_framework(
         db=db,
-        redis=redis,
         admin=admin,
         framework_id=framework_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return AdminFrameworkStatusResponse(
         framework_id=framework.id,
@@ -772,24 +774,22 @@ async def suspend_framework(
 @router.post(
     "/frameworks/{framework_id}/reinstate",
     response_model=AdminFrameworkStatusResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def reinstate_framework(
     framework_id: UUID,
     payload: AdminFrameworkReinstateRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminFrameworkStatusResponse:
     """Reverse a takedown, returning a Framework to the marketplace.
 
-    Requires an admin step-up code.
+    Requires an open step-up window.
     """
     framework = await service.reinstate_framework(
         db=db,
-        redis=redis,
         admin=admin,
         framework_id=framework_id,
-        totp_code=payload.totp_code,
     )
     return AdminFrameworkStatusResponse(
         framework_id=framework.id,
@@ -801,22 +801,20 @@ async def reinstate_framework(
 @router.post(
     "/frameworks/{framework_id}/rarity-block/override",
     response_model=AdminFrameworkStatusResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def override_rarity_block(
     framework_id: UUID,
     payload: AdminRarityBlockOverrideRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminFrameworkStatusResponse:
-    """Override a near-duplicate rarity hard block. Requires a step-up code."""
+    """Override a near-duplicate rarity hard block. Requires a step-up window."""
     framework = await service.override_rarity_block(
         db=db,
-        redis=redis,
         admin=admin,
         framework_id=framework_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return AdminFrameworkStatusResponse(
         framework_id=framework.id,
@@ -829,24 +827,22 @@ async def override_rarity_block(
     "/licenses",
     response_model=AdminLicenseGrantResponse,
     status_code=201,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def grant_license(
     payload: AdminLicenseGrantRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminLicenseGrantResponse:
-    """Grant a Framework license to an Operator. Requires a step-up code."""
+    """Grant a Framework license to an Operator. Requires a step-up window."""
     license_row = await service.grant_license(
         db=db,
-        redis=redis,
         admin=admin,
         framework_id=payload.framework_id,
         operator_id=payload.operator_id,
         license_type=payload.type,
         expires_at=payload.expires_at,
         seats_total=payload.seats_total,
-        totp_code=payload.totp_code,
     )
     return AdminLicenseGrantResponse(
         license_id=license_row.id,
@@ -864,22 +860,20 @@ async def grant_license(
 @router.post(
     "/escrows/{escrow_id}/release",
     response_model=AdminEscrowResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def release_escrow(
     escrow_id: UUID,
     payload: AdminEscrowOverrideRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminEscrowResponse:
     """Release held escrow funds through an audited admin override."""
     escrow = await service.release_escrow_override(
         db=db,
-        redis=redis,
         admin=admin,
         escrow_id=escrow_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return _escrow_response(escrow)
 
@@ -887,22 +881,20 @@ async def release_escrow(
 @router.post(
     "/escrows/{escrow_id}/refund",
     response_model=AdminEscrowResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def refund_escrow(
     escrow_id: UUID,
     payload: AdminEscrowOverrideRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminEscrowResponse:
     """Refund held escrow funds through an audited admin override."""
     escrow = await service.refund_escrow_override(
         db=db,
-        redis=redis,
         admin=admin,
         escrow_id=escrow_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return _escrow_response(escrow)
 
@@ -911,22 +903,20 @@ async def refund_escrow(
     "/reputation/recompute",
     response_model=AdminReputationRecomputeResponse,
     status_code=202,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def recompute_reputation_subject(
     payload: AdminReputationRecomputeRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AdminReputationRecomputeResponse:
-    """Queue an audited, 2FA-gated recompute for one reputation subject."""
+    """Queue an audited, step-up-gated recompute for one reputation subject."""
     await service.recompute_reputation_subject(
         db=db,
-        redis=redis,
         admin=admin,
         subject_type=payload.subject_type,
         subject_id=payload.subject_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return AdminReputationRecomputeResponse(
         status="queued",
@@ -965,25 +955,23 @@ async def list_project_disputes(
 @router.post(
     "/projects/disputes/{dispute_id}/resolve",
     response_model=DisputeResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def resolve_project_dispute(
     dispute_id: UUID,
     payload: AdminDisputeResolveRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> DisputeResponse:
-    """Resolve a Project dispute through an audited 2FA-gated admin action."""
+    """Resolve a Project dispute through an audited step-up-gated admin action."""
     dispute = await dispute_service.resolve_dispute(
         db=db,
-        redis=redis,
         admin=admin,
         dispute_id=dispute_id,
         resolution_type=payload.resolution_type,
         release_amount=payload.release_amount,
         refund_amount=payload.refund_amount,
         resolution_notes=payload.resolution_notes,
-        totp_code=payload.totp_code,
     )
     return DisputeResponse.model_validate(dispute)
 

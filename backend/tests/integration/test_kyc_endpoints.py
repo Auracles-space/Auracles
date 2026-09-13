@@ -32,6 +32,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.notifications.models import Notification
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.support.db_cleanup import clear_identity_state_async
 
 
@@ -116,13 +117,21 @@ async def kyc_test_context() -> AsyncIterator[None]:
             await session.commit()
 
     await cleanup()
-    app.dependency_overrides[get_redis] = lambda: FakeRedis()
+    # One shared double: the step-up window seeded before a request must be
+    # the instance the dependency reads during it.
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
     try:
         yield
     finally:
         app.dependency_overrides.pop(get_redis, None)
         await cleanup()
         await engine.dispose()
+
+
+async def _open_step_up(admin_id: UUID) -> None:
+    """Seed a step-up window on the Redis double installed by the fixture."""
+    await open_step_up_window(app.dependency_overrides[get_redis](), admin_id)
 
 
 async def _create_admin_with_totp(email: str) -> tuple[UUID, str]:
@@ -182,15 +191,12 @@ async def test_admin_override_verifies_user_and_dependency_allows(
 ) -> None:
     """Admin override sets verified without a document and satisfies the gate."""
     user_id = await create_user_with_roles("verify-kyc@auracles.space", ["operator"])
-    admin_id, admin_totp = await _create_admin_with_totp("kyc-admin@auracles.space")
+    admin_id, _ = await _create_admin_with_totp("kyc-admin@auracles.space")
+    await _open_step_up(admin_id)
 
     response = await client.patch(
         f"/v1/admin/users/{user_id}/kyc",
-        json={
-            "status": "verified",
-            "notes": "Appeal approved.",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
-        },
+        json={"status": "verified", "notes": "Appeal approved."},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -218,15 +224,12 @@ async def test_admin_override_notifies_reviewed_user(
 ) -> None:
     """An override creates a durable in-app notification for the user."""
     user_id = await create_user_with_roles("notify-kyc@auracles.space", ["operator"])
-    admin_id, admin_totp = await _create_admin_with_totp("kyc-admin2@auracles.space")
+    admin_id, _ = await _create_admin_with_totp("kyc-admin2@auracles.space")
+    await _open_step_up(admin_id)
 
     response = await client.patch(
         f"/v1/admin/users/{user_id}/kyc",
-        json={
-            "status": "verified",
-            "notes": "Reviewed.",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
-        },
+        json={"status": "verified", "notes": "Reviewed."},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -247,11 +250,12 @@ async def test_admin_override_requires_existing_user(
     kyc_test_context: None,
 ) -> None:
     """Overriding a non-existent user returns 404."""
-    admin_id, admin_totp = await _create_admin_with_totp("kyc-admin3@auracles.space")
+    admin_id, _ = await _create_admin_with_totp("kyc-admin3@auracles.space")
+    await _open_step_up(admin_id)
 
     response = await client.patch(
         f"/v1/admin/users/{UUID(int=0)}/kyc",
-        json={"status": "verified", "totp_code": pyotp.TOTP(admin_totp).now()},
+        json={"status": "verified"},
         headers=auth_headers(admin_id, ["admin"]),
     )
 

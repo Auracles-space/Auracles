@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, SecretStr
 
 
 class ConsentAcceptRequest(BaseModel):
@@ -49,11 +49,11 @@ class AccountDeletionRequestBody(BaseModel):
 
     Password accounts confirm with their password; passwordless (e.g. Google)
     accounts omit it and rely on the deletion grace period as the safety net.
-    TOTP still applies when the account has it enabled.
+    Accounts with 2FA enabled must hold an open step-up window
+    (``require_step_up_if_enrolled`` on the route); no code travels in the body.
     """
 
     password: SecretStr | None = None
-    totp_code: str | None = Field(default=None, min_length=6, max_length=16)
 
 
 class AccountDeletionBlockedReason(BaseModel):

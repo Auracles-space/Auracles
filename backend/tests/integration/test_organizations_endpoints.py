@@ -15,7 +15,7 @@ from sqlalchemy import delete, select
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.integrations import s3
 from app.main import app
 from app.modules.auth.models import User
@@ -30,7 +30,7 @@ from app.modules.organizations.models import (
 )
 from app.modules.organizations.router import ORG_CREATE_LIMIT
 from app.shared.models.audit_log import AuditLog
-from tests.conftest import verify_org_kyb
+from tests.conftest import open_step_up_window, verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.support.db_cleanup import clear_identity_state_async
 
@@ -54,7 +54,7 @@ async def _reset_org_state() -> None:
 
 
 @pytest.fixture
-async def clean_orgs() -> AsyncIterator[None]:
+async def clean_orgs() -> AsyncIterator[FakeRedis]:
     """Reset org state before and after each test.
 
     The teardown matters: organizations.created_by references users, so
@@ -69,15 +69,19 @@ async def clean_orgs() -> AsyncIterator[None]:
     await engine.dispose()
     await _reset_org_state()
     try:
-        yield
+        yield fake_redis
     finally:
         app.dependency_overrides.pop(get_redis, None)
         await _reset_org_state()
         await engine.dispose()
 
 
-async def create_user(prefix: str) -> UUID:
-    """Create a verified user with a unique email; return its id."""
+async def create_user(prefix: str, *, totp_enabled: bool = False) -> UUID:
+    """Create a verified user with a unique email; return its id.
+
+    ``totp_enabled`` enrols the user in 2FA so step-up gated routes can be
+    reached once a window is seeded with ``open_step_up_window``.
+    """
     email = f"{prefix}-{uuid4().hex[:8]}@auracles.space"
     async with async_session_factory() as session:
         async with session.begin():
@@ -86,6 +90,10 @@ async def create_user(prefix: str) -> UUID:
                 password_hash=hash_password("CorrectHorse9"),
                 display_name=email.split("@")[0],
                 email_verified=True,
+                totp_enabled=totp_enabled,
+                totp_secret=(
+                    encrypt_totp_secret("JBSWY3DPEHPK3PXP") if totp_enabled else None
+                ),
             )
             session.add(user)
             await session.flush()
@@ -116,7 +124,7 @@ async def create_org(
         json={"slug": f"{prefix}-{uuid4().hex[:6]}", "name": prefix, "country": "GB"},
         headers=auth(token),
     )
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     body = dict(response.json())
     if verified:
         await verify_org_kyb(body["id"])
@@ -303,9 +311,10 @@ async def test_my_orgs_grants_plain_member_false(
     response = await client.get("/v1/orgs/mine", headers=auth(member_token))
 
     assert response.status_code == 200
-    assert response.json()["organizations"][0].get("grants", {}).get(
-        "contributor", False
-    ) is False
+    assert (
+        response.json()["organizations"][0].get("grants", {}).get("contributor", False)
+        is False
+    )
 
 
 async def test_my_orgs_grants_team_member_true(
@@ -698,50 +707,55 @@ async def test_role_change_owner_only_and_never_to_owner(
     assert to_owner.status_code == 422
 
 
-async def test_ownership_transfer_requires_totp(
-    client: AsyncClient, migrated_database: None, clean_orgs: None
+async def test_ownership_transfer_requires_step_up(
+    client: AsyncClient, migrated_database: None, clean_orgs: FakeRedis
 ) -> None:
-    """Ownership transfer is blocked until the owner enables 2FA."""
-    del migrated_database, clean_orgs
+    """Ownership transfer needs 2FA enrolment and then an open step-up window."""
+    del migrated_database
     owner_id = await create_user("xfer-owner")
+    enrolled_owner_id = await create_user("xfer-owner-2fa", totp_enabled=True)
     member_id = await create_user("xfer-member")
     owner_token = create_access_token(owner_id, [])
+    enrolled_token = create_access_token(enrolled_owner_id, [])
     org = await create_org(client, owner_token, "xfer")
+    enrolled_org = await create_org(client, enrolled_token, "xfer-2fa")
     member_row = await add_member(str(org["id"]), member_id, "member")
+    enrolled_member_row = await add_member(str(enrolled_org["id"]), member_id, "member")
 
-    response = await client.post(
+    not_enrolled = await client.post(
         f"/v1/orgs/{org['id']}/transfer-ownership",
-        json={"new_owner_member_id": str(member_row), "totp_code": "000000"},
+        json={"new_owner_member_id": str(member_row)},
         headers=auth(owner_token),
     )
+    no_window = await client.post(
+        f"/v1/orgs/{enrolled_org['id']}/transfer-ownership",
+        json={"new_owner_member_id": str(enrolled_member_row)},
+        headers=auth(enrolled_token),
+    )
 
-    assert response.status_code == 403
+    assert not_enrolled.status_code == 403
+    assert not_enrolled.json()["detail"]["error_code"] == "totp_setup_required"
+    assert no_window.status_code == 403
+    assert no_window.json()["detail"]["error_code"] == "step_up_required"
 
 
 async def test_ownership_transfer_swaps_roles(
     client: AsyncClient,
     migrated_database: None,
-    clean_orgs: None,
-    monkeypatch: pytest.MonkeyPatch,
+    clean_orgs: FakeRedis,
 ) -> None:
-    """A verified transfer demotes the old owner and promotes the new one."""
-    del migrated_database, clean_orgs
-    from app.modules.organizations import service as org_service
-
-    async def totp_ok(*args: object, **kwargs: object) -> None:
-        """Accept the transfer without real TOTP setup in this test."""
-        del args, kwargs
-
-    monkeypatch.setattr(org_service, "verify_totp_for_sensitive_action", totp_ok)
-    owner_id = await create_user("xfer2-owner")
+    """A stepped-up transfer demotes the old owner and promotes the new one."""
+    del migrated_database
+    owner_id = await create_user("xfer2-owner", totp_enabled=True)
     member_id = await create_user("xfer2-member")
     owner_token = create_access_token(owner_id, [])
     org = await create_org(client, owner_token, "xfer2")
     member_row = await add_member(str(org["id"]), member_id, "admin")
+    await open_step_up_window(clean_orgs, owner_id)
 
     response = await client.post(
         f"/v1/orgs/{org['id']}/transfer-ownership",
-        json={"new_owner_member_id": str(member_row), "totp_code": "123456"},
+        json={"new_owner_member_id": str(member_row)},
         headers=auth(owner_token),
     )
 

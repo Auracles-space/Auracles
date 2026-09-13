@@ -100,3 +100,66 @@ async def test_if_enrolled_variant_gates_enrolled_users() -> None:
         await require_step_up_if_enrolled(user=user, redis=_FakeRedis())
 
     assert excinfo.value.detail["error_code"] == "step_up_required"
+
+
+async def test_after_variant_runs_the_gate_before_the_window_check() -> None:
+    """A caller who fails the role gate is refused by the gate, not asked to step up."""
+    from app.core.dependencies import require_step_up_after
+
+    async def gate() -> User:
+        raise HTTPException(status_code=403, detail={"error_code": "role_required"})
+
+    checker = require_step_up_after(gate)
+    user = _user(totp_enabled=True)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await checker(subject=await _raise_or_user(gate, user), redis=_FakeRedis())
+
+    assert excinfo.value.detail["error_code"] == "role_required"
+
+
+async def _raise_or_user(gate, user: User) -> User:  # type: ignore[no-untyped-def]
+    """Resolve the gate the way FastAPI would, surfacing its HTTPException."""
+    try:
+        return await gate()
+    except HTTPException:
+        raise
+
+
+async def test_after_variant_requires_a_window_once_the_gate_passes() -> None:
+    """With the gate satisfied, the composed dependency still needs an open window."""
+    from app.core.dependencies import require_step_up_after
+
+    user = _user(totp_enabled=True)
+
+    async def gate() -> User:
+        return user
+
+    checker = require_step_up_after(gate)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await checker(subject=await gate(), redis=_FakeRedis())
+    assert excinfo.value.detail["error_code"] == "step_up_required"
+
+    redis = _FakeRedis()
+    await redis.set(step_up_key(user.id), datetime.now(UTC).isoformat(), ex=600)
+    assert await checker(subject=await gate(), redis=redis) is user
+
+
+async def test_after_variant_accepts_an_organization_context() -> None:
+    """Organization-role gates return a context carrying ``.user``; that works too."""
+    from types import SimpleNamespace
+
+    from app.core.dependencies import require_step_up_after
+
+    user = _user(totp_enabled=True)
+    context = SimpleNamespace(org=None, member=None, user=user)
+
+    async def gate() -> object:
+        return context
+
+    checker = require_step_up_after(gate)
+    redis = _FakeRedis()
+    await redis.set(step_up_key(user.id), datetime.now(UTC).isoformat(), ex=600)
+
+    assert await checker(subject=await gate(), redis=redis) is user

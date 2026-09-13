@@ -11,7 +11,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -56,6 +55,10 @@ from app.modules.webhooks import service as stripe_webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import developer_beat, partner_webhooks
+from tests.conftest import open_step_up_window
+
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+"""Placeholder enrolled-2FA secret; step-up windows are seeded, never verified."""
 
 
 class FakeRedis:
@@ -290,6 +293,7 @@ async def developer_e2e_context(
             "dispatched_payouts": dispatched_payouts,
             "dispatched_webhooks": dispatched_webhooks,
             "invoice_jobs": invoice_jobs,
+            "redis": fake_redis,
             "stripe_events": webhook_verified_events,
         }
     finally:
@@ -306,8 +310,6 @@ def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
 
 async def create_e2e_users() -> dict[str, Any]:
     """Create Developer applicant, admin, contributor, and operator users."""
-    admin_totp_secret = pyotp.random_base32()
-    developer_totp_secret = pyotp.random_base32()
     async with async_session_factory() as session:
         async with session.begin():
             admin = User(
@@ -316,7 +318,7 @@ async def create_e2e_users() -> dict[str, Any]:
                 display_name="Developer E2E Admin",
                 email_verified=True,
                 totp_enabled=True,
-                totp_secret=encrypt_totp_secret(admin_totp_secret),
+                totp_secret=encrypt_totp_secret(TOTP_SECRET),
             )
             developer = User(
                 email="developer-e2e-partner@auracles.space",
@@ -325,7 +327,7 @@ async def create_e2e_users() -> dict[str, Any]:
                 email_verified=True,
                 kyc_status="verified",
                 totp_enabled=True,
-                totp_secret=encrypt_totp_secret(developer_totp_secret),
+                totp_secret=encrypt_totp_secret(TOTP_SECRET),
             )
             contributor = User(
                 email="developer-e2e-contributor@auracles.space",
@@ -397,9 +399,7 @@ async def create_e2e_users() -> dict[str, Any]:
             await session.flush()
             return {
                 "admin_id": admin.id,
-                "admin_totp_secret": admin_totp_secret,
                 "developer_id": developer.id,
-                "developer_totp_secret": developer_totp_secret,
                 "contributor_id": contributor.id,
                 "operator_id": operator.id,
                 "operator_email": operator.email,
@@ -491,13 +491,13 @@ async def test_developer_platform_end_to_end_money_and_webhook_flow(
     assert application.status_code == 201
     application_id = application.json()["id"]
 
+    await open_step_up_window(developer_e2e_context["redis"], users["admin_id"])
     approved = await client.post(
         f"/v1/admin/developer/applications/{application_id}/review",
         headers=auth_headers(users["admin_id"], ["admin"]),
         json={
             "decision": "approved",
             "feedback": "Approved for E2E verification.",
-            "totp_code": pyotp.TOTP(users["admin_totp_secret"]).now(),
         },
     )
     assert approved.status_code == 200
@@ -594,6 +594,7 @@ async def test_developer_platform_end_to_end_money_and_webhook_flow(
         "commission.cleared"
     )
 
+    await open_step_up_window(developer_e2e_context["redis"], users["developer_id"])
     payout = await client.post(
         "/v1/developer/payouts",
         headers=auth_headers(users["developer_id"], ["developer"]),
@@ -601,7 +602,6 @@ async def test_developer_platform_end_to_end_money_and_webhook_flow(
             "amount": "50.00",
             "currency": "USD",
             "payout_account_id": str(users["payout_account_id"]),
-            "totp_code": pyotp.TOTP(users["developer_totp_secret"]).now(),
         },
     )
     assert payout.status_code == 200

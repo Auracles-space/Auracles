@@ -11,7 +11,6 @@ from typing import cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from redis.asyncio import Redis
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +19,6 @@ from app.core.audit import write_audit
 from app.core.security import verify_password
 from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation.models import Attestation, AttestationDispute
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.developer.models import DeveloperAccount, PartnerPayout
 from app.modules.financials.models import Escrow, Payout, PlatformConfig
@@ -271,9 +269,7 @@ async def _count_active_attestations(db: AsyncSession, user_id: UUID) -> int:
     )
 
 
-async def _count_active_reviewing_assignments(
-    db: AsyncSession, user_id: UUID
-) -> int:
+async def _count_active_reviewing_assignments(db: AsyncSession, user_id: UUID) -> int:
     """Return in-flight attestations the user staffs as an org reviewing member.
 
     Deleting a member mid-review would orphan an active org attestation, so a
@@ -378,9 +374,7 @@ async def collect_blocked_reasons(
                 count=active_attestation_count,
             )
         )
-    reviewing_assignment_count = await _count_active_reviewing_assignments(
-        db, user_id
-    )
+    reviewing_assignment_count = await _count_active_reviewing_assignments(db, user_id)
     if reviewing_assignment_count > 0:
         reasons.append(
             AccountDeletionBlockedReason(
@@ -417,11 +411,14 @@ async def collect_blocked_reasons(
 async def request_account_deletion(
     *,
     db: AsyncSession,
-    redis: Redis,
     user: User,
     payload: AccountDeletionRequestBody,
 ) -> tuple[AccountDeletionStatusResponse, int]:
-    """Schedule account deletion after password confirmation and cooling-off."""
+    """Schedule account deletion after password confirmation and cooling-off.
+
+    Accounts with 2FA enabled are gated by ``require_step_up_if_enrolled`` on
+    the route; this service performs no factor check beyond the password.
+    """
     await _ensure_password_confirmation(user=user, payload=payload)
 
     user_id = user.id
@@ -444,19 +441,6 @@ async def request_account_deletion(
                     detail="Account deletion is already pending.",
                 )
 
-            user_for_confirmation = await db.get(User, user_id, with_for_update=True)
-            if user_for_confirmation is None:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid access token.",
-                )
-            if user_for_confirmation.totp_enabled:
-                await auth_service.verify_totp_for_sensitive_action(
-                    db=db,
-                    redis=redis,
-                    user=user_for_confirmation,
-                    code=payload.totp_code,
-                )
             reasons = await collect_blocked_reasons(db=db, user_id=user_id)
             if reasons:
                 request = AccountDeletionRequest(

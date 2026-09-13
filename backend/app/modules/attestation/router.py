@@ -8,12 +8,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import Response
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_role
-from app.core.redis import get_redis
+from app.core.dependencies import get_current_user, require_role, require_step_up_after
 from app.modules.attestation import (
     access_service,
     badge_service,
@@ -81,7 +79,6 @@ from app.modules.auth.models import User
 
 router = APIRouter(tags=["Attestation"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
-RedisClient = Annotated[Redis, Depends(get_redis)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, Depends(require_role("admin"))]
 
@@ -762,9 +759,9 @@ async def create_attestation_dispute(
 async def list_admin_attestation_disputes(
     admin: AdminUser,
     db: DatabaseSession,
-    status_value: Literal[
-        "active", "open", "under_review", "resolved"
-    ] = Query(default="active", alias="status"),
+    status_value: Literal["active", "open", "under_review", "resolved"] = Query(
+        default="active", alias="status"
+    ),
 ) -> AdminAttestationDisputesResponse:
     """List Attestation disputes in a given status for admin triage."""
     del admin
@@ -779,23 +776,21 @@ async def list_admin_attestation_disputes(
 @router.post(
     "/admin/attestation-disputes/{dispute_id}/resolve",
     response_model=AttestationDisputeResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def resolve_attestation_dispute(
     dispute_id: UUID,
     payload: AdminAttestationDisputeResolveRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AttestationDisputeResponse:
-    """Resolve an Attestation dispute through a 2FA-gated admin action."""
+    """Resolve an Attestation dispute. Requires an open step-up window."""
     dispute = await dispute_service.resolve_dispute(
         db=db,
-        redis=redis,
         admin=admin,
         dispute_id=dispute_id,
         outcome=payload.outcome,
         resolution_notes=payload.resolution_notes,
-        totp_code=payload.totp_code,
         is_complex=payload.is_complex,
     )
     return AttestationDisputeResponse.model_validate(dispute)
@@ -856,23 +851,24 @@ async def get_admin_attestation_detail(
 @router.post(
     "/admin/attestations/{attestation_id}/assign",
     response_model=AttestationRequestResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_assign_attestation(
     attestation_id: UUID,
     payload: AdminAttestationAssignRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AttestationRequestResponse:
-    """Manually assign a needs-admin Attestation to an attestor org + member."""
+    """Manually assign a needs-admin Attestation to an attestor org.
+
+    Requires an open step-up window.
+    """
     attestation = await dispute_service.assign_needs_admin_attestation(
         db=db,
-        redis=redis,
         admin=admin,
         attestation_id=attestation_id,
         attestor_org_id=payload.attestor_org_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return AttestationRequestResponse.model_validate(attestation)
 
@@ -880,22 +876,20 @@ async def admin_assign_attestation(
 @router.post(
     "/admin/attestations/{attestation_id}/refund",
     response_model=AttestationRequestResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_refund_attestation(
     attestation_id: UUID,
     payload: AdminAttestationRefundRequest,
     admin: AdminUser,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> AttestationRequestResponse:
-    """Refund and close a needs-admin Attestation."""
+    """Refund and close a needs-admin Attestation. Requires an open step-up window."""
     attestation = await dispute_service.refund_needs_admin_attestation(
         db=db,
-        redis=redis,
         admin=admin,
         attestation_id=attestation_id,
         reason=payload.reason,
-        totp_code=payload.totp_code,
     )
     return AttestationRequestResponse.model_validate(attestation)
 

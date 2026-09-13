@@ -9,7 +9,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
-import pyotp
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -38,6 +37,10 @@ from app.modules.developer.models import (
 from app.modules.financials.models import PayoutAccount, Transaction
 from app.modules.frameworks.models import Framework
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
+
+TOTP_SECRET = "JBSWY3DPEHPK3PXP"
+"""Placeholder enrolled-2FA secret; step-up windows are seeded, never verified."""
 
 
 class FakeRedis:
@@ -152,9 +155,8 @@ async def developer_payout_context(
         await engine.dispose()
 
 
-async def create_partner_payout_fixture() -> tuple[UUID, UUID, UUID, str]:
+async def create_partner_payout_fixture() -> tuple[UUID, UUID, UUID]:
     """Create verified Developer, payout account, and cleared commissions."""
-    totp_secret = pyotp.random_base32()
     async with async_session_factory() as session:
         async with session.begin():
             developer = User(
@@ -164,7 +166,7 @@ async def create_partner_payout_fixture() -> tuple[UUID, UUID, UUID, str]:
                 email_verified=True,
                 kyc_status="verified",
                 totp_enabled=True,
-                totp_secret=encrypt_totp_secret(totp_secret),
+                totp_secret=encrypt_totp_secret(TOTP_SECRET),
             )
             contributor = User(
                 email=f"partner-payout-contributor-{uuid4()}@auracles.space",
@@ -283,13 +285,52 @@ async def create_partner_payout_fixture() -> tuple[UUID, UUID, UUID, str]:
                         cleared_at=datetime.now(UTC),
                     )
                 )
-            return developer.id, account.id, payout_account.id, totp_secret
+            return developer.id, account.id, payout_account.id
 
 
 def auth_headers(user_id: UUID) -> dict[str, str]:
     """Create Developer bearer auth headers."""
     token = create_access_token(user_id=user_id, roles=["developer"])
     return {"Authorization": f"Bearer {token}"}
+
+
+async def test_partner_payout_requires_open_step_up_window(
+    client: AsyncClient,
+    migrated_database: None,
+    developer_payout_context: dict[str, Any],
+) -> None:
+    """A Partner payout is refused without a step-up window and nothing moves.
+
+    The payout route is gated by ``require_step_up``: an enrolled Developer
+    who has not recently confirmed with their authenticator gets 403
+    ``step_up_required`` before any commission is locked or any task is
+    dispatched. Opening the window unlocks the same request unchanged.
+    """
+    del migrated_database
+    user_id, _account_id, payout_account_id = await create_partner_payout_fixture()
+    payload = {
+        "amount": "55.00",
+        "currency": "USD",
+        "payout_account_id": str(payout_account_id),
+    }
+
+    refused = await client.post(
+        "/v1/developer/payouts",
+        headers=auth_headers(user_id),
+        json=payload,
+    )
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["error_code"] == "step_up_required"
+    assert developer_payout_context["dispatched"] == []
+
+    await open_step_up_window(developer_payout_context["redis"], user_id)
+    accepted = await client.post(
+        "/v1/developer/payouts",
+        headers=auth_headers(user_id),
+        json=payload,
+    )
+    assert accepted.status_code == 200
+    assert developer_payout_context["dispatched"] == [accepted.json()["id"]]
 
 
 async def test_developer_requests_partner_payout_and_lists_history(
@@ -299,12 +340,8 @@ async def test_developer_requests_partner_payout_and_lists_history(
 ) -> None:
     """Verified Developer can withdraw full cleared Partner commission balance."""
     del migrated_database
-    (
-        user_id,
-        _account_id,
-        payout_account_id,
-        totp_secret,
-    ) = await create_partner_payout_fixture()
+    user_id, _account_id, payout_account_id = await create_partner_payout_fixture()
+    await open_step_up_window(developer_payout_context["redis"], user_id)
 
     response = await client.post(
         "/v1/developer/payouts",
@@ -313,7 +350,6 @@ async def test_developer_requests_partner_payout_and_lists_history(
             "amount": "55.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
     listed = await client.get(

@@ -21,7 +21,6 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from loguru import logger
-from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,7 +41,6 @@ from app.modules.attestation.models import (
     AttestorTrialAnswerKey,
 )
 from app.modules.attestation.schemas import CredentialEvidenceUploadSessionResponse
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials.models import PayoutAccount
 from app.modules.frameworks.models import Framework
@@ -425,8 +423,7 @@ async def submit_application(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=(
-                    "Complete all matching and credentials fields before "
-                    "submitting."
+                    "Complete all matching and credentials fields before submitting."
                 ),
             )
         application.status = "submitted"
@@ -454,31 +451,29 @@ async def submit_application(
 
 async def sign_undertakings(
     db: AsyncSession,
-    redis: Redis,
     *,
     org_id: UUID,
     user: User,
     payload: OrgUndertakingsSignRequest,
 ) -> OrgAttestorApplication:
-    """Owner-sign the CoI and confidentiality undertakings (TOTP-gated).
+    """Owner-sign the CoI and confidentiality undertakings.
 
-    Stamps ``coi_signed_at`` and ``confidentiality_signed_at`` to now and
+    The router requires an open step-up 2FA window before this runs. Stamps
+    ``coi_signed_at`` and ``confidentiality_signed_at`` to now and
     ``coi_expires_at`` one validity period out, and records the declared
     conflicts of interest.
 
     Args:
         db: Async session.
-        redis: Redis client for TOTP lockout accounting.
         org_id: Organization owning the application.
         user: Authenticated org owner performing the sensitive action.
-        payload: Declarations, acceptance flags, and TOTP code.
+        payload: Declarations and acceptance flags.
 
     Returns:
         The application with undertakings stamped.
 
     Raises:
         HTTPException(404): If no live application exists.
-        HTTPException(403/422): If TOTP is absent or invalid.
         HTTPException(422): If either undertaking is not accepted.
     """
     user_id = user.id
@@ -493,21 +488,6 @@ async def sign_undertakings(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="Both undertakings must be accepted.",
             )
-        # Reload the user inside the transaction: the rollback above expired
-        # the dependency-loaded instance, so its TOTP attributes must be
-        # re-fetched before the sensitive-action check reads them.
-        locked_user = await db.get(User, user_id, with_for_update=True)
-        if locked_user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token.",
-            )
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=locked_user,
-            code=payload.totp_code,
-        )
         now = datetime.now(UTC)
         application.coi_declarations = [
             declaration.model_dump(mode="json") for declaration in payload.declarations
@@ -603,7 +583,6 @@ async def set_tax_document(
         size_limit=TAX_DOCUMENT_MAX_BYTES,
         scan_status="pending_scan",
     )
-
 
 
 async def nominate_trial_member(
@@ -787,9 +766,7 @@ async def admin_list_documents(
         # the attestor reviewer still needs to see them — read-only, since the
         # KYB verdict is settled on the organization queue.
         profile = await db.scalar(
-            select(OrgLegalProfile).where(
-                OrgLegalProfile.org_id == application.org_id
-            )
+            select(OrgLegalProfile).where(OrgLegalProfile.org_id == application.org_id)
         )
         incorporation_keys = profile.incorporation_doc_keys if profile else []
         for index, key in enumerate(incorporation_keys, start=1):
@@ -949,9 +926,7 @@ async def admin_list_applications(
         )
     elif status_filter is not None:
         base = base.where(OrgAttestorApplication.status == status_filter)
-    total = await db.scalar(
-        select(func.count()).select_from(base.subquery())
-    )
+    total = await db.scalar(select(func.count()).select_from(base.subquery()))
     rows = (
         await db.scalars(
             base.order_by(OrgAttestorApplication.created_at.desc())
@@ -1053,7 +1028,6 @@ async def admin_capability_states(
         )
     )
     return {org_id: status for org_id, status in result}
-
 
 
 async def admin_needs_info(
@@ -1337,9 +1311,7 @@ async def _sync_org_member_roles(db: AsyncSession, org_id: UUID) -> None:
     from app.modules.organizations import service as org_service
 
     member_ids = (
-        await db.scalars(
-            select(OrgMember.user_id).where(OrgMember.org_id == org_id)
-        )
+        await db.scalars(select(OrgMember.user_id).where(OrgMember.org_id == org_id))
     ).all()
     for user_id in member_ids:
         await org_service.sync_derived_roles(db, user_id=user_id)

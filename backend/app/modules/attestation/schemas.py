@@ -364,7 +364,6 @@ class AdminAttestationDisputeResolveRequest(BaseModel):
 
     outcome: Literal["rejected", "upheld_refund", "upheld_revise"]
     resolution_notes: str = Field(min_length=5, max_length=4000)
-    totp_code: str = Field(min_length=6, max_length=16)
     is_complex: bool = False
 
 
@@ -377,14 +376,12 @@ class AdminAttestationAssignRequest(BaseModel):
 
     attestor_org_id: UUID
     reason: str = Field(min_length=5, max_length=4000)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminAttestationRefundRequest(BaseModel):
     """Admin request body for refunding a needs-admin Attestation."""
 
     reason: str = Field(min_length=5, max_length=4000)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AttestationBrief(BaseModel):
@@ -554,19 +551,16 @@ class AttestationConsentRequest(BaseModel):
 class AdminCredentialVerifyRequest(BaseModel):
     """Admin request body for verifying a pending Credential.
 
-    Carries only the step-up factor: verification takes no other input, but it
-    is a trust decision that feeds attestor eligibility, so it is gated like
-    the sibling rejection.
+    Intentionally empty: verification takes no input. The trust decision is
+    gated by the step-up window (``require_step_up``) on the route, not by a
+    body field.
     """
-
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminCredentialRejectRequest(BaseModel):
     """Admin request body for rejecting a pending Credential."""
 
     reason: str = Field(min_length=1, max_length=4000)
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class AdminCredentialResponse(BaseModel):

@@ -12,7 +12,6 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +28,6 @@ from app.modules.attestation.schemas import (
     AdminAttestationDisputeListItem,
     AttestationDisputeCreateRequest,
 )
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
@@ -44,11 +42,10 @@ async def _reviewing_member_user_id(
     if attestation.reviewing_member_id is None:
         return None
     member_user_id: UUID | None = await db.scalar(
-        select(OrgMember.user_id).where(
-            OrgMember.id == attestation.reviewing_member_id
-        )
+        select(OrgMember.user_id).where(OrgMember.id == attestation.reviewing_member_id)
     )
     return member_user_id
+
 
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 DEFAULT_COMPLETION_SLA_DAYS = 7
@@ -173,9 +170,7 @@ async def list_admin_disputes(
         await db.execute(
             select(AttestationDispute, Attestation, Organization.name)
             .join(Attestation, Attestation.id == AttestationDispute.attestation_id)
-            .outerjoin(
-                Organization, Organization.id == Attestation.attestor_org_id
-            )
+            .outerjoin(Organization, Organization.id == Attestation.attestor_org_id)
             .where(AttestationDispute.status.in_(statuses))
             .order_by(
                 AttestationDispute.resolution_due_at.asc().nulls_last(),
@@ -211,12 +206,10 @@ async def list_admin_disputes(
 async def resolve_dispute(
     *,
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     dispute_id: UUID,
     outcome: str,
     resolution_notes: str,
-    totp_code: str,
     is_complex: bool = False,
 ) -> AttestationDispute:
     """Resolve an Attestation dispute with a three-outcome verdict.
@@ -232,14 +225,14 @@ async def resolve_dispute(
       held, the attestation reopens as ``revision_requested`` with a fresh
       revision SLA, and ``revision_count`` increments.
 
+    The route requires an open step-up window (``require_step_up``).
+
     Args:
         db: Async database session.
-        redis: Redis client for admin TOTP verification.
         admin: Authenticated admin performing the resolution.
         dispute_id: Dispute being resolved.
         outcome: One of ``rejected``, ``upheld_refund``, ``upheld_revise``.
         resolution_notes: Admin's rationale (audited).
-        totp_code: Admin TOTP for the sensitive action.
 
     Returns:
         The resolved dispute row.
@@ -253,12 +246,6 @@ async def resolve_dispute(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         dispute = await db.scalar(
             select(AttestationDispute)
             .where(AttestationDispute.id == dispute_id)
@@ -395,12 +382,10 @@ async def resolve_dispute(
 async def assign_needs_admin_attestation(
     *,
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     attestation_id: UUID,
     attestor_org_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> Attestation:
     """Admin dispatches an offer to a chosen attestor org for a needs-admin request.
 
@@ -409,16 +394,15 @@ async def assign_needs_admin_attestation(
     staffs its own reviewing member through the normal offer flow. Bypasses the
     auto-match eligibility filter (sector/jurisdiction overlap) but keeps the
     integrity guards: the org's ``attestor`` capability must be active and the
-    org must not conflict with the target (self-review guard).
+    org must not conflict with the target (self-review guard). The route
+    requires an open step-up window (``require_step_up``).
 
     Args:
         db: Async database session.
-        redis: Redis client for admin TOTP verification.
         admin: Authenticated admin performing the assignment.
         attestation_id: The needs-admin Attestation to dispatch.
         attestor_org_id: Attestor org to offer the request to.
         reason: Audit reason for the manual dispatch.
-        totp_code: Admin TOTP code.
 
     Returns:
         The Attestation, now in ``offered`` status.
@@ -431,12 +415,6 @@ async def assign_needs_admin_attestation(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         attestation = await _load_attestation_for_update(db, attestation_id)
         if attestation.status != "needs_admin":
             raise HTTPException(
@@ -498,23 +476,18 @@ async def assign_needs_admin_attestation(
 async def refund_needs_admin_attestation(
     *,
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     attestation_id: UUID,
     reason: str,
-    totp_code: str,
 ) -> Attestation:
-    """Refund and close a needs-admin Attestation when assignment cannot proceed."""
+    """Refund and close a needs-admin Attestation when assignment cannot proceed.
+
+    The route requires an open step-up window (``require_step_up``).
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         attestation = await _load_attestation_for_update(db, attestation_id)
         if attestation.status != "needs_admin":
             raise HTTPException(
@@ -739,27 +712,6 @@ async def _platform_int_config(
             detail=f"{key} configuration is invalid.",
         )
     return parsed
-
-
-async def _verify_admin_2fa(
-    db: AsyncSession,
-    redis: Redis,
-    admin_id: UUID,
-    totp_code: str,
-) -> None:
-    """Require a valid admin TOTP before sensitive Attestation admin writes."""
-    admin = await db.get(User, admin_id, with_for_update=True)
-    if admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid access token.",
-        )
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=admin,
-        code=totp_code,
-    )
 
 
 async def _revision_sla_business_days(db: AsyncSession) -> int:

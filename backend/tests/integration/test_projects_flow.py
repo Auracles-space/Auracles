@@ -37,6 +37,7 @@ from app.modules.projects.models import (
 from app.modules.workspace import service as workspace_service
 from app.modules.workspace.models import WorkspaceMessage, WorkspaceUploadSession
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.support.db_cleanup import clear_identity_state_async
 
 
@@ -3317,10 +3318,11 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
         "dispute-contributor@auracles.space",
         ["contributor"],
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id, _ = await create_admin_user()
     operator_headers = auth_headers(operator_id, ["operator"])
     contributor_headers = auth_headers(contributor_id, ["contributor"])
     admin_headers = auth_headers(admin_id, ["admin"])
+    await open_step_up_window(fake_redis, admin_id)
     project_id, milestone_id = await create_funded_project_milestone(
         client,
         operator_headers=operator_headers,
@@ -3350,7 +3352,6 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
             "release_amount": "900.00",
             "refund_amount": "500.00",
             "resolution_notes": "Amounts do not match the funded milestone.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
     resolved = await client.post(
@@ -3361,9 +3362,6 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
             "release_amount": "900.00",
             "refund_amount": "600.00",
             "resolution_notes": "Partial delivery accepted by support.",
-            "totp_code": pyotp.TOTP(totp_secret).at(
-                datetime.now(UTC) + timedelta(seconds=30)
-            ),
         },
     )
     double_resolve = await client.post(
@@ -3374,9 +3372,6 @@ async def test_project_member_raises_dispute_and_admin_resolves_split(
             "release_amount": "900.00",
             "refund_amount": "600.00",
             "resolution_notes": "Duplicate resolution should be blocked.",
-            "totp_code": pyotp.TOTP(totp_secret).at(
-                datetime.now(UTC) - timedelta(seconds=30)
-            ),
         },
     )
 
@@ -3486,6 +3481,7 @@ async def test_admin_resolves_dispute_release_to_contributor(
         FakeNotificationTask(notification_calls),
     )
     context = await create_disputed_funded_project(client, name="release-dispute")
+    await open_step_up_window(fake_redis, context["admin_id"])
 
     resolved = await client.post(
         f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
@@ -3493,7 +3489,6 @@ async def test_admin_resolves_dispute_release_to_contributor(
         json={
             "resolution_type": "release",
             "resolution_notes": "Contributor delivered enough to release escrow.",
-            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
         },
     )
 
@@ -3582,6 +3577,7 @@ async def test_admin_resolves_dispute_refund_to_operator(
         FakeNotificationTask(notification_calls),
     )
     context = await create_disputed_funded_project(client, name="refund-dispute")
+    await open_step_up_window(fake_redis, context["admin_id"])
 
     resolved = await client.post(
         f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
@@ -3589,7 +3585,6 @@ async def test_admin_resolves_dispute_refund_to_operator(
         json={
             "resolution_type": "refund",
             "resolution_notes": "Operator refund approved after admin review.",
-            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
         },
     )
 
@@ -3707,6 +3702,7 @@ async def test_admin_resolves_dispute_refund_on_paystack_rail(
         FakeNotificationTask([]),
     )
     context = await create_disputed_funded_project(client, name="ngn-refund-dispute")
+    await open_step_up_window(fake_redis, context["admin_id"])
     transaction_id = await _reroute_funded_escrow_to_paystack(context)
 
     resolved = await client.post(
@@ -3715,7 +3711,6 @@ async def test_admin_resolves_dispute_refund_on_paystack_rail(
         json={
             "resolution_type": "refund",
             "resolution_notes": "Operator refund approved after admin review.",
-            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
         },
     )
 
@@ -3823,6 +3818,7 @@ async def test_admin_resolves_dispute_split_on_paystack_rail(
         FakeNotificationTask([]),
     )
     context = await create_disputed_funded_project(client, name="ngn-split-dispute")
+    await open_step_up_window(fake_redis, context["admin_id"])
     transaction_id = await _reroute_funded_escrow_to_paystack(context)
 
     resolved = await client.post(
@@ -3833,7 +3829,6 @@ async def test_admin_resolves_dispute_split_on_paystack_rail(
             "release_amount": "1000.00",
             "refund_amount": "500.00",
             "resolution_notes": "Partial delivery accepted after admin review.",
-            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
         },
     )
 
@@ -3964,6 +3959,7 @@ async def test_admin_resolve_rejects_split_over_held_escrow(
         FakeNotificationTask([]),
     )
     context = await create_disputed_funded_project(client, name="overcap-dispute")
+    await open_step_up_window(fake_redis, context["admin_id"])
 
     # Held escrow equals the 1500.00 milestone budget; 1000 + 1000 exceeds it.
     over_cap = await client.post(
@@ -3974,7 +3970,6 @@ async def test_admin_resolve_rejects_split_over_held_escrow(
             "release_amount": "1000.00",
             "refund_amount": "1000.00",
             "resolution_notes": "Attempt to pay out more than the held escrow.",
-            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
         },
     )
     assert over_cap.status_code == 422
@@ -4035,6 +4030,52 @@ async def test_admin_lists_open_project_disputes(
     assert forbidden.status_code == 403
 
 
+async def test_admin_dispute_resolution_requires_open_step_up_window(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolving without an open step-up window answers 403 and changes nothing.
+
+    The Admin is enrolled in 2FA but has not confirmed with the authenticator
+    in this session, so the dispute stays open and no escrow movement occurs.
+    """
+    del migrated_database, project_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return a Redis double holding no step-up window."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        dispute_service,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+    context = await create_disputed_funded_project(client, name="no-window-dispute")
+
+    blocked = await client.post(
+        f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
+        headers=context["admin_headers"],
+        json={
+            "resolution_type": "release",
+            "resolution_notes": "Attempt to resolve without confirming 2FA.",
+        },
+    )
+
+    async with async_session_factory() as session:
+        dispute = await session.get(Dispute, UUID(context["dispute_id"]))
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["error_code"] == "step_up_required"
+    assert dispute is not None
+    assert dispute.status != "resolved"
+
+
 async def test_admin_dispute_queue_excludes_resolved_by_default(
     client: AsyncClient,
     migrated_database: None,
@@ -4063,6 +4104,7 @@ async def test_admin_dispute_queue_excludes_resolved_by_default(
         FakeNotificationTask([]),
     )
     context = await create_disputed_funded_project(client, name="resolved-dispute")
+    await open_step_up_window(fake_redis, context["admin_id"])
 
     await client.post(
         f"/v1/admin/projects/disputes/{context['dispute_id']}/resolve",
@@ -4070,7 +4112,6 @@ async def test_admin_dispute_queue_excludes_resolved_by_default(
         json={
             "resolution_type": "release",
             "resolution_notes": "Delivery accepted in full by support.",
-            "totp_code": pyotp.TOTP(context["totp_secret"]).now(),
         },
     )
 

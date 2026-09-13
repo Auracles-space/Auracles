@@ -591,15 +591,15 @@ async def request_email_change(
     user: User,
     new_email: str,
     password: str | None,
-    totp_code: str | None,
 ) -> None:
     """Create a new-email verification token after re-authentication.
 
     Re-auth substitutes the factor the account actually has. Password accounts
     re-authenticate with the account password; passwordless (e.g. Google)
     accounts skip the password and rely on the new-address verification link as
-    proof of intent. Accounts with 2FA enabled additionally step up with a
-    TOTP/backup code. The current (old) address is notified for awareness.
+    proof of intent. Accounts with 2FA enabled must already hold an open
+    step-up window, enforced by ``require_step_up_if_enrolled`` on the route.
+    The current (old) address is notified for awareness.
     """
     normalized_email = auth_service.normalize_email(new_email)
     if normalized_email == user.email:
@@ -622,15 +622,6 @@ async def request_email_change(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect password.",
             )
-    # Step up with 2FA only when the account has it; never demand a factor the
-    # account does not possess (that would lock the user out of email change).
-    if user.totp_enabled:
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=user,
-            code=totp_code,
-        )
 
     previous_email = user.email
     token = f"{EMAIL_CHANGE_PREFIX}{generate_opaque_token()}"

@@ -68,6 +68,7 @@ from app.modules.organizations.models import (
     OrgMemberNda,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 from tests.integration.test_auth_sessions import FakeRedis
 
 pytestmark = pytest.mark.asyncio
@@ -92,6 +93,7 @@ def trial_notifications(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, objec
 
     monkeypatch.setattr(_svc, "dispatch_project_notification", _RecordingDispatch())
     return sent
+
 
 NDA_VERSION = get_settings().org_member_nda_version
 
@@ -188,9 +190,7 @@ async def _new_user(prefix: str, *, totp_secret: str | None = None) -> UUID:
             return user.id
 
 
-async def _org_with_members(
-    owner_id: UUID, member_id: UUID
-) -> tuple[UUID, UUID, UUID]:
+async def _org_with_members(owner_id: UUID, member_id: UUID) -> tuple[UUID, UUID, UUID]:
     """Create an org with a pending attestor capability + owner and member.
 
     Both members sign the current NDA (needed to nominate/staff them). Returns
@@ -207,9 +207,7 @@ async def _org_with_members(
             session.add(org)
             await session.flush()
             owner_member = OrgMember(org_id=org.id, user_id=owner_id, role="owner")
-            reviewer_member = OrgMember(
-                org_id=org.id, user_id=member_id, role="member"
-            )
+            reviewer_member = OrgMember(org_id=org.id, user_id=member_id, role="member")
             session.add_all([owner_member, reviewer_member])
             await session.flush()
             session.add_all(
@@ -422,7 +420,6 @@ async def test_org_attestor_full_lifecycle(
     a staffed member performs a real review, settlement credits the org (never a
     member), and the org's public identity carries the attestation.
     """
-    del clean_state
     # Uploads reserve S3 keys but never PUT objects in tests, so treat the
     # objects as present for the KYB-verify existence gate.
     from app.integrations import s3
@@ -441,6 +438,10 @@ async def test_org_attestor_full_lifecycle(
     admin_headers = {
         "Authorization": f"Bearer {create_access_token(admin_id, ['admin'])}"
     }
+    # Every sensitive write below (legal profile, undertakings, payout, KYB
+    # review, approval) reads the actor's step-up window instead of a code.
+    await open_step_up_window(clean_state, owner_id)
+    await open_step_up_window(clean_state, admin_id)
     # --- Business verification (KYB) --------------------------------------
     # Precedes every capability now, so the org establishes and verifies its
     # legal identity before the attestor gate walk can approve anything.
@@ -449,12 +450,6 @@ async def test_org_attestor_full_lifecycle(
         json={
             "legal_name": "Auracles Attestations Ltd",
             "registration_number": "RC123456",
-            # TOTP is single-use (M4) and only ±1 step is accepted, so the
-            # three owner step-ups in this test take one step each: undertakings
-            # spends `now`, the payout below spends `+30`, and this takes `-30`.
-            "totp_code": pyotp.TOTP(owner_secret).at(
-                datetime.now(UTC) - timedelta(seconds=30)
-            ),
         },
         headers=_auth(owner_id),
     )
@@ -476,10 +471,7 @@ async def test_org_attestor_full_lifecycle(
     assert submitted_kyb.json()["kyb_status"] == "pending"
     reviewed = await client.post(
         f"/v1/admin/orgs/{org_id}/kyb/review",
-        json={
-            "verdict": "verified",
-            "totp_code": pyotp.TOTP(admin_secret).now(),
-        },
+        json={"verdict": "verified"},
         headers=admin_headers,
     )
     assert reviewed.status_code == 200, reviewed.text
@@ -519,7 +511,6 @@ async def test_org_attestor_full_lifecycle(
             "declarations": [],
             "accept_policy": True,
             "accept_confidentiality": True,
-            "totp_code": pyotp.TOTP(owner_secret).now(),
         },
         headers=_auth(owner_id),
     )
@@ -540,9 +531,7 @@ async def test_org_attestor_full_lifecycle(
         for call in trial_notifications
         if call["notification_type"] == "org_attestor_trial_nominated"
     )
-    assert nomination["link"] == (
-        f"/dashboard/organizations/{org_id}/attestor-trial"
-    )
+    assert nomination["link"] == (f"/dashboard/organizations/{org_id}/attestor-trial")
 
     submitted = await client.post(f"{app_base}/submit", headers=_auth(owner_id))
     assert submitted.status_code == 200
@@ -679,10 +668,6 @@ async def test_org_attestor_full_lifecycle(
             "amount": "100.00",
             "currency": "USD",
             "payout_account_id": str(payout_account_id),
-            # Fresh code from the next step (TOTP is single-use now, M4).
-            "totp_code": pyotp.TOTP(owner_secret).at(
-                datetime.now(UTC) + timedelta(seconds=30)
-            ),
         },
         headers=_auth(owner_id),
     )

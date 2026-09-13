@@ -58,6 +58,4 @@ def test_prose_field_still_blocks_markup_and_null(bad: str) -> None:
 def test_legal_profile_text_still_blocks_markup() -> None:
     """The legal-profile prose guard keeps rejecting markup delimiters."""
     with pytest.raises(ValidationError):
-        OrgLegalProfileUpdateRequest.model_validate(
-            {"legal_name": "Evil<b>Corp", "totp_code": "123456"}
-        )
+        OrgLegalProfileUpdateRequest.model_validate({"legal_name": "Evil<b>Corp"})

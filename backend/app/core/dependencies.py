@@ -221,6 +221,43 @@ async def require_step_up(
     return user
 
 
+def require_step_up_after(
+    gate: Callable[..., object],
+) -> Callable[..., object]:
+    """Compose a role gate with the step-up check, role first.
+
+    FastAPI runs route-level ``dependencies=[...]`` before parameter
+    dependencies, so a bare ``require_step_up`` on a route would answer
+    ``step_up_required`` to a caller who does not even hold the role, and the
+    RBAC denial would never be audited. This wrapper resolves ``gate`` (a
+    ``require_role``/``require_org_role`` dependency) first, then requires an
+    open window for the user it returns.
+
+    Args:
+        gate: The role or organization-role dependency to run first.
+    """
+
+    async def checker(
+        subject: Annotated[object, Depends(gate)],
+        redis: RedisClient,
+    ) -> User:
+        """Return the user once both the gate and the step-up check pass.
+
+        Role gates return the ``User``; organization-role gates return a
+        context object carrying ``.user``. Both shapes are accepted here so
+        one composer serves every router.
+        """
+        user = subject if isinstance(subject, User) else getattr(subject, "user", None)
+        if not isinstance(user, User):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Step-up gate received no user.",
+            )
+        return await require_step_up(user=user, redis=redis)
+
+    return checker
+
+
 async def require_step_up_if_enrolled(
     user: Annotated[User, Depends(get_current_user)],
     redis: RedisClient,

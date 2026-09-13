@@ -61,10 +61,11 @@ from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
-    """Redis test double for TOTP-sensitive admin attestation routes."""
+    """Redis test double holding step-up windows for admin attestation routes."""
 
     def __init__(self) -> None:
         """Create empty in-memory Redis state."""
@@ -242,8 +243,12 @@ async def create_user(email: str, roles: list[str]) -> UUID:
         return user.id
 
 
-async def create_admin_user() -> tuple[UUID, str]:
-    """Create an admin user with encrypted TOTP enabled."""
+async def create_admin_user(*, totp_enabled: bool = True) -> UUID:
+    """Create an admin user, enrolled in TOTP unless told otherwise.
+
+    Step-up gated routes need ``totp_enabled=True`` plus a window seeded with
+    ``open_step_up_window``; the raw secret is never needed by tests.
+    """
     secret = pyotp.random_base32()
     async with async_session_factory() as session:
         async with session.begin():
@@ -252,8 +257,8 @@ async def create_admin_user() -> tuple[UUID, str]:
                 password_hash=hash_password("CorrectHorse9"),
                 display_name="Attestation Admin",
                 email_verified=True,
-                totp_enabled=True,
-                totp_secret=encrypt_totp_secret(secret),
+                totp_enabled=totp_enabled,
+                totp_secret=encrypt_totp_secret(secret) if totp_enabled else None,
             )
             session.add(user)
             await session.flush()
@@ -264,7 +269,7 @@ async def create_admin_user() -> tuple[UUID, str]:
                     approved_at=datetime.now(UTC),
                 )
             )
-        return user.id, secret
+        return user.id
 
 
 async def create_org_attestor(
@@ -1422,7 +1427,7 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     notification_calls: list[dict[str, Any]] = []
 
     async def override_redis() -> FakeRedis:
-        """Return Redis test double for admin TOTP verification."""
+        """Return the Redis test double holding the admin step-up window."""
         return fake_redis
 
     app.dependency_overrides[get_redis] = override_redis
@@ -1438,7 +1443,8 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
         jurisdictions=["US"],
         slug_prefix="reject",
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
     attestation_id, _, escrow_id = await create_report_submitted_attestation(
         requestor_id, org_id, member_id
     )
@@ -1457,21 +1463,17 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
         json={
             "outcome": "rejected",
             "resolution_notes": "Report is sound; the findings stand on review.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
             "is_complex": True,
         },
     )
-    # Fresh code from the next step (TOTP is single-use now, M4); the duplicate
-    # resolution is blocked by the dispute state, not by the reused code.
+    # The duplicate resolution is blocked by the dispute state (409), not by
+    # the step-up gate: the window stays open for the whole admin session.
     double_resolve = await client.post(
         f"/v1/admin/attestation-disputes/{dispute_id}/resolve",
         headers=auth_headers(admin_id, ["admin"]),
         json={
             "outcome": "rejected",
             "resolution_notes": "Duplicate resolution should be blocked.",
-            "totp_code": pyotp.TOTP(totp_secret).at(
-                datetime.now(UTC) + timedelta(seconds=30)
-            ),
         },
     )
 
@@ -1512,7 +1514,7 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
     notification_calls: list[dict[str, Any]] = []
 
     async def override_redis() -> FakeRedis:
-        """Return Redis test double for admin TOTP verification."""
+        """Return the Redis test double holding the admin step-up window."""
         return fake_redis
 
     async def fake_create_refund(
@@ -1547,7 +1549,8 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
         jurisdictions=["US"],
         slug_prefix="refund",
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
     (
         attestation_id,
         transaction_id,
@@ -1568,7 +1571,6 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
         json={
             "outcome": "upheld_refund",
             "resolution_notes": "Undisclosed conflict confirmed; refund the fee.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 
@@ -1620,7 +1622,7 @@ async def test_admin_upholds_revise_reopens_for_resubmission(
     notification_calls: list[dict[str, Any]] = []
 
     async def override_redis() -> FakeRedis:
-        """Return Redis test double for admin TOTP verification."""
+        """Return the Redis test double holding the admin step-up window."""
         return fake_redis
 
     app.dependency_overrides[get_redis] = override_redis
@@ -1636,7 +1638,8 @@ async def test_admin_upholds_revise_reopens_for_resubmission(
         jurisdictions=["US"],
         slug_prefix="revise",
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
     attestation_id, _, escrow_id = await create_report_submitted_attestation(
         requestor_id, org_id, member_id
     )
@@ -1655,7 +1658,6 @@ async def test_admin_upholds_revise_reopens_for_resubmission(
         json={
             "outcome": "upheld_revise",
             "resolution_notes": "Wrong version reviewed; revise against v2.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 
@@ -1695,7 +1697,7 @@ async def test_admin_manually_assigns_needs_admin_attestation(
     fake_redis = FakeRedis()
 
     async def override_redis() -> FakeRedis:
-        """Return Redis test double for admin TOTP verification."""
+        """Return the Redis test double holding the admin step-up window."""
         return fake_redis
 
     app.dependency_overrides[get_redis] = override_redis
@@ -1708,7 +1710,8 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         jurisdictions=["US"],
         slug_prefix="manual",
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
     attestation_id, _transaction_id, _ = await create_needs_admin_attestation(
         requestor_id
     )
@@ -1719,7 +1722,6 @@ async def test_admin_manually_assigns_needs_admin_attestation(
         json={
             "attestor_org_id": str(org_id),
             "reason": "Manual assignment after cohort exhaustion.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 
@@ -1765,7 +1767,7 @@ async def test_admin_detail_returns_offer_org_and_status(
     fake_redis = FakeRedis()
 
     async def override_redis() -> FakeRedis:
-        """Return Redis test double for admin TOTP verification."""
+        """Return the Redis test double holding the admin step-up window."""
         return fake_redis
 
     app.dependency_overrides[get_redis] = override_redis
@@ -1778,7 +1780,8 @@ async def test_admin_detail_returns_offer_org_and_status(
         jurisdictions=["US"],
         slug_prefix="detail",
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
     attestation_id, _txn, _ = await create_needs_admin_attestation(requestor_id)
 
     assign = await client.post(
@@ -1787,7 +1790,6 @@ async def test_admin_detail_returns_offer_org_and_status(
         json={
             "attestor_org_id": str(org_id),
             "reason": "Manual dispatch to a chosen org.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
     assert assign.status_code == 200
@@ -1819,7 +1821,7 @@ async def test_admin_lists_needs_admin_attestations(
         "needs-admin-list-requestor@auracles.space",
         ["operator"],
     )
-    admin_id, _ = await create_admin_user()
+    admin_id = await create_admin_user()
     attestation_id, _, _ = await create_needs_admin_attestation(requestor_id)
 
     listed = await client.get(
@@ -1851,7 +1853,7 @@ async def test_admin_refunds_needs_admin_attestation(
     refund_calls: list[dict[str, Any]] = []
 
     async def override_redis() -> FakeRedis:
-        """Return Redis test double for admin TOTP verification."""
+        """Return the Redis test double holding the admin step-up window."""
         return fake_redis
 
     async def fake_create_refund(
@@ -1878,7 +1880,8 @@ async def test_admin_refunds_needs_admin_attestation(
         "admin-refund-requestor@auracles.space",
         ["operator"],
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
     attestation_id, transaction_id, escrow_id = await create_needs_admin_attestation(
         requestor_id
     )
@@ -1888,7 +1891,6 @@ async def test_admin_refunds_needs_admin_attestation(
         headers=auth_headers(admin_id, ["admin"]),
         json={
             "reason": "No eligible Attestor available after cohort exhaustion.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
 
@@ -1923,6 +1925,81 @@ async def test_admin_refunds_needs_admin_attestation(
         }
     ]
     assert audit is not None
+
+
+async def test_admin_attestation_actions_require_step_up_window(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Assign, refund and dispute resolution answer 403 without a step-up window.
+
+    The gate runs before the handler, so no attestation state is touched: an
+    enrolled admin with no window gets ``step_up_required`` and an admin who
+    never enrolled in 2FA gets ``totp_setup_required``.
+    """
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return the Redis test double holding the admin step-up window."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    requestor_id = await create_user(
+        "stepup-gate-requestor@auracles.space",
+        ["operator"],
+    )
+    org_id, _attestor_id, _member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="stepup",
+    )
+    enrolled_id = await create_admin_user()
+    unenrolled_id = await create_admin_user(totp_enabled=False)
+    attestation_id, _transaction_id, _ = await create_needs_admin_attestation(
+        requestor_id
+    )
+
+    assign = await client.post(
+        f"/v1/admin/attestations/{attestation_id}/assign",
+        headers=auth_headers(enrolled_id, ["admin"]),
+        json={
+            "attestor_org_id": str(org_id),
+            "reason": "Manual assignment without a step-up window.",
+        },
+    )
+    refund = await client.post(
+        f"/v1/admin/attestations/{attestation_id}/refund",
+        headers=auth_headers(enrolled_id, ["admin"]),
+        json={"reason": "Refund without a step-up window."},
+    )
+    resolve = await client.post(
+        f"/v1/admin/attestation-disputes/{uuid4()}/resolve",
+        headers=auth_headers(enrolled_id, ["admin"]),
+        json={
+            "outcome": "rejected",
+            "resolution_notes": "Resolution without a step-up window.",
+        },
+    )
+    unenrolled = await client.post(
+        f"/v1/admin/attestations/{attestation_id}/refund",
+        headers=auth_headers(unenrolled_id, ["admin"]),
+        json={"reason": "Refund from an admin without 2FA."},
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+
+    app.dependency_overrides.pop(get_redis, None)
+
+    for response in (assign, refund, resolve):
+        assert response.status_code == 403
+        assert response.json()["detail"]["error_code"] == "step_up_required"
+    assert unenrolled.status_code == 403
+    assert unenrolled.json()["detail"]["error_code"] == "totp_setup_required"
+    assert attestation is not None
+    assert attestation.status == "needs_admin"
 
 
 async def test_escalate_attestation_disputes_flags_overdue_resolutions(
@@ -2001,7 +2078,7 @@ async def test_admin_lists_active_attestation_disputes(
     """
     del migrated_database, matching_context
     requestor_id = await create_user("dispute-queue@auracles.space", ["operator"])
-    admin_id, _secret = await create_admin_user()
+    admin_id = await create_admin_user()
     org_id, _attestor_id, member_id = await create_org_attestor(
         specializations=["healthcare"],
         jurisdictions=["US"],
@@ -2090,7 +2167,8 @@ async def test_resolved_dispute_leaves_the_active_queue(
         jurisdictions=["US"],
         slug_prefix="qfilter",
     )
-    admin_id, totp_secret = await create_admin_user()
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
     attestation_id, _, _escrow_id = await create_report_submitted_attestation(
         requestor_id, org_id, member_id
     )
@@ -2114,7 +2192,6 @@ async def test_resolved_dispute_leaves_the_active_queue(
         json={
             "outcome": "upheld_revise",
             "resolution_notes": "Scoping call missing; revise after holding it.",
-            "totp_code": pyotp.TOTP(totp_secret).now(),
         },
     )
     after = await client.get(
@@ -2150,7 +2227,7 @@ async def test_dispute_queue_rejects_unknown_status_filter(
     the opposite of the truth when the filter is simply misspelt.
     """
     del migrated_database, matching_context
-    admin_id, _secret = await create_admin_user()
+    admin_id = await create_admin_user()
 
     response = await client.get(
         "/v1/admin/attestation-disputes",
@@ -2172,7 +2249,7 @@ async def test_dispute_queue_orders_by_resolution_deadline(
     so ordering by creation time would bury the dispute about to breach.
     """
     del migrated_database, matching_context
-    admin_id, _secret = await create_admin_user()
+    admin_id = await create_admin_user()
     raised_ids: list[str] = []
     for index in range(2):
         requestor_id = await create_user(

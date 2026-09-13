@@ -14,13 +14,11 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.admin.notifications import notify_admins_review_pending
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User, UserRole
 from app.modules.developer.models import DeveloperAccount, DeveloperApplication
 from app.modules.developer.schemas import (
@@ -149,12 +147,15 @@ async def list_applications_for_admin(
 
 async def review_application(
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     application_id: UUID,
     payload: DeveloperApplicationReviewRequest,
 ) -> DeveloperApplication:
-    """Approve or reject a pending Developer application with admin 2FA."""
+    """Approve or reject a pending Developer application.
+
+    The route gate (``require_step_up``) has already confirmed the admin holds
+    an open step-up 2FA window; this service performs no factor check.
+    """
     admin_id = admin.id
     now = datetime.now(UTC)
     feedback = payload.feedback.strip() if payload.feedback else None
@@ -167,19 +168,6 @@ async def review_application(
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        locked_admin = await db.get(User, admin_id, with_for_update=True)
-        if locked_admin is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token.",
-            )
-        await auth_service.verify_totp_for_sensitive_action(
-            db=db,
-            redis=redis,
-            user=locked_admin,
-            code=payload.totp_code,
-        )
-
         application = await db.scalar(
             select(DeveloperApplication)
             .where(DeveloperApplication.id == application_id)

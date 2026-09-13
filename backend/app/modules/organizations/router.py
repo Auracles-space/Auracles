@@ -11,7 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_role
+from app.core.dependencies import (
+    get_current_user,
+    require_role,
+    require_step_up_after,
+)
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
 from app.modules.attestation import clarification_service, matching_service
@@ -19,7 +23,6 @@ from app.modules.attestation.models import Attestation, AttestationOffer
 from app.modules.attestation.schemas import (
     CredentialEvidenceUploadSessionResponse,
 )
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import service as financials_service
 from app.modules.financials.schemas import (
@@ -726,25 +729,23 @@ async def change_member_role(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Transfer organization ownership",
     description=(
-        "Transfer ownership to another existing member after successful "
-        "two-factor verification."
+        "Transfer ownership to another existing member. Requires an open "
+        "step-up 2FA window. Org owner only."
     ),
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
 )
 async def transfer_ownership(
     org_id: UUID,
     payload: OrgOwnershipTransferRequest,
     context: VerifiedOrgOwner,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> None:
     """Transfer organization ownership to another member."""
     del org_id
     await service.transfer_ownership(
         db=db,
-        redis=redis,
         context=context,
         new_owner_member_id=payload.new_owner_member_id,
-        totp_code=payload.totp_code,
     )
 
 
@@ -1175,19 +1176,21 @@ async def submit_attestor_application(
     summary="Sign the org attestor undertakings",
     description=(
         "Owner-sign the conflict-of-interest and confidentiality undertakings. "
-        "TOTP-gated; org owner only."
+        "Requires an open step-up 2FA window; org owner only."
     ),
+    dependencies=[
+        Depends(require_step_up_after(require_org_role("owner", verified=True)))
+    ],
 )
 async def sign_attestor_undertakings(
     org_id: UUID,
     payload: OrgUndertakingsSignRequest,
     context: VerifiedOrgOwner,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> OrgAttestorApplicationResponse:
     """Owner-sign the org attestor undertakings."""
     await attestor_application_service.sign_undertakings(
-        db, redis, org_id=org_id, user=context.user, payload=payload
+        db, org_id=org_id, user=context.user, payload=payload
     )
     application, checklist = await attestor_application_service.get_application(
         db, org_id=org_id
@@ -1784,24 +1787,22 @@ async def get_legal_profile(
     response_model=OrgLegalProfileResponse,
     summary="Upsert the organization legal profile",
     description=(
-        "Create or update the organization's shared legal identity after an "
-        "owner TOTP step-up. Org owner only."
+        "Create or update the organization's shared legal identity. Requires "
+        "an open step-up 2FA window. Org owner only."
     ),
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
 )
 async def upsert_legal_profile(
     org_id: UUID,
     payload: OrgLegalProfileUpdateRequest,
     context: OrgOwner,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> OrgLegalProfileResponse:
     """Create or update the shared legal profile for one organization."""
     profile = await legal_profile_service.upsert_legal_profile(
         db,
-        redis,
         org_id=org_id,
         actor_id=context.user.id,
-        totp_code=payload.totp_code,
         legal_name=payload.legal_name,
         registration_number=payload.registration_number,
         address=payload.address,
@@ -1858,8 +1859,12 @@ async def get_org_earnings(
     summary="Start organization payment-method setup",
     description=(
         "Create or reuse the organization's Stripe customer and return a "
-        "SetupIntent client secret. TOTP-gated; owner/admin only."
+        "SetupIntent client secret. Requires an open step-up 2FA window; "
+        "owner/admin only."
     ),
+    dependencies=[
+        Depends(require_step_up_after(require_org_role("admin", verified=True)))
+    ],
 )
 async def create_org_payment_method_setup(
     org_id: UUID,
@@ -1868,16 +1873,15 @@ async def create_org_payment_method_setup(
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgPaymentMethodSetupResponse:
-    """Create an organization payment-method SetupIntent after TOTP step-up."""
+    """Create an organization payment-method SetupIntent inside a step-up window."""
+    del payload
     await ORG_PAYMENT_METHOD_SETUP_RATE_LIMITER.check(
         cast(RedisCounter, redis), str(org_id)
     )
     response = await billing_service.create_org_payment_method_setup(
         db,
-        redis,
         org_id=org_id,
         actor=context.user,
-        totp_code=payload.totp_code,
     )
     return OrgPaymentMethodSetupResponse(**response.model_dump())
 
@@ -1912,9 +1916,12 @@ async def list_org_payment_methods(
     response_model=OrgPaymentMethodDeleteResponse,
     summary="Remove an organization payment method",
     description=(
-        "Detach a provider-held payment method from the organization after "
-        "TOTP verification. Owner/admin only."
+        "Detach a provider-held payment method from the organization. "
+        "Requires an open step-up 2FA window. Owner/admin only."
     ),
+    dependencies=[
+        Depends(require_step_up_after(require_org_role("admin", verified=True)))
+    ],
 )
 async def delete_org_payment_method(
     org_id: UUID,
@@ -1922,16 +1929,14 @@ async def delete_org_payment_method(
     payload: OrgPaymentMethodDeleteRequest,
     context: VerifiedOrgAdmin,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> OrgPaymentMethodDeleteResponse:
-    """Detach one organization payment method after TOTP and ownership checks."""
+    """Detach one organization payment method after the ownership check."""
+    del payload
     response = await billing_service.delete_org_payment_method(
         db,
-        redis,
         org_id=org_id,
         actor=context.user,
         payment_method_id=payment_method_id,
-        totp_code=payload.totp_code,
     )
     return OrgPaymentMethodDeleteResponse(**response.model_dump())
 
@@ -1963,21 +1968,23 @@ async def onboard_org_payout_account(
     response_model=PayoutResponse,
     summary="Request an organization payout",
     description=(
-        "Request a payout of the org's available earnings. TOTP-gated "
-        "(requester's own TOTP); requires a verified org payout account and "
-        "an eligible active capability path. Owner/admin only."
+        "Request a payout of the org's available earnings. Requires an open "
+        "step-up 2FA window, a verified org payout account and an eligible "
+        "active capability path. Owner/admin only."
     ),
+    dependencies=[
+        Depends(require_step_up_after(require_org_role("admin", verified=True)))
+    ],
 )
 async def request_org_payout(
     org_id: UUID,
     payload: PayoutRequest,
     context: VerifiedOrgAdmin,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> PayoutResponse:
-    """Request an org payout after TOTP step-up."""
+    """Request an org payout inside an open step-up window."""
     return await financials_service.request_org_payout(
-        db, redis, org_id=org_id, actor=context.user, payload=payload
+        db, org_id=org_id, actor=context.user, payload=payload
     )
 
 
@@ -2104,21 +2111,18 @@ PlatformAdmin = Annotated[User, Depends(require_role("admin"))]
     description=(
         "Record a verified/rejected verdict on an organization awaiting "
         "business verification. Verifying unlocks every capability, so the "
-        "write is TOTP step-up gated. Rejection is not terminal: the "
-        "organization may correct its details and submit again."
+        "write requires an open step-up 2FA window. Rejection is not "
+        "terminal: the organization may correct its details and submit again."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_review_org_kyb(
     org_id: UUID,
     payload: OrgKybReviewRequest,
     admin: PlatformAdmin,
     db: DatabaseSession,
-    redis: RedisClient,
 ) -> OrgKybStatusResponse:
     """Record an admin's business-verification decision for one org."""
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db, redis=redis, user=admin, code=payload.totp_code
-    )
     await kyb_service.review_org_kyb(
         db,
         org_id=org_id,
@@ -2171,6 +2175,7 @@ async def admin_list_orgs(
         "Suspend an organization platform-wide. Idempotent; members lose "
         "org access and derived roles are re-evaluated."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_org(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2187,6 +2192,7 @@ async def admin_suspend_org(
         "Lift a platform-wide organization suspension. Idempotent; members "
         "regain org access and derived roles are re-evaluated."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_reinstate_org(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2203,6 +2209,7 @@ async def admin_reinstate_org(
         "Suspend an org's attestor capability; the profile is retained but "
         "excluded from matching and members' derived roles are re-evaluated."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_attestor_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2221,6 +2228,7 @@ async def admin_suspend_attestor_capability(
         "Reactivate a suspended org attestor capability and its profile; "
         "members' derived roles are re-evaluated."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_reinstate_attestor_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2239,6 +2247,7 @@ async def admin_reinstate_attestor_capability(
         "Revoke an org's attestor capability and deactivate its profile; "
         "members' derived roles are re-evaluated."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_revoke_attestor_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2257,6 +2266,7 @@ async def admin_revoke_attestor_capability(
         "Suspend an org's contributor capability; member derived contributor "
         "roles are re-evaluated."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_contributor_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2275,6 +2285,7 @@ async def admin_suspend_contributor_capability(
         "Reactivate a suspended org contributor capability and re-grant any "
         "derived contributor roles."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_reinstate_contributor_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2293,6 +2304,7 @@ async def admin_reinstate_contributor_capability(
         "Revoke an org's contributor capability, deactivate its profile, and "
         "remove derived contributor roles from its members."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_revoke_contributor_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2311,6 +2323,7 @@ async def admin_revoke_contributor_capability(
         "Suspend an org's operator capability and remove derived operator "
         "roles from its members."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_operator_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2329,6 +2342,7 @@ async def admin_suspend_operator_capability(
         "Reactivate a suspended org operator capability and re-grant any "
         "derived operator roles."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_reinstate_operator_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2347,6 +2361,7 @@ async def admin_reinstate_operator_capability(
         "Revoke an org's operator capability and remove derived operator "
         "roles from its members."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_revoke_operator_capability(
     org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2515,6 +2530,7 @@ async def admin_get_trial_grade(
     response_model=OrgAttestorApplicationResponse,
     summary="Decide the calibration trial (platform admin)",
     description="Confirm or override the latest submitted calibration trial.",
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_decide_trial(
     application_id: UUID,
@@ -2704,6 +2720,7 @@ async def admin_delete_fixture_artifact(
         "Approve a fully gated application: create the profile, activate the "
         "attestor capability, and grant every member the derived attestor role."
     ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_approve(
     application_id: UUID, admin: PlatformAdmin, db: DatabaseSession
@@ -2723,6 +2740,7 @@ async def admin_approve(
     response_model=OrgAttestorApplicationResponse,
     summary="Reject an application (platform admin)",
     description="Terminally reject an application under review with feedback.",
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_reject(
     application_id: UUID,

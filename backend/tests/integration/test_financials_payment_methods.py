@@ -25,6 +25,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
@@ -254,16 +255,15 @@ async def test_operator_can_start_stripe_payment_method_setup(
     payment_method_context: dict[str, Any],
 ) -> None:
     """Operator receives a SetupIntent secret and only provider ids are stored."""
-    user_id, totp_secret = await create_user_with_roles(
+    user_id, _ = await create_user_with_roles(
         "payment-operator@auracles.space",
         ["operator"],
     )
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(payment_method_context["redis"], user_id)
 
     response = await client.post(
         "/v1/financials/payment-methods",
         headers=auth_headers(user_id, ["operator"]),
-        json={"totp_code": code},
     )
 
     async with async_session_factory() as session:
@@ -300,17 +300,16 @@ async def test_unverified_operator_cannot_set_up_payment_method(
     payment_method_context: dict[str, Any],
 ) -> None:
     """Adding a payment method requires verified KYC; unverified is blocked (403)."""
-    user_id, totp_secret = await create_user_with_roles(
+    user_id, _ = await create_user_with_roles(
         "kyc-gate-payment@auracles.space",
         ["operator"],
         kyc_status="unverified",
     )
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(payment_method_context["redis"], user_id)
 
     response = await client.post(
         "/v1/financials/payment-methods",
         headers=auth_headers(user_id, ["operator"]),
-        json={"totp_code": code},
     )
 
     assert response.status_code == 403
@@ -323,11 +322,11 @@ async def test_operator_lists_and_removes_provider_held_payment_methods(
     payment_method_context: dict[str, Any],
 ) -> None:
     """List/delete proxy safe card metadata and never expose full card numbers."""
-    user_id, totp_secret = await create_user_with_roles(
+    user_id, _ = await create_user_with_roles(
         "payment-list@auracles.space",
         ["operator"],
     )
-    code = pyotp.TOTP(totp_secret).now()
+    await open_step_up_window(payment_method_context["redis"], user_id)
     async with async_session_factory() as session:
         user = await session.get(User, user_id)
         assert user is not None
@@ -342,7 +341,6 @@ async def test_operator_lists_and_removes_provider_held_payment_methods(
         "DELETE",
         "/v1/financials/payment-methods/pm_test_123",
         headers=auth_headers(user_id, ["operator"]),
-        json={"totp_code": code},
     )
 
     async with async_session_factory() as session:
@@ -380,12 +378,48 @@ async def test_operator_lists_and_removes_provider_held_payment_methods(
     assert audit.metadata_["payment_method_ref"] == "****_123"
 
 
+async def test_payment_method_changes_require_open_step_up_window(
+    client: AsyncClient,
+    migrated_database: None,
+    payment_method_context: dict[str, Any],
+) -> None:
+    """Without an open step-up window, setup and removal answer 403.
+
+    Nothing reaches Stripe: no customer or SetupIntent is created and no
+    method is detached.
+    """
+    del migrated_database
+    user_id, _ = await create_user_with_roles(
+        "payment-no-window@auracles.space",
+        ["operator"],
+    )
+
+    setup = await client.post(
+        "/v1/financials/payment-methods",
+        headers=auth_headers(user_id, ["operator"]),
+    )
+    removed = await client.request(
+        "DELETE",
+        "/v1/financials/payment-methods/pm_test_123",
+        headers=auth_headers(user_id, ["operator"]),
+    )
+
+    calls = payment_method_context["calls"]
+    assert setup.status_code == 403
+    assert setup.json()["detail"]["error_code"] == "step_up_required"
+    assert removed.status_code == 403
+    assert removed.json()["detail"]["error_code"] == "step_up_required"
+    assert calls["customers"] == []
+    assert calls["setup_intents"] == []
+    assert calls["detached"] == []
+
+
 async def test_payment_method_changes_require_operator_role_and_totp(
     client: AsyncClient,
     migrated_database: None,
     payment_method_context: dict[str, Any],
 ) -> None:
-    """Payment method writes are RBAC-gated and require enabled 2FA."""
+    """Payment method writes are RBAC-gated, need enrolled 2FA, and reject PANs."""
     contributor_id, _ = await create_user_with_roles(
         "payment-contributor@auracles.space",
         ["contributor"],
@@ -395,23 +429,28 @@ async def test_payment_method_changes_require_operator_role_and_totp(
         ["operator"],
         enable_totp=False,
     )
+    enrolled_operator_id, _ = await create_user_with_roles(
+        "payment-enrolled@auracles.space",
+        ["operator"],
+    )
+    await open_step_up_window(payment_method_context["redis"], contributor_id)
+    await open_step_up_window(payment_method_context["redis"], enrolled_operator_id)
 
     wrong_role = await client.post(
         "/v1/financials/payment-methods",
         headers=auth_headers(contributor_id, ["contributor"]),
-        json={"totp_code": "123456"},
     )
     no_totp = await client.post(
         "/v1/financials/payment-methods",
         headers=auth_headers(operator_id, ["operator"]),
-        json={"totp_code": "123456"},
     )
     invalid_pan_shape = await client.post(
         "/v1/financials/payment-methods",
-        headers=auth_headers(operator_id, ["operator"]),
-        json={"totp_code": "123456", "card_number": "4242424242424242"},
+        headers=auth_headers(enrolled_operator_id, ["operator"]),
+        json={"card_number": "4242424242424242"},
     )
 
     assert wrong_role.status_code == 403
     assert no_totp.status_code == 403
+    assert no_totp.json()["detail"]["error_code"] == "totp_setup_required"
     assert invalid_pan_shape.status_code == 422

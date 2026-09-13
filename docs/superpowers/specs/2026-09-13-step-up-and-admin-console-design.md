@@ -31,7 +31,7 @@ The admin console mirrors the fragmentation: attestor applications are reviewabl
 | Storage | Redis key `stepup:{user_id}` → value `verified_at` ISO string, TTL `STEP_UP_TTL_SECONDS` (settings, default **600**). Not a JWT claim: revocable, no token re-issue, survives access-token rotation. |
 | Revocation | `POST /v1/auth/logout` and `disable_totp` delete the key. Admin `suspend_user` deletes the target's key. |
 | Dependency | `require_step_up` in `app/core/dependencies.py`. Order: `get_current_user` → `totp_enabled` else 403 `{"error_code": "totp_setup_required", "onboarding_url": "/settings/security"}` → Redis key present else 403 `{"error_code": "step_up_required"}`. No audit on a miss (normal flow). |
-| Composition | Applied at the router as an extra `Depends` beside the role/org-role gate. Service functions lose their `totp_code` parameter and internal verify calls. Request schemas lose `totp_code`. |
+| Composition | Applied at the router as `dependencies=[Depends(require_step_up_after(<role gate>))]`. FastAPI runs route-level dependencies before parameter ones, so a bare `require_step_up` would answer `step_up_required` to a caller without the role and skip the audited RBAC denial; the composer resolves the role/org-role gate first, then the window. Routes with no role gate (email change, account deletion) use `require_step_up_if_enrolled` directly. Service functions lose their `totp_code` parameter and internal verify calls. Request schemas lose `totp_code`. |
 | Audit | Successful step-up writes audit `step_up_verified`. Gated endpoints keep their existing audit rows. |
 | Rate limit | Step-up endpoint reuses the TOTP failure lockout (5 wrong codes / window). |
 

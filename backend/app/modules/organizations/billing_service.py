@@ -6,7 +6,6 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -35,15 +34,18 @@ async def _get_org_for_billing(db: AsyncSession, *, org_id: UUID) -> Organizatio
 
 async def create_org_payment_method_setup(
     db: AsyncSession,
-    redis: Redis,
     *,
     org_id: UUID,
     actor: User,
-    totp_code: str,
 ) -> PaymentMethodSetupResponse:
-    """Create or reuse the org Stripe customer and return a SetupIntent secret."""
-    from app.modules.financials.service import _verify_sensitive_payment_method_change
+    """Create or reuse the org Stripe customer and return a SetupIntent secret.
 
+    The router requires an open step-up 2FA window before this runs.
+    """
+    # The audit write below rolls the session back first, which expires the
+    # dependency-loaded actor; read what we need while it is still loaded.
+    actor_id = actor.id
+    actor_email = actor.email
     organization = await _get_org_for_billing(db, org_id=org_id)
 
     # Deliberately not routed through `select_provider`. Stored payment methods
@@ -51,18 +53,11 @@ async def create_org_payment_method_setup(
     # Stripe rail regardless of org country. Paystack's redirect flow collects
     # the card per purchase and has nothing to store, so routing here would
     # only strand NG orgs with no way to save a card and no rail that wants one.
-    await _verify_sensitive_payment_method_change(
-        db=db,
-        redis=redis,
-        operator=actor,
-        totp_code=totp_code,
-    )
-
     customer_id = organization.stripe_customer_id
     try:
         if customer_id is None:
             customer = await stripe.create_customer(
-                email=actor.email,
+                email=actor_email,
                 name=organization.name,
                 idempotency_key=f"stripe_customer:org:{organization.id}",
             )
@@ -72,7 +67,7 @@ async def create_org_payment_method_setup(
         logger.bind(
             module="financials",
             action="create_org_payment_method_setup",
-            user_id=actor.id,
+            user_id=actor_id,
         ).error("stripe_org_payment_method_setup_failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -92,7 +87,7 @@ async def create_org_payment_method_setup(
             stored_org.stripe_customer_id = customer_id
         await write_audit(
             db=db,
-            actor_id=actor.id,
+            actor_id=actor_id,
             action="org_payment_method_added",
             target_type="organization",
             target_id=org_id,
@@ -105,7 +100,7 @@ async def create_org_payment_method_setup(
     logger.bind(
         module="financials",
         action="create_org_payment_method_setup",
-        user_id=actor.id,
+        user_id=actor_id,
     ).info("org_payment_method_added")
     return PaymentMethodSetupResponse(
         provider="stripe",
@@ -155,19 +150,19 @@ async def list_org_payment_methods(
 
 async def delete_org_payment_method(
     db: AsyncSession,
-    redis: Redis,
     *,
     org_id: UUID,
     actor: User,
     payment_method_id: str,
-    totp_code: str,
 ) -> PaymentMethodDeleteResponse:
-    """Detach an org-owned payment method after TOTP and ownership checks."""
-    from app.modules.financials.service import (
-        _masked_provider_ref,
-        _verify_sensitive_payment_method_change,
-    )
+    """Detach an org-owned payment method after the ownership check.
 
+    The router requires an open step-up 2FA window before this runs.
+    """
+    from app.modules.financials.service import _masked_provider_ref
+
+    # Same expiry hazard as setup: the audit write rolls back first.
+    actor_id = actor.id
     organization = await _get_org_for_billing(db, org_id=org_id)
     customer_id = organization.stripe_customer_id
     if customer_id is None:
@@ -175,13 +170,6 @@ async def delete_org_payment_method(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment method not found.",
         )
-
-    await _verify_sensitive_payment_method_change(
-        db=db,
-        redis=redis,
-        operator=actor,
-        totp_code=totp_code,
-    )
 
     try:
         owned_methods = await stripe.list_payment_methods(customer_id=customer_id)
@@ -199,7 +187,7 @@ async def delete_org_payment_method(
         logger.bind(
             module="financials",
             action="delete_org_payment_method",
-            user_id=actor.id,
+            user_id=actor_id,
         ).error("stripe_org_payment_method_detach_failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -211,7 +199,7 @@ async def delete_org_payment_method(
     async with db.begin():
         await write_audit(
             db=db,
-            actor_id=actor.id,
+            actor_id=actor_id,
             action="org_payment_method_removed",
             target_type="organization",
             target_id=org_id,
@@ -224,7 +212,7 @@ async def delete_org_payment_method(
     logger.bind(
         module="financials",
         action="delete_org_payment_method",
-        user_id=actor.id,
+        user_id=actor_id,
     ).info("org_payment_method_removed")
     return PaymentMethodDeleteResponse(
         provider="stripe",

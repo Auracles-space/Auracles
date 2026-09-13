@@ -11,11 +11,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PaymentMethodSetupRequest(BaseModel):
-    """Request body for starting a provider-hosted payment method setup."""
+    """Request body for starting a provider-hosted payment method setup.
+
+    Intentionally empty: the endpoint is gated by an open step-up window.
+    ``extra="forbid"`` still rejects stray fields such as a raw card number.
+    """
 
     model_config = ConfigDict(extra="forbid")
-
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class PaymentMethodSetupResponse(BaseModel):
@@ -45,11 +47,12 @@ class PaymentMethodsResponse(BaseModel):
 
 
 class PaymentMethodDeleteRequest(BaseModel):
-    """Request body for removing a provider-held payment method."""
+    """Request body for removing a provider-held payment method.
+
+    Intentionally empty: the endpoint is gated by an open step-up window.
+    """
 
     model_config = ConfigDict(extra="forbid")
-
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class PaymentMethodDeleteResponse(BaseModel):
@@ -229,11 +232,12 @@ class PayoutAccountsResponse(BaseModel):
 
 
 class PayoutAccountDeleteRequest(BaseModel):
-    """Request body for soft-deleting a payout account."""
+    """Request body for soft-deleting a payout account.
+
+    Intentionally empty: the endpoint is gated by an open step-up window.
+    """
 
     model_config = ConfigDict(extra="forbid")
-
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class PayoutAccountDeleteResponse(BaseModel):
@@ -262,7 +266,6 @@ class PayoutRequest(BaseModel):
     amount: Decimal = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
     payout_account_id: UUID
-    totp_code: str = Field(min_length=6, max_length=16)
 
 
 class PayoutResponse(BaseModel):

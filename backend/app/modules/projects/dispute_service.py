@@ -13,14 +13,12 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.audit import write_audit
 from app.modules.admin.notifications import notify_admins_review_pending
-from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, Transaction
@@ -589,9 +587,7 @@ async def list_disputes_for_admin(
         .outerjoin(operator_org, operator_org.id == Project.operator_org_id)
         .join(Proposal, Proposal.id == Project.accepted_proposal_id)
         .outerjoin(contributor_user, contributor_user.id == Proposal.contributor_id)
-        .outerjoin(
-            contributor_org, contributor_org.id == Proposal.contributor_org_id
-        )
+        .outerjoin(contributor_org, contributor_org.id == Proposal.contributor_org_id)
         .outerjoin(raiser_user, raiser_user.id == Dispute.raised_by)
         .outerjoin(
             operator_raiser_member,
@@ -685,27 +681,6 @@ async def get_project_dispute(
     return dispute
 
 
-async def _verify_admin_2fa(
-    db: AsyncSession,
-    redis: Redis,
-    admin_id: UUID,
-    totp_code: str,
-) -> None:
-    """Require a valid admin TOTP before sensitive dispute resolution."""
-    admin = await db.get(User, admin_id, with_for_update=True)
-    if admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid access token.",
-        )
-    await auth_service.verify_totp_for_sensitive_action(
-        db=db,
-        redis=redis,
-        user=admin,
-        code=totp_code,
-    )
-
-
 def _validate_resolution_amounts(
     *,
     resolution_type: str,
@@ -762,16 +737,17 @@ async def _refund_escrow_at_provider(
 async def resolve_dispute(
     *,
     db: AsyncSession,
-    redis: Redis,
     admin: User,
     dispute_id: UUID,
     resolution_type: str,
     release_amount: Decimal | None,
     refund_amount: Decimal | None,
     resolution_notes: str,
-    totp_code: str,
 ) -> Dispute:
-    """Resolve a Project dispute and synchronize escrow/workspace state."""
+    """Resolve a Project dispute and synchronize escrow/workspace state.
+
+    The admin route requires an open step-up window; no factor is checked here.
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
@@ -779,12 +755,6 @@ async def resolve_dispute(
     notification_type = f"dispute_resolved_{resolution_type}"
     notify_user_ids: list[UUID] = []
     async with db.begin():
-        await _verify_admin_2fa(
-            db=db,
-            redis=redis,
-            admin_id=admin_id,
-            totp_code=totp_code,
-        )
         dispute = await db.scalar(
             select(Dispute).where(Dispute.id == dispute_id).with_for_update()
         )

@@ -45,6 +45,7 @@ from app.modules.frameworks.models_artifact import (
     ArtifactRarityAudit,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
 
 
 class FakeRedis:
@@ -207,11 +208,14 @@ async def framework_test_context() -> AsyncIterator[dict[str, Any]]:
 
     await cleanup()
 
-    app.dependency_overrides[get_redis] = lambda: FakeRedis()
+    # One shared double: the step-up window seeded before a request must be
+    # the instance the dependency reads during it.
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
     original_s3_storage = s3.storage
     s3.storage = fake_storage
     try:
-        yield {"storage": fake_storage}
+        yield {"storage": fake_storage, "redis": fake_redis}
     finally:
         s3.storage = original_s3_storage
         app.dependency_overrides.pop(get_redis, None)
@@ -251,20 +255,20 @@ async def create_user_with_roles(
         return user.id
 
 
-async def enable_admin_totp(user_id: UUID) -> str:
-    """Enable TOTP on a user and return the raw secret for code generation.
+async def enable_admin_totp(user_id: UUID) -> None:
+    """Enrol a user in TOTP.
 
-    Admin moderation writes are step-up gated, so their test admins need a
-    real authenticator secret rather than a bare role row.
+    Admin moderation writes are step-up gated, and the gate refuses admins
+    who never enrolled, so test admins need an authenticator secret rather
+    than a bare role row. The window itself is seeded with
+    ``open_step_up_window``.
     """
     async with async_session_factory() as session:
         async with session.begin():
             user = await session.get(User, user_id)
             assert user is not None
-            secret = pyotp.random_base32()
-            user.totp_secret = encrypt_totp_secret(secret)
+            user.totp_secret = encrypt_totp_secret(pyotp.random_base32())
             user.totp_enabled = True
-    return secret
 
 
 def auth_headers(user_id: UUID, roles: list[str]) -> dict[str, str]:
@@ -2621,7 +2625,8 @@ async def test_admin_override_unblocks_near_duplicate_hard_band(
         "rarity-admin@auracles.space",
         ["admin"],
     )
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(framework_test_context["redis"], admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     artifact_id = await create_artifact_for_framework(
         client,
@@ -2649,10 +2654,7 @@ async def test_admin_override_unblocks_near_duplicate_hard_band(
     )
     override = await client.post(
         f"/v1/admin/frameworks/{framework_id}/rarity-block/override",
-        json={
-            "reason": "Contributor supplied reuse license evidence.",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
-        },
+        json={"reason": "Contributor supplied reuse license evidence."},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -2854,7 +2856,8 @@ async def test_admin_can_suspend_published_framework(
         ["contributor"],
     )
     admin_id = await create_user_with_roles("suspend-admin@auracles.space", ["admin"])
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(framework_test_context["redis"], admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -2864,10 +2867,7 @@ async def test_admin_can_suspend_published_framework(
 
     response = await client.post(
         f"/v1/admin/frameworks/{framework_id}/suspend",
-        json={
-            "reason": "Post-publish moderation hit.",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
-        },
+        json={"reason": "Post-publish moderation hit."},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -2900,7 +2900,8 @@ async def test_admin_suspended_frameworks_list_surfaces_takedowns(
     admin_id = await create_user_with_roles(
         "suspended-list-admin@auracles.space", ["admin"]
     )
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(framework_test_context["redis"], admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -2909,10 +2910,7 @@ async def test_admin_suspended_frameworks_list_surfaces_takedowns(
         await session.commit()
     await client.post(
         f"/v1/admin/frameworks/{framework_id}/suspend",
-        json={
-            "reason": "Listed for review.",
-            "totp_code": pyotp.TOTP(admin_totp).now(),
-        },
+        json={"reason": "Listed for review."},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -3071,7 +3069,8 @@ async def test_admin_can_reinstate_suspended_framework(
         ["contributor"],
     )
     admin_id = await create_user_with_roles("reinstate-admin@auracles.space", ["admin"])
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(framework_test_context["redis"], admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -3082,7 +3081,7 @@ async def test_admin_can_reinstate_suspended_framework(
 
     response = await client.post(
         f"/v1/admin/frameworks/{framework_id}/reinstate",
-        json={"totp_code": pyotp.TOTP(admin_totp).now()},
+        json={},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
@@ -3096,12 +3095,12 @@ async def test_admin_can_reinstate_suspended_framework(
         assert framework.rejection_reason is None
 
 
-async def test_admin_moderation_writes_require_step_up_code(
+async def test_admin_moderation_writes_require_step_up(
     client: AsyncClient,
     migrated_database: None,
     framework_test_context: dict[str, Any],
 ) -> None:
-    """Suspend, reinstate, and rarity override each demand a valid admin code.
+    """Suspend, reinstate, and rarity override each demand an open step-up window.
 
     These sit alongside user suspension and the escrow overrides, which were
     already gated. A stolen admin session must not be able to pull a
@@ -3121,31 +3120,29 @@ async def test_admin_moderation_writes_require_step_up_code(
         await session.commit()
 
     headers = auth_headers(admin_id, ["admin"])
-    suspend_without_code = await client.post(
+    suspend_without_window = await client.post(
         f"/v1/admin/frameworks/{framework_id}/suspend",
-        json={"reason": "No step-up supplied."},
+        json={"reason": "No step-up window open."},
         headers=headers,
     )
-    suspend_wrong_code = await client.post(
-        f"/v1/admin/frameworks/{framework_id}/suspend",
-        json={"reason": "Wrong step-up supplied.", "totp_code": "000000"},
-        headers=headers,
-    )
-    reinstate_without_code = await client.post(
+    reinstate_without_window = await client.post(
         f"/v1/admin/frameworks/{framework_id}/reinstate",
         json={},
         headers=headers,
     )
-    override_without_code = await client.post(
+    override_without_window = await client.post(
         f"/v1/admin/frameworks/{framework_id}/rarity-block/override",
-        json={"reason": "No step-up supplied for override."},
+        json={"reason": "No step-up window open for override."},
         headers=headers,
     )
 
-    assert suspend_without_code.status_code == 422
-    assert suspend_wrong_code.status_code == 422
-    assert reinstate_without_code.status_code == 422
-    assert override_without_code.status_code == 422
+    for response in (
+        suspend_without_window,
+        reinstate_without_window,
+        override_without_window,
+    ):
+        assert response.status_code == 403
+        assert response.json()["detail"]["error_code"] == "step_up_required"
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
         assert framework is not None
@@ -3166,7 +3163,8 @@ async def test_admin_reinstate_rejects_non_suspended_framework(
     admin_id = await create_user_with_roles(
         "reinstate-noop-admin@auracles.space", ["admin"]
     )
-    admin_totp = await enable_admin_totp(admin_id)
+    await enable_admin_totp(admin_id)
+    await open_step_up_window(framework_test_context["redis"], admin_id)
     framework_id = await create_draft_framework(client, contributor_id)
     async with async_session_factory() as session:
         framework = await session.get(Framework, UUID(framework_id))
@@ -3176,7 +3174,7 @@ async def test_admin_reinstate_rejects_non_suspended_framework(
 
     response = await client.post(
         f"/v1/admin/frameworks/{framework_id}/reinstate",
-        json={"totp_code": pyotp.TOTP(admin_totp).now()},
+        json={},
         headers=auth_headers(admin_id, ["admin"]),
     )
 
