@@ -27,7 +27,12 @@ from app.modules.attestation.models import (
 )
 from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
-from app.modules.organizations.models import OrgAttestorApplication, OrgMember
+from app.modules.organizations import notifications as org_notifications
+from app.modules.organizations.models import (
+    Organization,
+    OrgAttestorApplication,
+    OrgMember,
+)
 from app.modules.organizations.schemas import (
     AdminTrialGradeResponse,
     AdminTrialGradeRow,
@@ -85,8 +90,12 @@ async def _load_open_trial(
     org_id: UUID,
 ) -> tuple[OrgAttestorApplication, AttestorTrial]:
     """Load the org's live or latest trial, or raise 404 if none exist."""
+    # Newest first: an org may hold a rejected application beside a fresh one.
     application = await db.scalar(
-        select(OrgAttestorApplication).where(OrgAttestorApplication.org_id == org_id)
+        select(OrgAttestorApplication)
+        .where(OrgAttestorApplication.org_id == org_id)
+        .order_by(OrgAttestorApplication.created_at.desc())
+        .limit(1)
     )
     if application is None:
         raise HTTPException(
@@ -497,6 +506,34 @@ async def admin_decide_trial(
                 "score_pct": str(trial.score_pct),
             },
         )
+        nominee_user_id = (
+            await db.scalar(
+                select(OrgMember.user_id).where(OrgMember.id == trial.member_id)
+            )
+            if trial.member_id is not None
+            else None
+        )
+        org_name = (
+            await db.scalar(
+                select(Organization.name).where(Organization.id == trial.org_id)
+            )
+            if trial.org_id is not None
+            else None
+        )
+        owner_ids = (
+            await org_notifications.org_owner_ids(db, trial.org_id)
+            if trial.org_id is not None
+            else []
+        )
+    if trial.org_id is not None:
+        org_notifications.notify_trial_decided(
+            nominee_user_id=nominee_user_id,
+            owner_ids=owner_ids,
+            org_id=trial.org_id,
+            org_name=org_name or "your organization",
+            passed=trial.status == "passed",
+            feedback=trial.feedback,
+        )
     logger.bind(
         module="organizations",
         action="admin_decide_trial",
@@ -726,9 +763,7 @@ async def list_answer_keys(
                     else None
                 ),
                 tolerance=(
-                    key_map[dimension.id].tolerance
-                    if dimension.id in key_map
-                    else None
+                    key_map[dimension.id].tolerance if dimension.id in key_map else None
                 ),
             )
             for dimension in dimensions

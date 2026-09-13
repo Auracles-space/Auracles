@@ -29,6 +29,7 @@ from app.integrations import s3
 from app.modules.auth.models import User
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.notifications.service import create_notification
+from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import (
     Organization,
@@ -761,6 +762,7 @@ async def remove_member(
         HTTPException(404): Target member does not belong to this organization.
         HTTPException(409): The organization owner cannot be removed.
     """
+    org_name = context.org.name
     org_id = context.org.id
     actor_id = context.user.id
     caller_role = context.member.role
@@ -810,6 +812,11 @@ async def remove_member(
         )
 
     await sync_derived_roles(db, user_id=removed_user_id)
+    # Leaving is the member's own action; only removal by someone else is news.
+    if not is_self:
+        org_notifications.notify_member_removed(
+            removed_user_id, org_id=org_id, org_name=org_name
+        )
 
 
 _IN_FLIGHT_REVIEW_STATUSES = (
@@ -1093,6 +1100,7 @@ async def change_member_role(
         HTTPException(404): Target member does not belong to this organization.
         HTTPException(409): The owner role must be moved through transfer flow.
     """
+    org_name = context.org.name
     org_id = context.org.id
     actor_id = context.user.id
     synced_user_id: UUID | None = None
@@ -1143,6 +1151,10 @@ async def change_member_role(
     assert synced_user_id is not None
     assert response is not None
     await sync_derived_roles(db, user_id=synced_user_id)
+    if old_role != new_role:
+        org_notifications.notify_member_role_changed(
+            synced_user_id, org_id=org_id, org_name=org_name, new_role=new_role
+        )
     return response
 
 
@@ -1166,6 +1178,7 @@ async def transfer_ownership(
         HTTPException(404): The target membership does not belong to this organization.
         HTTPException(409): The transfer target already owns the organization.
     """
+    org_name = context.org.name
     org_id = context.org.id
     actor_id = context.user.id
     current_member_id = context.member.id
@@ -1197,14 +1210,18 @@ async def transfer_ownership(
         current_owner.role = "admin"
         await db.flush()
         target.role = "owner"
+        new_owner_user_id = target.user_id
         await write_audit(
             db=db,
             actor_id=actor_id,
             action="org_ownership_transferred",
             target_type="organization",
             target_id=org_id,
-            metadata={"new_owner_user_id": str(target.user_id)},
+            metadata={"new_owner_user_id": str(new_owner_user_id)},
         )
+    org_notifications.notify_ownership_transferred(
+        new_owner_user_id, org_id=org_id, org_name=org_name
+    )
 
 
 async def create_invitation(
@@ -2413,8 +2430,14 @@ async def admin_suspend_org(
     *,
     admin: User,
     org_id: UUID,
+    reason: str,
 ) -> None:
-    """Suspend an organization platform-wide (idempotent)."""
+    """Suspend an organization platform-wide (idempotent).
+
+    Stores ``reason`` on the org so the owner's banner can show it, and
+    notifies every owner after commit. A repeat call on an already suspended
+    org changes nothing and sends nothing.
+    """
     admin_id = admin.id
     if db.in_transaction():
         await db.rollback()
@@ -2430,12 +2453,15 @@ async def admin_suspend_org(
             return
 
         org.suspended_at = datetime.now(UTC)
+        org.suspension_reason = reason
+        org_name = org.name
         await write_audit(
             db=db,
             actor_id=admin_id,
             action="org_suspended",
             target_type="organization",
             target_id=org_id,
+            metadata={"reason": reason},
         )
 
         members = (
@@ -2447,9 +2473,13 @@ async def admin_suspend_org(
             .scalars()
             .all()
         )
+        owner_ids = await org_notifications.org_owner_ids(db, org_id)
 
     for user_id in members:
         await sync_derived_roles(db, user_id=user_id)
+    org_notifications.notify_org_suspended(
+        owner_ids, org_id=org_id, org_name=org_name, reason=reason
+    )
 
 
 async def admin_reinstate_org(
@@ -2474,6 +2504,8 @@ async def admin_reinstate_org(
             return
 
         org.suspended_at = None
+        org.suspension_reason = None
+        org_name = org.name
         await write_audit(
             db=db,
             actor_id=admin_id,
@@ -2491,9 +2523,11 @@ async def admin_reinstate_org(
             .scalars()
             .all()
         )
+        owner_ids = await org_notifications.org_owner_ids(db, org_id)
 
     for user_id in members:
         await sync_derived_roles(db, user_id=user_id)
+    org_notifications.notify_org_reinstated(owner_ids, org_id=org_id, org_name=org_name)
 
 
 async def export_user_org_memberships(

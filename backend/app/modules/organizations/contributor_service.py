@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.organizations import kyb_service
+from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.models import (
     Organization,
     OrgCapability,
@@ -78,8 +79,7 @@ async def activate_contributor_capability(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Organization is not eligible to activate contributor "
-                    "capability."
+                    "Organization is not eligible to activate contributor capability."
                 ),
             )
 
@@ -151,6 +151,7 @@ async def admin_set_contributor_capability_status(
     org_id: UUID,
     admin_id: UUID,
     status_value: Literal["suspended", "active", "revoked"],
+    reason: str | None = None,
 ) -> None:
     """Set platform-admin status for the org Contributor capability."""
     if db.in_transaction():
@@ -170,7 +171,15 @@ async def admin_set_contributor_capability_status(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Org contributor capability not found.",
             )
+        changed = capability.status != status_value
         capability.status = status_value
+        # A reinstatement clears the reason so it never outlives the state it
+        # explained; suspend/revoke replace it with the admin's new reason.
+        capability.status_reason = None if status_value == "active" else reason
+        org_name = await db.scalar(
+            select(Organization.name).where(Organization.id == org_id)
+        )
+        owner_ids = await org_notifications.org_owner_ids(db, org_id)
 
         profile = await db.scalar(
             select(OrgContributorProfile)
@@ -189,10 +198,19 @@ async def admin_set_contributor_capability_status(
             action="org_contributor_capability_status_changed",
             target_type="organization",
             target_id=org_id,
-            metadata={"status": status_value},
+            metadata={"status": status_value, "reason": reason},
         )
 
     await _sync_org_member_roles(db, org_id)
+    if changed:
+        org_notifications.notify_capability_status(
+            owner_ids,
+            org_id=org_id,
+            org_name=org_name or "your organization",
+            capability="contributor",
+            status_value=status_value,
+            reason=reason,
+        )
     logger.bind(
         module="organizations",
         action="org_contributor_capability_status_changed",

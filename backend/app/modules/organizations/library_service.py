@@ -238,9 +238,7 @@ async def list_org_library(
 
     visible_rows: list[tuple[License, Framework]] = []
     if member.role in {"admin", "owner"}:
-        visible_rows = [
-            (license_row, framework) for license_row, framework in rows
-        ]
+        visible_rows = [(license_row, framework) for license_row, framework in rows]
     else:
         # Resolve the member's accessible Licenses in ONE grant query rather
         # than a per-row member_has_license_access call (N+1). A License is
@@ -287,10 +285,7 @@ async def list_org_library(
             .where(LicenseGrant.license_id.in_(license_ids))
             .group_by(LicenseGrant.license_id)
         )
-        grant_counts = {
-            license_id: int(count)
-            for license_id, count in counts.all()
-        }
+        grant_counts = {license_id: int(count) for license_id, count in counts.all()}
 
     return [
         (_library_item(framework, license_row), grant_counts.get(license_row.id, 0))

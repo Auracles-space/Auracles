@@ -9039,6 +9039,11 @@ components:
             type: string
           title: Capabilities
           type: object
+        capability_reasons:
+          additionalProperties:
+            type: string
+          title: Capability Reasons
+          type: object
         counts:
           $ref: '#/components/schemas/OrgActionCounts'
           default:
@@ -9765,6 +9770,16 @@ components:
             type: string
           - type: 'null'
           title: Trial Member Id
+        trial_feedback:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trial Feedback
+        trial_status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Trial Status
       required:
       - id
       - org_id
@@ -10270,6 +10285,23 @@ components:
       required:
       - invoices
       title: OrgInvoicesResponse
+      type: object
+    OrgStatusReasonRequest:
+      description: 'Admin reason for suspending an org or suspending/revoking a capability.
+
+
+        The text is stored on the row and shown to the organization''s owner, so
+
+        it must explain the decision rather than reference internal tickets.'
+      properties:
+        reason:
+          maxLength: 500
+          minLength: 5
+          title: Reason
+          type: string
+      required:
+      - reason
+      title: OrgStatusReasonRequest
       type: object
     OrgKybReviewRequest:
       description: Admin verdict on one organization's business verification.
@@ -11114,6 +11146,11 @@ components:
             type: string
           - type: 'null'
           title: Suspended At
+        suspension_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suspension Reason
         website:
           anyOf:
           - type: string
@@ -16297,6 +16334,12 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgStatusReasonRequest'
+        required: true
       responses:
         '204':
           description: Successful Response
@@ -16324,6 +16367,12 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgStatusReasonRequest'
+        required: true
       responses:
         '204':
           description: Successful Response
@@ -16378,6 +16427,12 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgStatusReasonRequest'
+        required: true
       responses:
         '204':
           description: Successful Response
@@ -16405,6 +16460,12 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgStatusReasonRequest'
+        required: true
       responses:
         '204':
           description: Successful Response
@@ -16498,6 +16559,12 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgStatusReasonRequest'
+        required: true
       responses:
         '204':
           description: Successful Response
@@ -16525,6 +16592,12 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgStatusReasonRequest'
+        required: true
       responses:
         '204':
           description: Successful Response
@@ -16579,6 +16652,12 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgStatusReasonRequest'
+        required: true
       responses:
         '204':
           description: Successful Response

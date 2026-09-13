@@ -825,3 +825,124 @@ async def test_logo_upload_url_and_confirm_happy_for_admin(
     )
     assert confirm_response.status_code == 200
     assert confirm_response.json()["logo_key"] == file_key
+
+
+def _record_org_notifications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict[str, object]]:
+    """Capture org notifications queued through the shared helper."""
+    from app.modules.organizations import notifications as _notifications
+
+    sent: list[dict[str, object]] = []
+
+    class _Recorder:
+        def delay(self, **kwargs: object) -> None:
+            sent.append(kwargs)
+
+    monkeypatch.setattr(_notifications, "dispatch_project_notification", _Recorder())
+    return sent
+
+
+async def test_removed_member_is_notified(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_orgs: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member removed by an owner hears about it; leaving yourself is silent."""
+    del migrated_database, clean_orgs
+    sent = _record_org_notifications(monkeypatch)
+    owner_id = await create_user("notify-rm-owner")
+    member_id = await create_user("notify-rm-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "notifyrm")
+    target = await add_member(str(org["id"]), member_id, "member")
+
+    removed = await client.delete(
+        f"/v1/orgs/{org['id']}/members/{target}", headers=auth(owner_token)
+    )
+    assert removed.status_code == 204
+
+    note = next(c for c in sent if c["notification_type"] == "org_member_removed")
+    assert note["user_id"] == str(member_id)
+    assert note["link"] == "/dashboard/organizations"
+
+
+async def test_member_leaving_is_not_notified(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_orgs: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Self-removal is the member's own action, so nothing is queued."""
+    del migrated_database, clean_orgs
+    sent = _record_org_notifications(monkeypatch)
+    owner_id = await create_user("leave-owner")
+    member_id = await create_user("leave-member")
+    org = await create_org(client, create_access_token(owner_id, []), "leaveorg")
+    own_row = await add_member(str(org["id"]), member_id, "member")
+
+    left = await client.delete(
+        f"/v1/orgs/{org['id']}/members/{own_row}",
+        headers=auth(create_access_token(member_id, [])),
+    )
+    assert left.status_code == 204
+    assert not [c for c in sent if c["notification_type"] == "org_member_removed"]
+
+
+async def test_role_change_notifies_the_member(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_orgs: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A promoted or demoted member is told their new role."""
+    del migrated_database, clean_orgs
+    sent = _record_org_notifications(monkeypatch)
+    owner_id = await create_user("notify-role-owner")
+    member_id = await create_user("notify-role-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "notifyrole")
+    member_row = await add_member(str(org["id"]), member_id, "member")
+
+    promoted = await client.patch(
+        f"/v1/orgs/{org['id']}/members/{member_row}",
+        json={"role": "admin"},
+        headers=auth(owner_token),
+    )
+    assert promoted.status_code == 200
+
+    note = next(c for c in sent if c["notification_type"] == "org_member_role_changed")
+    assert note["user_id"] == str(member_id)
+    assert "admin" in str(note["body"])
+    assert note["link"] == f"/dashboard/organizations/{org['id']}"
+
+
+async def test_ownership_transfer_notifies_the_new_owner(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_orgs: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The incoming owner is told they now own the organization."""
+    del migrated_database
+    sent = _record_org_notifications(monkeypatch)
+    owner_id = await create_user("notify-xfer-owner", totp_enabled=True)
+    member_id = await create_user("notify-xfer-member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "notifyxfer")
+    member_row = await add_member(str(org["id"]), member_id, "admin")
+    await open_step_up_window(clean_orgs, owner_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/transfer-ownership",
+        json={"new_owner_member_id": str(member_row)},
+        headers=auth(owner_token),
+    )
+    assert response.status_code == 204
+
+    note = next(
+        c for c in sent if c["notification_type"] == "org_ownership_transferred"
+    )
+    assert note["user_id"] == str(member_id)
+    assert note["link"] == f"/dashboard/organizations/{org['id']}"

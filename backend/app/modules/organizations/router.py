@@ -136,6 +136,7 @@ from app.modules.organizations.schemas import (
     OrgPaymentMethodSetupResponse,
     OrgPaymentMethodsResponse,
     OrgReassignReviewerRequest,
+    OrgStatusReasonRequest,
     OrgTeamCreateRequest,
     OrgTeamMembersResponse,
     OrgTeamRenameRequest,
@@ -200,9 +201,12 @@ ORG_FRAMEWORK_PURCHASE_RATE_LIMITER = RateLimiter(
 def _application_response(
     application: OrgAttestorApplication,
     checklist: OrgAttestorGateChecklist,
+    trial: tuple[str, str | None] | None = None,
 ) -> OrgAttestorApplicationResponse:
     """Assemble the application response with its derived gate checklist."""
     return OrgAttestorApplicationResponse(
+        trial_status=trial[0] if trial else None,
+        trial_feedback=trial[1] if trial else None,
         id=application.id,
         org_id=application.org_id,
         status=application.status,
@@ -325,6 +329,11 @@ async def list_my_organizations(
                 capabilities={
                     capability.capability: capability.status
                     for capability in capabilities
+                },
+                capability_reasons={
+                    capability.capability: capability.status_reason
+                    for capability in capabilities
+                    if capability.status_reason
                 },
                 grants={
                     capability: True
@@ -1116,7 +1125,10 @@ async def get_attestor_application(
     application, checklist = await attestor_application_service.get_application(
         db, org_id=org_id
     )
-    return _application_response(application, checklist)
+    trial = await attestor_application_service.latest_trial_outcome(
+        db, application_id=application.id
+    )
+    return _application_response(application, checklist, trial)
 
 
 @router.patch(
@@ -2178,10 +2190,15 @@ async def admin_list_orgs(
     dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_org(
-    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    org_id: UUID,
+    payload: OrgStatusReasonRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> None:
-    """Suspend an organization platform-wide (idempotent)."""
-    await service.admin_suspend_org(db=db, admin=admin, org_id=org_id)
+    """Suspend an organization platform-wide (idempotent), recording why."""
+    await service.admin_suspend_org(
+        db=db, admin=admin, org_id=org_id, reason=payload.reason
+    )
 
 
 @admin_orgs_router.post(
@@ -2212,11 +2229,18 @@ async def admin_reinstate_org(
     dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_attestor_capability(
-    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    org_id: UUID,
+    payload: OrgStatusReasonRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> None:
     """Suspend an org's attestor capability."""
     await attestor_application_service.admin_set_capability_status(
-        db, org_id=org_id, admin_id=admin.id, status_value="suspended"
+        db,
+        org_id=org_id,
+        admin_id=admin.id,
+        status_value="suspended",
+        reason=payload.reason,
     )
 
 
@@ -2250,11 +2274,18 @@ async def admin_reinstate_attestor_capability(
     dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_revoke_attestor_capability(
-    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    org_id: UUID,
+    payload: OrgStatusReasonRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> None:
     """Revoke an org's attestor capability."""
     await attestor_application_service.admin_set_capability_status(
-        db, org_id=org_id, admin_id=admin.id, status_value="revoked"
+        db,
+        org_id=org_id,
+        admin_id=admin.id,
+        status_value="revoked",
+        reason=payload.reason,
     )
 
 
@@ -2269,11 +2300,18 @@ async def admin_revoke_attestor_capability(
     dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_contributor_capability(
-    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    org_id: UUID,
+    payload: OrgStatusReasonRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> None:
     """Suspend an org's contributor capability."""
     await contributor_service.admin_set_contributor_capability_status(
-        db, org_id=org_id, admin_id=admin.id, status_value="suspended"
+        db,
+        org_id=org_id,
+        admin_id=admin.id,
+        status_value="suspended",
+        reason=payload.reason,
     )
 
 
@@ -2307,11 +2345,18 @@ async def admin_reinstate_contributor_capability(
     dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_revoke_contributor_capability(
-    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    org_id: UUID,
+    payload: OrgStatusReasonRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> None:
     """Revoke an org's contributor capability."""
     await contributor_service.admin_set_contributor_capability_status(
-        db, org_id=org_id, admin_id=admin.id, status_value="revoked"
+        db,
+        org_id=org_id,
+        admin_id=admin.id,
+        status_value="revoked",
+        reason=payload.reason,
     )
 
 
@@ -2326,11 +2371,18 @@ async def admin_revoke_contributor_capability(
     dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_suspend_operator_capability(
-    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    org_id: UUID,
+    payload: OrgStatusReasonRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> None:
     """Suspend an org's operator capability."""
     await operator_service.admin_set_operator_capability_status(
-        db, org_id=org_id, admin_id=admin.id, status_value="suspended"
+        db,
+        org_id=org_id,
+        admin_id=admin.id,
+        status_value="suspended",
+        reason=payload.reason,
     )
 
 
@@ -2364,11 +2416,18 @@ async def admin_reinstate_operator_capability(
     dependencies=[Depends(require_step_up_after(require_role("admin")))],
 )
 async def admin_revoke_operator_capability(
-    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+    org_id: UUID,
+    payload: OrgStatusReasonRequest,
+    admin: PlatformAdmin,
+    db: DatabaseSession,
 ) -> None:
     """Revoke an org's operator capability."""
     await operator_service.admin_set_operator_capability_status(
-        db, org_id=org_id, admin_id=admin.id, status_value="revoked"
+        db,
+        org_id=org_id,
+        admin_id=admin.id,
+        status_value="revoked",
+        reason=payload.reason,
     )
 
 

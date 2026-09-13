@@ -122,16 +122,26 @@ async def test_admin_suspend_org(
     org_id = org["id"]
 
     no_window = await client.post(
-        f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers
+        f"/v1/admin/orgs/{org_id}/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
+        headers=admin_headers,
     )
     assert no_window.status_code == 403
     assert no_window.json()["detail"]["error_code"] == "step_up_required"
 
     await step_up_platform_admin(admin_id)
-    res = await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
+    res = await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
+        headers=admin_headers,
+    )
     assert res.status_code == 204
 
-    res2 = await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
+    res2 = await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
+        headers=admin_headers,
+    )
     assert res2.status_code == 204
 
     patch_res = await client.patch(
@@ -160,7 +170,11 @@ async def test_orgs_mine_exposes_suspension_state(
     entry = next(o for o in before.json()["organizations"] if o["org"]["id"] == org_id)
     assert entry["org"]["suspended_at"] is None
 
-    await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
+    await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
+        headers=admin_headers,
+    )
 
     after = await client.get("/v1/orgs/mine", headers=auth(owner_token))
     entry = next(o for o in after.json()["organizations"] if o["org"]["id"] == org_id)
@@ -183,7 +197,11 @@ async def test_admin_reinstate_org_lifts_suspension(
     org = await create_org(client, owner_token, "reinstateorg")
     org_id = org["id"]
 
-    await client.post(f"/v1/admin/orgs/{org_id}/suspend", headers=admin_headers)
+    await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
+        headers=admin_headers,
+    )
 
     res = await client.post(f"/v1/admin/orgs/{org_id}/reinstate", headers=admin_headers)
     assert res.status_code == 204
@@ -218,7 +236,11 @@ async def test_admin_reinstate_org_syncs_derived_roles_for_members(
         client, create_access_token(owner_id, []), "reinstatesyncorg"
     )
     await add_member(str(org["id"]), member_id, "member")
-    await client.post(f"/v1/admin/orgs/{org['id']}/suspend", headers=admin_headers)
+    await client.post(
+        f"/v1/admin/orgs/{org['id']}/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
+        headers=admin_headers,
+    )
 
     synced: list[UUID] = []
 
@@ -284,8 +306,160 @@ async def test_admin_suspend_org_syncs_derived_roles_for_members(
     await add_member(str(org["id"]), member_id, "member")
 
     res = await client.post(
-        f"/v1/admin/orgs/{org['id']}/suspend", headers=admin_headers
+        f"/v1/admin/orgs/{org['id']}/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
+        headers=admin_headers,
     )
 
     assert res.status_code == 204
     assert sorted(synced) == sorted([owner_id, member_id])
+
+
+class RecordingDispatch:
+    """Capture queued owner notifications instead of hitting Celery."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict[str, object]] = []
+
+    def delay(self, **kwargs: object) -> None:
+        self.sent.append(kwargs)
+
+
+def record_owner_notifications(monkeypatch: pytest.MonkeyPatch) -> RecordingDispatch:
+    """Swap the org notification dispatcher for an in-memory recorder."""
+    from app.modules.organizations import notifications as _notifications
+
+    recorder = RecordingDispatch()
+    monkeypatch.setattr(_notifications, "dispatch_project_notification", recorder)
+    return recorder
+
+
+async def test_admin_suspend_org_requires_reason_stores_it_and_notifies_owner(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    clean_orgs: None,
+    migrated_database: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A suspension carries a reason the owner can read, and the owner hears it.
+
+    Slice 2 decision 1: admins must say why; the reason is stored on the org,
+    surfaced on /orgs/mine for the banner, and delivered as a notification.
+    Reinstating clears it and notifies again.
+    """
+    del override_redis
+    recorder = record_owner_notifications(monkeypatch)
+    _admin_id, admin_headers = await create_platform_admin()
+
+    owner_id = await create_user("reason-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "reasonorg")
+    org_id = org["id"]
+
+    missing = await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend",
+        headers=admin_headers,
+    )
+    assert missing.status_code == 422
+
+    too_short = await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend", json={"reason": "no"}, headers=admin_headers
+    )
+    assert too_short.status_code == 422
+
+    reason = "Repeated chargebacks on operator purchases."
+    res = await client.post(
+        f"/v1/admin/orgs/{org_id}/suspend",
+        json={"reason": reason},
+        headers=admin_headers,
+    )
+    assert res.status_code == 204
+
+    mine = await client.get("/v1/orgs/mine", headers=auth(owner_token))
+    entry = next(o for o in mine.json()["organizations"] if o["org"]["id"] == org_id)
+    assert entry["org"]["suspension_reason"] == reason
+
+    suspended = next(
+        c for c in recorder.sent if c["notification_type"] == "org_suspended"
+    )
+    assert suspended["user_id"] == str(owner_id)
+    assert reason in str(suspended["body"])
+    assert suspended["link"] == f"/dashboard/organizations/{org_id}"
+
+    lifted = await client.post(
+        f"/v1/admin/orgs/{org_id}/reinstate", headers=admin_headers
+    )
+    assert lifted.status_code == 204
+
+    mine = await client.get("/v1/orgs/mine", headers=auth(owner_token))
+    entry = next(o for o in mine.json()["organizations"] if o["org"]["id"] == org_id)
+    assert entry["org"]["suspended_at"] is None
+    assert entry["org"]["suspension_reason"] is None
+    assert any(c["notification_type"] == "org_reinstated" for c in recorder.sent)
+
+
+async def test_admin_capability_suspend_requires_reason_and_notifies_owner(
+    client: AsyncClient,
+    override_redis: FakeRedis,
+    clean_orgs: None,
+    migrated_database: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Suspending a capability records why, exposes it on /orgs/mine, notifies.
+
+    Contributor is used because it self-activates without KYB fixtures; the
+    three capability services share the same contract.
+    """
+    del override_redis
+    recorder = record_owner_notifications(monkeypatch)
+    _admin_id, admin_headers = await create_platform_admin()
+
+    owner_id = await create_user("cap-reason-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "capreasonorg")
+    org_id = org["id"]
+    from tests.conftest import verify_org_kyb
+
+    await verify_org_kyb(org_id)
+    activated = await client.post(
+        f"/v1/orgs/{org_id}/contributor-capability/activate", headers=auth(owner_token)
+    )
+    assert activated.status_code in (200, 201), activated.text
+
+    missing = await client.post(
+        f"/v1/admin/orgs/{org_id}/contributor-capability/suspend",
+        headers=admin_headers,
+    )
+    assert missing.status_code == 422
+
+    reason = "Framework artifacts failed the malware scan twice."
+    res = await client.post(
+        f"/v1/admin/orgs/{org_id}/contributor-capability/suspend",
+        json={"reason": reason},
+        headers=admin_headers,
+    )
+    assert res.status_code == 204
+
+    mine = await client.get("/v1/orgs/mine", headers=auth(owner_token))
+    entry = next(o for o in mine.json()["organizations"] if o["org"]["id"] == org_id)
+    assert entry["capabilities"]["contributor"] == "suspended"
+    assert entry["capability_reasons"]["contributor"] == reason
+
+    sent = next(
+        c for c in recorder.sent if c["notification_type"] == "org_capability_suspended"
+    )
+    assert sent["user_id"] == str(owner_id)
+    assert reason in str(sent["body"])
+
+    lifted = await client.post(
+        f"/v1/admin/orgs/{org_id}/contributor-capability/reinstate",
+        headers=admin_headers,
+    )
+    assert lifted.status_code == 204
+    mine = await client.get("/v1/orgs/mine", headers=auth(owner_token))
+    entry = next(o for o in mine.json()["organizations"] if o["org"]["id"] == org_id)
+    assert entry["capabilities"]["contributor"] == "active"
+    assert "contributor" not in entry["capability_reasons"]
+    assert any(
+        c["notification_type"] == "org_capability_reinstated" for c in recorder.sent
+    )

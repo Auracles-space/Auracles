@@ -462,3 +462,64 @@ async def test_admin_decide_requires_submitted(
             )
 
     assert exc.value.status_code == 409
+
+
+async def test_admin_decide_notifies_nominee_and_owners(
+    seeded_trial: SeededTrialContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A trial verdict reaches the nominee and the org's owners.
+
+    Neither party was told before; the nominee polled the trial page and the
+    owner's Activation gate silently flipped. The feedback rides along.
+    """
+    from app.modules.organizations import notifications as _notifications
+
+    sent: list[dict[str, object]] = []
+
+    class _Recorder:
+        def delay(self, **kwargs: object) -> None:
+            sent.append(kwargs)
+
+    monkeypatch.setattr(_notifications, "dispatch_project_notification", _Recorder())
+
+    async with async_session_factory() as session:
+        await svc.submit_nominee_trial(
+            session,
+            org_id=seeded_trial.org_id,
+            member=seeded_trial.nominee,
+            payload=seeded_trial.full_submission(),
+        )
+    async with async_session_factory() as session:
+        await svc.admin_decide_trial(
+            session,
+            application_id=seeded_trial.application_id,
+            admin_id=seeded_trial.admin_id,
+            payload=TrialDecideRequest(result="fail", feedback="Scores drifted high."),
+        )
+        owner_ids = (
+            await session.scalars(
+                select(OrgMember.user_id).where(
+                    OrgMember.org_id == seeded_trial.org_id,
+                    OrgMember.role == "owner",
+                )
+            )
+        ).all()
+
+    decided = [
+        c for c in sent if c["notification_type"] == "org_attestor_trial_decided"
+    ]
+    nominee = next(
+        c for c in decided if c["user_id"] == str(seeded_trial.nominee.user_id)
+    )
+    assert (
+        nominee["link"]
+        == f"/dashboard/organizations/{seeded_trial.org_id}/attestor-trial"
+    )
+    assert "Scores drifted high." in str(nominee["body"])
+    for owner_id in owner_ids:
+        if owner_id == seeded_trial.nominee.user_id:
+            continue
+        owner = next(c for c in decided if c["user_id"] == str(owner_id))
+        assert (
+            owner["link"] == f"/dashboard/organizations/{seeded_trial.org_id}/attestor"
+        )

@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation.credential_service import (
     CREDENTIAL_EVIDENCE_MAX_BYTES,
     CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
@@ -328,6 +329,17 @@ async def submit_for_verification(
             metadata={"document_count": len(profile.incorporation_doc_keys)},
         )
     await db.refresh(profile)
+    # KYB gates every capability, so a submission nobody notices stalls the
+    # whole organization. Same inbox the attestor application already uses.
+    notify_admins_review_pending(
+        domain="org_kyb",
+        target_id=org_id,
+        body=(
+            f"{profile.legal_name or 'An organization'} submitted business "
+            "verification."
+        ),
+        link="/admin/organizations",
+    )
     logger.bind(
         module="organizations",
         action="submit_org_kyb",
@@ -466,8 +478,7 @@ async def review_org_kyb(
                 payload={"org_id": str(org_id)},
                 link=f"/dashboard/organizations/{org_id}/verification",
                 dedupe_key=(
-                    f"org_kyb_{verdict}:{org_id}:{owner_id}:"
-                    f"{decided_at.isoformat()}"
+                    f"org_kyb_{verdict}:{org_id}:{owner_id}:{decided_at.isoformat()}"
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive queue guard

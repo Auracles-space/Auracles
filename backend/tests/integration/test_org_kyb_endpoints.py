@@ -391,3 +391,30 @@ async def test_admin_cannot_verify_documents_that_were_never_uploaded(
 
     assert res.status_code == 422
     assert "never uploaded" in res.json()["detail"]
+
+
+async def test_submit_pings_admins_for_review(
+    client: AsyncClient, clean_state: FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Submitting business verification lands in the admin review inbox.
+
+    Attestor applications already ping admins on submit; KYB gates every
+    capability, so an unnoticed submission blocks the whole org.
+    """
+    del clean_state
+    from app.modules.organizations import kyb_service as _svc
+
+    pings: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        _svc, "notify_admins_review_pending", lambda **kwargs: pings.append(kwargs)
+    )
+    owner_id = await _user("owner")
+    org_id = await _org(owner_id)
+    await _profile(org_id, kyb_status="unverified")
+
+    res = await client.post(f"/v1/orgs/{org_id}/kyb/submit", headers=_auth(owner_id))
+
+    assert res.status_code == 200
+    ping = next(p for p in pings if p["domain"] == "org_kyb")
+    assert ping["target_id"] == org_id
+    assert ping["link"] == "/admin/organizations"

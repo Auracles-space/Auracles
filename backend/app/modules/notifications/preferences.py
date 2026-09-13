@@ -107,6 +107,15 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "developer_application_approved": "account",
     "developer_application_rejected": "account",
     "admin_review_pending": "account",
+    "org_suspended": "account",
+    "org_reinstated": "account",
+    "org_capability_suspended": "account",
+    "org_capability_reinstated": "account",
+    "org_capability_revoked": "account",
+    "org_attestor_trial_decided": "account",
+    "org_member_removed": "account",
+    "org_member_role_changed": "account",
+    "org_ownership_transferred": "account",
 }
 NOTIFICATION_TYPE_LABELS: Final[dict[str, str]] = {
     notification_type: notification_type.replace("_", " ").title()

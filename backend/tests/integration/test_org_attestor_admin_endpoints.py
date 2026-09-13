@@ -504,6 +504,15 @@ async def test_admin_can_grade_and_decide_trial(
     assert decided.status_code == 200
     assert decided.json()["gate_checklist"]["trial_passed"] is True
 
+    # The owner's own view carries the outcome and the admin's feedback, so
+    # the Trial gate can show more than a checklist flag.
+    owner_view = await client.get(
+        f"/v1/orgs/{org_id}/attestor-application", headers=auth(owner_id)
+    )
+    assert owner_view.status_code == 200
+    assert owner_view.json()["trial_status"] == "passed"
+    assert owner_view.json()["trial_feedback"] == "Solid calibration."
+
 
 async def test_approve_requires_step_up(
     client: AsyncClient, migrated_database: None, clean_state: FakeRedis
@@ -657,7 +666,11 @@ async def test_capability_suspend_reinstate_revoke(
 
     base = f"/v1/admin/orgs/{org_id}/attestor-capability"
     assert (
-        await client.post(f"{base}/suspend", headers=auth(admin_id, ["admin"]))
+        await client.post(
+            f"{base}/suspend",
+            json={"reason": "Policy breach recorded by the trust team."},
+            headers=auth(admin_id, ["admin"]),
+        )
     ).status_code == 204
 
     async with async_session_factory() as session:
@@ -672,7 +685,11 @@ async def test_capability_suspend_reinstate_revoke(
         await client.post(f"{base}/reinstate", headers=auth(admin_id, ["admin"]))
     ).status_code == 204
     assert (
-        await client.post(f"{base}/revoke", headers=auth(admin_id, ["admin"]))
+        await client.post(
+            f"{base}/revoke",
+            json={"reason": "Policy breach recorded by the trust team."},
+            headers=auth(admin_id, ["admin"]),
+        )
     ).status_code == 204
 
     async with async_session_factory() as session:

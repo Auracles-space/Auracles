@@ -123,6 +123,9 @@ class Organization(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Why the platform suspended the org, written by the admin and shown to
+    # the owner. Cleared on reinstate so a stale reason never outlives it.
+    suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class OrgMember(CreatedAtMixin, Base):
@@ -187,6 +190,9 @@ class OrgCapability(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Admin's reason for a suspended or revoked status, shown to the owner.
+    # Cleared when the capability is reinstated.
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class OrgInvitation(CreatedAtMixin, Base):
@@ -555,9 +561,7 @@ class OrgLegalProfile(UpdatedAtMixin, Base):
     """Shared legal identity row for organization commercial capabilities."""
 
     __tablename__ = "org_legal_profiles"
-    __table_args__ = (
-        UniqueConstraint("org_id", name="uq_org_legal_profiles_org"),
-    )
+    __table_args__ = (UniqueConstraint("org_id", name="uq_org_legal_profiles_org"),)
 
     id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

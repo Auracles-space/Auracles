@@ -169,14 +169,17 @@ async def test_admin_operator_capability_status_routes(
     assert activated.status_code == 200
 
     suspend_unauthenticated = await client.post(
-        f"/v1/admin/orgs/{org['id']}/operator-capability/suspend"
+        f"/v1/admin/orgs/{org['id']}/operator-capability/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
     )
     suspend_forbidden = await client.post(
         f"/v1/admin/orgs/{org['id']}/operator-capability/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
         headers=plain_headers,
     )
     suspended = await client.post(
         f"/v1/admin/orgs/{org['id']}/operator-capability/suspend",
+        json={"reason": "Policy breach recorded by the trust team."},
         headers=admin_headers,
     )
     reinstated = await client.post(
@@ -185,6 +188,7 @@ async def test_admin_operator_capability_status_routes(
     )
     revoked = await client.post(
         f"/v1/admin/orgs/{org['id']}/operator-capability/revoke",
+        json={"reason": "Policy breach recorded by the trust team."},
         headers=admin_headers,
     )
 

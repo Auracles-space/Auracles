@@ -124,6 +124,9 @@ class OrganizationResponse(BaseModel):
     # surfaces can render a suspension banner. Only ever returned on
     # member-scoped endpoints; the public profile uses a separate schema.
     suspended_at: datetime | None = None
+    # The admin's reason for the suspension, shown to members beside the
+    # banner. Cleared on reinstate.
+    suspension_reason: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -164,6 +167,9 @@ class MyOrganizationResponse(BaseModel):
     org: OrganizationResponse
     role: str
     capabilities: dict[str, str]
+    # Admin reasons for suspended/revoked capabilities, keyed by capability.
+    # Only capabilities that carry a reason appear.
+    capability_reasons: dict[str, str] = Field(default_factory=dict)
     # Business verification gates every capability, so the shell and the
     # become-attestor entry need it here to route an unverified org to
     # verification rather than into a flow that will refuse it.
@@ -741,6 +747,16 @@ class OrgKybStatusResponse(BaseModel):
     kyb_review_notes: str | None = None
 
 
+class OrgStatusReasonRequest(BaseModel):
+    """Admin reason for suspending an org or suspending/revoking a capability.
+
+    The text is stored on the row and shown to the organization's owner, so
+    it must explain the decision rather than reference internal tickets.
+    """
+
+    reason: str = Field(min_length=5, max_length=500)
+
+
 class OrgKybReviewRequest(BaseModel):
     """Admin verdict on one organization's business verification."""
 
@@ -812,6 +828,11 @@ class OrgAttestorApplicationResponse(BaseModel):
     reviewed_at: datetime | None
     created_at: datetime
     gate_checklist: OrgAttestorGateChecklist
+    # Latest calibration-trial outcome for the owner's Trial gate. The
+    # checklist only says whether a trial passed; a failed trial and the
+    # admin's feedback would otherwise be invisible to the owner.
+    trial_status: str | None = None
+    trial_feedback: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
