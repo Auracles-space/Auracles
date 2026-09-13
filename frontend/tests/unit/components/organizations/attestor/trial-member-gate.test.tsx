@@ -28,8 +28,9 @@ describe("TrialMemberGate", () => {
     vi.clearAllMocks();
   });
 
-  it("renders nominated message if already nominated", () => {
+  it("renders nominated message if already nominated", async () => {
     vi.mocked(useOrganization).mockReturnValue({ role: "owner", orgId: "org-1" } as unknown as ReturnType<typeof useOrganization>);
+    vi.mocked(listMembers).mockResolvedValue({ data: { members: [] } } as never);
     render(
       <TrialMemberGate
         application={{ trial_member_id: "member-123" } as never}
@@ -37,7 +38,9 @@ describe("TrialMemberGate", () => {
       />
     );
     expect(screen.getByText(/Trial member nominated:/i)).toBeInTheDocument();
-    expect(screen.getByText("member-123")).toBeInTheDocument();
+    // The roster lookup finds no such member, so the gate says so instead of
+    // printing the raw id.
+    expect(await screen.findByText(/a former member/i)).toBeInTheDocument();
   });
 
   it("submits trial member nomination", async () => {

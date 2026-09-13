@@ -38,6 +38,7 @@ function setOrg(
   overrides: Partial<{
     role: string;
     capabilities: Record<string, string>;
+    capabilityReasons: Record<string, string>;
     kybStatus: string;
     isSuspended: boolean;
   }> = {},
@@ -46,6 +47,7 @@ function setOrg(
     orgId: "org-1",
     role: "owner",
     capabilities: {},
+    capabilityReasons: {},
     // Verified: activation is only offered to a verified org.
     kybStatus: "verified",
     isSuspended: false,
@@ -106,10 +108,33 @@ describe("OrganizationCapabilities", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders nothing when the org is suspended", () => {
-    setOrg({ role: "owner", isSuspended: true });
-    const { container } = render(<OrganizationCapabilities />);
-    expect(container).toBeEmptyDOMElement();
+  it("stays visible but read-only while the org is suspended", () => {
+    setOrg({ role: "owner", isSuspended: true, capabilities: { contributor: "active" } });
+    render(<OrganizationCapabilities />);
+    expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Activate/ })).toBeNull();
+    expect(screen.getByText(/paused while the organization is suspended/i)).toBeTruthy();
+  });
+
+  it("shows the admin's reason under a suspended capability", () => {
+    setOrg({
+      capabilities: { contributor: "suspended" },
+      capabilityReasons: { contributor: "Artifacts failed the malware scan twice." },
+    });
+    render(<OrganizationCapabilities />);
+    expect(screen.getByText("Artifacts failed the malware scan twice.")).toBeTruthy();
+  });
+
+  it("shows Revoked with its reason and no way to reactivate", () => {
+    setOrg({
+      capabilities: { operator: "revoked" },
+      capabilityReasons: { operator: "Fraudulent purchase pattern." },
+    });
+    render(<OrganizationCapabilities />);
+    expect(screen.getByText("Revoked")).toBeTruthy();
+    expect(screen.getByText("Fraudulent purchase pattern.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /contact support/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Activate Operator capability" })).toBeNull();
   });
 
   it("activates a capability after confirmation, then toasts and refreshes", async () => {

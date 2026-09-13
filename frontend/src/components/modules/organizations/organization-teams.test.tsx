@@ -102,7 +102,7 @@ describe("OrganizationTeams", () => {
     });
     expect(button).toBeDisabled();
     expect(
-      screen.getByText("Activate this capability for the organization first."),
+      screen.getByText("Activate Operator for the organization first."),
     ).toBeTruthy();
 
     await waitFor(() =>

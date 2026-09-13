@@ -117,4 +117,26 @@ describe("OrgVerificationPanel", () => {
       screen.getByRole("button", { name: /Submit for verification/i }),
     ).toBeInTheDocument();
   });
+
+  it("reads In review while an administrator has the submission", async () => {
+    vi.mocked(getOrgKyb).mockResolvedValue(
+      kyb({ kyb_status: "pending", kyb_submitted_at: "2026-09-13T09:00:00Z" }) as never,
+    );
+
+    render(<OrgVerificationPanel />);
+
+    expect(await screen.findByText("In review")).toBeInTheDocument();
+    expect(screen.getByText(/we will notify you/i)).toBeInTheDocument();
+    expect(screen.queryByText(/awaiting review/i)).not.toBeInTheDocument();
+  });
+
+  it("reads Needs changes, not Rejected, because the org can resubmit", async () => {
+    vi.mocked(getOrgKyb).mockResolvedValue(
+      kyb({ kyb_review_notes: "The certificate is unreadable.", kyb_status: "rejected" }) as never,
+    );
+
+    render(<OrgVerificationPanel />);
+
+    expect(await screen.findByText("Needs changes")).toBeInTheDocument();
+  });
 });

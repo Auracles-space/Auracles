@@ -1,5 +1,6 @@
 /**
- * One status vocabulary for the admin trust console.
+ * One status vocabulary for the admin trust console and the owner-facing
+ * organization surfaces.
  *
  * Every operational status the console shows (attestor applications, KYB,
  * capabilities, calibration trials, attestations, disputes, offers) resolves
@@ -34,6 +35,11 @@ const PRESENTATION: Record<string, StatusPresentation> = {
   // Business verification (KYB)
   unverified: { label: "Not verified", tone: "neutral" },
   verified: { label: "Verified", tone: "success" },
+  // A KYB rejection is not terminal (the org fixes its documents and
+  // resubmits), so owner-facing surfaces present it as work to do.
+  needs_changes: { label: "Needs changes", tone: "warning" },
+  // A capability the org never activated (no row at all).
+  inactive: { label: "Not active", tone: "neutral" },
   // Calibration trials
   assigned: { label: "Assigned", tone: "info" },
   passed: { label: "Passed", tone: "success" },
@@ -72,6 +78,27 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   success: "border-success/30 bg-success/10 text-success",
   error: "border-error/30 bg-error/10 text-error",
 };
+
+/**
+ * Map a raw status to the key the owner should read for it.
+ *
+ * Waiting on an administrator is always "In review" whatever the domain calls
+ * it, and a resubmittable KYB rejection reads as "Needs changes".
+ *
+ * @param status - Raw status string from the API.
+ * @param domain - Which lifecycle the status belongs to.
+ */
+export function ownerStatusKey(
+  status: string,
+  domain: "kyb" | "application" | "trial" | "capability" = "capability",
+): string {
+  if (status === "pending" && domain === "kyb") return "in_review";
+  if (status === "submitted" && (domain === "application" || domain === "trial")) {
+    return "in_review";
+  }
+  if (status === "rejected" && domain === "kyb") return "needs_changes";
+  return status;
+}
 
 /**
  * Resolve the label and tone for a raw status value.

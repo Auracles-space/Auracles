@@ -21,6 +21,7 @@ import type {
   TrialScoreInput,
 } from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
+import { StatusPill } from "@/components/ui/status-pill";
 
 type TrialWorkspaceProps = {
   orgId: string;
@@ -238,13 +239,11 @@ export function TrialWorkspace({ orgId }: TrialWorkspaceProps) {
 
       {(isSubmitted || isPassed || isFailed) ? (
         <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground">
-            {isSubmitted
-              ? "Under review"
-              : isPassed
-                ? "Trial passed"
-                : "Trial failed"}
-          </h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-semibold text-foreground">Trial outcome</h2>
+            {/* Waiting on an admin is "In review" everywhere in the product. */}
+            <StatusPill status={isSubmitted ? "in_review" : trial.status} />
+          </div>
           <p className="mt-2 text-sm text-foreground-muted">
             {isSubmitted
               ? "Your calibration review has been submitted and is awaiting admin confirmation."

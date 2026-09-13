@@ -8,6 +8,8 @@ type OrganizationContextType = {
   role: string;
   org: MyOrganizationResponse["org"];
   capabilities: MyOrganizationResponse["capabilities"];
+  /** Admin reasons for suspended or revoked capabilities, keyed by capability. */
+  capabilityReasons: Record<string, string>;
   /** Business-verification state; everything but verification waits on it. */
   kybStatus: string;
   isSuspended: boolean;
@@ -31,6 +33,7 @@ export function OrganizationProvider({
   role,
   org,
   capabilities,
+  capabilityReasons = {},
   kybStatus = "verified",
   refreshOrganization,
 }: {
@@ -39,6 +42,7 @@ export function OrganizationProvider({
   role: string;
   org: MyOrganizationResponse["org"];
   capabilities: MyOrganizationResponse["capabilities"];
+  capabilityReasons?: Record<string, string>;
   kybStatus?: string;
   refreshOrganization?: () => Promise<void>;
 }) {
@@ -53,6 +57,7 @@ export function OrganizationProvider({
         role,
         org,
         capabilities,
+        capabilityReasons,
         kybStatus,
         isSuspended,
         markSuspended: () => setIsSuspended(true),

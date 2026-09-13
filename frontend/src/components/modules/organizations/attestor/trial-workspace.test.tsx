@@ -139,7 +139,9 @@ describe("TrialWorkspace", () => {
         }),
       ),
     );
-    expect(await screen.findByText(/Under review/i)).toBeInTheDocument();
+    // Waiting on an admin is always "In review" in the shared vocabulary.
+    expect(await screen.findByText("In review")).toBeInTheDocument();
+    expect(screen.queryByText(/Under review/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Submit Trial/i })).not.toBeInTheDocument();
   });
 
@@ -174,7 +176,8 @@ describe("TrialWorkspace", () => {
     );
     render(<TrialWorkspace orgId="org-1" />);
 
-    expect(await screen.findByText(/Trial passed/i)).toBeInTheDocument();
+    const pill = await screen.findByText("Passed");
+    expect(pill.className).toContain("text-success");
     expect(screen.getByText(/Strong calibration — approved\./i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Submit Trial/i })).not.toBeInTheDocument();
   });

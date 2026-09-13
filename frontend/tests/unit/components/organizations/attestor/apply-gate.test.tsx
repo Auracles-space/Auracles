@@ -39,9 +39,9 @@ describe("ApplyGate", () => {
     expect(onChange).toHaveBeenCalled();
   });
 
-  it("shows admin feedback when status is needs_info", () => {
+  it("leaves admin feedback to the gate card so it is not shown twice", () => {
     render(<ApplyGate orgId="org-1" onChange={vi.fn()}
       application={{ status: "needs_info", admin_feedback: "Add incorporation cert" } as never} />);
-    expect(screen.getByText(/Add incorporation cert/)).toBeInTheDocument();
+    expect(screen.queryByText(/Add incorporation cert/)).not.toBeInTheDocument();
   });
 });

@@ -1,3 +1,13 @@
+/**
+ * Trial-member nomination gate.
+ *
+ * Lets an organization owner nominate the NDA-signed member who will sit the
+ * calibration trial, and names the nominee once one is stamped on the
+ * application. The nominee is shown by display name resolved from the org
+ * roster, never by raw member id.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-13-org-onboarding-journey-design.md §2 "Attestor tab".
+ */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -13,6 +23,13 @@ import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-c
 import { Button } from "@/components/ui/button";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
+/**
+ * Nominate the member who will complete the trial attestation, or show who
+ * was nominated.
+ *
+ * @param application - The live application, or null before it exists.
+ * @param onChange - Called after a successful nomination so the tab reloads.
+ */
 export function TrialMemberGate({
   application,
   onChange,
@@ -28,15 +45,12 @@ export function TrialMemberGate({
   const [membersLoading, setMembersLoading] = useState(true);
   const [ndaBlocked, setNdaBlocked] = useState(false);
 
-  const isNominated = !!application?.trial_member_id;
+  const nomineeId = application?.trial_member_id ?? null;
+  const isNominated = !!nomineeId;
 
   // Load the org roster so the owner nominates by name, not by copying a
-  // member's internal id. Skipped once a trial member is already stamped.
+  // member's internal id, and so a stamped nominee is shown by name too.
   useEffect(() => {
-    if (isNominated) {
-      setMembersLoading(false);
-      return;
-    }
     let mounted = true;
     async function load() {
       const res = await listMembers({
@@ -48,23 +62,32 @@ export function TrialMemberGate({
       if (res.error) {
         setError(describeGeneratedError(res.error));
       } else if (res.data) {
-        // Only NDA-signed members are staffable, so the picker lists them
-        // exclusively. Members sign via the NDA page in the org sidebar.
-        setMembers(
-          res.data.members.filter((member: OrgMemberResponse) => member.nda_signed),
-        );
+        setMembers(res.data.members);
       }
     }
     load();
     return () => {
       mounted = false;
     };
-  }, [orgId, isNominated]);
+  }, [orgId]);
+
+  // Only NDA-signed members are staffable, so the picker lists them
+  // exclusively. Members sign via the NDA page in the org sidebar. The
+  // nominee lookup below deliberately uses the unfiltered roster.
+  const staffable = members.filter((member: OrgMemberResponse) => member.nda_signed);
 
   if (isNominated) {
+    const nominee = members.find((member) => member.id === nomineeId);
     return (
-      <div className="rounded-xl border border-border-default bg-surface-1 p-5 shadow-sm text-sm text-foreground">
-        Trial member nominated: <span className="font-semibold">{application.trial_member_id}</span>
+      <div className="rounded-xl border border-border-default bg-surface-1 p-5 text-sm text-foreground shadow-sm">
+        Trial member nominated:{" "}
+        <span className="font-semibold">
+          {nominee
+            ? nominee.display_name
+            : membersLoading
+              ? "loading…"
+              : "a former member"}
+        </span>
       </div>
     );
   }
@@ -144,18 +167,18 @@ export function TrialMemberGate({
             <select
               id="trial_member_id"
               value={memberId}
-              disabled={membersLoading || members.length === 0}
+              disabled={membersLoading || staffable.length === 0}
               onChange={(e) => setMemberId(e.target.value)}
               className="min-h-12 w-full cursor-pointer appearance-none rounded-xl border border-border-default bg-background pl-4 pr-10 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="" disabled hidden>
                 {membersLoading
                   ? "Loading members…"
-                  : members.length === 0
+                  : staffable.length === 0
                     ? "No NDA-signed members yet"
                     : "Select a member"}
               </option>
-              {members.map((member) => (
+              {staffable.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.display_name}
                   {member.email ? ` (${member.email})` : ""} — {member.role}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AttestorApplicationCard } from "@/components/modules/admin/attestors/attestor-application-card";
@@ -197,7 +197,7 @@ describe("AttestorApplicationCard", () => {
     );
   });
 
-  it("confirms before suspending an active capability and reports the new status", async () => {
+  it("confirms before suspending an active capability, requiring a reason, and reports the new status", async () => {
     sdk.suspendOrgAttestorCapability.mockResolvedValue(ok({}));
     const { onUpdate } = renderCard(app({ status: "approved", capability_status: "active" }));
 
@@ -207,17 +207,68 @@ describe("AttestorApplicationCard", () => {
     expect(dialog).toHaveTextContent("Suspend attestor capability?");
     // The dialog's confirm button shares its label with the trigger; pick the
     // one inside the dialog.
-    const confirm = Array.from(dialog.querySelectorAll("button")).find(
-      (button) => button.textContent === "Suspend",
+    const confirm = within(dialog).getByRole("button", { name: "Suspend" });
+    expect(confirm).toBeDisabled();
+
+    const reason = within(dialog).getByLabelText(
+      /reason \(shown to the organization's owner\)/i,
     );
-    fireEvent.click(confirm as HTMLButtonElement);
+    fireEvent.change(reason, { target: { value: "abc" } });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(reason, { target: { value: "Two reports were withdrawn after review" } });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
 
     await waitFor(() =>
       expect(sdk.suspendOrgAttestorCapability).toHaveBeenCalledWith(
-        expect.objectContaining({ path: { org_id: "org-1" } }),
+        expect.objectContaining({
+          body: { reason: "Two reports were withdrawn after review" },
+          path: { org_id: "org-1" },
+        }),
       ),
     );
     expect(onUpdate).toHaveBeenCalledWith("app-1", { capability_status: "suspended" });
+  });
+
+  it("requires a reason to revoke and sends it in the body", async () => {
+    sdk.revokeOrgAttestorCapability.mockResolvedValue(ok({}));
+    const { onUpdate } = renderCard(app({ status: "approved", capability_status: "active" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    const dialog = await screen.findByRole("dialog");
+    const confirm = within(dialog).getByRole("button", { name: "Revoke" });
+    expect(confirm).toBeDisabled();
+
+    fireEvent.change(within(dialog).getByLabelText(/reason/i), {
+      target: { value: "Falsified attestation evidence" },
+    });
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(sdk.revokeOrgAttestorCapability).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: { reason: "Falsified attestation evidence" },
+          path: { org_id: "org-1" },
+        }),
+      ),
+    );
+    expect(onUpdate).toHaveBeenCalledWith("app-1", { capability_status: "revoked" });
+  });
+
+  it("reinstates without asking for a reason and sends no body", async () => {
+    sdk.reinstateOrgAttestorCapability.mockResolvedValue(ok({}));
+    const { onUpdate } = renderCard(app({ status: "approved", capability_status: "suspended" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Reinstate" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByLabelText(/reason/i)).not.toBeInTheDocument();
+    const confirm = within(dialog).getByRole("button", { name: "Reinstate" });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(sdk.reinstateOrgAttestorCapability).toHaveBeenCalledTimes(1));
+    expect(sdk.reinstateOrgAttestorCapability.mock.calls[0][0]).not.toHaveProperty("body");
+    expect(onUpdate).toHaveBeenCalledWith("app-1", { capability_status: "active" });
   });
 
   it("surfaces an API failure through onError without changing state", async () => {

@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { StatusPill, ownerStatusKey } from "@/components/ui/status-pill";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import {
   configureBrowserClient,
@@ -59,29 +60,6 @@ function documentName(key: string): string {
   // characters, so anything after that is the name the uploader chose.
   return segment.length > 37 ? segment.slice(37) : segment;
 }
-
-/** Status pill wording and tone for each verification state. */
-const STATUS_PRESENTATION: Record<
-  string,
-  { label: string; classes: string }
-> = {
-  unverified: {
-    label: "Not started",
-    classes: "border-border-default bg-surface-2 text-foreground-muted",
-  },
-  pending: {
-    label: "Awaiting review",
-    classes: "border-warning/30 bg-warning/10 text-warning",
-  },
-  verified: {
-    label: "Verified",
-    classes: "border-success/30 bg-success/10 text-success",
-  },
-  rejected: {
-    label: "Needs changes",
-    classes: "border-error/30 bg-error/10 text-error",
-  },
-};
 
 /**
  * Render the organization's verification state and, for admins, its form.
@@ -222,7 +200,6 @@ export function OrgVerificationPanel() {
   }
 
   const status = kyb?.kyb_status ?? "unverified";
-  const presentation = STATUS_PRESENTATION[status] ?? STATUS_PRESENTATION.unverified;
   const labels = REGISTRATION_LABELS[kyb?.country ?? ""] ?? GENERIC_LABELS;
   const documents = kyb?.incorporation_doc_keys ?? [];
   const locked = status === "verified" || status === "pending";
@@ -246,11 +223,7 @@ export function OrgVerificationPanel() {
               Verify this organization
             </h1>
           </div>
-          <span
-            className={`inline-flex rounded-badge border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] ${presentation.classes}`}
-          >
-            {presentation.label}
-          </span>
+          <StatusPill status={ownerStatusKey(status, "kyb")} />
         </div>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-foreground-muted">
           {status === "verified"
@@ -264,8 +237,8 @@ export function OrgVerificationPanel() {
         ) : null}
         {status === "pending" ? (
           <p className="mt-4 rounded-xl border border-border-default bg-surface-2 p-4 text-sm text-foreground-muted">
-            Submitted for review. We will let you know as soon as an
-            administrator has looked at it.
+            In review. We will notify you as soon as an administrator has
+            decided; nothing else is needed from you right now.
           </p>
         ) : null}
       </div>

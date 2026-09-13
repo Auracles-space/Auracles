@@ -224,6 +224,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
       role={role}
       org={myOrg.org}
       capabilities={myOrg.capabilities}
+      capabilityReasons={myOrg.capability_reasons ?? {}}
       kybStatus={myOrg.kyb_status ?? "unverified"}
       refreshOrganization={loadOrg}
     >
@@ -263,6 +264,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
         ) : null}
 
         <OrganizationSuspendedBanner />
+        <CapabilityStatusBanners />
 
         <div className="mb-8">
           <Tabs
@@ -281,20 +283,119 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   );
 }
 
+const SUPPORT_EMAIL = "support@auracles.space";
+
+const CAPABILITY_LABELS: Record<string, string> = {
+  attestor: "Attestor",
+  contributor: "Contributor",
+  operator: "Operator",
+};
+
+/** Format an ISO timestamp as a short readable date. */
+function formatDate(value: string): string {
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * Banner shown while the platform has the organization suspended.
+ *
+ * Carries the admin's reason and the date so the owner knows what happened
+ * and when, plus the only path forward (support), instead of a bare
+ * "actions are disabled".
+ */
 function OrganizationSuspendedBanner() {
-  const { isSuspended } = useOrganization();
+  const { isSuspended, org } = useOrganization();
 
   if (!isSuspended) return null;
 
   return (
-    <div className="mb-6 flex items-start gap-3 rounded-2xl border border-error/50 bg-error/5 p-4 text-error">
-      <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0" />
-      <div>
-        <h3 className="font-semibold">Organization Suspended</h3>
-        <p className="mt-1 text-sm text-error/80">
-          This organization has been suspended. Modification actions are disabled.
+    <div
+      className="mb-6 flex items-start gap-3 rounded-2xl border border-error/50 bg-error/5 p-4"
+      role="status"
+    >
+      <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-error" />
+      <div className="text-sm">
+        <h3 className="font-semibold text-error">
+          Organization suspended
+          {org.suspended_at ? (
+            <span className="font-normal text-error/80"> · {formatDate(org.suspended_at)}</span>
+          ) : null}
+        </h3>
+        {org.suspension_reason ? (
+          <p className="mt-1 text-foreground">{org.suspension_reason}</p>
+        ) : null}
+        <p className="mt-1 text-foreground-muted">
+          Members keep read access. Every other action is paused until an
+          administrator lifts the suspension.{" "}
+          <a
+            className="font-medium text-foreground underline underline-offset-4"
+            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(`Suspension of ${org.name}`)}`}
+          >
+            Contact support
+          </a>
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One banner per capability an administrator has suspended or revoked.
+ *
+ * The affected tab disappears from the bar, so without this the owner would
+ * only notice something missing. The reason is the admin's own words.
+ */
+function CapabilityStatusBanners() {
+  const { capabilities, capabilityReasons, org } = useOrganization();
+  const affected = Object.entries(capabilities ?? {}).filter(
+    ([, status]) => status === "suspended" || status === "revoked",
+  );
+  if (affected.length === 0) return null;
+
+  return (
+    <div className="mb-6 grid gap-3">
+      {affected.map(([capability, status]) => {
+        const label = CAPABILITY_LABELS[capability] ?? capability;
+        const revoked = status === "revoked";
+        return (
+          <div
+            className={`flex items-start gap-3 rounded-2xl border p-4 text-sm ${
+              revoked ? "border-error/50 bg-error/5" : "border-warning/50 bg-warning/10"
+            }`}
+            key={capability}
+            role="status"
+          >
+            <ExclamationTriangleIcon
+              className={`mt-0.5 h-5 w-5 shrink-0 ${revoked ? "text-error" : "text-warning"}`}
+            />
+            <div>
+              <h3 className={`font-semibold ${revoked ? "text-error" : "text-warning"}`}>
+                {label} capability {revoked ? "revoked" : "suspended"}
+              </h3>
+              {capabilityReasons?.[capability] ? (
+                <p className="mt-1 text-foreground">{capabilityReasons[capability]}</p>
+              ) : null}
+              <p className="mt-1 text-foreground-muted">
+                {revoked
+                  ? "It cannot be reactivated from here. "
+                  : "It stays paused until an administrator reinstates it. "}
+                <a
+                  className="font-medium text-foreground underline underline-offset-4"
+                  href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+                    `${label} capability for ${org.name}`,
+                  )}`}
+                >
+                  Contact support
+                </a>
+              </p>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

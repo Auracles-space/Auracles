@@ -6,10 +6,13 @@
  * Each transition changes what every member of the organization can do on
  * the marketplace, so it confirms through the shared dialog and requires an
  * open step-up window (the API answers 403 and the global prompt handles it).
- * Only the transitions valid for the current status are enabled.
+ * Suspend and revoke also collect a required reason that the organization's
+ * owner will see; reinstate does not. Only the transitions valid for the
+ * current status are enabled.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 
+import { ReasonField, isReasonValid } from "@/components/modules/admin/reason-field";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
@@ -72,32 +75,60 @@ export function AttestorCapabilityControls({
   onChanged,
   onError,
 }: AttestorCapabilityControlsProps) {
+  const reasonFieldId = useId();
   const [pending, setPending] = useState<CapabilityAction | null>(null);
   const [busy, setBusy] = useState(false);
+  // Owner-visible reason; required for suspend and revoke, so the confirm
+  // button stays disabled until it satisfies the backend length rule.
+  const [reason, setReason] = useState("");
+  const needsReason = pending === "suspend" || pending === "revoke";
+  const reasonMissing = needsReason && !isReasonValid(reason);
+
+  /** Open the confirm dialog for one transition with a fresh reason field. */
+  function open(action: CapabilityAction) {
+    setReason("");
+    setPending(action);
+  }
+
+  /** Dismiss the dialog and drop any half-typed reason. */
+  function close() {
+    if (busy) {
+      return;
+    }
+    setPending(null);
+    setReason("");
+  }
 
   async function confirm() {
-    if (!pending) {
+    if (!pending || reasonMissing) {
       return;
     }
     setBusy(true);
     configureBrowserClient();
-    const call =
-      pending === "suspend"
-        ? suspendOrgAttestorCapability
-        : pending === "reinstate"
-          ? reinstateOrgAttestorCapability
-          : revokeOrgAttestorCapability;
+    const headers = getAccessTokenHeaders();
+    const path = { org_id: orgId };
     try {
-      const result = await call({
-        headers: getAccessTokenHeaders(),
-        path: { org_id: orgId },
-      });
+      const result =
+        pending === "reinstate"
+          ? await reinstateOrgAttestorCapability({ headers, path })
+          : pending === "suspend"
+            ? await suspendOrgAttestorCapability({
+                body: { reason: reason.trim() },
+                headers,
+                path,
+              })
+            : await revokeOrgAttestorCapability({
+                body: { reason: reason.trim() },
+                headers,
+                path,
+              });
       if (!result.response.ok) {
         onError(describeGeneratedError(result.error));
         return;
       }
       onChanged(RESULT[pending]);
       setPending(null);
+      setReason("");
     } catch {
       onError("The capability could not be updated.");
     } finally {
@@ -113,21 +144,21 @@ export function AttestorCapabilityControls({
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
           disabled={!transitions.canSuspend || busy}
-          onClick={() => setPending("suspend")}
+          onClick={() => open("suspend")}
           variant="destructive"
         >
           Suspend
         </Button>
         <Button
           disabled={!transitions.canReinstate || busy}
-          onClick={() => setPending("reinstate")}
+          onClick={() => open("reinstate")}
           variant="secondary"
         >
           Reinstate
         </Button>
         <Button
           disabled={!transitions.canRevoke || busy}
-          onClick={() => setPending("revoke")}
+          onClick={() => open("revoke")}
           variant="destructive"
         >
           Revoke
@@ -135,11 +166,29 @@ export function AttestorCapabilityControls({
       </div>
 
       <ConfirmDialog
-        busy={busy}
+        busy={busy || reasonMissing}
         confirmLabel={pending ? COPY[pending].confirm : "Confirm"}
-        description={pending ? `${orgName}: ${COPY[pending].body}` : ""}
+        description={
+          pending ? (
+            <>
+              <p>
+                {orgName}: {COPY[pending].body}
+              </p>
+              {needsReason ? (
+                <ReasonField
+                  disabled={busy}
+                  id={reasonFieldId}
+                  onChange={setReason}
+                  value={reason}
+                />
+              ) : null}
+            </>
+          ) : (
+            ""
+          )
+        }
         eyebrow="Attestor capability"
-        onClose={() => (busy ? undefined : setPending(null))}
+        onClose={close}
         onConfirm={() => void confirm()}
         open={pending !== null}
         title={pending ? COPY[pending].title : ""}

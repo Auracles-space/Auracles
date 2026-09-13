@@ -3,11 +3,13 @@
 /**
  * Become-attestor organization picker.
  *
- * Displays the already-eligible organizations a user can apply with and offers
- * a create-new path when they want to onboard a different organization.
+ * Displays the organizations a user could apply with and offers a create-new
+ * path. An org still in business verification is listed but not clickable,
+ * with a link to the verification page that unblocks it.
  */
-import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import type { AttestorEligibleOrg } from "@/components/modules/organizations/become-attestor";
 
@@ -16,7 +18,7 @@ import { CreateOrganizationDialog } from "./create-organization-dialog";
 /**
  * Render the organization chooser for attestor onboarding.
  *
- * @param orgs - Already filtered attestor-eligible organizations.
+ * @param orgs - Owner/admin organizations without an active attestor capability.
  */
 export function BecomeAttestorPicker({ orgs }: { orgs: AttestorEligibleOrg[] }) {
   const router = useRouter();
@@ -37,6 +39,23 @@ export function BecomeAttestorPicker({ orgs }: { orgs: AttestorEligibleOrg[] }) 
       <ul className="flex flex-col gap-3">
         {orgs.map((org) => (
           <li key={org.id}>
+            {!org.eligible ? (
+              <div className="flex min-h-[44px] w-full flex-col gap-2 rounded-2xl border border-dashed border-border-default bg-surface-1 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-heading text-base font-bold text-foreground">{org.name}</p>
+                  <p className="mt-1 text-sm text-foreground-muted">
+                    Verify the business first. Attestor applications open once
+                    verification is approved.
+                  </p>
+                </div>
+                <Link
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 px-4 text-sm font-semibold text-foreground transition hover:bg-surface-3"
+                  href={`/dashboard/organizations/${org.id}/verification`}
+                >
+                  Go to verification
+                </Link>
+              </div>
+            ) : (
             <button
               type="button"
               onClick={() => router.push(`/dashboard/organizations/${org.id}/attestor`)}
@@ -49,6 +68,7 @@ export function BecomeAttestorPicker({ orgs }: { orgs: AttestorEligibleOrg[] }) 
                 {org.attestorStatus ? "Resume" : "Not started"}
               </span>
             </button>
+            )}
           </li>
         ))}
         <li>

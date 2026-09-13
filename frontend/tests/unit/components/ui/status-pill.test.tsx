@@ -36,3 +36,12 @@ describe("StatusPill", () => {
     expect(screen.getByText("Trial passed").className).toContain("text-success");
   });
 });
+
+describe("owner-facing vocabulary", () => {
+  it("names a resubmittable KYB rejection Needs changes", () => {
+    expect(describeStatus("needs_changes")).toEqual({
+      label: "Needs changes",
+      tone: "warning",
+    });
+  });
+});

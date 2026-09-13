@@ -9,8 +9,8 @@ const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 const orgs: AttestorEligibleOrg[] = [
-  { id: "a", name: "Alpha", attestorStatus: null },
-  { id: "b", name: "Beta", attestorStatus: "pending" },
+  { id: "a", name: "Alpha", attestorStatus: null, kybStatus: "verified", eligible: true },
+  { id: "b", name: "Beta", attestorStatus: "pending", kybStatus: "verified", eligible: true },
 ];
 
 describe("BecomeAttestorPicker", () => {
@@ -31,6 +31,24 @@ describe("BecomeAttestorPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: /Alpha/i }));
 
     expect(push).toHaveBeenCalledWith("/dashboard/organizations/a/attestor");
+  });
+
+  it("explains an unverified org instead of hiding it, linking to verification", () => {
+    render(
+      <BecomeAttestorPicker
+        orgs={[
+          { id: "u", name: "Unverified Co", attestorStatus: null, kybStatus: "pending", eligible: false },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Unverified Co")).toBeInTheDocument();
+    expect(screen.getByText(/verify the business first/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /verification/i })).toHaveAttribute(
+      "href",
+      "/dashboard/organizations/u/verification",
+    );
+    expect(screen.queryByRole("button", { name: /Unverified Co/i })).not.toBeInTheDocument();
   });
 
   it("opens the create dialog from the create tile", () => {

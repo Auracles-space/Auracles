@@ -7,6 +7,9 @@ import { loadReceivedInvitations } from "@/lib/organizations/received-invitation
 const toastSuccess = vi.fn();
 const storage = new Map<string, string>();
 
+let mockPathname = "/dashboard";
+vi.mock("next/navigation", () => ({ usePathname: () => mockPathname }));
+
 vi.mock("@/components/ui/toast", () => ({
   useToast: () => ({ error: vi.fn(), success: toastSuccess }),
 }));
@@ -43,6 +46,21 @@ describe("PendingInvitationsToast", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(toastSuccess).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays quiet on the organizations page, where the inbox already shows them", async () => {
+    mockPathname = "/dashboard/organizations";
+    vi.mocked(loadReceivedInvitations).mockResolvedValue([
+      { id: "inv-1" },
+    ] as never);
+
+    render(<PendingInvitationsToast />);
+
+    // Nothing is even fetched: the inbox on that page owns the data.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(loadReceivedInvitations).not.toHaveBeenCalled();
+    expect(toastSuccess).not.toHaveBeenCalled();
+    mockPathname = "/dashboard";
   });
 
   it("does not toast when there are none", async () => {

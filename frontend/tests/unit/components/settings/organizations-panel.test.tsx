@@ -1,9 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OrganizationsPanel } from "@/components/modules/settings/organizations-panel";
 import {
-  acceptReceivedInvitation,
   declineReceivedInvitation,
   listMyOrganizationsV1OrgsMineGet,
 } from "@/lib/generated/sdk.gen";
@@ -48,35 +47,27 @@ describe("OrganizationsPanel", () => {
     );
   });
 
-  it("renders a pending invitation and accepts it", async () => {
+  it("points at the Organizations page when invitations are pending", async () => {
     vi.mocked(loadReceivedInvitations).mockResolvedValue([
       {
         created_at: "2026-07-13T00:00:00Z",
         id: "inv-1",
         invited_by_name: "Ada",
-        org: {
-          id: "o1",
-          logo_url: null,
-          name: "Meridian",
-          slug: "meridian",
-        },
+        org: { id: "o1", logo_url: null, name: "Meridian", slug: "meridian" },
         role: "member",
       },
     ] as never);
-    vi.mocked(acceptReceivedInvitation).mockResolvedValue(
-      ok({ role: "member" }) as never,
-    );
 
     render(<OrganizationsPanel />);
 
-    await waitFor(() => expect(screen.getByText("Meridian")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /accept/i }));
-
     await waitFor(() =>
-      expect(acceptReceivedInvitation).toHaveBeenCalledWith(
-        expect.objectContaining({ path: { invitation_id: "inv-1" } }),
-      ),
+      expect(screen.getByText(/1 pending invitation/i)).toBeInTheDocument(),
     );
+    expect(screen.getByRole("link", { name: /review invitations/i })).toHaveAttribute(
+      "href",
+      "/dashboard/organizations",
+    );
+    expect(screen.queryByRole("button", { name: /accept/i })).not.toBeInTheDocument();
   });
 
   it("shows an empty state when there are no invitations", async () => {

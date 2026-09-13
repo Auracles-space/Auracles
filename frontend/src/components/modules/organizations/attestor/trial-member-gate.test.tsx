@@ -84,6 +84,36 @@ describe("TrialMemberGate", () => {
     expect(screen.queryByRole("option", { name: /Alan Turing/ })).toBeNull();
   });
 
+  it("names the nominated member instead of showing their raw id", async () => {
+    render(
+      <TrialMemberGate
+        application={{ trial_member_id: "member-2" } as never}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("Alan Turing")).toBeInTheDocument();
+    expect(screen.queryByText("member-2")).not.toBeInTheDocument();
+    // No picker once a nominee is stamped.
+    expect(screen.queryByLabelText(/Nominee/i)).not.toBeInTheDocument();
+  });
+
+  it("still names a nominee who has since let their NDA lapse", async () => {
+    // The picker filters to NDA-signed members, but the nominee lookup must
+    // not: the trial was staffed already and the owner needs to know by whom.
+    vi.mocked(listMembers).mockResolvedValue({
+      data: { members: [MEMBERS[0], { ...MEMBERS[1], nda_signed: false }] },
+    } as never);
+    render(
+      <TrialMemberGate
+        application={{ trial_member_id: "member-2" } as never}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("Alan Turing")).toBeInTheDocument();
+  });
+
   it("keeps the nominate button disabled until a member is chosen", async () => {
     render(<TrialMemberGate application={null} onChange={vi.fn()} />);
     await screen.findByRole("option", { name: /Ada Lovelace/ });

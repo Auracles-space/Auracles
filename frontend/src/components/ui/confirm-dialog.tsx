@@ -58,6 +58,7 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const titleId = useId();
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on Escape and move focus to the confirm button on open so keyboard
   // users land inside the dialog rather than behind it.
@@ -71,8 +72,19 @@ export function ConfirmDialog({
       }
     }
     document.addEventListener("keydown", handleKeyDown);
-    confirmRef.current?.focus();
+    // A dialog that asks for input (e.g. a reason) opens with confirm
+    // disabled; focus then goes to the first field so typing can start.
+    const confirm = confirmRef.current;
+    if (confirm && !confirm.disabled) {
+      confirm.focus();
+    } else {
+      panelRef.current
+        ?.querySelector<HTMLElement>("input, textarea, select, button:not([disabled])")
+        ?.focus();
+    }
     return () => document.removeEventListener("keydown", handleKeyDown);
+    // busy is intentionally omitted: refocusing on every busy flip would yank
+    // the cursor out of a field the user is typing in.
   }, [open, onClose]);
 
   if (!open || typeof document === "undefined") {
@@ -98,6 +110,7 @@ export function ConfirmDialog({
       <div
         className="w-full rounded-t-2xl border border-border-default bg-surface-1 p-5 shadow-xl sm:max-w-md sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
+        ref={panelRef}
       >
         {eyebrow ? (
           <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">

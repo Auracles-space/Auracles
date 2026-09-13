@@ -514,3 +514,75 @@ describe("OrganizationShell unverified organization", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("OrganizationShell status banners", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: { required: false, current_version: "1.0", signed_version: null, signed_at: null },
+    } as never);
+  });
+
+  it("explains a platform suspension with the admin's reason, date, and a support link", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: {
+              id: "org-1",
+              name: "Test Org",
+              suspended_at: "2026-09-13T10:00:00Z",
+              suspension_reason: "Repeated chargebacks on operator purchases.",
+            },
+            role: "owner",
+            kyb_status: "verified",
+            capabilities: {},
+            capability_reasons: {},
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(await screen.findByText(/organization suspended/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("Repeated chargebacks on operator purchases."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/13 Sep(t)? 2026|Sep(t)? 13, 2026/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /contact support/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^mailto:/),
+    );
+  });
+
+  it("shows a banner with the reason for each suspended or revoked capability", async () => {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org", suspended_at: null },
+            role: "owner",
+            kyb_status: "verified",
+            capabilities: { contributor: "suspended", attestor: "revoked", operator: "active" },
+            capability_reasons: {
+              contributor: "Artifacts failed the malware scan twice.",
+              attestor: "Calibration drift after two disputes.",
+            },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(await screen.findByText(/contributor capability suspended/i)).toBeInTheDocument();
+    expect(screen.getByText("Artifacts failed the malware scan twice.")).toBeInTheDocument();
+    expect(screen.getByText(/attestor capability revoked/i)).toBeInTheDocument();
+    expect(screen.getByText("Calibration drift after two disputes.")).toBeInTheDocument();
+    expect(screen.queryByText(/operator capability/i)).not.toBeInTheDocument();
+  });
+});

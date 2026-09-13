@@ -6,6 +6,7 @@
  * Fetches token-free received invitations on authenticated shell mount and
  * surfaces a one-time toast when the invitation id set changes.
  */
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 import { useToast } from "@/components/ui/toast";
@@ -18,8 +19,15 @@ const PENDING_INVITES_SEEN_KEY = "pending-invites-seen";
  */
 export function PendingInvitationsToast() {
   const toast = useToast();
+  const pathname = usePathname();
+  // The organizations page renders the inbox itself; a toast pointing the
+  // user at the page they are already on would be noise.
+  const onInboxPage = pathname?.startsWith("/dashboard/organizations") ?? false;
 
   useEffect(() => {
+    if (onInboxPage) {
+      return;
+    }
     let mounted = true;
 
     async function loadPendingInvitations(): Promise<void> {
@@ -44,7 +52,7 @@ export function PendingInvitationsToast() {
         toast.success(
           `You have ${count} pending invitation${
             count === 1 ? "" : "s"
-          } — review them in Settings › Organizations.`,
+          } — review them on the Organizations page.`,
         );
         localStorage.setItem(PENDING_INVITES_SEEN_KEY, key);
       } catch {
@@ -57,7 +65,7 @@ export function PendingInvitationsToast() {
     return () => {
       mounted = false;
     };
-  }, [toast]);
+  }, [toast, onInboxPage]);
 
   return null;
 }

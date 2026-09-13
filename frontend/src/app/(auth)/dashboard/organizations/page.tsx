@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * Organizations list page.
+ *
+ * Shows the invitations waiting on the user, then every organization they
+ * belong to with its verification, suspension, and capability state, so an
+ * org that is blocked never looks identical to one that is live.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-13-org-onboarding-journey-design.md §2.
+ */
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { listMyOrganizationsV1OrgsMineGet } from "@/lib/generated/sdk.gen";
@@ -8,9 +17,19 @@ import type { MyOrganizationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill, ownerStatusKey } from "@/components/ui/status-pill";
 import { CreateOrganizationDialog } from "@/components/modules/organizations/create-organization-dialog";
+import { ReceivedInvitationsInbox } from "@/components/modules/organizations/received-invitations-inbox";
 
+const CAPABILITY_LABELS: Record<string, string> = {
+  attestor: "Attestor",
+  contributor: "Contributor",
+  operator: "Operator",
+};
+
+/**
+ * Render the organizations the user belongs to and their invitation inbox.
+ */
 export default function OrganizationsPage() {
   const [orgs, setOrgs] = useState<MyOrganizationResponse[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,6 +87,8 @@ export default function OrganizationsPage() {
         </div>
       </div>
 
+      <ReceivedInvitationsInbox onResolved={() => void loadOrgs()} />
+
       {loading ? (
         <div className="flex justify-center py-20">
           <Spinner className="h-8 w-8 text-accent" />
@@ -90,7 +111,11 @@ export default function OrganizationsPage() {
                 <h2 className="font-heading text-xl font-bold text-foreground">
                   {item.org.name}
                 </h2>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {item.org.suspended_at ? <StatusPill status="suspended" /> : null}
+                  {item.kyb_status !== "verified" ? (
+                    <StatusPill status={ownerStatusKey(item.kyb_status ?? "unverified", "kyb")} />
+                  ) : null}
                   {item.counts?.offers ? (
                     <span
                       aria-label={`${item.counts.offers} attestation offer${item.counts.offers === 1 ? "" : "s"} to review`}
@@ -113,19 +138,12 @@ export default function OrganizationsPage() {
               {Object.keys(item.capabilities).length > 0 && (
                 <div className="relative mt-auto flex flex-wrap gap-2 border-t border-border-default pt-5">
                   {Object.entries(item.capabilities).map(([cap, status]) => (
-                    <Badge
-                      key={cap}
-                      variant={
-                        status === "active"
-                          ? "success"
-                          : status === "pending"
-                            ? "warning"
-                            : "default"
-                      }
-                      className="capitalize"
-                    >
-                      {cap}: {status}
-                    </Badge>
+                    <span className="inline-flex items-center gap-1.5" key={cap}>
+                      <span className="text-xs font-medium text-foreground-muted">
+                        {CAPABILITY_LABELS[cap] ?? cap}
+                      </span>
+                      <StatusPill status={status} />
+                    </span>
                   ))}
                 </div>
               )}

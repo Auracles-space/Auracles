@@ -4,10 +4,12 @@
  * Admin organization directory with platform-wide suspend / reinstate.
  *
  * Suspending removes every member's derived marketplace roles at once, so
- * the action confirms through the shared dialog and requires an open step-up
- * window; a failed call shows its reason inside the dialog.
+ * the action confirms through the shared dialog, collects a required reason
+ * that the organization's owner will see, and requires an open step-up
+ * window; a failed call shows its error inside the dialog. Reinstate needs
+ * no reason.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import {
   adminListOrgsV1AdminOrgsGet,
   adminSuspendOrgV1AdminOrgsOrgIdSuspendPost,
@@ -19,9 +21,15 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
+import { ReasonField, isReasonValid } from "@/components/modules/admin/reason-field";
 import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
 
+/**
+ * Paginated, searchable directory of every organization with suspend and
+ * reinstate controls for platform admins.
+ */
 export function AdminOrganizationsList() {
+  const reasonFieldId = useId();
   const [orgs, setOrgs] = useState<AdminOrgResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +49,10 @@ export function AdminOrganizationsList() {
   const [actionKind, setActionKind] = useState<"suspend" | "reinstate">("suspend");
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Owner-visible reason; required for suspend only, so the confirm button
+  // stays disabled until it satisfies the backend length rule.
+  const [reason, setReason] = useState("");
+  const reasonMissing = actionKind === "suspend" && !isReasonValid(reason);
 
   async function loadOrgs(currentPage: number, query: string) {
     setLoading(true);
@@ -91,20 +103,22 @@ export function AdminOrganizationsList() {
   }
 
   async function handleConfirmAction() {
-    if (!orgToAct) return;
+    if (!orgToAct || reasonMissing) return;
     setActionLoading(true);
     setActionError(null);
 
-    const call =
-      actionKind === "suspend"
-        ? adminSuspendOrgV1AdminOrgsOrgIdSuspendPost
-        : adminReinstateOrgV1AdminOrgsOrgIdReinstatePost;
-
     try {
-      const result = await call({
-        path: { org_id: orgToAct.id },
-        headers: getAccessTokenHeaders(),
-      });
+      const result =
+        actionKind === "suspend"
+          ? await adminSuspendOrgV1AdminOrgsOrgIdSuspendPost({
+              path: { org_id: orgToAct.id },
+              headers: getAccessTokenHeaders(),
+              body: { reason: reason.trim() },
+            })
+          : await adminReinstateOrgV1AdminOrgsOrgIdReinstatePost({
+              path: { org_id: orgToAct.id },
+              headers: getAccessTokenHeaders(),
+            });
 
       if (!result.response.ok) {
         setActionError(describeGeneratedError(result.error));
@@ -129,7 +143,15 @@ export function AdminOrganizationsList() {
   function openAction(org: AdminOrgResponse, kind: "suspend" | "reinstate") {
     setActionKind(kind);
     setActionError(null);
+    setReason("");
     setOrgToAct(org);
+  }
+
+  /** Dismiss the dialog and drop any half-typed reason so it never leaks to the next target. */
+  function closeAction() {
+    setOrgToAct(null);
+    setActionError(null);
+    setReason("");
   }
 
   const totalPages = Math.ceil(total / pageSize);
@@ -291,19 +313,29 @@ export function AdminOrganizationsList() {
             : "Reinstate Organization?"
         }
         description={
-          actionKind === "suspend"
-            ? `Are you sure you want to suspend "${orgToAct?.name}"? Members will lose access to organization resources immediately.`
-            : `Reinstate "${orgToAct?.name}"? Members will regain access to organization resources immediately.`
+          actionKind === "suspend" ? (
+            <>
+              <p>
+                Are you sure you want to suspend &quot;{orgToAct?.name}&quot;? Members will lose
+                access to organization resources immediately.
+              </p>
+              <ReasonField
+                disabled={actionLoading}
+                id={reasonFieldId}
+                onChange={setReason}
+                value={reason}
+              />
+            </>
+          ) : (
+            `Reinstate "${orgToAct?.name}"? Members will regain access to organization resources immediately.`
+          )
         }
         confirmLabel={actionKind === "suspend" ? "Suspend" : "Reinstate"}
         tone={actionKind === "suspend" ? "danger" : "default"}
-        busy={actionLoading}
+        busy={actionLoading || reasonMissing}
         error={actionError}
         onConfirm={handleConfirmAction}
-        onClose={() => {
-          setOrgToAct(null);
-          setActionError(null);
-        }}
+        onClose={closeAction}
       />
     </div>
   );

@@ -35,8 +35,19 @@ export function TeamCapabilityToggles({
   isBusy = false,
   onToggle,
 }: TeamCapabilityTogglesProps) {
-  const showHint = CAPABILITY_META.some(
-    ({ key }) => orgCapabilities[key] !== "active",
+  // One line per blocked capability, saying why: a suspended or revoked
+  // capability is not the same as one nobody has activated yet.
+  const hints = CAPABILITY_META.filter(({ key }) => orgCapabilities[key] !== "active").map(
+    ({ key, label }) => {
+      const status = orgCapabilities[key];
+      if (status === "suspended") {
+        return `${label} is suspended for the organization.`;
+      }
+      if (status === "revoked") {
+        return `${label} was revoked for the organization.`;
+      }
+      return `Activate ${label} for the organization first.`;
+    },
   );
 
   return (
@@ -69,10 +80,12 @@ export function TeamCapabilityToggles({
           );
         })}
       </div>
-      {showHint ? (
-        <p className="text-xs text-foreground-muted">
-          Activate this capability for the organization first.
-        </p>
+      {hints.length > 0 ? (
+        <ul className="grid gap-0.5 text-xs text-foreground-muted">
+          {hints.map((hint) => (
+            <li key={hint}>{hint}</li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );

@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useToast } from "@/components/ui/toast";
 import {
   activateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePost as activateContributor,
@@ -43,37 +44,21 @@ const CAPABILITIES: CapabilityMeta[] = [
   },
 ];
 
-/** Render a status pill for a capability's current state. */
-function StatusPill({ status }: { status?: string }) {
-  if (status === "active") {
-    return (
-      <span className="rounded-md border border-success/30 bg-success/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-success">
-        Active
-      </span>
-    );
-  }
-
-  if (status === "suspended") {
-    return (
-      <span className="rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
-        Suspended
-      </span>
-    );
-  }
-
-  return (
-    <span className="rounded-md border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-      Not active
-    </span>
-  );
-}
+const SUPPORT_EMAIL = "support@auracles.space";
 
 /**
  * Card of self-service capability rows for organization owners and admins.
  */
 export function OrganizationCapabilities() {
-  const { orgId, role, capabilities, kybStatus, isSuspended, refreshOrganization } =
-    useOrganization();
+  const {
+    orgId,
+    role,
+    capabilities,
+    capabilityReasons,
+    kybStatus,
+    isSuspended,
+    refreshOrganization,
+  } = useOrganization();
   const router = useRouter();
   const toast = useToast();
 
@@ -82,7 +67,9 @@ export function OrganizationCapabilities() {
   const [error, setError] = useState<string | null>(null);
 
   const isAdminOrOwner = role === "owner" || role === "admin";
-  if (!isAdminOrOwner || isSuspended) {
+  // A suspended org still needs to see its capability states; only the
+  // activation buttons go away, since the API would refuse them anyway.
+  if (!isAdminOrOwner) {
     return null;
   }
 
@@ -151,10 +138,20 @@ export function OrganizationCapabilities() {
           Activate what your organization can do on the marketplace. Members
           receive each right through the teams you assign it to.
         </p>
+        {isSuspended ? (
+          <p className="mt-2 text-sm font-medium text-error">
+            Capabilities are paused while the organization is suspended.
+          </p>
+        ) : null}
       </div>
 
       <ul className="flex flex-col divide-y divide-border-default">
-        {CAPABILITIES.map((cap) => (
+        {CAPABILITIES.map((cap) => {
+          const status = capabilities?.[cap.key];
+          const reason = capabilityReasons?.[cap.key];
+          const blocked = status === "suspended" || status === "revoked";
+          const canActivate = !isSuspended && !blocked && status !== "active";
+          return (
           <li
             key={cap.key}
             className="flex flex-col gap-3 px-8 py-5 sm:flex-row sm:items-center sm:justify-between"
@@ -164,11 +161,26 @@ export function OrganizationCapabilities() {
               <p className="mt-0.5 text-sm text-foreground-muted">
                 {cap.description}
               </p>
+              {blocked && reason ? (
+                <p className="mt-2 text-sm text-foreground">{reason}</p>
+              ) : null}
+              {status === "revoked" ? (
+                <p className="mt-1 text-sm text-foreground-muted">
+                  Revoked capabilities cannot be reactivated here.{" "}
+                  <a
+                    className="font-medium text-foreground underline underline-offset-4"
+                    href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+                      `${cap.label} capability appeal`,
+                    )}`}
+                  >
+                    Contact support
+                  </a>
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center gap-3">
-              <StatusPill status={capabilities?.[cap.key]} />
-              {capabilities?.[cap.key] !== "active" &&
-              capabilities?.[cap.key] !== "suspended" ? (
+              <StatusPill label={status ? undefined : "Not active"} status={status ?? "inactive"} />
+              {canActivate ? (
                 kybStatus === "verified" ? (
                   <button
                     type="button"
@@ -191,7 +203,8 @@ export function OrganizationCapabilities() {
               ) : null}
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
 
       <ConfirmDialog

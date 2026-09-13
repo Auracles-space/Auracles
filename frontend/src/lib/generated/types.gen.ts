@@ -3104,6 +3104,9 @@ export type MyOrganizationResponse = {
     capabilities: {
         [key: string]: (string);
     };
+    capability_reasons?: {
+        [key: string]: (string);
+    };
     counts?: OrgActionCounts;
     grants?: {
         [key: string]: (boolean);
@@ -3259,6 +3262,7 @@ export type OrganizationResponse = {
     name: string;
     slug: string;
     suspended_at?: (string | null);
+    suspension_reason?: (string | null);
     website: (string | null);
 };
 
@@ -3408,6 +3412,8 @@ export type OrgAttestorApplicationResponse = {
     tax_document_type: (string | null);
     trial_attestation_id: (string | null);
     trial_member_id: (string | null);
+    trial_feedback?: (string | null);
+    trial_status?: (string | null);
 };
 
 /**
@@ -3864,6 +3870,16 @@ export type OrgProposalReassignRequest = {
  */
 export type OrgReassignReviewerRequest = {
     reviewing_member_id: string;
+};
+
+/**
+ * Admin reason for suspending an org or suspending/revoking a capability.
+ *
+ * The text is stored on the row and shown to the organization's owner, so
+ * it must explain the decision rather than reference internal tickets.
+ */
+export type OrgStatusReasonRequest = {
+    reason: string;
 };
 
 /**
@@ -5707,6 +5723,7 @@ export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRe
 export type AdminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePostError = (HTTPValidationError);
 
 export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostData = {
+    body: OrgStatusReasonRequest;
     path: {
         org_id: string;
     };
@@ -5717,6 +5734,7 @@ export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevok
 export type AdminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePostError = (HTTPValidationError);
 
 export type AdminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPostData = {
+    body: OrgStatusReasonRequest;
     path: {
         org_id: string;
     };
@@ -5737,6 +5755,7 @@ export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabi
 export type AdminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePostError = (HTTPValidationError);
 
 export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostData = {
+    body: OrgStatusReasonRequest;
     path: {
         org_id: string;
     };
@@ -5747,6 +5766,7 @@ export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilit
 export type AdminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePostError = (HTTPValidationError);
 
 export type AdminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPostData = {
+    body: OrgStatusReasonRequest;
     path: {
         org_id: string;
     };
@@ -5778,6 +5798,7 @@ export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRe
 export type AdminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePostError = (HTTPValidationError);
 
 export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostData = {
+    body: OrgStatusReasonRequest;
     path: {
         org_id: string;
     };
@@ -5788,6 +5809,7 @@ export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevok
 export type AdminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePostError = (HTTPValidationError);
 
 export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostData = {
+    body: OrgStatusReasonRequest;
     path: {
         org_id: string;
     };
@@ -5808,6 +5830,7 @@ export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostResponse = (void);
 export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostError = (HTTPValidationError);
 
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
+    body: OrgStatusReasonRequest;
     path: {
         org_id: string;
     };
