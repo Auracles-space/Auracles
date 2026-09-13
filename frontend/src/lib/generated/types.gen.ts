@@ -4957,6 +4957,28 @@ export type SourcePreviewResponse = {
 };
 
 /**
+ * Request body opening a step-up window with a TOTP or backup code.
+ */
+export type StepUpRequest = {
+    code: string;
+};
+
+/**
+ * Response after a step-up verification: when the window closes.
+ */
+export type StepUpResponse = {
+    verified_until: string;
+};
+
+/**
+ * Whether the caller currently holds an open step-up window.
+ */
+export type StepUpStatusResponse = {
+    active: boolean;
+    verified_until?: (string | null);
+};
+
+/**
  * One-time response carrying a freshly generated set of backup codes.
  */
 export type TotpBackupCodesResponse = {
@@ -6377,6 +6399,18 @@ export type VerifyTotpLoginV1Auth2FaVerifyLoginPostData = {
 export type VerifyTotpLoginV1Auth2FaVerifyLoginPostResponse = (LoginResponse);
 
 export type VerifyTotpLoginV1Auth2FaVerifyLoginPostError = (HTTPValidationError);
+
+export type ReadStepUpV1AuthStepUpGetResponse = (StepUpStatusResponse);
+
+export type ReadStepUpV1AuthStepUpGetError = unknown;
+
+export type OpenStepUpV1AuthStepUpPostData = {
+    body: StepUpRequest;
+};
+
+export type OpenStepUpV1AuthStepUpPostResponse = (StepUpResponse);
+
+export type OpenStepUpV1AuthStepUpPostError = (HTTPValidationError);
 
 export type ForgotPasswordV1AuthForgotPasswordPostData = {
     body: ForgotPasswordRequest;

@@ -42,6 +42,7 @@ export const metadata: Metadata = {
 
 import { IncompleteUserListener } from "@/components/incomplete-user-listener";
 import { SessionTerminatedListener } from "@/components/session-terminated-listener";
+import { StepUpDialog } from "@/components/step-up-dialog";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ToastProvider } from "@/components/ui/toast";
 
@@ -62,6 +63,7 @@ export default function RootLayout({
           <ToastProvider>
             <IncompleteUserListener />
             <SessionTerminatedListener />
+            <StepUpDialog />
             {children}
           </ToastProvider>
         </ThemeProvider>

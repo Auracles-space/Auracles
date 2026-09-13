@@ -11,6 +11,7 @@ import { OrganizationProvider } from "./organization-context";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { ExclamationTriangleIcon } from "@radix-ui/react-icons";
+import { StepUpPill } from "@/components/modules/auth/step-up-pill";
 import { useOrganization } from "./organization-context";
 
 type OrganizationShellProps = {
@@ -230,9 +231,12 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
         <div className="relative mb-8 overflow-hidden rounded-3xl border border-border-default bg-surface-1 p-8 shadow-sm">
           <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
           <div className="relative">
-            <h1 className="font-heading text-3xl font-bold text-foreground tracking-tight">
-              {myOrg.org.name}
-            </h1>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h1 className="font-heading text-3xl font-bold text-foreground tracking-tight">
+                {myOrg.org.name}
+              </h1>
+              <StepUpPill />
+            </div>
             <p className="mt-2 text-foreground-muted">
               Manage organization settings and members. Your role: <span className="font-semibold text-foreground capitalize">{role}</span>
             </p>

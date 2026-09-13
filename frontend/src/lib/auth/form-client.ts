@@ -8,6 +8,7 @@ import { resolveApiBaseUrl } from "@/lib/api-base";
 import { client } from "@/lib/generated/sdk.gen";
 
 import { installIncompleteUserInterceptor } from "./incomplete-user-interceptor";
+import { installStepUpInterceptor } from "./step-up-interceptor";
 import { authTokenStore } from "./token-store";
 import { installUnauthorizedRefreshInterceptor } from "./unauthorized-refresh-interceptor";
 
@@ -17,8 +18,9 @@ const API_BASE_URL = resolveApiBaseUrl();
  * Configure the generated client for browser calls that need cookies.
  *
  * Also installs the shared response interceptors: incomplete-user (403 →
- * onboarding redirect) and unauthorized-refresh (401 → transparent token
- * refresh and single retry), so neither concern needs per-form wiring.
+ * onboarding redirect), step-up (403 `step_up_required` → one 2FA prompt and
+ * a single replay), and unauthorized-refresh (401 → transparent token refresh
+ * and single retry), so none of them needs per-form wiring.
  */
 export function configureBrowserClient(): void {
   client.setConfig({
@@ -27,6 +29,7 @@ export function configureBrowserClient(): void {
     credentials: "include",
   });
   installIncompleteUserInterceptor();
+  installStepUpInterceptor();
   installUnauthorizedRefreshInterceptor();
 }
 

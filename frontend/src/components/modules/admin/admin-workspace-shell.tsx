@@ -16,6 +16,7 @@ import {
 } from "@/lib/auth/form-client";
 import { listAdminAttestations } from "@/lib/generated/sdk.gen";
 import { NEEDS_ADMIN_CHANGED_EVENT } from "@/components/modules/admin/admin-events";
+import { StepUpPill } from "@/components/modules/auth/step-up-pill";
 
 type AdminWorkspaceShellProps = {
   children: ReactNode;
@@ -156,9 +157,12 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
       <div className="mx-auto grid max-w-[1280px] gap-6 xl:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="grid content-start gap-4">
           <header className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-              Admin workspace
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
+                Admin workspace
+              </p>
+              <StepUpPill />
+            </div>
             <h1 className="mt-2 font-heading text-2xl font-bold text-foreground">
               Operations
             </h1>

@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 /**
  * Controlled TOTP code input.
  *
@@ -10,6 +12,8 @@ type TotpInputProps = {
   label?: string;
   onChange: (value: string) => void;
   value: string;
+  /** Focus the field on mount (dialogs). */
+  autoFocus?: boolean;
 };
 
 /**
@@ -21,14 +25,19 @@ export function TotpInput({
   label = "Authenticator code",
   onChange,
   value,
+  autoFocus = false,
 }: TotpInputProps) {
+  // Unique per instance: the step-up dialog can render beside the 2FA setup
+  // form, and two inputs sharing one id would break their labels.
+  const id = useId();
   return (
-    <label className="block" htmlFor="totp-code">
+    <label className="block" htmlFor={id}>
       <span className="text-sm font-medium text-foreground">{label}</span>
       <input
         autoComplete="one-time-code"
+        autoFocus={autoFocus}
         className="mt-2 min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 py-2 text-center font-heading text-lg font-semibold tracking-[0.05em] text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-accent focus-visible:ring-2 focus-visible:ring-accent"
-        id="totp-code"
+        id={id}
         inputMode="numeric"
         maxLength={6}
         onChange={(event) => {

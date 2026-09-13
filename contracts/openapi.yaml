@@ -14066,6 +14066,45 @@ components:
       - backup_codes
       title: TotpBackupCodesResponse
       type: object
+    StepUpRequest:
+      description: Request body opening a step-up window with a TOTP or backup code.
+      properties:
+        code:
+          maxLength: 16
+          minLength: 6
+          title: Code
+          type: string
+      required:
+      - code
+      title: StepUpRequest
+      type: object
+    StepUpResponse:
+      description: 'Response after a step-up verification: when the window closes.'
+      properties:
+        verified_until:
+          format: date-time
+          title: Verified Until
+          type: string
+      required:
+      - verified_until
+      title: StepUpResponse
+      type: object
+    StepUpStatusResponse:
+      description: Whether the caller currently holds an open step-up window.
+      properties:
+        active:
+          title: Active
+          type: boolean
+        verified_until:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Verified Until
+      required:
+      - active
+      title: StepUpStatusResponse
+      type: object
     TotpCodeRequest:
       description: Request body containing a current TOTP code.
       properties:
@@ -18695,6 +18734,59 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Verify Totp Login
+      tags:
+      - Auth
+  /v1/auth/step-up:
+    get:
+      description: Report whether the caller holds an open step-up window and
+        when it closes.
+      operationId: read_step_up_v1_auth_step_up_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepUpStatusResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Read step-up status
+      tags:
+      - Auth
+    post:
+      description: Verify a TOTP or backup code once to unlock sensitive actions
+        for a short window. Sensitive endpoints answer 403 `step_up_required`
+        until this succeeds.
+      operationId: open_step_up_v1_auth_step_up_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepUpRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StepUpResponse'
+          description: Successful Response
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Two-factor authentication is not enrolled
+            (`totp_setup_required`).
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Invalid code
+      security:
+      - HTTPBearer: []
+      summary: Open a step-up window
       tags:
       - Auth
   /v1/auth/forgot-password:
