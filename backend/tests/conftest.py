@@ -239,3 +239,24 @@ async def verify_org_kyb(org_id: object) -> None:
             profile.incorporation_doc_keys = ["org-incorporation-docs/test/cert.pdf"]
             profile.kyb_status = "verified"
             profile.kyb_verified_at = datetime.now(UTC)
+
+
+async def open_step_up_window(redis: object, user_id: object) -> None:
+    """Seed an open step-up 2FA window for ``user_id`` on ``redis``.
+
+    Sensitive endpoints require an open window (``require_step_up``) instead
+    of a per-request TOTP code. Tests seed the window directly; the
+    verification path itself is covered by ``test_auth_step_up``. Works with
+    the real client and with the ``FakeRedis`` doubles used across suites
+    because both accept ``set(key, value, ex=...)``. The user must also have
+    ``totp_enabled=True`` or the dependency answers ``totp_setup_required``.
+    """
+    from datetime import UTC, datetime
+    from uuid import UUID as _UUID
+
+    from app.modules.auth.service import step_up_key
+
+    resolved = user_id if isinstance(user_id, _UUID) else _UUID(str(user_id))
+    await redis.set(  # type: ignore[attr-defined]
+        step_up_key(resolved), datetime.now(UTC).isoformat(), ex=600
+    )

@@ -102,6 +102,9 @@ class Settings(BaseSettings):
         default=SecretStr(DEV_TOTP_ENCRYPTION_KEY),
         alias="TOTP_ENCRYPTION_KEY",
     )
+    # One TOTP verification opens a step-up window this long; sensitive
+    # endpoints require an open window instead of a per-request code.
+    step_up_ttl_seconds: int = Field(default=600, alias="STEP_UP_TTL_SECONDS")
     payout_account_encryption_key: SecretStr = Field(
         default=SecretStr(DEV_PAYOUT_ACCOUNT_ENCRYPTION_KEY),
         alias="PAYOUT_ACCOUNT_ENCRYPTION_KEY",

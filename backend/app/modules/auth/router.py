@@ -25,7 +25,7 @@ from app.core.cookies import (
     set_session_hint_cookie,
 )
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import BearerCredentials, get_current_user
 from app.core.network import client_ip
 from app.core.profile_images import resolve_profile_image_url
 from app.core.redis import get_redis
@@ -52,6 +52,9 @@ from app.modules.auth.schemas import (
     ResendVerificationRequest,
     ResetPasswordRequest,
     RoleAssignmentResponse,
+    StepUpRequest,
+    StepUpResponse,
+    StepUpStatusResponse,
     TotpBackupCodesResponse,
     TotpCodeRequest,
     TotpLoginVerifyRequest,
@@ -569,16 +572,72 @@ async def logout(
     response: Response,
     db: DatabaseSession,
     redis: RedisClient,
+    credentials: BearerCredentials,
 ) -> RegisterResponse:
-    """Revoke the current refresh token and clear the browser cookie."""
+    """Revoke the current refresh token, the step-up window, and the cookie."""
     await service.logout(
         db=db,
         redis=redis,
         token=request.cookies.get(REFRESH_COOKIE_NAME),
     )
+    # The refresh cookie may be absent (expired, or a bearer-only client); the
+    # step-up window still belongs to whoever presents a valid access token.
+    if credentials is not None:
+        try:
+            payload = decode_access_token(credentials.credentials)
+        except Exception:  # noqa: BLE001 - an invalid bearer just skips revocation
+            payload = None
+        if payload is not None:
+            await service.revoke_step_up(redis, payload.sub)
     clear_refresh_cookie(response)
     clear_session_hint_cookie(response)
     return RegisterResponse(message="Logged out.")
+
+
+@router.post(
+    "/step-up",
+    response_model=StepUpResponse,
+    summary="Open a step-up window",
+    description=(
+        "Verify a TOTP or backup code once to unlock sensitive actions for a "
+        "short window. Sensitive endpoints answer 403 `step_up_required` "
+        "until this succeeds."
+    ),
+)
+async def open_step_up(
+    payload: StepUpRequest,
+    current_user: CurrentUser,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> StepUpResponse:
+    """Open the caller's step-up window after one code verification."""
+    verified_until = await service.open_step_up(
+        db=db,
+        redis=redis,
+        user=current_user,
+        code=payload.code,
+    )
+    return StepUpResponse(verified_until=verified_until)
+
+
+@router.get(
+    "/step-up",
+    response_model=StepUpStatusResponse,
+    summary="Read step-up status",
+    description=(
+        "Report whether the caller holds an open step-up window and when it closes."
+    ),
+)
+async def read_step_up(
+    current_user: CurrentUser,
+    redis: RedisClient,
+) -> StepUpStatusResponse:
+    """Return the caller's step-up window state."""
+    verified_until = await service.get_step_up_verified_until(redis, current_user.id)
+    return StepUpStatusResponse(
+        active=verified_until is not None,
+        verified_until=verified_until,
+    )
 
 
 @router.get("/me", response_model=CurrentUserResponse)

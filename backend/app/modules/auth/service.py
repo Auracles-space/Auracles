@@ -14,7 +14,7 @@ import time
 from base64 import b64encode
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import cache
 from io import BytesIO
 from typing import Any, cast
@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.rate_limit import RateLimiter, RedisCounter, format_retry_phrase
 from app.core.security import (
     create_access_token,
@@ -184,6 +185,11 @@ def _totp_failure_key(user_id: UUID) -> str:
     return f"2fa_failure:{user_id}"
 
 
+def step_up_key(user_id: UUID) -> str:
+    """Build the Redis key holding a user's open step-up window."""
+    return f"stepup:{user_id}"
+
+
 def _backup_code_hash(code: str) -> str:
     """Normalize and hash a backup code for lookup."""
     return hash_token(code.strip().lower())
@@ -267,8 +273,7 @@ def _lockout_error(ttl: int, *, window: int, what: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         detail=(
-            f"Too many {what}. Please try again in "
-            f"{format_retry_phrase(retry_after)}."
+            f"Too many {what}. Please try again in {format_retry_phrase(retry_after)}."
         ),
         headers={"Retry-After": str(retry_after)},
     )
@@ -1189,6 +1194,7 @@ async def logout(
             Awaitable[int],
             redis.srem(_user_refresh_key(UUID(record["user_id"])), key),
         )
+        await revoke_step_up(redis, UUID(record["user_id"]))
         await write_audit(
             db=db,
             actor_id=UUID(record["user_id"]),
@@ -1439,6 +1445,92 @@ async def verify_totp_for_sensitive_action(
     await _clear_totp_failures(redis, user.id)
 
 
+async def open_step_up(
+    db: AsyncSession,
+    redis: Redis,
+    user: User,
+    code: str,
+) -> datetime:
+    """Open a step-up window after one TOTP or backup-code verification.
+
+    Sensitive endpoints (see the 2026-09-13 step-up design registry) require
+    an open window rather than a per-request code. The window is a Redis key
+    per user with a fixed TTL, so it survives access-token rotation and is
+    revoked on logout, 2FA disable, and suspension.
+
+    Args:
+        db: Async session for backup-code consumption and the audit row.
+        redis: Redis client holding the window and the failure counter.
+        user: The authenticated user opening the window.
+        code: A current TOTP code or an unused backup code.
+
+    Returns:
+        The instant the window closes.
+
+    Raises:
+        HTTPException(403): If the user has not enrolled in 2FA.
+        HTTPException(422): If the code is invalid.
+        HTTPException(429): If recent wrong codes exceeded the lockout limit.
+    """
+    if not user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "totp_setup_required",
+                "onboarding_url": "/settings/security",
+                "message": "Enable two-factor authentication before this action.",
+            },
+        )
+    await _ensure_totp_not_locked(redis, user.id)
+    if not await _verify_totp_or_backup_code(db, redis, user, code):
+        await _record_totp_failure(redis, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid 2FA code.",
+        )
+    await _clear_totp_failures(redis, user.id)
+
+    ttl = get_settings().step_up_ttl_seconds
+    verified_at = datetime.now(UTC)
+    verified_until = verified_at + timedelta(seconds=ttl)
+    await redis.set(step_up_key(user.id), verified_at.isoformat(), ex=ttl)
+    await write_audit(
+        db=db,
+        actor_id=user.id,
+        action="step_up_verified",
+        target_type="user",
+        target_id=user.id,
+        metadata={"ttl_seconds": ttl},
+    )
+    await db.commit()
+    logger.bind(module="auth", action="step_up_verified", user_id=str(user.id)).info(
+        "Step-up window opened"
+    )
+    return verified_until
+
+
+async def get_step_up_verified_until(redis: Redis, user_id: UUID) -> datetime | None:
+    """Return when the user's step-up window closes, or None if none is open."""
+    key = step_up_key(user_id)
+    raw = await redis.get(key)
+    if raw is None:
+        return None
+    ttl = await redis.ttl(key)
+    if ttl < 0:
+        return None
+    return datetime.now(UTC) + timedelta(seconds=ttl)
+
+
+async def has_step_up(redis: Redis, user_id: UUID) -> bool:
+    """Return whether the user currently holds an open step-up window."""
+    return await redis.get(step_up_key(user_id)) is not None
+
+
+async def revoke_step_up(redis: Redis, user_id: UUID) -> None:
+    """Close the user's step-up window, if any."""
+    await redis.delete(step_up_key(user_id))
+
+
 async def disable_totp(
     db: AsyncSession,
     redis: Redis,
@@ -1463,6 +1555,7 @@ async def disable_totp(
     user.totp_secret = None
     await db.execute(delete(UserBackupCode).where(UserBackupCode.user_id == user.id))
     await _clear_totp_failures(redis, user.id)
+    await revoke_step_up(redis, user.id)
     await write_audit(
         db=db,
         actor_id=user.id,

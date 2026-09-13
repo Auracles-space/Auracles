@@ -176,6 +176,25 @@ class TotpCodeRequest(BaseModel):
     code: str = Field(min_length=6, max_length=16)
 
 
+class StepUpRequest(BaseModel):
+    """Request body opening a step-up window with a TOTP or backup code."""
+
+    code: str = Field(min_length=6, max_length=16)
+
+
+class StepUpResponse(BaseModel):
+    """Response after a step-up verification: when the window closes."""
+
+    verified_until: datetime
+
+
+class StepUpStatusResponse(BaseModel):
+    """Whether the caller currently holds an open step-up window."""
+
+    active: bool
+    verified_until: datetime | None = None
+
+
 class TotpStatusResponse(BaseModel):
     """Response body describing TOTP account state.
 

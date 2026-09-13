@@ -7,11 +7,13 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError  # type: ignore[import-untyped]
 from pydantic import ValidationError
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.database import get_db
+from app.core.redis import get_redis
 from app.core.security import decode_access_token
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import User
@@ -19,6 +21,7 @@ from app.shared.schemas.token import TokenPayload
 
 bearer_scheme = HTTPBearer(auto_error=False)
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
+RedisClient = Annotated[Redis, Depends(get_redis)]
 BearerCredentials = Annotated[
     HTTPAuthorizationCredentials | None,
     Depends(bearer_scheme),
@@ -174,6 +177,63 @@ async def require_superadmin(
             detail={"error_code": "superadmin_required"},
         )
     return user
+
+
+async def require_step_up(
+    user: Annotated[User, Depends(get_current_user)],
+    redis: RedisClient,
+) -> User:
+    """Require an open step-up 2FA window before a sensitive write.
+
+    Composed beside the role or organization-role gate on every endpoint in
+    the step-up registry (2026-09-13 design): trust, money, identity, and
+    privilege changes. The window is opened by ``POST /v1/auth/step-up``; this
+    dependency never verifies a code itself.
+
+    Args:
+        user: The authenticated user.
+        redis: Redis client holding step-up windows.
+
+    Returns:
+        The user when a window is open.
+
+    Raises:
+        HTTPException(403): ``totp_setup_required`` when 2FA is not enrolled,
+            ``step_up_required`` when no window is open.
+    """
+    if not user.totp_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "totp_setup_required",
+                "onboarding_url": "/settings/security",
+                "message": "Enable two-factor authentication before this action.",
+            },
+        )
+    if not await auth_service.has_step_up(redis, user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error_code": "step_up_required",
+                "message": "Confirm with your authenticator app before continuing.",
+            },
+        )
+    return user
+
+
+async def require_step_up_if_enrolled(
+    user: Annotated[User, Depends(get_current_user)],
+    redis: RedisClient,
+) -> User:
+    """Require an open step-up window only for users who have enrolled in 2FA.
+
+    Used where demanding a factor the account does not possess would lock the
+    user out of their own account: email change and GDPR account deletion.
+    Enrolled users get the same ``step_up_required`` gate as everywhere else.
+    """
+    if not user.totp_enabled:
+        return user
+    return await require_step_up(user=user, redis=redis)
 
 
 async def require_kyc_verified(
