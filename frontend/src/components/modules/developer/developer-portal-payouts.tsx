@@ -4,7 +4,9 @@
  * Developer portal payout panel.
  *
  * Renders Partner payout request controls and payout history for approved
- * Developer partners with verified payout accounts.
+ * Developer partners with verified payout accounts. Requesting a payout is a
+ * sensitive action: the API requires a step-up 2FA window, which the global
+ * step-up prompt handles when the call is refused — so 2FA must be enrolled.
  */
 import type { FormEvent } from "react";
 import { useId, useState } from "react";
@@ -14,20 +16,11 @@ import type {
   PartnerPayoutResponse,
   PayoutAccountResponse,
 } from "@/lib/generated/types.gen";
-import {
-  allValid,
-  isLengthBetween,
-  isNonEmpty,
-  isPositiveNumber,
-} from "@/lib/forms/validators";
+import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type PayoutPanelProps = {
-  onRequest: (
-    amount: string,
-    payoutAccountId: string,
-    totpCode: string,
-  ) => Promise<void>;
+  onRequest: (amount: string, payoutAccountId: string) => Promise<void>;
   payouts: PartnerPayoutResponse[];
   verifiedAccounts: PayoutAccountResponse[];
   sales?: DeveloperSalesAnalyticsResponse | null;
@@ -48,15 +41,12 @@ export function PayoutPanel({
 }: PayoutPanelProps) {
   const amountId = useId();
   const accountId = useId();
-  const totpId = useId();
   const [amount, setAmount] = useState("");
   const [payoutAccountId, setPayoutAccountId] = useState(
     verifiedAccounts[0]?.id ?? "",
   );
-  const [totpCode, setTotpCode] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [amountError, setAmountError] = useState<string | null>(null);
-  const [totpError, setTotpError] = useState<string | null>(null);
 
   const parsedAmount = Number(amount);
   const clearedLimit = sales ? Number(sales.cleared_commission_amount) : Infinity;
@@ -65,7 +55,6 @@ export function PayoutPanel({
     isPositiveNumber(amount),
     parsedAmount <= clearedLimit,
     isNonEmpty(payoutAccountId),
-    isLengthBetween(totpCode, 6, 6),
   ) && !isSubmitting;
 
   const handleAmountChange = (value: string) => {
@@ -84,15 +73,6 @@ export function PayoutPanel({
     }
   };
 
-  const handleTotpChange = (value: string) => {
-    setTotpCode(value);
-    if (value.trim() === "" || isLengthBetween(value, 6, 6)) {
-      setTotpError(null);
-    } else {
-      setTotpError("Code must be exactly 6 characters");
-    }
-  };
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isPositiveNumber(amount)) {
@@ -104,17 +84,11 @@ export function PayoutPanel({
       setAmountError(`Amount exceeds cleared balance of ${formatMoney(sales!.cleared_commission_amount)}`);
       return;
     }
-    if (!isLengthBetween(totpCode, 6, 6)) {
-      setTotpError("Code must be exactly 6 characters");
-      return;
-    }
     setIsSubmitting(true);
     try {
-      await onRequest(amount, payoutAccountId, totpCode);
+      await onRequest(amount, payoutAccountId);
       setAmount("");
-      setTotpCode("");
       setAmountError(null);
-      setTotpError(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -210,26 +184,6 @@ export function PayoutPanel({
                 </option>
               ))}
             </select>
-          </label>
-          <label className="grid gap-2 text-sm font-semibold" htmlFor={totpId}>
-            Authenticator code
-            <input
-              className={`min-h-12 rounded-xl border bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
-                totpError ? "border-error focus-visible:ring-error" : "border-border-default"
-              }`}
-              id={totpId}
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(event) => handleTotpChange(event.target.value)}
-              pattern="[0-9]{6}"
-              required
-              disabled={isSubmitting}
-              value={totpCode}
-              placeholder="000000"
-            />
-            {totpError ? (
-              <span className="text-xs text-error font-normal">{totpError}</span>
-            ) : null}
           </label>
           <button
             className="min-h-12 rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"

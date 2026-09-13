@@ -18,7 +18,6 @@ export type AccountDeletionBlockedReason = {
  */
 export type AccountDeletionRequestBody = {
     password?: (string | null);
-    totp_code?: (string | null);
 };
 
 /**
@@ -127,7 +126,6 @@ export type AdminAnalyticsWindowCounts = {
 export type AdminAttestationAssignRequest = {
     attestor_org_id: string;
     reason: string;
-    totp_code: string;
 };
 
 /**
@@ -172,7 +170,6 @@ export type AdminAttestationDisputeResolveRequest = {
     is_complex?: boolean;
     outcome: 'rejected' | 'upheld_refund' | 'upheld_revise';
     resolution_notes: string;
-    totp_code: string;
 };
 
 export type outcome = 'rejected' | 'upheld_refund' | 'upheld_revise';
@@ -205,7 +202,6 @@ export type AdminAttestationOfferItem = {
  */
 export type AdminAttestationRefundRequest = {
     reason: string;
-    totp_code: string;
 };
 
 /**
@@ -249,7 +245,6 @@ export type AdminConfigItem = {
  */
 export type AdminConfigPatchRequest = {
     reason: string;
-    totp_code: string;
     updates: Array<AdminConfigUpdateItem>;
 };
 
@@ -304,7 +299,6 @@ export type AdminConnectorsResponse = {
  */
 export type AdminCredentialRejectRequest = {
     reason: string;
-    totp_code: string;
 };
 
 /**
@@ -346,7 +340,7 @@ export type AdminCredentialsResponse = {
  * the sibling rejection.
  */
 export type AdminCredentialVerifyRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -384,7 +378,6 @@ export type AdminDisputeResolveRequest = {
     release_amount?: (number | string | null);
     resolution_notes: string;
     resolution_type: 'release' | 'refund' | 'split';
-    totp_code: string;
 };
 
 export type resolution_type = 'release' | 'refund' | 'split';
@@ -463,7 +456,6 @@ export type status2 = 'held' | 'released' | 'refunded';
  */
 export type AdminEscrowOverrideRequest = {
     reason: string;
-    totp_code: string;
 };
 
 /**
@@ -572,7 +564,7 @@ export type AdminFrameworkDirectoryResponse = {
  * and is gated like its sibling takedown.
  */
 export type AdminFrameworkReinstateRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -589,7 +581,6 @@ export type AdminFrameworkStatusResponse = {
  */
 export type AdminFrameworkSuspendRequest = {
     reason: string;
-    totp_code: string;
 };
 
 /**
@@ -666,7 +657,6 @@ export type AdminKycDocumentsResponse = {
 export type AdminKycReviewRequest = {
     notes?: (string | null);
     status: 'verified' | 'rejected';
-    totp_code: string;
 };
 
 export type status4 = 'verified' | 'rejected';
@@ -687,7 +677,6 @@ export type AdminLicenseGrantRequest = {
     framework_id: string;
     operator_id: string;
     seats_total?: (number | null);
-    totp_code: string;
     type: 'single_user' | 'team' | 'organizational' | 'enterprise';
 };
 
@@ -825,7 +814,6 @@ export type status5 = 'pending' | 'processing' | 'completed' | 'failed';
  */
 export type AdminRarityBlockOverrideRequest = {
     reason: string;
-    totp_code: string;
 };
 
 /**
@@ -835,7 +823,6 @@ export type AdminReputationRecomputeRequest = {
     reason: string;
     subject_id: string;
     subject_type: 'framework' | 'contributor' | 'operator' | 'attestor_org';
-    totp_code: string;
 };
 
 export type subject_type = 'framework' | 'contributor' | 'operator' | 'attestor_org';
@@ -854,7 +841,6 @@ export type AdminReputationRecomputeResponse = {
  */
 export type AdminRoleAssignmentRequest = {
     role: 'contributor' | 'operator' | 'attestor' | 'admin';
-    totp_code: string;
 };
 
 export type role2 = 'contributor' | 'operator' | 'attestor' | 'admin';
@@ -999,7 +985,6 @@ export type AdminUserDirectoryResponse = {
  */
 export type AdminUserSuspendRequest = {
     reason: string;
-    totp_code: string;
 };
 
 /**
@@ -1017,7 +1002,7 @@ export type AdminUserSuspensionResponse = {
  * Request body for unsuspending a user account.
  */
 export type AdminUserUnsuspendRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -2156,7 +2141,6 @@ export type DeveloperApplicationResponse = {
 export type DeveloperApplicationReviewRequest = {
     decision: 'approved' | 'rejected';
     feedback?: (string | null);
-    totp_code: string;
 };
 
 export type decision2 = 'approved' | 'rejected';
@@ -2313,7 +2297,6 @@ export type EmailChangeConfirmRequest = {
 export type EmailChangeRequest = {
     new_email: string;
     password?: (string | null);
-    totp_code?: (string | null);
 };
 
 /**
@@ -3624,7 +3607,6 @@ export type OrgInvoicesResponse = {
  */
 export type OrgKybReviewRequest = {
     notes?: (string | null);
-    totp_code: string;
     verdict: 'verified' | 'rejected';
 };
 
@@ -3675,7 +3657,6 @@ export type OrgLegalProfileUpdateRequest = {
 } | null);
     legal_name: string;
     registration_number?: (string | null);
-    totp_code: string;
 };
 
 /**
@@ -3788,14 +3769,13 @@ export type OrgNominateTrialMemberRequest = {
  */
 export type OrgOwnershipTransferRequest = {
     new_owner_member_id: string;
-    totp_code: string;
 };
 
 /**
  * Request body for removing a provider-held org payment method.
  */
 export type OrgPaymentMethodDeleteRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -3824,7 +3804,7 @@ export type OrgPaymentMethodResponse = {
  * Request body for starting organization payment-method setup.
  */
 export type OrgPaymentMethodSetupRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -3935,7 +3915,6 @@ export type OrgUndertakingsSignRequest = {
     accept_confidentiality: boolean;
     accept_policy: boolean;
     declarations: Array<CoiEntry>;
-    totp_code: string;
 };
 
 /**
@@ -3996,7 +3975,6 @@ export type PartnerPayoutRequest = {
     amount: (number | string);
     currency: string;
     payout_account_id: string;
-    totp_code: string;
 };
 
 /**
@@ -4138,7 +4116,7 @@ export type PartnerWebhooksResponse = {
  * Request body for removing a provider-held payment method.
  */
 export type PaymentMethodDeleteRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -4167,7 +4145,7 @@ export type PaymentMethodResponse = {
  * Request body for starting a provider-hosted payment method setup.
  */
 export type PaymentMethodSetupRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -4190,7 +4168,7 @@ export type PaymentMethodsResponse = {
  * Request body for soft-deleting a payout account.
  */
 export type PayoutAccountDeleteRequest = {
-    totp_code: string;
+    [key: string]: unknown;
 };
 
 /**
@@ -4271,7 +4249,6 @@ export type PayoutRequest = {
     amount: (number | string);
     currency: string;
     payout_account_id: string;
-    totp_code: string;
 };
 
 /**

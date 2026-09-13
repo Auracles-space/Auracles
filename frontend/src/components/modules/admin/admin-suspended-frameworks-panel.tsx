@@ -6,13 +6,14 @@
  * Lists Frameworks an admin has taken down from the marketplace and lets an
  * admin reverse a takedown (reinstate), returning the Framework to the public
  * catalog. Reinstatement is the only path back to published — a Contributor
- * cannot republish a suspended Framework.
+ * cannot republish a suspended Framework. Reinstatement is a sensitive action:
+ * the API requires a step-up 2FA window, which the global step-up prompt
+ * handles when the call is refused.
  *
  * Maps to: admin content moderation (FR-ADMIN, FR-FWK).
  */
 import { useEffect, useState } from "react";
 
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
@@ -53,9 +54,6 @@ export function AdminSuspendedFrameworksPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [totpCode, setTotpCode] = useState("");
-
-  const canAct = totpCode.trim().length >= 6;
 
   useEffect(() => {
     let mounted = true;
@@ -88,7 +86,7 @@ export function AdminSuspendedFrameworksPanel() {
     setError(null);
     configureBrowserClient();
     const result = await reinstateFrameworkV1AdminFrameworksFrameworkIdReinstatePost({
-      body: { totp_code: totpCode.trim() },
+      body: {},
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
@@ -97,9 +95,6 @@ export function AdminSuspendedFrameworksPanel() {
       setError(describeGeneratedError(result.error));
       return;
     }
-    // Each code is single-use, so clear it rather than leave a stale value
-    // that would silently fail the next reinstatement.
-    setTotpCode("");
     // Drop the reinstated Framework from the suspended list.
     setItems((current) =>
       current.filter((item) => item.framework_id !== frameworkId),
@@ -134,13 +129,7 @@ export function AdminSuspendedFrameworksPanel() {
         </p>
       ) : (
         <>
-          <div className="mt-5 rounded-xl border border-border-default bg-surface-2 p-4">
-            <TotpInput onChange={setTotpCode} value={totpCode} />
-            <p className="mt-2 text-xs leading-5 text-foreground-muted">
-              Returning a Framework to the public catalog needs a current code.
-            </p>
-          </div>
-          <ul className="mt-3 grid gap-3">
+          <ul className="mt-5 grid gap-3">
           {items.map((item) => (
             <li
               key={item.framework_id}
@@ -164,7 +153,7 @@ export function AdminSuspendedFrameworksPanel() {
                 variant="secondary"
                 className="w-full md:w-auto"
                 loading={busyId === item.framework_id}
-                disabled={busyId !== null || !canAct}
+                disabled={busyId !== null}
                 onClick={() => void handleReinstate(item.framework_id)}
               >
                 Reinstate

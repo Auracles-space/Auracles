@@ -4,13 +4,14 @@
  * Admin user directory panel.
  *
  * Allows administrators to search users, filter by suspension state, and run
- * the suspend or unsuspend mutations with TOTP confirmation.
+ * the suspend, unsuspend, and KYC-review mutations. Each is a sensitive
+ * action: the API requires a step-up 2FA window, which the global step-up
+ * prompt handles when the call is refused.
  * Styled as a responsive grid directory that functions as a table on desktop.
  */
 import React, { useEffect, useMemo, useState } from "react";
 
 import { AdminKycDocumentList } from "@/components/modules/admin/admin-kyc-document-list";
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { authTokenStore } from "@/lib/auth/token-store";
 import {
@@ -83,7 +84,6 @@ export function AdminUserDirectoryPanel() {
   const [reason, setReason] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("all");
-  const [totpCode, setTotpCode] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [kycReviewUserId, setKycReviewUserId] = useState<string | null>(null);
   const [kycNotes, setKycNotes] = useState("");
@@ -145,7 +145,6 @@ export function AdminUserDirectoryPanel() {
     const result = await suspendUserV1AdminUsersUserIdSuspendPost({
       body: {
         reason: reason.trim(),
-        totp_code: totpCode.trim(),
       },
       headers: getAccessTokenHeaders(),
       path: { user_id: selectedUser.user_id },
@@ -165,7 +164,6 @@ export function AdminUserDirectoryPanel() {
       }),
     );
     setReason("");
-    setTotpCode("");
     setSelectedUserId(null);
   }
 
@@ -178,9 +176,7 @@ export function AdminUserDirectoryPanel() {
     setError(null);
     configureBrowserClient();
     const result = await unsuspendUserV1AdminUsersUserIdUnsuspendPost({
-      body: {
-        totp_code: totpCode.trim(),
-      },
+      body: {},
       headers: getAccessTokenHeaders(),
       path: { user_id: selectedUser.user_id },
     });
@@ -198,7 +194,6 @@ export function AdminUserDirectoryPanel() {
         suspended_at: null,
       }),
     );
-    setTotpCode("");
     setSelectedUserId(null);
   }
 
@@ -213,9 +208,6 @@ export function AdminUserDirectoryPanel() {
       body: {
         status: decision,
         notes: kycNotes.trim() || null,
-        // Marking an account verified unlocks payouts, so the override is a
-        // TOTP-gated sensitive admin action.
-        totp_code: totpCode.trim(),
       },
       headers: getAccessTokenHeaders(),
       path: { user_id: userId },
@@ -246,10 +238,6 @@ export function AdminUserDirectoryPanel() {
       };
     });
     setKycNotes("");
-    // Clear the code too, as suspend/unsuspend do. A spent code left in the
-    // field carries into the next user's review, where the backend rejects it
-    // as a replay — so the reviewer would meet a confusing "Invalid 2FA code".
-    setTotpCode("");
     setKycReviewUserId(null);
   }
 
@@ -268,7 +256,7 @@ export function AdminUserDirectoryPanel() {
         </h2>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-foreground-muted">
           Search accounts, inspect approved roles, and apply reversible
-          suspension controls with 2FA confirmation.
+          suspension controls.
         </p>
       </header>
 
@@ -400,7 +388,6 @@ export function AdminUserDirectoryPanel() {
                   <Button
                     onClick={() => {
                       setKycNotes("");
-                      setTotpCode("");
                       setKycReviewUserId(item.user_id);
                     }}
                     className="min-h-10 px-4"
@@ -449,12 +436,9 @@ export function AdminUserDirectoryPanel() {
                       value={kycNotes}
                     />
                   </label>
-                  {/* TotpInput renders its own label; wrapping it in another
-                      duplicated the caption and nested a label inside a label. */}
-                  <TotpInput onChange={setTotpCode} value={totpCode} />
                   <div className="flex flex-wrap gap-3">
                     <Button
-                      disabled={kycBusy || totpCode.trim().length < 6}
+                      disabled={kycBusy}
                       onClick={() =>
                         void handleKycReview(item.user_id, "verified")
                       }
@@ -462,7 +446,7 @@ export function AdminUserDirectoryPanel() {
                       Approve KYC
                     </Button>
                     <Button
-                      disabled={kycBusy || totpCode.trim().length < 6}
+                      disabled={kycBusy}
                       onClick={() =>
                         void handleKycReview(item.user_id, "rejected")
                       }
@@ -473,7 +457,6 @@ export function AdminUserDirectoryPanel() {
                     <Button
                       onClick={() => {
                         setKycNotes("");
-                        setTotpCode("");
                         setKycReviewUserId(null);
                       }}
                       variant="secondary"
@@ -498,12 +481,10 @@ export function AdminUserDirectoryPanel() {
                     </label>
                   ) : null}
 
-                  <TotpInput onChange={setTotpCode} value={totpCode} />
-
                   <div className="flex flex-wrap gap-3">
                     {item.suspended ? (
                       <Button
-                        disabled={pendingAction === "unsuspend" || totpCode.trim().length < 6}
+                        disabled={pendingAction === "unsuspend"}
                         onClick={() => void handleUnsuspend()}
                       >
                         Confirm unsuspension
@@ -511,9 +492,7 @@ export function AdminUserDirectoryPanel() {
                     ) : (
                       <Button
                         disabled={
-                          pendingAction === "suspend" ||
-                          reason.trim().length === 0 ||
-                          totpCode.trim().length < 6
+                          pendingAction === "suspend" || reason.trim().length === 0
                         }
                         onClick={() => void handleSuspend()}
                         variant="destructive"
@@ -525,7 +504,6 @@ export function AdminUserDirectoryPanel() {
                       onClick={() => {
                         setReason("");
                         setSelectedUserId(null);
-                        setTotpCode("");
                       }}
                       variant="secondary"
                     >

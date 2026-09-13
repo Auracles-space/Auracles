@@ -6,6 +6,8 @@
  * Provides email-change controls, GDPR export access, and the single
  * user-facing GDPR delete-account flow. The legacy self-service deactivation
  * action has been retired in favor of the cooling-off deletion workflow.
+ * Email change and deletion are sensitive actions: the API requires a step-up
+ * 2FA window, which the global step-up prompt handles when a call is refused.
  */
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
@@ -25,7 +27,6 @@ import {
   requestAccountDeletion,
   requestDataExportV1GdprExportsPost,
   requestEmailChange,
-  totpStatus,
 } from "@/lib/generated/sdk.gen";
 import type {
   AccountDeletionStatusResponse,
@@ -131,7 +132,6 @@ export function AccountSettingsPanel() {
   const [deletionPending, setDeletionPending] = useState<PendingDeleteAction>(null);
   const [deletionStatus, setDeletionStatus] =
     useState<AccountDeletionStatusResponse | null>(null);
-  const [deletionTotp, setDeletionTotp] = useState("");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailMessage, setEmailMessage] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -144,8 +144,6 @@ export function AccountSettingsPanel() {
   const [newEmail, setNewEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [statusLoading, setStatusLoading] = useState(true);
-  const [totpCode, setTotpCode] = useState("");
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
   // Passwordless (e.g. Google) accounts re-auth without a password: the
   // verification link / 2FA stands in, and they can set a password to recover.
   const [hasPassword, setHasPassword] = useState(true);
@@ -156,26 +154,20 @@ export function AccountSettingsPanel() {
     async function loadSettingsState(): Promise<void> {
       configureBrowserClient();
       const headers = getAccessTokenHeaders();
-      const [deletionResult, exportResult, totpResult, userResult] =
-        await Promise.all([
-          getAccountDeletionStatus({
-            headers,
-          }),
-          getLatestDataExportStatusV1GdprExportsLatestGet({
-            headers,
-          }),
-          totpStatus({ headers }),
-          getCurrentUser({ headers }),
-        ]);
+      const [deletionResult, exportResult, userResult] = await Promise.all([
+        getAccountDeletionStatus({
+          headers,
+        }),
+        getLatestDataExportStatusV1GdprExportsLatestGet({
+          headers,
+        }),
+        getCurrentUser({ headers }),
+      ]);
 
       if (!mounted) {
         return;
       }
 
-      // Only accounts with 2FA enabled need to confirm GDPR actions with a code.
-      if (totpResult.response.ok && totpResult.data) {
-        setTwoFactorEnabled(totpResult.data.totp_enabled);
-      }
       if (userResult.response.ok && userResult.data) {
         setHasPassword(userResult.data.has_password ?? true);
       }
@@ -253,11 +245,8 @@ export function AccountSettingsPanel() {
   const canSubmitEmailChange = allValid(
     isEmail(newEmail),
     !hasPassword || isNonEmpty(emailPassword),
-    !twoFactorEnabled || totpCode.trim().length >= 6,
   );
-  const canSubmitDeletion =
-    (!hasPassword || isNonEmpty(deletionPassword)) &&
-    (!twoFactorEnabled || deletionTotp.trim().length >= 6);
+  const canSubmitDeletion = !hasPassword || isNonEmpty(deletionPassword);
 
   async function submitEmailChange(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -270,18 +259,12 @@ export function AccountSettingsPanel() {
       setEmailError("Enter your current password.");
       return;
     }
-    // 2FA is a step-up only for accounts that have it enabled.
-    if (twoFactorEnabled && totpCode.trim().length < 6) {
-      setEmailError("Enter your 2FA code.");
-      return;
-    }
 
     configureBrowserClient();
     const result = await requestEmailChange({
       body: {
         new_email: newEmail.trim(),
         password: hasPassword ? emailPassword : undefined,
-        totp_code: twoFactorEnabled ? totpCode.trim() : null,
       },
       headers: getAccessTokenHeaders(),
     });
@@ -293,7 +276,6 @@ export function AccountSettingsPanel() {
 
     setEmailMessage(result.data?.message ?? "Email change verification sent.");
     setEmailPassword("");
-    setTotpCode("");
   }
 
   async function submitExportRequest(): Promise<void> {
@@ -363,7 +345,6 @@ export function AccountSettingsPanel() {
     const result = await requestAccountDeletion({
       body: {
         password: hasPassword ? deletionPassword : undefined,
-        totp_code: deletionTotp.trim() || null,
       },
       headers: getAccessTokenHeaders(),
     });
@@ -376,7 +357,6 @@ export function AccountSettingsPanel() {
       if (deletionStatusError) {
         setDeletionStatus(deletionStatusError);
         setDeletionPassword("");
-        setDeletionTotp("");
         return;
       }
 
@@ -386,7 +366,6 @@ export function AccountSettingsPanel() {
 
     setDeletionStatus(result.data ?? null);
     setDeletionPassword("");
-    setDeletionTotp("");
   }
 
   async function submitDeletionCancel(): Promise<void> {
@@ -419,8 +398,8 @@ export function AccountSettingsPanel() {
           </h2>
           <p className="mt-2 text-sm leading-6 text-foreground-muted">
             {hasPassword
-              ? `Confirm with your password${twoFactorEnabled ? " and 2FA code" : ""}, then verify the new address from your email. We notify your current address for security.`
-              : `Verify the new address from your email${twoFactorEnabled ? " and confirm with your 2FA code" : ""}. We notify your current address for security.`}
+              ? "Confirm with your password, then verify the new address from your email. We notify your current address for security."
+              : "Verify the new address from your email. We notify your current address for security."}
           </p>
         </div>
         {emailError ? <FormMessage kind="error" message={emailError} /> : null}
@@ -455,15 +434,6 @@ export function AccountSettingsPanel() {
             to add email sign-in.
           </p>
         )}
-        {twoFactorEnabled ? (
-          <FormField
-            autoComplete="one-time-code"
-            label="2FA code"
-            name="totp_code"
-            onChange={(event) => setTotpCode(event.target.value)}
-            value={totpCode}
-          />
-        ) : null}
         <Button disabled={!canSubmitEmailChange} type="submit">
           Request email change
         </Button>
@@ -648,20 +618,9 @@ export function AccountSettingsPanel() {
             ) : (
               <p className="text-sm leading-6 text-foreground-muted">
                 You signed in with Google. Deletion starts a cooling-off period
-                before anything is removed
-                {twoFactorEnabled ? ", and your 2FA code confirms it below" : ""}.
+                before anything is removed.
               </p>
             )}
-            {twoFactorEnabled ? (
-              <FormField
-                autoComplete="one-time-code"
-                helper="Enter the 6-digit code from your authenticator app."
-                label="Confirmation code"
-                name="deletion_totp_code"
-                onChange={(event) => setDeletionTotp(event.target.value)}
-                value={deletionTotp}
-              />
-            ) : null}
             <Button
               disabled={
                 deletionPending === "request" ||

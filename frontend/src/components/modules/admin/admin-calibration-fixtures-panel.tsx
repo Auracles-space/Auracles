@@ -32,6 +32,9 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 const REVIEW_TYPES = ["quality", "compliance", "expert", "provenance"] as const;
 
@@ -44,7 +47,7 @@ function ScanChip({ status }: { status: string }) {
         ? "bg-error/10 text-error"
         : "bg-surface-3 text-foreground-muted";
   return (
-    <span className={`rounded px-2 py-0.5 text-xs font-semibold ${tone}`}>
+    <span className={`rounded-badge px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.05em] ${tone}`}>
       {status}
     </span>
   );
@@ -188,7 +191,7 @@ function FixtureDetail({ frameworkId }: { frameworkId: string }) {
           {artifacts.map((a) => (
             <li
               key={a.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border-default p-3"
+              className="flex items-center justify-between gap-3 rounded-xl border border-border-default bg-surface-1 p-3"
             >
               <span className="flex items-center gap-2 text-sm text-foreground">
                 {a.name} <ScanChip status={a.scan_status} />
@@ -210,7 +213,7 @@ function FixtureDetail({ frameworkId }: { frameworkId: string }) {
             type="file"
             accept=".pdf,image/*"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="block w-full text-sm text-foreground-muted file:mr-4 file:cursor-pointer file:rounded-md file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-background"
+            className="block w-full text-sm text-foreground-muted file:mr-4 file:min-h-11 file:cursor-pointer file:rounded-xl file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-background"
           />
           <Button type="button" onClick={handleUpload} disabled={busy || !file} loading={busy}>
             Upload
@@ -243,7 +246,7 @@ function AnswerKeyRow({
   const [expected, setExpected] = useState(row.expected_score ?? 3);
   const [tolerance, setTolerance] = useState(row.tolerance ?? 0);
   return (
-    <li className="grid gap-2 rounded-lg border border-border-default p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+    <li className="grid gap-2 rounded-xl border border-border-default bg-surface-1 p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
       <span className="text-sm text-foreground">{row.label}</span>
       <label className="text-xs text-foreground-muted">
         Score
@@ -251,7 +254,7 @@ function AnswerKeyRow({
           aria-label={`${row.label} expected score`}
           value={expected}
           onChange={(e) => setExpected(Number(e.target.value))}
-          className="ml-2 rounded-md border border-border-default bg-background px-2 py-1 text-sm"
+          className="ml-2 min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground"
         >
           {[1, 2, 3, 4, 5].map((n) => (
             <option key={n} value={n}>
@@ -266,7 +269,7 @@ function AnswerKeyRow({
           aria-label={`${row.label} tolerance`}
           value={tolerance}
           onChange={(e) => setTolerance(Number(e.target.value))}
-          className="ml-2 rounded-md border border-border-default bg-background px-2 py-1 text-sm"
+          className="ml-2 min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground"
         >
           {[0, 1, 2, 3, 4].map((n) => (
             <option key={n} value={n}>
@@ -331,9 +334,9 @@ export function AdminCalibrationFixturesPanel() {
   return (
     <div className="space-y-8">
       <header>
-        <h1 className="font-heading text-2xl font-extrabold text-foreground">
+        <h2 className="font-heading text-2xl font-bold text-foreground">
           Calibration Fixtures
-        </h1>
+        </h2>
         <p className="mt-1 text-sm text-foreground-muted">
           Test frameworks nominees attest during the calibration trial. Add
           artifacts and a complete answer key before assigning one in a trial.
@@ -342,38 +345,35 @@ export function AdminCalibrationFixturesPanel() {
 
       <form
         onSubmit={handleCreate}
-        className="space-y-4 rounded-xl border border-border-default bg-surface-2 p-5"
+        className="space-y-4 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm"
       >
-        <h2 className="text-base font-bold text-foreground">New fixture</h2>
+        <h3 className="font-heading text-base font-bold text-foreground">New fixture</h3>
         {error && <p className="text-sm text-error">{error}</p>}
-        <input
+        <Input
           aria-label="Fixture title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Title"
           required
-          className="w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm"
         />
-        <textarea
+        <Textarea
           aria-label="Fixture description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Description"
           required
-          className="w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm"
         />
-        <select
+        <Select
           aria-label="Review type"
           value={reviewType}
           onChange={(e) => setReviewType(e.target.value as (typeof REVIEW_TYPES)[number])}
-          className="w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm"
         >
           {REVIEW_TYPES.map((rt) => (
             <option key={rt} value={rt}>
               {rt}
             </option>
           ))}
-        </select>
+        </Select>
         <Button type="submit" disabled={busy} loading={busy}>
           Create fixture
         </Button>
@@ -384,7 +384,7 @@ export function AdminCalibrationFixturesPanel() {
           <li className="text-sm text-foreground-muted">No fixtures yet.</li>
         )}
         {fixtures.map((f) => (
-          <li key={f.id} className="rounded-xl border border-border-default bg-surface-2 p-5">
+          <li key={f.id} className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
             <button
               type="button"
               className="flex w-full items-center justify-between gap-3 text-left"

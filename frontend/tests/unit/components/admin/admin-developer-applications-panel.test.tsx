@@ -1,7 +1,7 @@
 /**
  * Unit coverage for the admin developer-applications panel.
  *
- * Verifies the pending queue renders, the status filter refetches, and a 2FA
+ * Verifies the pending queue renders, the status filter refetches, and a
  * review (approve) submits and drops the application from the pending view.
  */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -23,22 +23,6 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   listDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGet: vi.fn(),
   reviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPost:
     vi.fn(),
-}));
-
-vi.mock("@/components/modules/auth/totp-input", () => ({
-  TotpInput: ({
-    onChange,
-    value,
-  }: {
-    onChange: (value: string) => void;
-    value: string;
-  }) => (
-    <input
-      aria-label="totp"
-      onChange={(event) => onChange(event.target.value)}
-      value={value}
-    />
-  ),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -97,7 +81,7 @@ describe("AdminDeveloperApplicationsPanel", () => {
     expect(await screen.findByText("Approved Co.")).toBeInTheDocument();
   });
 
-  it("approves an application with a 2FA code and removes it from the queue", async () => {
+  it("approves an application and removes it from the queue", async () => {
     vi.mocked(
       reviewDeveloperApplicationV1AdminDeveloperApplicationsApplicationIdReviewPost,
     ).mockResolvedValue(ok({ ...pendingApp, status: "approved" }));
@@ -105,9 +89,6 @@ describe("AdminDeveloperApplicationsPanel", () => {
     render(<AdminDeveloperApplicationsPanel />);
     fireEvent.click(await screen.findByRole("button", { name: /^Review$/ }));
 
-    fireEvent.change(screen.getByLabelText("totp"), {
-      target: { value: "123456" },
-    });
     fireEvent.click(screen.getByRole("button", { name: /^Approve$/ }));
 
     await waitFor(() =>
@@ -122,11 +103,12 @@ describe("AdminDeveloperApplicationsPanel", () => {
     );
   });
 
-  it("disables review actions until a 2FA code is entered", async () => {
+  it("offers review actions without asking for a code", async () => {
+    // The API requires a step-up window; the global prompt handles a refusal.
     render(<AdminDeveloperApplicationsPanel />);
     fireEvent.click(await screen.findByRole("button", { name: /^Review$/ }));
 
-    expect(screen.getByRole("button", { name: /^Approve$/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Reject$/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Approve$/ })).toBeEnabled();
+    expect(screen.queryByLabelText(/authenticator code/i)).not.toBeInTheDocument();
   });
 });

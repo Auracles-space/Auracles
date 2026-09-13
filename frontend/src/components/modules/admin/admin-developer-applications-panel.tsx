@@ -4,15 +4,16 @@
  * Admin developer-application review panel.
  *
  * Lists Developer Platform applications and lets an admin approve or reject a
- * pending one with optional feedback, gated by TOTP. Approval is what mints the
- * developer's account and unlocks API keys, so without this surface the whole
- * developer feature is stuck at "pending".
+ * pending one with optional feedback. Approval is what mints the developer's
+ * account and unlocks API keys, so without this surface the whole developer
+ * feature is stuck at "pending". Decisions are sensitive actions: the API
+ * requires a step-up 2FA window, which the global step-up prompt handles when
+ * the call is refused.
  *
  * Maps to: FR-DEV-002.
  */
 import { useEffect, useState } from "react";
 
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
@@ -62,7 +63,6 @@ export function AdminDeveloperApplicationsPanel() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -102,10 +102,9 @@ export function AdminDeveloperApplicationsPanel() {
   function resetForm(): void {
     setSelectedId(null);
     setFeedback("");
-    setTotpCode("");
   }
 
-  const canReview = !pending && totpCode.trim().length >= 6;
+  const canReview = !pending;
 
   async function handleReview(
     applicationId: string,
@@ -120,7 +119,6 @@ export function AdminDeveloperApplicationsPanel() {
           body: {
             decision,
             feedback: feedback.trim() || null,
-            totp_code: totpCode.trim(),
           },
           headers: getAccessTokenHeaders(),
           path: { application_id: applicationId },
@@ -155,7 +153,7 @@ export function AdminDeveloperApplicationsPanel() {
         </h2>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-foreground-muted">
           Review Developer Platform applications. Approving one provisions the
-          developer account and unlocks API keys. Decisions require 2FA.
+          developer account and unlocks API keys.
         </p>
       </header>
 
@@ -263,7 +261,6 @@ export function AdminDeveloperApplicationsPanel() {
                         value={feedback}
                       />
                     </label>
-                    <TotpInput onChange={setTotpCode} value={totpCode} />
                     <div className="flex flex-wrap gap-3">
                       <Button
                         disabled={!canReview}

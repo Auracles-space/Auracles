@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * Attestor organization financials tab.
+ *
+ * Shows the org's attestation earnings, lets an org admin link a payout
+ * account (Paystack bank details on the NGN rail, Stripe Connect elsewhere),
+ * request a payout of the available balance, and browse invoices. Requesting a
+ * payout is a sensitive action: the API requires a step-up 2FA window, which
+ * the global step-up prompt handles when the call is refused.
+ *
+ * Maps to: FR-FIN-* (organization payouts).
+ */
 import { useEffect, useState } from "react";
 import {
   getOrgAttestorEarnings,
@@ -16,7 +27,6 @@ import {
 } from "@/components/modules/financials/paystack-bank-fields";
 import { payoutProviderForCountry } from "@/lib/marketplace/currency";
 import { Spinner } from "@/components/ui/spinner";
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -24,9 +34,15 @@ import {
 } from "@/lib/auth/form-client";
 
 interface OrgAttestorFinancialsTabProps {
+  /** Organization whose earnings, payout account, and invoices are shown. */
   orgId: string;
 }
 
+/**
+ * Render earnings, payout controls, and invoices for one attestor org.
+ *
+ * @param orgId - Organization whose financials are shown.
+ */
 export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProps) {
   const [earnings, setEarnings] = useState<EarningsResponse | null>(null);
   const [application, setApplication] = useState<OrgAttestorApplicationResponse | null>(null);
@@ -39,8 +55,6 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   // Mirrors the backend routing. On an NGN deployment Stripe Connect cannot pay
   // out at all, so bank details are collected here instead of redirecting.
   const isPaystackRail = payoutProviderForCountry("") === "paystack";
-  const [showTotp, setShowTotp] = useState(false);
-  const [totpCode, setTotpCode] = useState("");
   const [payoutError, setPayoutError] = useState<string | null>(null);
 
   const fetchData = async () => {
@@ -111,23 +125,28 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   const handleRequestPayout = async () => {
     if (!earnings || !application?.payout_account_id) return;
     setIsActionLoading(true);
+    setPayoutError(null);
     try {
       configureBrowserClient();
-      await requestOrgPayout({
+      const res = await requestOrgPayout({
         headers: getAccessTokenHeaders(),
         path: { org_id: orgId },
         body: {
           amount: earnings.available_balance,
           currency: earnings.currency,
           payout_account_id: application.payout_account_id,
-          totp_code: totpCode,
         },
       });
-      setShowTotp(false);
-      setTotpCode("");
+      if (!res.response.ok || !res.data) {
+        // Non-2xx responses resolve with `error` (the generated client does not
+        // throw); surface the reason instead of failing silently.
+        setPayoutError(describeGeneratedError(res.error));
+        return;
+      }
       await fetchData(); // Refresh data
     } catch (error) {
       console.error("Failed to request payout:", error);
+      setPayoutError("The request could not be completed.");
     } finally {
       setIsActionLoading(false);
     }
@@ -206,30 +225,15 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
               Setup Payout Account
             </Button>
           </div>
-        ) : showTotp ? (
-          <div className="max-w-sm space-y-4">
-            <p className="text-sm text-foreground-subtle">
-              Enter your authenticator code to confirm payout of {earnings?.currency} {earnings?.available_balance}
-            </p>
-            <TotpInput value={totpCode} onChange={setTotpCode} />
-            <div className="flex gap-2">
-              <Button 
-                onClick={handleRequestPayout} 
-                disabled={totpCode.length !== 6 || isActionLoading || parseFloat(earnings?.available_balance || "0") <= 0}
-              >
-                Confirm Payout
-              </Button>
-              <Button variant="secondary" onClick={() => setShowTotp(false)} disabled={isActionLoading}>
-                Cancel
-              </Button>
-            </div>
-          </div>
         ) : (
           <div>
             <div className="flex flex-wrap gap-2">
               <Button
-                onClick={() => setShowTotp(true)}
-                disabled={parseFloat(earnings?.available_balance || "0") <= 0}
+                onClick={handleRequestPayout}
+                disabled={
+                  isActionLoading ||
+                  parseFloat(earnings?.available_balance || "0") <= 0
+                }
               >
                 Request Payout
               </Button>

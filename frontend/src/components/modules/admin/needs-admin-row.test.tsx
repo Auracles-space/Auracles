@@ -37,13 +37,10 @@ const attestation = {
 
 const orgs = [{ org_id: "org-1", name: "Acme Advisory" }] as never;
 
-/** Fill the row's reason and 2FA fields with valid values. */
-function fillReasonAndTotp() {
+/** Fill the row's reason field with a valid value. */
+function fillReason() {
   fireEvent.change(screen.getByPlaceholderText("Reason for this action"), {
     target: { value: "Manual dispatch." },
-  });
-  fireEvent.change(screen.getByPlaceholderText("6-digit code"), {
-    target: { value: "123456" },
   });
 }
 
@@ -63,7 +60,7 @@ describe("NeedsAdminRow", () => {
       />,
     );
 
-    fillReasonAndTotp();
+    fillReason();
     fireEvent.change(screen.getByLabelText(/Attestor org/i), {
       target: { value: "org-1" },
     });
@@ -76,13 +73,13 @@ describe("NeedsAdminRow", () => {
           body: expect.objectContaining({
             attestor_org_id: "org-1",
             reason: "Manual dispatch.",
-            totp_code: "123456",
           }),
         }),
       );
     });
     const body = vi.mocked(adminAssignAttestation).mock.calls[0][0].body;
     expect(body).not.toHaveProperty("reviewing_member_id");
+    expect(body).not.toHaveProperty("totp_code");
     expect(onResolved).toHaveBeenCalledWith("att-1");
   });
 
@@ -95,7 +92,7 @@ describe("NeedsAdminRow", () => {
       />,
     );
 
-    fillReasonAndTotp();
+    fillReason();
 
     // Org not yet picked: assign disabled, refund enabled.
     expect(
@@ -119,7 +116,7 @@ describe("NeedsAdminRow", () => {
       />,
     );
 
-    fillReasonAndTotp();
+    fillReason();
     fireEvent.click(screen.getByRole("button", { name: /Refund/i }));
 
     await waitFor(() => {

@@ -14,7 +14,12 @@ import {
   configureBrowserClient,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { listAdminAttestations } from "@/lib/generated/sdk.gen";
+import {
+  listAdminAttestationDisputes,
+  listAdminAttestations,
+  listAdminProjectDisputes,
+  listOrgAttestorApplicationsForAdmin,
+} from "@/lib/generated/sdk.gen";
 import { NEEDS_ADMIN_CHANGED_EVENT } from "@/components/modules/admin/admin-events";
 import { StepUpPill } from "@/components/modules/auth/step-up-pill";
 
@@ -22,92 +27,121 @@ type AdminWorkspaceShellProps = {
   children: ReactNode;
 };
 
-const adminLinks = [
+type AdminLink = {
+  href: string;
+  label: string;
+  summary: string;
+};
+
+type AdminNavGroup = {
+  title: string;
+  links: AdminLink[];
+};
+
+/**
+ * Admin navigation grouped by what the admin is doing: running the
+ * marketplace, deciding trust, moving money, or operating the platform.
+ */
+const adminGroups: AdminNavGroup[] = [
   {
-    href: "/admin/analytics",
-    label: "Analytics",
-    summary: "GMV, activity, and frozen daily trend history.",
+    title: "Marketplace",
+    links: [
+      {
+        href: "/admin/analytics",
+        label: "Analytics",
+        summary: "GMV, activity, and frozen daily trend history.",
+      },
+      {
+        href: "/admin/moderation",
+        label: "Moderation",
+        summary: "Rarity, near-duplicate, and PII review signals.",
+      },
+      {
+        href: "/admin/users",
+        label: "Users",
+        summary: "Search accounts and apply suspension controls.",
+      },
+      {
+        href: "/admin/invoices",
+        label: "Invoices",
+        summary: "Review issued invoices for financial reconciliation.",
+      },
+    ],
   },
   {
-    href: "/admin/moderation",
-    label: "Moderation",
-    summary: "Rarity, near-duplicate, and PII review signals.",
+    title: "Trust",
+    links: [
+      {
+        href: "/admin/organizations",
+        label: "Organizations",
+        summary: "Verify businesses, search organizations, suspend or reinstate.",
+      },
+      {
+        href: "/admin/attestors",
+        label: "Attestors",
+        summary: "Applications, calibration trials, and fixtures in one pipeline.",
+      },
+      {
+        href: "/admin/attestations",
+        label: "Attestations",
+        summary: "Assign or refund requests matching could not staff.",
+      },
+      {
+        href: "/admin/credentials",
+        label: "Credentials",
+        summary: "Review evidence and verify or reject submitted credentials.",
+      },
+      {
+        href: "/admin/disputes",
+        label: "Disputes",
+        summary: "Resolve Attestation and Project disputes with escrow outcomes.",
+      },
+    ],
   },
   {
-    href: "/admin/users",
-    label: "Users",
-    summary: "Search accounts and apply suspension controls.",
+    title: "Money",
+    links: [
+      {
+        href: "/admin/money",
+        label: "Money",
+        summary: "Trace payments, escrow, webhooks, and audit history end to end.",
+      },
+      {
+        href: "/admin/payouts",
+        label: "Payouts",
+        summary: "Monitor Contributor and Organization payouts and failed transfers.",
+      },
+    ],
   },
   {
-    href: "/admin/disputes",
-    label: "Disputes",
-    summary:
-      "Resolve Project milestone and Attestation disputes with escrow outcomes.",
-  },
-  {
-    href: "/admin/money",
-    label: "Money",
-    summary: "Trace payments, escrow, webhooks, and audit history end to end.",
-  },
-  {
-    href: "/admin/payouts",
-    label: "Payouts",
-    summary: "Monitor Contributor and Organization payouts and failed transfers.",
-  },
-  {
-    href: "/admin/gdpr",
-    label: "GDPR",
-    summary: "Review account-deletion and data-export requests and blockers.",
-  },
-  {
-    href: "/admin/connectors",
-    label: "Connectors",
-    summary: "Audit external file-provider connections and revocation state.",
-  },
-  {
-    href: "/admin/waitlist",
-    label: "Waitlist",
-    summary: "Review pre-launch signups and demand by source.",
-  },
-  {
-    href: "/admin/invoices",
-    label: "Invoices",
-    summary: "Review issued invoices for financial reconciliation.",
-  },
-  {
-    href: "/admin/attestations",
-    label: "Attestations",
-    summary: "Assign, refund, and resolve attestation workflows.",
-  },
-  {
-    href: "/admin/credentials",
-    label: "Credentials",
-    summary: "Review evidence and verify or reject submitted credentials.",
-  },
-  {
-    href: "/admin/organizations",
-    label: "Organizations",
-    summary: "Search organizations and review membership and capabilities.",
-  },
-  {
-    href: "/admin/org-attestors",
-    label: "Org Attestors",
-    summary: "Review applications and verify KYB for organization attestors.",
-  },
-  {
-    href: "/admin/calibration-fixtures",
-    label: "Calibration Fixtures",
-    summary: "Manage attestor-trial fixtures: artifacts, scans, and answer keys.",
-  },
-  {
-    href: "/admin/developer",
-    label: "Developer",
-    summary: "Approve or reject Developer Platform applications.",
-  },
-  {
-    href: "/admin/configuration",
-    label: "Configuration",
-    summary: "Commission, fees, SLAs, and reputation tuning (super-admin).",
+    title: "Platform",
+    links: [
+      {
+        href: "/admin/gdpr",
+        label: "GDPR",
+        summary: "Review account-deletion and data-export requests and blockers.",
+      },
+      {
+        href: "/admin/connectors",
+        label: "Connectors",
+        summary: "Audit external file-provider connections and revocation state.",
+      },
+      {
+        href: "/admin/waitlist",
+        label: "Waitlist",
+        summary: "Review pre-launch signups and demand by source.",
+      },
+      {
+        href: "/admin/developer",
+        label: "Developer",
+        summary: "Approve or reject Developer Platform applications.",
+      },
+      {
+        href: "/admin/configuration",
+        label: "Configuration",
+        summary: "Commission, fees, SLAs, and reputation tuning (super-admin).",
+      },
+    ],
   },
 ];
 
@@ -119,6 +153,8 @@ const adminLinks = [
 export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
   const pathname = usePathname() ?? "";
   const [needsAdminCount, setNeedsAdminCount] = useState(0);
+  const [attestorCount, setAttestorCount] = useState(0);
+  const [disputeCount, setDisputeCount] = useState(0);
 
   useEffect(() => {
     async function loadNeedsAdminCount() {
@@ -139,7 +175,33 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
         setNeedsAdminCount(result.data.attestations.length);
       }
     }
+    async function loadTrustCounts() {
+      configureBrowserClient();
+      const headers = getAccessTokenHeaders();
+      try {
+        const [applications, attestationDisputes, projectDisputes] = await Promise.all([
+          listOrgAttestorApplicationsForAdmin({ headers, query: { status: "submitted" } }),
+          listAdminAttestationDisputes({ headers, query: { status: "active" } }),
+          listAdminProjectDisputes({ headers }),
+        ]);
+        if (applications.response.ok && applications.data) {
+          setAttestorCount(applications.data.applications.length);
+        }
+        const open =
+          (attestationDisputes.response.ok && attestationDisputes.data
+            ? attestationDisputes.data.disputes.length
+            : 0) +
+          (projectDisputes.response.ok && projectDisputes.data
+            ? projectDisputes.data.disputes.filter((dispute: { status: string }) => dispute.status !== "resolved")
+                .length
+            : 0);
+        setDisputeCount(open);
+      } catch {
+        return;
+      }
+    }
     void loadNeedsAdminCount();
+    void loadTrustCounts();
     // Refresh the badge when an admin assigns or refunds a needs-admin request
     // elsewhere in the workspace, so the count never goes stale.
     const onChanged = () => void loadNeedsAdminCount();
@@ -150,6 +212,8 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
 
   const badgeCounts: Record<string, number> = {
     "/admin/attestations": needsAdminCount,
+    "/admin/attestors": attestorCount,
+    "/admin/disputes": disputeCount,
   };
 
   return (
@@ -174,39 +238,49 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
 
           <nav
             aria-label="Admin navigation"
-            className="grid gap-2 rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm"
+            className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm"
           >
-            {adminLinks.map((link) => {
-              const isActive = pathname.startsWith(link.href);
-              const badge = badgeCounts[link.href] ?? 0;
-              return (
-                <Link
-                  className={[
-                    "rounded-xl border px-3 py-3 text-left transition-colors",
-                    isActive
-                      ? "border-accent/40 bg-accent/10 text-foreground"
-                      : "border-transparent text-foreground-muted hover:border-border-default hover:bg-surface-2 hover:text-foreground",
-                  ].join(" ")}
-                  href={link.href}
-                  key={link.href}
-                >
-                  <p className="flex items-center justify-between gap-2 text-sm font-semibold">
-                    {link.label}
-                    {badge > 0 ? (
-                      <span
-                        aria-label={`${badge} needing attention`}
-                        className="inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-background"
-                      >
-                        {badge}
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="mt-1 text-xs leading-5 text-foreground-muted">
-                    {link.summary}
-                  </p>
-                </Link>
-              );
-            })}
+            {adminGroups.map((group) => (
+              <div className="grid gap-1" key={group.title}>
+                <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground-muted">
+                  {group.title}
+                </p>
+                {group.links.map((link) => {
+                  const isActive = pathname.startsWith(link.href);
+                  const badge = badgeCounts[link.href] ?? 0;
+                  return (
+                    <Link
+                      className={[
+                        "rounded-xl border px-3 py-2.5 text-left transition-colors",
+                        isActive
+                          ? "border-accent/40 bg-accent/10 text-foreground"
+                          : "border-transparent text-foreground-muted hover:border-border-default hover:bg-surface-2 hover:text-foreground",
+                      ].join(" ")}
+                      href={link.href}
+                      key={link.href}
+                      title={link.summary}
+                    >
+                      <p className="flex items-center justify-between gap-2 text-sm font-semibold">
+                        {link.label}
+                        {badge > 0 ? (
+                          <span
+                            aria-label={`${badge} needing attention`}
+                            className="inline-flex min-w-5 items-center justify-center rounded-badge bg-accent px-1.5 text-xs font-bold text-background"
+                          >
+                            {badge}
+                          </span>
+                        ) : null}
+                      </p>
+                      {isActive ? (
+                        <p className="mt-1 text-xs leading-5 text-foreground-muted">
+                          {link.summary}
+                        </p>
+                      ) : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
         </aside>
 

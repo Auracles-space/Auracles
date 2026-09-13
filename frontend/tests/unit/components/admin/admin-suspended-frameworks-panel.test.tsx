@@ -68,10 +68,9 @@ describe("AdminSuspendedFrameworksPanel", () => {
 
     render(<AdminSuspendedFrameworksPanel />);
     const reinstate = await screen.findByRole("button", { name: /reinstate/i });
-    // Reinstatement is step-up gated; the button stays disabled without a code.
-    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
-      target: { value: "123456" },
-    });
+    // Reinstatement is step-up gated server-side; the global prompt handles a
+    // refusal, so the panel collects no code.
+    expect(screen.queryByLabelText(/authenticator code/i)).not.toBeInTheDocument();
 
     fireEvent.click(reinstate);
 
@@ -97,9 +96,6 @@ describe("AdminSuspendedFrameworksPanel", () => {
 
     render(<AdminSuspendedFrameworksPanel />);
     await screen.findByRole("button", { name: /reinstate/i });
-    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
-      target: { value: "123456" },
-    });
     fireEvent.click(screen.getByRole("button", { name: /reinstate/i }));
 
     expect(

@@ -6,7 +6,9 @@
  * An organization establishes its legal identity here once, and every
  * capability reads that verdict: before verification it cannot activate
  * Contributor or Operator at all. Owner/admin only — plain members see the
- * status without the form.
+ * status without the form. Saving legal identity is a sensitive action: the
+ * API requires a step-up 2FA window, which the global step-up prompt handles
+ * when the call is refused.
  *
  * Maps to: DESIGN-1.
  */
@@ -94,7 +96,6 @@ export function OrgVerificationPanel() {
   const [busy, setBusy] = useState(false);
   const [legalName, setLegalName] = useState("");
   const [registrationNumber, setRegistrationNumber] = useState("");
-  const [totpCode, setTotpCode] = useState("");
 
   const load = useCallback(async () => {
     if (!orgId) return;
@@ -121,7 +122,8 @@ export function OrgVerificationPanel() {
    * Save the organization's legal identity.
    *
    * Step-up gated server-side: the legal name is what an admin verifies
-   * against, so changing it is a sensitive write.
+   * against, so changing it is a sensitive write. The global step-up prompt
+   * opens the window when the API refuses the call.
    */
   async function handleSaveIdentity() {
     if (!orgId) return;
@@ -131,13 +133,11 @@ export function OrgVerificationPanel() {
       body: {
         legal_name: legalName.trim(),
         registration_number: registrationNumber.trim() || null,
-        totp_code: totpCode,
       },
       path: { org_id: orgId },
       headers: getAccessTokenHeaders(),
     });
     setBusy(false);
-    setTotpCode("");
     if (!result.response.ok) {
       setError(describeGeneratedError(result.error));
       return;
@@ -302,28 +302,18 @@ export function OrgVerificationPanel() {
         </div>
         {isAdmin && !locked ? (
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <label className="grid gap-2 text-sm font-semibold text-foreground">
-              Authenticator code
-              <Input
-                inputMode="numeric"
-                maxLength={6}
-                onChange={(event) => setTotpCode(event.target.value)}
-                placeholder="123456"
-                value={totpCode}
-              />
-              <span className="text-xs font-normal leading-5 text-foreground-muted">
-                Saving legal details requires two-factor authentication.{" "}
-                <a
-                  className="font-medium text-accent hover:underline"
-                  href="/2fa-setup"
-                >
-                  Set it up first
-                </a>{" "}
-                if you have not already.
-              </span>
-            </label>
+            <span className="text-xs leading-5 text-foreground-muted">
+              Saving legal details requires two-factor authentication.{" "}
+              <a
+                className="font-medium text-accent hover:underline"
+                href="/2fa-setup"
+              >
+                Set it up first
+              </a>{" "}
+              if you have not already.
+            </span>
             <Button
-              disabled={busy || legalName.trim().length < 2 || totpCode.length !== 6}
+              disabled={busy || legalName.trim().length < 2}
               loading={busy}
               onClick={handleSaveIdentity}
             >

@@ -1,18 +1,11 @@
 /**
- * Authenticated admin calibration-fixtures management route.
+ * Legacy admin route. Calibration fixtures are a tab of `/admin/attestors`.
  */
-import { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { AdminCalibrationFixturesPanel } from "@/components/modules/admin/admin-calibration-fixtures-panel";
-
-export const metadata: Metadata = {
-  title: "Admin - Calibration Fixtures",
-};
-
+/**
+ * Redirect the old fixtures route to the attestor console's Fixtures tab.
+ */
 export default function AdminCalibrationFixturesPage() {
-  return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <AdminCalibrationFixturesPanel />
-    </div>
-  );
+  redirect("/admin/attestors?tab=fixtures");
 }

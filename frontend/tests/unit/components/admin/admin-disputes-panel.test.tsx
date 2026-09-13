@@ -25,22 +25,6 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   resolveAdminProjectDispute: vi.fn(),
 }));
 
-vi.mock("@/components/modules/auth/totp-input", () => ({
-  TotpInput: ({
-    onChange,
-    value,
-  }: {
-    onChange: (value: string) => void;
-    value: string;
-  }) => (
-    <input
-      aria-label="totp"
-      onChange={(event) => onChange(event.target.value)}
-      value={value}
-    />
-  ),
-}));
-
 const ok = <T,>(data: T) => ({
   data,
   error: undefined,
@@ -135,9 +119,6 @@ describe("AdminDisputesPanel", () => {
     fireEvent.change(screen.getByPlaceholderText(/audit log details/i), {
       target: { value: "Contributor delivered after mediation." },
     });
-    fireEvent.change(screen.getByLabelText("totp"), {
-      target: { value: "123456" },
-    });
     fireEvent.click(screen.getByRole("button", { name: /confirm resolution/i }));
 
     await waitFor(() =>
@@ -150,7 +131,7 @@ describe("AdminDisputesPanel", () => {
     );
   });
 
-  it("keeps the confirm button disabled until notes and a code are entered", async () => {
+  it("keeps the confirm button disabled until notes are entered", async () => {
     render(<AdminDisputesPanel />);
     fireEvent.click(
       await screen.findByRole("button", { name: /resolve dispute/i }),

@@ -4,8 +4,9 @@
  * Admin platform-configuration panel.
  *
  * Reads the editable platform configuration and, for the protected super-admin
- * only, allows changing values in batches with a reason and TOTP confirmation.
- * Ordinary admins see the values read-only with a notice. Changes are grouped
+ * only, allows changing values in batches with a reason. Saving is a sensitive
+ * action: the API requires a step-up 2FA window, which the global step-up
+ * prompt handles when the call is refused. Ordinary admins see the values read-only with a notice. Changes are grouped
  * by domain so a reviewer can find the right knob quickly.
  *
  * Maps to: FR-ADMIN-009.
@@ -13,7 +14,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
 
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
@@ -119,7 +119,6 @@ export function AdminConfigPanel() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [reason, setReason] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,8 +211,7 @@ export function AdminConfigPanel() {
     !pending &&
     changedKeys.length > 0 &&
     !tooManyChanges &&
-    reason.trim().length > 0 &&
-    totpCode.trim().length >= 6;
+    reason.trim().length > 0;
 
   async function handleSave(): Promise<void> {
     setPending(true);
@@ -225,7 +223,7 @@ export function AdminConfigPanel() {
       value: drafts[key],
     }));
     const result = await updatePlatformConfig({
-      body: { reason: reason.trim(), totp_code: totpCode.trim(), updates },
+      body: { reason: reason.trim(), updates },
       headers: getAccessTokenHeaders(),
     });
     setPending(false);
@@ -240,7 +238,6 @@ export function AdminConfigPanel() {
       ),
     );
     setReason("");
-    setTotpCode("");
     setNotice(`Saved ${updates.length} change${updates.length === 1 ? "" : "s"}.`);
   }
 
@@ -259,7 +256,7 @@ export function AdminConfigPanel() {
         </h2>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-foreground-muted">
           Commission, fees, SLAs, reputation tuning, and privacy windows. Changes
-          are reserved for the super-admin and require a reason plus 2FA.
+          are reserved for the super-admin and require a reason.
         </p>
       </header>
 
@@ -588,9 +585,6 @@ export function AdminConfigPanel() {
               />
             </label>
 
-            {/* TOTP Validation field */}
-            <TotpInput onChange={setTotpCode} value={totpCode} />
-
             {/* Modal actions row */}
             <div className="mt-2 flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end border-t border-border-default/45 pt-4">
               <button
@@ -598,7 +592,6 @@ export function AdminConfigPanel() {
                 onClick={() => {
                   setIsConfirmOpen(false);
                   setReason("");
-                  setTotpCode("");
                 }}
                 type="button"
                 disabled={pending}

@@ -8,10 +8,11 @@
  * Frameworks surfaced by the moderation queue. Relisting a takedown lives in
  * the suspended-Frameworks panel. Styled as a responsive grid that reads as a
  * table on desktop and a card stack on mobile, matching the user directory.
+ * Delisting is a sensitive action: the API requires a step-up 2FA window,
+ * which the global step-up prompt handles when the call is refused.
  */
 import { useEffect, useState } from "react";
 
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
@@ -57,7 +58,6 @@ export function AdminFrameworkDirectoryPanel() {
     null,
   );
   const [reason, setReason] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [delisting, setDelisting] = useState(false);
 
   useEffect(() => {
@@ -95,7 +95,7 @@ export function AdminFrameworkDirectoryPanel() {
     setError(null);
     configureBrowserClient();
     const result = await suspendFrameworkV1AdminFrameworksFrameworkIdSuspendPost({
-      body: { reason: reason.trim(), totp_code: totpCode.trim() },
+      body: { reason: reason.trim() },
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
@@ -118,8 +118,6 @@ export function AdminFrameworkDirectoryPanel() {
         : current,
     );
     setReason("");
-    // Each step-up code is single-use; clear it so the next delist prompts.
-    setTotpCode("");
     setSelectedFrameworkId(null);
   }
 
@@ -240,14 +238,9 @@ export function AdminFrameworkDirectoryPanel() {
                         value={reason}
                       />
                     </label>
-                    <TotpInput onChange={setTotpCode} value={totpCode} />
                     <div className="flex flex-wrap gap-3">
                       <Button
-                        disabled={
-                          delisting ||
-                          reason.trim().length === 0 ||
-                          totpCode.trim().length < 6
-                        }
+                        disabled={delisting || reason.trim().length === 0}
                         onClick={() => void handleDelist(item.framework_id)}
                         variant="destructive"
                       >
@@ -256,7 +249,6 @@ export function AdminFrameworkDirectoryPanel() {
                       <Button
                         onClick={() => {
                           setReason("");
-                          setTotpCode("");
                           setSelectedFrameworkId(null);
                         }}
                         variant="secondary"

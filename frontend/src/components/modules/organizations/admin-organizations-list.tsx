@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * Admin organization directory with platform-wide suspend / reinstate.
+ *
+ * Suspending removes every member's derived marketplace roles at once, so
+ * the action confirms through the shared dialog and requires an open step-up
+ * window; a failed call shows its reason inside the dialog.
+ */
 import { useEffect, useState } from "react";
 import {
   adminListOrgsV1AdminOrgsGet,
@@ -7,7 +14,7 @@ import {
   adminReinstateOrgV1AdminOrgsOrgIdReinstatePost
 } from "@/lib/generated/sdk.gen";
 import type { AdminOrgResponse } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -33,7 +40,7 @@ export function AdminOrganizationsList() {
   const [orgToAct, setOrgToAct] = useState<AdminOrgResponse | null>(null);
   const [actionKind, setActionKind] = useState<"suspend" | "reinstate">("suspend");
   const [actionLoading, setActionLoading] = useState(false);
-  const [, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   async function loadOrgs(currentPage: number, query: string) {
     setLoading(true);
@@ -100,10 +107,7 @@ export function AdminOrganizationsList() {
       });
 
       if (!result.response.ok) {
-        setActionError(
-          result.error?.detail?.error_code ||
-            `Failed to ${actionKind} organization.`,
-        );
+        setActionError(describeGeneratedError(result.error));
         setActionLoading(false);
       } else {
         setActionLoading(false);
@@ -124,6 +128,7 @@ export function AdminOrganizationsList() {
    */
   function openAction(org: AdminOrgResponse, kind: "suspend" | "reinstate") {
     setActionKind(kind);
+    setActionError(null);
     setOrgToAct(org);
   }
 
@@ -132,9 +137,9 @@ export function AdminOrganizationsList() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="font-heading text-2xl font-bold text-foreground">
-          Organizations
-        </h1>
+        <h2 className="font-heading text-2xl font-bold text-foreground">
+          All organizations
+        </h2>
         
         <form onSubmit={handleSearch} role="search" className="flex gap-2 w-full sm:w-auto">
           <div className="relative flex-grow sm:w-64">
@@ -293,8 +298,12 @@ export function AdminOrganizationsList() {
         confirmLabel={actionKind === "suspend" ? "Suspend" : "Reinstate"}
         tone={actionKind === "suspend" ? "danger" : "default"}
         busy={actionLoading}
+        error={actionError}
         onConfirm={handleConfirmAction}
-        onClose={() => setOrgToAct(null)}
+        onClose={() => {
+          setOrgToAct(null);
+          setActionError(null);
+        }}
       />
     </div>
   );

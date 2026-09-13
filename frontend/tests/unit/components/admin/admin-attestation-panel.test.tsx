@@ -78,9 +78,6 @@ describe("AdminAttestationPanel", () => {
     fireEvent.change(rowQueries.getByPlaceholderText("Reason for this action"), {
       target: { value: "Manual dispatch." },
     });
-    fireEvent.change(rowQueries.getByPlaceholderText("6-digit code"), {
-      target: { value: "123456" },
-    });
     fireEvent.click(rowQueries.getByRole("button", { name: /Assign to org/i }));
 
     await waitFor(() =>
@@ -90,7 +87,6 @@ describe("AdminAttestationPanel", () => {
           body: {
             attestor_org_id: "org-2",
             reason: "Manual dispatch.",
-            totp_code: "123456",
           },
         }),
       ),

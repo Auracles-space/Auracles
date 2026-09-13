@@ -5,7 +5,6 @@ import { signOrgAttestorUndertakings } from "@/lib/generated/sdk.gen";
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
 import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
 /**
@@ -84,7 +83,6 @@ export function UndertakingsGate({
 
   const [acceptPolicy, setAcceptPolicy] = useState(false);
   const [acceptConfidentiality, setAcceptConfidentiality] = useState(false);
-  const [totpCode, setTotpCode] = useState("");
 
   const isSigned = !!application?.confidentiality_signed_at;
 
@@ -110,10 +108,6 @@ export function UndertakingsGate({
       setError("You must accept both declarations.");
       return;
     }
-    if (!totpCode || totpCode.length !== 6) {
-      setError("Please enter a valid 6-digit authenticator code.");
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -124,7 +118,6 @@ export function UndertakingsGate({
           declarations: [],
           accept_policy: acceptPolicy,
           accept_confidentiality: acceptConfidentiality,
-          totp_code: totpCode,
         },
         headers: getAccessTokenHeaders(),
       });
@@ -183,24 +176,7 @@ export function UndertakingsGate({
         </label>
 
         <div className="pt-2">
-          <label htmlFor="totp_code" className="mb-1 block text-sm font-semibold text-foreground">
-            Authenticator Code
-          </label>
-          <Input
-            id="totp_code"
-            value={totpCode}
-            onChange={(e) => setTotpCode(e.target.value)}
-            placeholder="123456"
-            maxLength={6}
-            className="max-w-[200px]"
-          />
-          <p className="mt-1 text-xs text-foreground-muted">
-            Provide your 2FA code to cryptographically sign this undertaking.
-          </p>
-        </div>
-
-        <div className="pt-2">
-          <Button type="submit" disabled={loading || !acceptPolicy || !acceptConfidentiality || !totpCode} loading={loading}>
+          <Button type="submit" disabled={loading || !acceptPolicy || !acceptConfidentiality} loading={loading}>
             Sign Undertakings
           </Button>
         </div>

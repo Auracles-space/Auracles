@@ -75,7 +75,7 @@ describe("PayoutHistoryTable", () => {
     });
   });
 
-  it("lists payouts and submits a TOTP-gated payout request", async () => {
+  it("lists payouts and submits a payout request", async () => {
     vi.mocked(requestPayout).mockResolvedValue({
       data: {
         amount: "200.00",
@@ -102,9 +102,6 @@ describe("PayoutHistoryTable", () => {
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "200.00" },
     });
-    fireEvent.change(screen.getByLabelText("Authenticator code"), {
-      target: { value: "123456" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Submit payout request" }));
 
     await waitFor(() => {
@@ -114,7 +111,6 @@ describe("PayoutHistoryTable", () => {
             amount: "200.00",
             currency: "NGN",
             payout_account_id: account.id,
-            totp_code: "123456",
           },
         }),
       );
@@ -122,7 +118,7 @@ describe("PayoutHistoryTable", () => {
     expect(await screen.findByText("$170")).toBeInTheDocument();
   });
 
-  it("disables the payout submit until amount and a 6-digit code are valid", async () => {
+  it("disables the payout submit until the amount is valid", async () => {
     render(<PayoutHistoryTable />);
 
     expect(await screen.findByText("****tr_1")).toBeInTheDocument();
@@ -136,16 +132,7 @@ describe("PayoutHistoryTable", () => {
     fireEvent.change(screen.getByLabelText("Amount"), {
       target: { value: "200.00" },
     });
-    expect(submit).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText("Authenticator code"), {
-      target: { value: "123" },
-    });
-    expect(submit).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText("Authenticator code"), {
-      target: { value: "123456" },
-    });
     expect(submit).toBeEnabled();
+    expect(screen.queryByLabelText("Authenticator code")).not.toBeInTheDocument();
   });
 });

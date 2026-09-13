@@ -222,18 +222,13 @@ export function useDeveloperPortal() {
     }));
   }
 
-  async function handlePayoutRequest(
-    amount: string,
-    payoutAccountId: string,
-    totpCode: string,
-  ) {
+  async function handlePayoutRequest(amount: string, payoutAccountId: string) {
     configureBrowserClient();
     const result = await requestPartnerPayoutV1DeveloperPayoutsPost({
       body: {
         amount,
         currency: PLATFORM_CURRENCY,
         payout_account_id: payoutAccountId,
-        totp_code: totpCode,
       },
       headers: getAccessTokenHeaders(),
     });

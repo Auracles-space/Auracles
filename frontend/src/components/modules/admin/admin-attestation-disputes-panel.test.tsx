@@ -77,9 +77,6 @@ describe("AdminAttestationDisputesPanel", () => {
     fireEvent.change(screen.getByLabelText(/Resolution notes/i), {
       target: { value: "Control 4.2 was never in scope; revise and resubmit." },
     });
-    fireEvent.change(screen.getByLabelText(/2FA code/i), {
-      target: { value: "123456" },
-    });
     fireEvent.click(screen.getByRole("button", { name: /Confirm verdict/i }));
 
     await waitFor(() => {
@@ -146,7 +143,7 @@ describe("AdminAttestationDisputesPanel", () => {
     ).not.toBeChecked();
   });
 
-  it("keeps the verdict disabled until notes and a 2FA code are supplied", async () => {
+  it("keeps the verdict disabled until a verdict and notes are supplied", async () => {
     vi.mocked(listAdminAttestationDisputes).mockResolvedValue({
       response: { ok: true },
       data: { disputes: [openDispute()] },
@@ -164,11 +161,7 @@ describe("AdminAttestationDisputesPanel", () => {
     fireEvent.change(screen.getByLabelText(/Resolution notes/i), {
       target: { value: "Report withdrawn; refund in full." },
     });
-    expect(confirm).toBeDisabled();
-
-    fireEvent.change(screen.getByLabelText(/2FA code/i), {
-      target: { value: "123456" },
-    });
     expect(confirm).toBeEnabled();
+    expect(screen.queryByLabelText(/2FA code/i)).not.toBeInTheDocument();
   });
 });

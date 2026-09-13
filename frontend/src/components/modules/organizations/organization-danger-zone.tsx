@@ -26,7 +26,6 @@ export function OrganizationDangerZone() {
 
   // Transfer State
   const [transferMemberId, setTransferMemberId] = useState("");
-  const [transferTotp, setTransferTotp] = useState("");
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
 
@@ -60,7 +59,7 @@ export function OrganizationDangerZone() {
 
   async function handleTransfer(e: React.FormEvent) {
     e.preventDefault();
-    if (!isOwner || isSuspended || !transferMemberId || !transferTotp) return;
+    if (!isOwner || isSuspended || !transferMemberId) return;
 
     setTransferLoading(true);
     setTransferError(null);
@@ -68,7 +67,7 @@ export function OrganizationDangerZone() {
     try {
       const result = await transferOwnershipV1OrgsOrgIdTransferOwnershipPost({
         path: { org_id: orgId },
-        body: { new_owner_member_id: transferMemberId, totp_code: transferTotp },
+        body: { new_owner_member_id: transferMemberId },
         headers: getAccessTokenHeaders(),
       });
 
@@ -165,26 +164,11 @@ export function OrganizationDangerZone() {
             )}
           </div>
 
-          <div>
-            <label htmlFor="totp" className="mb-1 block text-sm font-semibold text-foreground">
-              6-Digit Authenticator Code
-            </label>
-            <Input
-              id="totp"
-              required
-              disabled={isSuspended || !transferMemberId}
-              value={transferTotp}
-              onChange={(e) => setTransferTotp(e.target.value)}
-              placeholder="123456"
-              maxLength={6}
-            />
-          </div>
-
           <Button 
             type="submit" 
             variant="primary"
             loading={transferLoading} 
-            disabled={isSuspended || !transferMemberId || transferTotp.length < 6} 
+            disabled={isSuspended || !transferMemberId} 
             className="mt-2"
           >
             Transfer Ownership

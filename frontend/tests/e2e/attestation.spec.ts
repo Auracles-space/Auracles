@@ -161,7 +161,10 @@ async function mockAttestationApi(page: Page): Promise<void> {
               description: "Audit Ltd"
             },
             role: "owner",
-            capabilities: { "attestor": "active" }
+            capabilities: { "attestor": "active" },
+            // The shell hides every capability tab until the business is
+            // verified (DESIGN-1), so the mock must say so.
+            kyb_status: "verified"
           }
         ]
       });
@@ -202,6 +205,7 @@ async function mockAttestationApi(page: Page): Promise<void> {
           {
             id: "app-1",
             org_id: "org-1",
+            org_name: "Audit Ltd",
             legal_name: "Audit Ltd",
             status: "pending",
             nda_signed_at: "2026-06-20T12:00:00Z",
@@ -277,8 +281,9 @@ test("authenticated user can open Org Attestation workspaces", async ({
   await expect(page.getByRole("heading", { name: "Attestor Application" })).toBeVisible();
 
   await page.goto("/admin/org-attestors");
-  await expect(page.getByRole("heading", { name: "Attestor Review Queue" })).toBeVisible();
-  await expect(page.getByText("Audit Ltd")).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/attestors/);
+  await expect(page.getByRole("heading", { name: "Attestor organizations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Audit Ltd" })).toBeVisible();
 
   await page.goto("/dashboard/organizations/org-1/queue");
   await expect(page.getByText("Offers")).toBeVisible();

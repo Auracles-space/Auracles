@@ -41,7 +41,7 @@ describe("UndertakingsGate", () => {
     expect(screen.getByText(/Undertakings have been signed/i)).toBeInTheDocument();
   });
 
-  it("submits undertakings with totp", async () => {
+  it("submits undertakings without collecting a code", async () => {
     vi.mocked(useOrganization).mockReturnValue({ role: "owner", orgId: "org-1" } as never);
     vi.mocked(signOrgAttestorUndertakings).mockResolvedValue(ok({ status: "draft" }) as never);
     const onChange = vi.fn();
@@ -50,7 +50,7 @@ describe("UndertakingsGate", () => {
     
     fireEvent.click(screen.getByLabelText(/accept.*policy/i));
     fireEvent.click(screen.getByLabelText(/accept.*confidentiality/i));
-    fireEvent.change(screen.getByLabelText(/authenticator code/i), { target: { value: "123456" } });
+    expect(screen.queryByLabelText(/authenticator code/i)).not.toBeInTheDocument();
     
     fireEvent.click(screen.getByRole("button", { name: /sign undertakings/i }));
     
@@ -62,7 +62,6 @@ describe("UndertakingsGate", () => {
             declarations: [],
             accept_policy: true,
             accept_confidentiality: true,
-            totp_code: "123456",
           },
         })
       )

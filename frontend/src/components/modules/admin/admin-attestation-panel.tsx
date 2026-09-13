@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * Admin attestation queue.
+ *
+ * Needs-admin requests (auto-matching found no attestor) are assigned or
+ * refunded inline; every other status is a read-only browse with a detail
+ * modal. Attestor applications live on the Attestors page.
+ */
 import { useEffect, useState } from "react";
 import {
   configureBrowserClient,
@@ -7,28 +14,21 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { Select } from "@/components/ui/select";
-import {
-  listAdminAttestations,
-  listAttestorOrgs,
-  listOrgAttestorApplicationsForAdmin,
-} from "@/lib/generated/sdk.gen";
+import { listAdminAttestations, listAttestorOrgs } from "@/lib/generated/sdk.gen";
 import type {
   AttestationRequestResponse,
   AttestorDirectoryEntry,
-  OrgAttestorApplicationResponse,
 } from "@/lib/generated/types.gen";
-import {
-  ErrorMessage,
-  HeaderCard,
-  StatusTag,
-} from "@/components/modules/attestation/attestation-status";
+import { ErrorMessage, HeaderCard } from "@/components/modules/attestation/attestation-status";
+import { StatusPill } from "@/components/ui/status-pill";
 import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
-import { AttestorApplicationRow } from "@/components/modules/admin/attestor-application-row";
 import { emitNeedsAdminChanged } from "@/components/modules/admin/admin-events";
 import { AttestationDetailModal } from "@/components/modules/admin/attestation-detail-modal";
 
+/**
+ * Render the needs-admin queue and the read-only status browser.
+ */
 export function AdminAttestationPanel() {
-  const [applications, setApplications] = useState<OrgAttestorApplicationResponse[]>([]);
   const [queueItems, setQueueItems] = useState<AttestationRequestResponse[]>([]);
   const [queueStatus, setQueueStatus] = useState("needs_admin");
   const [attestorOrgs, setAttestorOrgs] = useState<AttestorDirectoryEntry[]>([]);
@@ -36,7 +36,6 @@ export function AdminAttestationPanel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void loadApplications();
     void loadAttestorOrgs();
   }, []);
 
@@ -53,19 +52,6 @@ export function AdminAttestationPanel() {
     }
   }
 
-  async function loadApplications() {
-    configureBrowserClient();
-    const result = await listOrgAttestorApplicationsForAdmin({
-      headers: getAccessTokenHeaders(),
-      query: { status: "submitted" },
-    });
-    if (!result.response.ok || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
-    }
-    setApplications(result.data.applications);
-  }
-
   /** Load attestations in the given status for the admin queue/history. */
   async function loadQueue(status: string) {
     configureBrowserClient();
@@ -80,13 +66,6 @@ export function AdminAttestationPanel() {
     setQueueItems(result.data.attestations);
   }
 
-  /** Drop an application from the list once it is rejected. */
-  function handleApplicationRejected(applicationId: string) {
-    setApplications((current) =>
-      current.filter((item) => item.id !== applicationId),
-    );
-  }
-
   /** Drop a request from the queue once it is assigned or refunded. */
   function handleNeedsAdminResolved(attestationId: string) {
     setQueueItems((current) =>
@@ -99,28 +78,12 @@ export function AdminAttestationPanel() {
   return (
     <section className="grid gap-6">
       <HeaderCard
-        eyebrow="Admin attestation"
-        title="Review and resolution"
-        summary="Review Attestor applications, manually assign exhausted requests, and refund needs-admin requests. Disputes resolve under Admin → Disputes."
+        eyebrow="Trust"
+        title="Attestations"
+        summary="Assign requests that auto-matching could not staff, refund the ones that cannot proceed, and browse every attestation by status. Applications live under Attestors; disputes under Disputes."
       />
-      
-      <ErrorMessage message={error} />
 
-      <div className="grid gap-3">
-        {applications.length === 0 ? (
-          <p className="rounded-2xl border border-border-default bg-surface-1 p-6 text-sm text-foreground-muted">
-            No applications to show.
-          </p>
-        ) : (
-          applications.map((application) => (
-            <AttestorApplicationRow
-              application={application}
-              key={application.id}
-              onRejected={handleApplicationRejected}
-            />
-          ))
-        )}
-      </div>
+      <ErrorMessage message={error} />
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -182,7 +145,7 @@ export function AdminAttestationPanel() {
                     {item.id} · {item.currency} {item.fee_amount}
                   </p>
                 </div>
-                <StatusTag value={item.status} />
+                <StatusPill status={item.status} />
               </button>
             ))
           )}

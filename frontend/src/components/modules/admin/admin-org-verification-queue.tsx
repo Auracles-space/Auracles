@@ -7,16 +7,17 @@
  * queue is the gate for org onboarding: an org waits here until an admin reads
  * its incorporation documents and records a verdict.
  *
- * Verifying unlocks everything an organization can do, so the decision is TOTP
- * step-up gated. Rejection is not terminal — the org fixes what the notes say
- * and submits again — so a rejection must carry a reason.
+ * Verifying unlocks everything an organization can do, so the decision is a
+ * sensitive action: the API requires a step-up 2FA window, which the global
+ * step-up prompt handles when the call is refused. Rejection is not terminal —
+ * the org fixes what the notes say and submits again — so a rejection must
+ * carry a reason. Notes are keyed per org so each row decides on its own.
  *
  * Maps to: DESIGN-1.
  */
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -37,7 +38,6 @@ export function AdminOrgVerificationQueue() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const [totpCode, setTotpCode] = useState("");
 
   const load = useCallback(async () => {
     configureBrowserClient();
@@ -70,14 +70,12 @@ export function AdminOrgVerificationQueue() {
     const result = await adminReviewOrgKyb({
       body: {
         notes: notes[orgId]?.trim() || null,
-        totp_code: totpCode,
         verdict,
       },
       headers: getAccessTokenHeaders(),
       path: { org_id: orgId },
     });
     setBusyId(null);
-    setTotpCode("");
     if (!result.response.ok) {
       setError(describeGeneratedError(result.error));
       return;
@@ -163,19 +161,9 @@ export function AdminOrgVerificationQueue() {
                 value={notes[org.id] ?? ""}
               />
             </label>
-            <label className="grid gap-2 text-sm font-semibold text-foreground sm:max-w-xs">
-              Your authenticator code
-              <Input
-                inputMode="numeric"
-                maxLength={6}
-                onChange={(event) => setTotpCode(event.target.value)}
-                placeholder="123456"
-                value={totpCode}
-              />
-            </label>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Button
-                disabled={busyId === org.id || totpCode.length !== 6}
+                disabled={busyId === org.id}
                 loading={busyId === org.id}
                 onClick={() => decide(org.id, "verified")}
               >
@@ -183,11 +171,7 @@ export function AdminOrgVerificationQueue() {
               </Button>
               <button
                 className="min-h-12 rounded-xl border border-error/50 px-6 text-sm font-semibold text-error outline-none transition-colors hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={
-                  busyId === org.id ||
-                  totpCode.length !== 6 ||
-                  !(notes[org.id] ?? "").trim()
-                }
+                disabled={busyId === org.id || !(notes[org.id] ?? "").trim()}
                 onClick={() => decide(org.id, "rejected")}
                 type="button"
               >

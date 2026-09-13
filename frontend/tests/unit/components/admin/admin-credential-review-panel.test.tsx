@@ -91,11 +91,9 @@ describe("AdminCredentialReviewPanel", () => {
 
     render(<AdminCredentialReviewPanel />);
     await screen.findByRole("button", { name: "Verify" });
-    // Credential decisions are step-up gated; without a code both buttons
-    // stay disabled.
-    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
-      target: { value: "123456" },
-    });
+    // Credential decisions are step-up gated server-side; the global prompt
+    // handles a refusal, so the panel collects no code of its own.
+    expect(screen.queryByLabelText(/authenticator code/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Verify" }));
 
     await waitFor(() => {
@@ -120,9 +118,6 @@ describe("AdminCredentialReviewPanel", () => {
 
     render(<AdminCredentialReviewPanel />);
     await screen.findByRole("button", { name: "Reject" });
-    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
-      target: { value: "123456" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Reject" }));
 
     // Confirming with an empty reason must not call the reject endpoint.
@@ -143,7 +138,7 @@ describe("AdminCredentialReviewPanel", () => {
         rejectCredentialV1AdminCredentialsCredentialIdRejectPost,
       ).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: { reason: "Insufficient evidence", totp_code: "123456" },
+          body: { reason: "Insufficient evidence" },
           path: { credential_id: credential.id },
         }),
       );

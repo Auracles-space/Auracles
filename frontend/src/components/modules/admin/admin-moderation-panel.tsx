@@ -5,7 +5,9 @@
  *
  * Renders the aggregated moderation queue from the admin API and exposes a
  * signal-type filter. Enables interactive framework suspension and duplication
- * overrides directly from the queue.
+ * overrides directly from the queue. Both are sensitive actions: the API
+ * requires a step-up 2FA window, which the global step-up prompt handles when
+ * the call is refused.
  */
 import { useEffect, useState } from "react";
 
@@ -20,7 +22,6 @@ import {
   suspendFrameworkV1AdminFrameworksFrameworkIdSuspendPost,
 } from "@/lib/generated/sdk.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import type { AdminModerationQueueResponse } from "@/lib/generated/types.gen";
 import { formatLabel } from "@/lib/marketplace/format";
@@ -56,7 +57,6 @@ export function AdminModerationPanel() {
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
   const [formAction, setFormAction] = useState<"suspend" | "override" | null>(null);
   const [reason, setReason] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [busyAction, setBusyAction] = useState(false);
 
   useEffect(() => {
@@ -98,7 +98,7 @@ export function AdminModerationPanel() {
     setError(null);
     configureBrowserClient();
     const result = await overrideRarityBlockV1AdminFrameworksFrameworkIdRarityBlockOverridePost({
-      body: { reason: reason.trim(), totp_code: totpCode.trim() },
+      body: { reason: reason.trim() },
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
@@ -122,8 +122,6 @@ export function AdminModerationPanel() {
     setSelectedSignalId(null);
     setFormAction(null);
     setReason("");
-    // Step-up codes are single-use; clear so the next action prompts afresh.
-    setTotpCode("");
   }
 
   async function handleConfirmSuspend(frameworkId: string): Promise<void> {
@@ -131,7 +129,7 @@ export function AdminModerationPanel() {
     setError(null);
     configureBrowserClient();
     const result = await suspendFrameworkV1AdminFrameworksFrameworkIdSuspendPost({
-      body: { reason: reason.trim(), totp_code: totpCode.trim() },
+      body: { reason: reason.trim() },
       headers: getAccessTokenHeaders(),
       path: { framework_id: frameworkId },
     });
@@ -155,8 +153,6 @@ export function AdminModerationPanel() {
     setSelectedSignalId(null);
     setFormAction(null);
     setReason("");
-    // Step-up codes are single-use; clear so the next action prompts afresh.
-    setTotpCode("");
   }
 
   if (loading) {
@@ -419,26 +415,17 @@ export function AdminModerationPanel() {
                       value={reason}
                     />
                   </label>
-                  <TotpInput onChange={setTotpCode} value={totpCode} />
                   <div className="flex flex-wrap gap-3">
                     {formAction === "override" ? (
                       <Button
-                        disabled={
-                          busyAction ||
-                          reason.trim().length < 5 ||
-                          totpCode.trim().length < 6
-                        }
+                        disabled={busyAction || reason.trim().length < 5}
                         onClick={() => void handleConfirmOverride(item.framework_id)}
                       >
                         Confirm override
                       </Button>
                     ) : (
                       <Button
-                        disabled={
-                          busyAction ||
-                          reason.trim().length < 1 ||
-                          totpCode.trim().length < 6
-                        }
+                        disabled={busyAction || reason.trim().length < 1}
                         onClick={() => void handleConfirmSuspend(item.framework_id)}
                         variant="destructive"
                       >
@@ -451,7 +438,6 @@ export function AdminModerationPanel() {
                         setSelectedSignalId(null);
                         setFormAction(null);
                         setReason("");
-                        setTotpCode("");
                       }}
                       variant="secondary"
                     >

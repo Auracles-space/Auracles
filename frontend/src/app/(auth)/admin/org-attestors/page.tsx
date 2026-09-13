@@ -1,17 +1,11 @@
 /**
- * Authenticated admin Org Attestor review route.
+ * Legacy admin route. The attestor pipeline now lives at `/admin/attestors`.
  */
-import { Metadata } from "next";
-import { AdminOrgAttestorReviewPanel } from "@/components/modules/admin/admin-org-attestor-review-panel";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Admin - Org Attestors",
-};
-
+/**
+ * Redirect the old org-attestor review route to the attestor console.
+ */
 export default function AdminOrgAttestorsPage() {
-  return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <AdminOrgAttestorReviewPanel />
-    </div>
-  );
+  redirect("/admin/attestors?tab=applications");
 }

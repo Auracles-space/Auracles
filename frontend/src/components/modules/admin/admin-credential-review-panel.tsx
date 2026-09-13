@@ -6,7 +6,9 @@
  * Lets administrators filter submitted Credentials by verification status,
  * inspect submitted evidence via short-lived presigned download URLs, and
  * verify or reject each Credential. Uses only generated OpenAPI client
- * functions and the shared browser-auth helpers.
+ * functions and the shared browser-auth helpers. Verdicts are sensitive
+ * actions: the API requires a step-up 2FA window, which the global step-up
+ * prompt handles when a call is refused.
  *
  * Maps to: FR-ATT credential verification lifecycle (admin review).
  */
@@ -19,7 +21,6 @@ import {
 } from "@/lib/auth/form-client";
 import { CredentialStatusBadge } from "@/components/modules/attestation/credential-status-badge";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import {
   downloadCredentialEvidenceV1AdminCredentialsCredentialIdEvidenceGet,
@@ -89,7 +90,6 @@ export function AdminCredentialReviewPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectOpenId, setRejectOpenId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [totpCode, setTotpCode] = useState("");
   const [downloadBusyKey, setDownloadBusyKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -140,7 +140,7 @@ export function AdminCredentialReviewPanel() {
     setBusyId(credentialId);
     configureBrowserClient();
     const result = await verifyCredentialV1AdminCredentialsCredentialIdVerifyPost({
-      body: { totp_code: totpCode.trim() },
+      body: {},
       headers: getAccessTokenHeaders(),
       path: { credential_id: credentialId },
     });
@@ -149,8 +149,6 @@ export function AdminCredentialReviewPanel() {
       setError(describeGeneratedError(result.error));
       return;
     }
-    // Step-up codes are single-use; clear so the next decision prompts afresh.
-    setTotpCode("");
     applyUpdate(result.data);
   }
 
@@ -168,7 +166,7 @@ export function AdminCredentialReviewPanel() {
     setBusyId(credentialId);
     configureBrowserClient();
     const result = await rejectCredentialV1AdminCredentialsCredentialIdRejectPost({
-      body: { reason: rejectReason.trim(), totp_code: totpCode.trim() },
+      body: { reason: rejectReason.trim() },
       headers: getAccessTokenHeaders(),
       path: { credential_id: credentialId },
     });
@@ -179,7 +177,6 @@ export function AdminCredentialReviewPanel() {
     }
     setRejectOpenId(null);
     setRejectReason("");
-    setTotpCode("");
     applyUpdate(result.data);
   }
 
@@ -386,10 +383,9 @@ export function AdminCredentialReviewPanel() {
 
                 {isPending ? (
                   <div className="mt-4 border-t border-border-default/45 pt-4 grid gap-3">
-                    <TotpInput onChange={setTotpCode} value={totpCode} />
                     <div className="flex flex-wrap gap-3">
                       <Button
-                        disabled={isBusy || totpCode.trim().length < 6}
+                        disabled={isBusy}
                         onClick={() => handleVerify(credential.id)}
                       >
                         Verify
@@ -422,11 +418,7 @@ export function AdminCredentialReviewPanel() {
                           />
                         </label>
                         <Button
-                          disabled={
-                            isBusy ||
-                            !rejectReason.trim() ||
-                            totpCode.trim().length < 6
-                          }
+                          disabled={isBusy || !rejectReason.trim()}
                           onClick={() => handleReject(credential.id)}
                           variant="destructive"
                         >

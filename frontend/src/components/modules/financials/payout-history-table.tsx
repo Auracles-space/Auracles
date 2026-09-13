@@ -3,9 +3,11 @@
 /**
  * Contributor payout history and request controls.
  *
- * The browser collects only payout amount, selected provider account, and a
- * fresh authenticator code. Balance, KYC, 2FA, and minimum-payout enforcement
- * stay server-side in the financials API.
+ * The browser collects only payout amount and selected provider account.
+ * Balance, KYC, and minimum-payout enforcement stay server-side in the
+ * financials API. Requesting a payout is a sensitive action: the API requires
+ * a step-up 2FA window, which the global step-up prompt handles when the call
+ * is refused.
  */
 import Link from "next/link";
 import type { FormEvent } from "react";
@@ -16,12 +18,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import {
-  allValid,
-  isLengthBetween,
-  isNonEmpty,
-  isPositiveNumber,
-} from "@/lib/forms/validators";
+import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import {
   listPayoutAccounts,
   listPayouts,
@@ -35,7 +32,7 @@ import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 /**
- * Render Contributor payout rows and a TOTP-gated payout request modal.
+ * Render Contributor payout rows and a step-up-gated payout request modal.
  */
 export function PayoutHistoryTable() {
   const [accounts, setAccounts] = useState<PayoutAccountResponse[]>([]);
@@ -197,7 +194,7 @@ type PayoutRequestModalProps = {
 };
 
 /**
- * Collect payout amount and a fresh TOTP code before calling the payout API.
+ * Collect payout amount and account before calling the payout API.
  *
  * @param props - Verified payout accounts and modal callbacks.
  */
@@ -208,7 +205,6 @@ export function PayoutRequestModal({
 }: PayoutRequestModalProps) {
   const amountId = useId();
   const accountId = useId();
-  const totpId = useId();
   const verifiedAccounts = useMemo(
     () => accounts.filter((account) => account.verified_at),
     [accounts],
@@ -219,12 +215,7 @@ export function PayoutRequestModal({
     verifiedAccounts[0]?.id ?? "",
   );
   const [submitting, setSubmitting] = useState(false);
-  const [totpCode, setTotpCode] = useState("");
-  const canSubmit = allValid(
-    isPositiveNumber(amount),
-    isNonEmpty(payoutAccountId),
-    isLengthBetween(totpCode, 6, 6),
-  );
+  const canSubmit = allValid(isPositiveNumber(amount), isNonEmpty(payoutAccountId));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -236,7 +227,6 @@ export function PayoutRequestModal({
         amount,
         currency: PLATFORM_CURRENCY,
         payout_account_id: payoutAccountId,
-        totp_code: totpCode,
       },
       headers: getAccessTokenHeaders(),
     });
@@ -317,22 +307,6 @@ export function PayoutRequestModal({
                 </option>
               ))}
             </select>
-          </label>
-
-          <label className="grid gap-2 text-sm font-semibold text-foreground" htmlFor={totpId}>
-            Authenticator code
-            <input
-              autoComplete="one-time-code"
-              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 text-sm font-normal text-foreground outline-none transition-all focus:border-accent focus:ring-0"
-              id={totpId}
-              inputMode="numeric"
-              maxLength={6}
-              onChange={(event) => setTotpCode(event.target.value)}
-              pattern="[0-9]{6}"
-              required
-              type="text"
-              value={totpCode}
-            />
           </label>
         </div>
 

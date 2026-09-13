@@ -5,14 +5,14 @@
  *
  * Lists Project milestone disputes across all Projects and lets an admin
  * resolve an active dispute with a release, refund, or split escrow outcome.
- * Resolution is 2FA-gated (TOTP) to match the audited admin escrow controls.
+ * Resolution is a sensitive action: the API requires a step-up 2FA window,
+ * which the global step-up prompt handles when the call is refused.
  * Styled as a responsive CSS Grid table that collapses to cards on mobile.
  *
  * Maps to: FR-PROJ-022, BR-PROJ-014.
  */
 import { useEffect, useState } from "react";
 
-import { TotpInput } from "@/components/modules/auth/totp-input";
 import { Button } from "@/components/ui/button";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import {
@@ -79,7 +79,6 @@ export function AdminDisputesPanel() {
   const [releaseAmount, setReleaseAmount] = useState("");
   const [refundAmount, setRefundAmount] = useState("");
   const [notes, setNotes] = useState("");
-  const [totpCode, setTotpCode] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -121,7 +120,6 @@ export function AdminDisputesPanel() {
     setReleaseAmount("");
     setRefundAmount("");
     setNotes("");
-    setTotpCode("");
   }
 
   /**
@@ -137,7 +135,6 @@ export function AdminDisputesPanel() {
     setReleaseAmount("");
     setRefundAmount("");
     setNotes("");
-    setTotpCode("");
   }
 
   const selectedDispute =
@@ -163,8 +160,7 @@ export function AdminDisputesPanel() {
     refundNum >= 0 &&
     Math.abs(splitAllocated - heldAmount) < 0.005;
   const splitInvalid = resolutionType === "split" && !splitMatchesHeld;
-  const canResolve =
-    !pending && notes.trim().length > 0 && totpCode.trim().length >= 6 && !splitInvalid;
+  const canResolve = !pending && notes.trim().length > 0 && !splitInvalid;
 
   async function handleResolve(disputeId: string): Promise<void> {
     setPending(true);
@@ -177,7 +173,6 @@ export function AdminDisputesPanel() {
         release_amount: resolutionType === "split" ? releaseAmount.trim() || null : null,
         refund_amount: resolutionType === "split" ? refundAmount.trim() || null : null,
         resolution_notes: notes.trim(),
-        totp_code: totpCode.trim(),
       },
       headers: getAccessTokenHeaders(),
       path: { dispute_id: disputeId },
@@ -213,7 +208,7 @@ export function AdminDisputesPanel() {
         </h2>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-foreground-muted">
           Review milestone disputes raised in Project workspaces and resolve them
-          with a release, refund, or split escrow outcome. Resolution requires 2FA.
+          with a release, refund, or split escrow outcome.
         </p>
       </header>
 
@@ -426,8 +421,7 @@ export function AdminDisputesPanel() {
                     </dl>
                     <p className="text-xs text-foreground-muted leading-relaxed max-w-2xl">
                       Release and refund amounts must come out of the held escrow.
-                      Write resolution notes for the audit trail, then verify with
-                      your admin TOTP authenticator code.
+                      Write resolution notes for the audit trail before confirming.
                     </p>
                     
                     <div className="grid gap-4 md:grid-cols-2">
@@ -519,8 +513,6 @@ export function AdminDisputesPanel() {
                         value={notes}
                       />
                     </label>
-
-                    <TotpInput onChange={setTotpCode} value={totpCode} />
 
                     <div className="flex flex-wrap gap-3">
                       <Button

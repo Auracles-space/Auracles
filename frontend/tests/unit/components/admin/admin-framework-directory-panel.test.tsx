@@ -86,9 +86,6 @@ describe("AdminFrameworkDirectoryPanel", () => {
     render(<AdminFrameworkDirectoryPanel />);
     fireEvent.click(await screen.findByRole("button", { name: /^delist$/i }));
 
-    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
-      target: { value: "123456" },
-    });
     fireEvent.change(screen.getByPlaceholderText(/why is this framework/i), {
       target: { value: "Policy breach" },
     });
@@ -116,9 +113,6 @@ describe("AdminFrameworkDirectoryPanel", () => {
 
     render(<AdminFrameworkDirectoryPanel />);
     fireEvent.click(await screen.findByRole("button", { name: /^delist$/i }));
-    fireEvent.change(screen.getByLabelText(/authenticator code/i), {
-      target: { value: "123456" },
-    });
     fireEvent.change(screen.getByPlaceholderText(/why is this framework/i), {
       target: { value: "Policy breach" },
     });

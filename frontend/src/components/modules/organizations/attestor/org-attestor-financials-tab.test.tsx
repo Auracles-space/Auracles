@@ -74,7 +74,7 @@ describe("OrgAttestorFinancialsTab", () => {
     expect(screen.queryByRole("heading", { name: "Earnings Overview" })).toBeNull();
   });
 
-  it("shows request payout CTA and handles TOTP flow when payout account exists", async () => {
+  it("shows request payout CTA and submits the payout when a payout account exists", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: {
         id: "app-id",
@@ -84,20 +84,20 @@ describe("OrgAttestorFinancialsTab", () => {
       },
     } as never);
 
+    vi.mocked(requestOrgPayout).mockResolvedValue({
+      data: { id: "payout-1", status: "pending" },
+      response: { ok: true, status: 201 },
+    } as never);
+
     render(<OrgAttestorFinancialsTab orgId="org-1" />);
     await waitFor(() => {
       expect(screen.getByText("Request Payout")).toBeInTheDocument();
     });
 
+    // No code field: the API requires a step-up window and the global prompt
+    // handles a refusal, so one click submits.
+    expect(screen.queryByLabelText("Authenticator code")).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Request Payout"));
-
-    // Should show TOTP input
-    await waitFor(() => {
-      expect(screen.getByLabelText("Authenticator code")).toBeInTheDocument();
-    });
-
-    fireEvent.change(screen.getByLabelText("Authenticator code"), { target: { value: "123456" } });
-    fireEvent.click(screen.getByText("Confirm Payout"));
 
     await waitFor(() => {
       expect(requestOrgPayout).toHaveBeenCalledWith(
@@ -107,7 +107,6 @@ describe("OrgAttestorFinancialsTab", () => {
             amount: "450.00",
             currency: "USD",
             payout_account_id: "payout-acc-id",
-            totp_code: "123456",
           },
         }),
       );

@@ -3,10 +3,12 @@
 /**
  * One self-contained row in the admin needs-admin attestation queue.
  *
- * Carries its own attestor-org picker, reason, and 2FA so an admin can assign
- * or refund a single request inline — no shared form, no scrolling. Assigning
+ * Carries its own attestor-org picker and reason so an admin can assign or
+ * refund a single request inline — no shared form, no scrolling. Assigning
  * dispatches an offer to the chosen org (the org then staffs its own reviewer);
- * refunding returns the escrowed fee to the requestor.
+ * refunding returns the escrowed fee to the requestor. Both are sensitive
+ * actions: the API requires a step-up 2FA window, which the global step-up
+ * prompt handles when the call is refused.
  */
 import { useState } from "react";
 
@@ -47,20 +49,18 @@ export function NeedsAdminRow({
 }: NeedsAdminRowProps) {
   const [orgId, setOrgId] = useState("");
   const [reason, setReason] = useState("");
-  const [totp, setTotp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reasonOk = reason.trim().length >= 5;
-  const totpOk = totp.trim().length >= 6;
   // A request lands in needs_admin because matching found no attestor, so an
   // empty directory is the expected case, not an edge one. Showing a blank
   // dropdown reads as a broken page; the assign path is genuinely unavailable
   // until an organization completes attestor approval, and refund is the only
   // action left.
   const hasAttestorOrgs = attestorOrgs.length > 0;
-  const canAssign = hasAttestorOrgs && orgId.length > 0 && reasonOk && totpOk && !busy;
-  const canRefund = reasonOk && totpOk && !busy;
+  const canAssign = hasAttestorOrgs && orgId.length > 0 && reasonOk && !busy;
+  const canRefund = reasonOk && !busy;
 
   /** Dispatch an offer to the selected org for this request. */
   async function handleAssign() {
@@ -69,7 +69,7 @@ export function NeedsAdminRow({
     try {
       configureBrowserClient();
       const result = await adminAssignAttestation({
-        body: { attestor_org_id: orgId, reason, totp_code: totp },
+        body: { attestor_org_id: orgId, reason },
         headers: getAccessTokenHeaders(),
         path: { attestation_id: attestation.id },
       });
@@ -90,7 +90,7 @@ export function NeedsAdminRow({
     try {
       configureBrowserClient();
       const result = await adminRefundAttestation({
-        body: { reason, totp_code: totp },
+        body: { reason },
         headers: getAccessTokenHeaders(),
         path: { attestation_id: attestation.id },
       });
@@ -122,7 +122,7 @@ export function NeedsAdminRow({
         <p className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
           No approved attestor organizations yet, so there is nobody to assign
           this to. An organization becomes assignable once it passes business
-          verification and the calibration trial in Admin &rarr; Org Attestors.
+          verification and the calibration trial in Admin &rarr; Attestors.
           Until then, refunding the fee is the only action available.
         </p>
       )}
@@ -150,15 +150,6 @@ export function NeedsAdminRow({
             onChange={(event) => setReason(event.target.value)}
             placeholder="Reason for this action"
             value={reason}
-          />
-        </label>
-        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-          Admin 2FA code
-          <Input
-            inputMode="numeric"
-            onChange={(event) => setTotp(event.target.value)}
-            placeholder="6-digit code"
-            value={totp}
           />
         </label>
       </div>

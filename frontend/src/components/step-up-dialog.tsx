@@ -113,7 +113,9 @@ export function StepUpDialog() {
     <div
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
+      // Above every other overlay (confirm dialogs are z-50): the prompt is
+      // raised from inside those flows and must be the thing the user sees.
+      className="fixed inset-0 z-[60] grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
       onClick={() => settleStepUp(false)}
       role="dialog"
     >

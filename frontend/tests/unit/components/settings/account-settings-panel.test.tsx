@@ -84,34 +84,20 @@ describe("AccountSettingsPanel", () => {
     });
   });
 
-  it("hides the deletion confirmation code field when 2FA is disabled", async () => {
+  it("never asks for a confirmation code in the form", async () => {
+    // Password is required for everyone. Enrolled accounts are asked to step
+    // up by the global prompt when the API refuses, not by a field here.
     render(<AccountSettingsPanel />);
 
-    // Password is required for everyone; the 2FA code field must not appear for
-    // accounts without 2FA enabled.
     await screen.findByLabelText(/current password/i);
     expect(
       screen.queryByLabelText(/confirmation code/i),
     ).not.toBeInTheDocument();
   });
 
-  it("shows the deletion confirmation code field when 2FA is enabled", async () => {
-    vi.mocked(totpStatus).mockResolvedValue({
-      data: { totp_enabled: true },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
-
+  it("keeps email change disabled until the password is entered", async () => {
     render(<AccountSettingsPanel />);
-
-    expect(
-      await screen.findByLabelText(/confirmation code/i),
-    ).toBeInTheDocument();
-  });
-
-  it("keeps email change disabled until a 2FA code is entered", async () => {
-    render(<AccountSettingsPanel />);
-    // Without 2FA, the 2FA field is not shown; password gates the change.
+    // Password gates the change; the step-up prompt is global, not a field.
     await screen.findByLabelText(/account password/i);
     expect(screen.queryByLabelText(/^2fa code$/i)).not.toBeInTheDocument();
 
@@ -131,7 +117,7 @@ describe("AccountSettingsPanel", () => {
     expect(requestEmailChange).not.toHaveBeenCalled();
   });
 
-  it("submits an email-change request with password and null totp without 2FA", async () => {
+  it("submits an email-change request with the password", async () => {
     vi.mocked(requestEmailChange).mockResolvedValue({
       data: { message: "Email change verification sent." },
       error: undefined,
@@ -154,43 +140,6 @@ describe("AccountSettingsPanel", () => {
         body: {
           new_email: "next@auracles.space",
           password: "CorrectHorse9",
-          totp_code: null,
-        },
-        headers: { Authorization: "Bearer access-token" },
-      });
-    });
-  });
-
-  it("includes the 2FA code in the email-change request when 2FA is enabled", async () => {
-    vi.mocked(totpStatus).mockResolvedValue({
-      data: { totp_enabled: true },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
-    vi.mocked(requestEmailChange).mockResolvedValue({
-      data: { message: "Email change verification sent." },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    });
-
-    render(<AccountSettingsPanel />);
-    const totpField = await screen.findByLabelText(/^2fa code$/i);
-
-    fireEvent.change(screen.getByLabelText(/new email/i), {
-      target: { value: "next@auracles.space" },
-    });
-    fireEvent.change(screen.getByLabelText(/account password/i), {
-      target: { value: "CorrectHorse9" },
-    });
-    fireEvent.change(totpField, { target: { value: "123456" } });
-    fireEvent.click(screen.getByRole("button", { name: /request email change/i }));
-
-    await waitFor(() => {
-      expect(requestEmailChange).toHaveBeenCalledWith({
-        body: {
-          new_email: "next@auracles.space",
-          password: "CorrectHorse9",
-          totp_code: "123456",
         },
         headers: { Authorization: "Bearer access-token" },
       });
@@ -231,14 +180,11 @@ describe("AccountSettingsPanel", () => {
     fireEvent.change(screen.getByLabelText(/current password/i), {
       target: { value: "CorrectHorse9" },
     });
-    fireEvent.change(screen.getByLabelText(/confirmation code/i), {
-      target: { value: "654321" },
-    });
     fireEvent.click(screen.getByRole("button", { name: /delete account/i }));
 
     await waitFor(() => {
       expect(requestAccountDeletion).toHaveBeenCalledWith({
-        body: { password: "CorrectHorse9", totp_code: "654321" },
+        body: { password: "CorrectHorse9" },
         headers: { Authorization: "Bearer access-token" },
       });
     });

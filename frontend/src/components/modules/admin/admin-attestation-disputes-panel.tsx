@@ -6,7 +6,8 @@
  * Attestation disputes had no queue: the only admin surface was a free-text
  * dispute-ID box, and no screen anywhere handed an admin that id, so an open
  * dispute was unreachable in practice. This panel enumerates them and resolves
- * one in place.
+ * one in place. Resolution is a sensitive action: the API requires a step-up
+ * 2FA window, which the global step-up prompt handles when the call is refused.
  *
  * Maps to: FR-ATT-* (dispute resolution).
  */
@@ -25,7 +26,6 @@ import type { AdminAttestationDisputeListItem } from "@/lib/generated/types.gen"
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
 type StatusFilter = "active" | "open" | "under_review" | "resolved";
@@ -106,7 +106,6 @@ export function AdminAttestationDisputesPanel() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [notes, setNotes] = useState("");
-  const [totp, setTotp] = useState("");
   const [isComplex, setIsComplex] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -140,7 +139,6 @@ export function AdminAttestationDisputesPanel() {
     setOpenId(null);
     setOutcome(null);
     setNotes("");
-    setTotp("");
     setIsComplex(false);
   }
 
@@ -157,7 +155,6 @@ export function AdminAttestationDisputesPanel() {
     setOpenId(dispute.id);
     setOutcome(null);
     setNotes("");
-    setTotp("");
     // An already-complex dispute must not read as standard-SLA in the form.
     setIsComplex(dispute.is_complex);
   }
@@ -180,7 +177,6 @@ export function AdminAttestationDisputesPanel() {
         body: {
           outcome,
           resolution_notes: notes,
-          totp_code: totp,
           is_complex: isComplex,
         },
       });
@@ -353,22 +349,11 @@ export function AdminAttestationDisputesPanel() {
                     />
                   </label>
 
-                  <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-                    Admin 2FA code
-                    <Input
-                      inputMode="numeric"
-                      onChange={(event) => setTotp(event.target.value)}
-                      placeholder="6-digit code"
-                      value={totp}
-                    />
-                  </label>
-
                   <Button
                     disabled={
                       busyId === dispute.id ||
                       !outcome ||
-                      notes.trim().length < 5 ||
-                      totp.trim().length < 6
+                      notes.trim().length < 5
                     }
                     onClick={() => void handleResolve(dispute.id)}
                   >
