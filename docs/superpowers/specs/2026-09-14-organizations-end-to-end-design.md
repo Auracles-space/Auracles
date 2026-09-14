@@ -24,13 +24,11 @@ All on `rework/step-up-admin-console`, unmerged.
 | Split oversized money components; payouts panel on formatMoney | d02b4d88 |
 | Fixed on the way: email action links, public profile 404, centering, nav order | 1350c29c, f7c19e7e, 41001c6e, 4bba0027 |
 
-Carry-overs, not built:
-- `admin-money-panel.tsx` (about 600 lines) and `org-attestor-financials-tab.tsx` (about 325
-  lines) exceed the component size guideline.
-- The admin payouts panel formats money with its own per-row formatter rather than
-  `formatMoney`.
-- Stripe `payout.failed` deliberately changes no payout status: the money sits in the
-  connected account's Stripe balance, so re-crediting would pay twice.
+No carry-overs remain.
+
+Deliberate choices:
+- Stripe `payout.failed` changes no payout status: the money sits in the connected
+  account's Stripe balance, so re-crediting would pay twice. The payee is told instead.
 
 ## Why (survey, 2026-09-14, five parallel read-only surveys)
 
