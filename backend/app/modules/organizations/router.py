@@ -16,6 +16,7 @@ from app.core.dependencies import (
     require_role,
     require_step_up_after,
 )
+from app.core.network import client_ip
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
 from app.modules.attestation import clarification_service, matching_service
@@ -197,6 +198,12 @@ ORG_PAYMENT_METHOD_SETUP_RATE_LIMITER = RateLimiter(
 ORG_FRAMEWORK_PURCHASE_RATE_LIMITER = RateLimiter(
     namespace="org_framework_purchase", limit=30, window=3600
 )
+# The public profile is unauthenticated and hits the database per read, so
+# it is throttled per client address like the other anonymous surfaces.
+ORG_PUBLIC_PROFILE_LIMIT = 60
+ORG_PUBLIC_PROFILE_RATE_LIMITER = RateLimiter(
+    namespace="org_public_profile", limit=ORG_PUBLIC_PROFILE_LIMIT, window=60
+)
 
 
 def _application_response(
@@ -359,9 +366,14 @@ async def list_my_organizations(
 )
 async def get_public_org(
     slug: str,
+    request: Request,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> PublicOrganizationResponse:
     """Return the public organization profile for the given slug."""
+    await ORG_PUBLIC_PROFILE_RATE_LIMITER.check(
+        cast(RedisCounter, redis), client_ip(request) or "unknown"
+    )
     return await service.get_public_org(db=db, slug=slug)
 
 
@@ -601,6 +613,7 @@ async def revoke_org_license_grant(
         org_id=context.org.id,
         license_id=license_id,
         grant_id=grant_id,
+        actor_id=context.user.id,
     )
 
 
@@ -1283,8 +1296,10 @@ async def get_org_kyb(
     summary="Create an incorporation-document upload session",
     description=(
         "Create a presigned upload session for one incorporation document and "
-        "attach its S3 key to the organization. Owner/admin only."
+        "attach its S3 key to the organization. Requires an open step-up 2FA "
+        "window. Owner/admin only."
     ),
+    dependencies=[Depends(require_step_up_after(require_org_role("admin")))],
 )
 async def add_org_incorporation_document(
     org_id: UUID,
@@ -1319,8 +1334,10 @@ async def add_org_incorporation_document(
     summary="Remove an incorporation document",
     description=(
         "Detach one incorporation document from the organization by its S3 "
-        "key. Owner/admin only, and refused once verified."
+        "key. Requires an open step-up 2FA window. Owner/admin only, and "
+        "refused once verified."
     ),
+    dependencies=[Depends(require_step_up_after(require_org_role("admin")))],
 )
 async def remove_org_incorporation_document(
     org_id: UUID,
@@ -1343,8 +1360,10 @@ async def remove_org_incorporation_document(
     summary="Submit the organization for verification",
     description=(
         "Send the organization's legal details and incorporation documents "
-        "for admin review. Owner/admin only."
+        "for admin review. Requires an open step-up 2FA window. Owner/admin "
+        "only."
     ),
+    dependencies=[Depends(require_step_up_after(require_org_role("admin")))],
 )
 async def submit_org_kyb(
     org_id: UUID,
@@ -1962,13 +1981,17 @@ async def delete_org_payment_method(
     summary="Onboard an organization payout account",
     description=(
         "Create a provider-held payout destination owned by the organization. "
-        "Provider routing follows the org's registered country. Owner/admin only."
+        "Provider routing follows the org's registered country. Requires an "
+        "open step-up 2FA window. Owner only."
     ),
+    dependencies=[
+        Depends(require_step_up_after(require_org_role("owner", verified=True)))
+    ],
 )
 async def onboard_org_payout_account(
     org_id: UUID,
     payload: OrgPayoutAccountOnboardRequest,
-    context: VerifiedOrgAdmin,
+    context: VerifiedOrgOwner,
     db: DatabaseSession,
 ) -> PayoutAccountOnboardResponse:
     """Onboard an org-owned payout destination."""
@@ -1985,16 +2008,17 @@ async def onboard_org_payout_account(
     description=(
         "Request a payout of the org's available earnings. Requires an open "
         "step-up 2FA window, a verified org payout account and an eligible "
-        "active capability path. Owner/admin only."
+        "active capability path. One payout in flight per organization. "
+        "Owner only."
     ),
     dependencies=[
-        Depends(require_step_up_after(require_org_role("admin", verified=True)))
+        Depends(require_step_up_after(require_org_role("owner", verified=True)))
     ],
 )
 async def request_org_payout(
     org_id: UUID,
     payload: PayoutRequest,
-    context: VerifiedOrgAdmin,
+    context: VerifiedOrgOwner,
     db: DatabaseSession,
 ) -> PayoutResponse:
     """Request an org payout inside an open step-up window."""
@@ -2055,9 +2079,12 @@ async def get_org_purchase_invoice(
     description=(
         "Start Stripe checkout for a Framework purchased on behalf of the "
         "organization. The resulting License is owned by the organization. "
-        "Requires an active Operator capability and a payment method on "
-        "file. Owner/admin only."
+        "Requires an open step-up 2FA window, an active Operator capability "
+        "and a payment method on file. Owner/admin only."
     ),
+    dependencies=[
+        Depends(require_step_up_after(require_org_role("admin", verified=True)))
+    ],
 )
 async def create_org_framework_purchase(
     org_id: UUID,

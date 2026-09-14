@@ -27,6 +27,7 @@ from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import hash_token
 from app.integrations import s3
 from app.modules.auth.models import User
+from app.modules.frameworks.models import LicenseGrant
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.notifications.service import create_notification
 from app.modules.organizations import notifications as org_notifications
@@ -752,6 +753,10 @@ async def remove_member(
 ) -> None:
     """Remove a member or allow a non-owner to leave the organization.
 
+    The member's direct License grants are revoked explicitly with one
+    ``license_grant_revoked`` audit row each, rather than being lost to the
+    ``license_grants.member_id`` ON DELETE CASCADE with no trail.
+
     Args:
         db: Async database session.
         context: Resolved organization/member/user context from RBAC dependency.
@@ -796,6 +801,9 @@ async def remove_member(
 
         await _guard_and_release_member_reviews(db, member_id=target.id)
         await _guard_and_release_member_deliveries(db, member_id=target.id)
+        revoked_grant_count = await _revoke_member_license_grants(
+            db, org_id=org_id, member_id=target.id, actor_id=actor_id
+        )
 
         removed_user_id = target.user_id
         await db.delete(target)
@@ -815,8 +823,59 @@ async def remove_member(
     # Leaving is the member's own action; only removal by someone else is news.
     if not is_self:
         org_notifications.notify_member_removed(
-            removed_user_id, org_id=org_id, org_name=org_name
+            removed_user_id,
+            org_id=org_id,
+            org_name=org_name,
+            revoked_grant_count=revoked_grant_count,
         )
+
+
+async def _revoke_member_license_grants(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    member_id: UUID,
+    actor_id: UUID,
+) -> int:
+    """Delete every direct grant held by one member and audit each revocation.
+
+    Runs inside the caller's ``remove_member`` transaction. Team grants are
+    untouched: they belong to the team, not the departing member.
+
+    Returns:
+        The number of grants revoked.
+    """
+    grants = list(
+        (
+            await db.scalars(
+                select(LicenseGrant).where(LicenseGrant.member_id == member_id)
+            )
+        ).all()
+    )
+    for grant in grants:
+        await db.delete(grant)
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="license_grant_revoked",
+            target_type="license",
+            target_id=grant.license_id,
+            metadata={
+                "org_id": str(org_id),
+                "member_id": str(member_id),
+                "grant_id": str(grant.id),
+                "reason": "member_removed",
+            },
+        )
+    if grants:
+        logger.bind(
+            module="organizations",
+            action="revoke_member_license_grants",
+            user_id=str(actor_id),
+            org_id=str(org_id),
+            member_id=str(member_id),
+        ).info("license_grants_revoked", count=len(grants))
+    return len(grants)
 
 
 _IN_FLIGHT_REVIEW_STATUSES = (

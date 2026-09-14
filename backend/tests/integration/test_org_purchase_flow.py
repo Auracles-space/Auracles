@@ -22,7 +22,7 @@ from sqlalchemy import delete, select, update
 
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
-from app.core.security import create_access_token, hash_password
+from app.core.security import create_access_token, encrypt_totp_secret, hash_password
 from app.integrations.paystack import PaystackInitializedTransaction
 from app.main import app
 from app.modules.auth.models import User
@@ -34,7 +34,7 @@ from app.modules.organizations.models import Organization, OrgCapability, OrgMem
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
-from tests.conftest import verify_org_kyb
+from tests.conftest import open_step_up_window, verify_org_kyb
 from tests.integration.test_financials_payment_methods import FakeRedis
 
 pytestmark = pytest.mark.asyncio
@@ -168,6 +168,9 @@ async def _create_user(prefix: str) -> UUID:
                 display_name=email.split("@")[0],
                 email_verified=True,
                 kyc_status="verified",
+                # Org checkout is step-up gated, so buyers are 2FA-enrolled.
+                totp_enabled=True,
+                totp_secret=encrypt_totp_secret("JBSWY3DPEHPK3PXP"),
             )
             session.add(user)
             await session.flush()
@@ -284,6 +287,7 @@ async def test_org_purchase_happy_path_and_webhook_grants_org_library_access(
     owner_id = await _create_user("org-purchase-owner")
     member_id = await _create_user("org-purchase-member")
     org = await _create_org(client, owner_id, "org-purchase")
+    await open_step_up_window(org_purchase_context["redis"], owner_id)
     member_row_id = await _add_member(UUID(org["id"]), member_id)
     await _activate_operator_capability(client, org["id"], owner_id)
     await _set_org_stripe_customer(org["id"], "cus_org_purchase_flow_123")
@@ -387,7 +391,7 @@ async def test_org_purchase_routes_to_paystack_for_nigerian_billing(
     contact (falling back to the owner) and the browser is redirected.
     Enforces the org side of the Nigerian pilot corridor.
     """
-    del migrated_database, org_purchase_context
+    del migrated_database
     paystack_calls: list[dict[str, Any]] = []
 
     async def fake_initialize_transaction(
@@ -422,6 +426,7 @@ async def test_org_purchase_routes_to_paystack_for_nigerian_billing(
     contributor_id = await _create_user("org-ngn-contributor")
     owner_id = await _create_user("org-ngn-owner")
     org = await _create_org(client, owner_id, "org-ngn-purchase")
+    await open_step_up_window(org_purchase_context["redis"], owner_id)
     await _activate_operator_capability(client, org["id"], owner_id)
     # Deliberately no Stripe customer: the Paystack rail must not require one.
     framework_id = await _create_published_framework(contributor_id)
@@ -469,11 +474,12 @@ async def test_org_purchase_requires_auth_and_admin_role(
     org_purchase_context: dict[str, Any],
 ) -> None:
     """Unauthenticated and plain-member callers cannot start org checkout."""
-    del migrated_database, org_purchase_context
+    del migrated_database
     contributor_id = await _create_user("org-purchase-contributor")
     owner_id = await _create_user("org-purchase-owner")
     member_id = await _create_user("org-purchase-member")
     org = await _create_org(client, owner_id, "org-purchase")
+    await open_step_up_window(org_purchase_context["redis"], owner_id)
     await _add_member(UUID(org["id"]), member_id)
     await _activate_operator_capability(client, org["id"], owner_id)
     await _set_org_stripe_customer(org["id"], "cus_org_purchase_flow_123")
@@ -499,10 +505,11 @@ async def test_org_purchase_blocks_suspended_capability(
     org_purchase_context: dict[str, Any],
 ) -> None:
     """A suspended Operator capability blocks org checkout with 403."""
-    del migrated_database, org_purchase_context
+    del migrated_database
     contributor_id = await _create_user("org-purchase-contributor")
     owner_id = await _create_user("org-purchase-owner")
     org = await _create_org(client, owner_id, "org-purchase")
+    await open_step_up_window(org_purchase_context["redis"], owner_id)
     await _activate_operator_capability(client, org["id"], owner_id)
     await _set_org_stripe_customer(org["id"], "cus_org_purchase_flow_123")
     await _suspend_operator_capability(org["id"])
@@ -527,6 +534,7 @@ async def test_org_purchase_requires_payment_method_on_file(
     contributor_id = await _create_user("org-purchase-contributor")
     owner_id = await _create_user("org-purchase-owner")
     org = await _create_org(client, owner_id, "org-purchase")
+    await open_step_up_window(org_purchase_context["redis"], owner_id)
     await _activate_operator_capability(client, org["id"], owner_id)
     framework_id = await _create_published_framework(contributor_id)
 
@@ -549,6 +557,7 @@ async def test_org_purchase_rejects_self_deal(
     del migrated_database
     owner_id = await _create_user("org-purchase-owner")
     org = await _create_org(client, owner_id, "org-purchase")
+    await open_step_up_window(org_purchase_context["redis"], owner_id)
     await _activate_operator_capability(client, org["id"], owner_id)
     await _set_org_stripe_customer(org["id"], "cus_org_purchase_flow_123")
     framework_id = await _create_published_framework(

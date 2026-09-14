@@ -58,6 +58,7 @@ from app.modules.gdpr.models import AccountDeletionRequest, DataExportRequest
 from app.modules.integrations.models import OAuthConnection
 from app.modules.invoicing.models import Invoice
 from app.modules.notifications.service import create_notification
+from app.modules.organizations.models import Organization
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
 from app.modules.waitlist.models import WaitlistEntry
@@ -840,14 +841,44 @@ def _framework_suspend_action_links(framework: Framework) -> list[dict[str, str]
     ]
 
 
+def _framework_owner_fields(
+    contributor: User | None,
+    organization: Organization | None,
+) -> dict[str, Any]:
+    """Serialize whichever seller owns a Framework (BR: ck_frameworks_seller_xor).
+
+    Exactly one of ``contributor`` / ``organization`` is set; the other side
+    is reported as ``None`` so admin surfaces can show the right owner.
+    """
+    return {
+        "contributor_id": contributor.id if contributor is not None else None,
+        "contributor_name": (
+            contributor.display_name if contributor is not None else None
+        ),
+        "organization_id": organization.id if organization is not None else None,
+        "organization_name": organization.name if organization is not None else None,
+    }
+
+
 async def _list_rarity_review_rows(
     db: AsyncSession,
-) -> list[tuple[Artifact, Framework, User, ArtifactRarityAudit | None]]:
+) -> list[
+    tuple[
+        Artifact,
+        Framework,
+        User | None,
+        Organization | None,
+        ArtifactRarityAudit | None,
+    ]
+]:
     """Return current artifact rows that require rarity moderation review."""
+    # Outer joins to both sellers: an org-owned Framework has no contributor
+    # row and must not fall out of the queue.
     result = await db.execute(
-        select(Artifact, Framework, User, ArtifactRarityAudit)
+        select(Artifact, Framework, User, Organization, ArtifactRarityAudit)
         .join(Framework, Framework.id == Artifact.framework_id)
-        .join(User, User.id == Framework.contributor_id)
+        .outerjoin(User, User.id == Framework.contributor_id)
+        .outerjoin(Organization, Organization.id == Framework.contributor_org_id)
         .outerjoin(
             ArtifactRarityAudit,
             ArtifactRarityAudit.artifact_id == Artifact.id,
@@ -857,10 +888,11 @@ async def _list_rarity_review_rows(
             Artifact.processing_status == "flagged_rarity",
         )
     )
-    # The outer join makes the audit nullable, but the select() types it
-    # non-optional; the declared return type is the accurate one.
+    # The outer joins make the owner and audit nullable, but the select()
+    # types them non-optional; the declared return type is the accurate one.
     return cast(
-        "list[tuple[Artifact, Framework, User, ArtifactRarityAudit | None]]",
+        "list[tuple[Artifact, Framework, User | None, Organization | None,"
+        " ArtifactRarityAudit | None]]",
         list(result.all()),
     )
 
@@ -887,7 +919,8 @@ def _rarity_review_item(
     *,
     artifact: Artifact,
     framework: Framework,
-    contributor: User,
+    contributor: User | None,
+    organization: Organization | None,
     rarity_audit: ArtifactRarityAudit | None,
 ) -> dict[str, Any]:
     """Serialize one artifact-level rarity review row."""
@@ -914,8 +947,7 @@ def _rarity_review_item(
         "queue_type": "rarity_review",
         "framework_id": framework.id,
         "framework_title": framework.title,
-        "contributor_id": contributor.id,
-        "contributor_name": contributor.display_name,
+        **_framework_owner_fields(contributor, organization),
         "artifact_id": artifact.id,
         "artifact_name": artifact.name,
         "signal_at": signal_at,
@@ -927,7 +959,8 @@ def _rarity_review_item(
 def _near_duplicate_block_item(
     *,
     framework: Framework,
-    contributor: User,
+    contributor: User | None,
+    organization: Organization | None,
     blocked_artifacts: Sequence[Artifact],
     rarity_audits: dict[UUID, ArtifactRarityAudit | None],
 ) -> dict[str, Any]:
@@ -955,8 +988,7 @@ def _near_duplicate_block_item(
         "queue_type": "near_duplicate_block",
         "framework_id": framework.id,
         "framework_title": framework.title,
-        "contributor_id": contributor.id,
-        "contributor_name": contributor.display_name,
+        **_framework_owner_fields(contributor, organization),
         "artifact_id": primary_artifact.id,
         "artifact_name": primary_artifact.name,
         "signal_at": signal_at,
@@ -989,7 +1021,8 @@ def _pii_review_item(
     *,
     artifact: Artifact,
     framework: Framework,
-    contributor: User,
+    contributor: User | None,
+    organization: Organization | None,
     pii_audit: Any | None,
 ) -> dict[str, Any]:
     """Serialize one artifact-level PII review row."""
@@ -1022,8 +1055,7 @@ def _pii_review_item(
         "queue_type": "pii_review",
         "framework_id": framework.id,
         "framework_title": framework.title,
-        "contributor_id": contributor.id,
-        "contributor_name": contributor.display_name,
+        **_framework_owner_fields(contributor, organization),
         "artifact_id": artifact.id,
         "artifact_name": artifact.name,
         "signal_at": signal_at,
@@ -1057,20 +1089,23 @@ async def list_moderation_queue(
 
     rarity_rows = await _list_rarity_review_rows(db)
     rarity_audits_by_artifact = {
-        artifact.id: rarity_audit for artifact, _, _, rarity_audit in rarity_rows
+        artifact.id: rarity_audit for artifact, _, _, _, rarity_audit in rarity_rows
     }
     items: list[dict[str, Any]] = [
         _rarity_review_item(
             artifact=artifact,
             framework=framework,
             contributor=contributor,
+            organization=organization,
             rarity_audit=rarity_audit,
         )
-        for artifact, framework, contributor, rarity_audit in rarity_rows
+        for artifact, framework, contributor, organization, rarity_audit in rarity_rows
     ]
 
-    framework_maps: dict[UUID, tuple[Framework, User, list[Artifact]]] = {}
-    for artifact, framework, contributor, _ in rarity_rows:
+    framework_maps: dict[
+        UUID, tuple[Framework, User | None, Organization | None, list[Artifact]]
+    ] = {}
+    for artifact, framework, contributor, organization, _ in rarity_rows:
         blocked_ids = (framework.pipeline_failure_reasons or {}).get("internal_rarity")
         if not isinstance(blocked_ids, list):
             blocked_ids = []
@@ -1081,23 +1116,30 @@ async def list_moderation_queue(
             continue
         existing = framework_maps.get(framework.id)
         if existing is None:
-            framework_maps[framework.id] = (framework, contributor, [artifact])
+            framework_maps[framework.id] = (
+                framework,
+                contributor,
+                organization,
+                [artifact],
+            )
             continue
-        existing[2].append(artifact)
+        existing[3].append(artifact)
     items.extend(
         _near_duplicate_block_item(
             framework=framework,
             contributor=contributor,
+            organization=organization,
             blocked_artifacts=artifacts,
             rarity_audits=rarity_audits_by_artifact,
         )
-        for framework, contributor, artifacts in framework_maps.values()
+        for framework, contributor, organization, artifacts in framework_maps.values()
     )
 
     pii_result = await db.execute(
-        select(Artifact, Framework, User)
+        select(Artifact, Framework, User, Organization)
         .join(Framework, Framework.id == Artifact.framework_id)
-        .join(User, User.id == Framework.contributor_id)
+        .outerjoin(User, User.id == Framework.contributor_id)
+        .outerjoin(Organization, Organization.id == Framework.contributor_org_id)
         .where(
             Artifact.current_for_framework.is_(True),
             Artifact.pii_review_needed.is_(True),
@@ -1106,16 +1148,17 @@ async def list_moderation_queue(
     pii_rows = list(pii_result.all())
     latest_pii_audits = await _latest_pii_audits_by_artifact(
         db,
-        [artifact.id for artifact, _, _ in pii_rows],
+        [artifact.id for artifact, _, _, _ in pii_rows],
     )
     items.extend(
         _pii_review_item(
             artifact=artifact,
             framework=framework,
             contributor=contributor,
+            organization=organization,
             pii_audit=latest_pii_audits.get(artifact.id),
         )
-        for artifact, framework, contributor in pii_rows
+        for artifact, framework, contributor, organization in pii_rows
     )
 
     if queue_type != "all":
@@ -1929,8 +1972,9 @@ async def list_admin_frameworks(
     """List published Frameworks with their owners for admin delist control.
 
     Surfaces arbitrary published Frameworks — not just signal-flagged ones —
-    so an admin can take down any Framework on request. Joined to the owning
-    Contributor so the UI can show who is affected.
+    so an admin can take down any Framework on request. Outer-joined to the
+    owning Contributor and organization so the UI can show who is affected
+    whichever seller owns the Framework.
 
     Args:
         db: Async database session.
@@ -1941,8 +1985,9 @@ async def list_admin_frameworks(
         publication first.
     """
     statement = (
-        select(Framework, User)
-        .join(User, User.id == Framework.contributor_id)
+        select(Framework, User, Organization)
+        .outerjoin(User, User.id == Framework.contributor_id)
+        .outerjoin(Organization, Organization.id == Framework.contributor_org_id)
         .where(Framework.status == "published")
     )
     if query:
@@ -1957,12 +2002,11 @@ async def list_admin_frameworks(
             {
                 "framework_id": framework.id,
                 "title": framework.title,
-                "contributor_id": contributor.id,
-                "contributor_name": contributor.display_name,
+                **_framework_owner_fields(contributor, organization),
                 "status": framework.status,
                 "published_at": framework.published_at,
             }
-            for framework, contributor in rows
+            for framework, contributor, organization in rows
         ]
     }
 
@@ -1970,7 +2014,8 @@ async def list_admin_frameworks(
 async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
     """List every Framework currently suspended from the marketplace.
 
-    Joins each suspended Framework to its owning Contributor and the timestamp
+    Outer-joins each suspended Framework to its owning Contributor or
+    organization and the timestamp
     of its most recent ``framework_suspended`` audit entry so the admin UI can
     show who is affected and when the takedown happened.
 
@@ -1996,8 +2041,14 @@ async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
 
     rows = (
         await db.execute(
-            select(Framework, User, suspended_at_subquery.c.suspended_at)
-            .join(User, User.id == Framework.contributor_id)
+            select(
+                Framework,
+                User,
+                Organization,
+                suspended_at_subquery.c.suspended_at,
+            )
+            .outerjoin(User, User.id == Framework.contributor_id)
+            .outerjoin(Organization, Organization.id == Framework.contributor_org_id)
             .outerjoin(
                 suspended_at_subquery,
                 suspended_at_subquery.c.target_id == Framework.id,
@@ -2015,12 +2066,11 @@ async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
             {
                 "framework_id": framework.id,
                 "title": framework.title,
-                "contributor_id": contributor.id,
-                "contributor_name": contributor.display_name,
+                **_framework_owner_fields(contributor, organization),
                 "reason": framework.rejection_reason,
                 "suspended_at": suspended_at,
             }
-            for framework, contributor, suspended_at in rows
+            for framework, contributor, organization, suspended_at in rows
         ]
     }
 

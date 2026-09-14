@@ -46,6 +46,9 @@ export function getAccessTokenHeaders(): Record<string, string> {
 /**
  * Convert generated-client errors into safe user-facing copy.
  *
+ * Reads, in order: a string `detail`, a list of 422 entries or plain strings,
+ * then a dict `detail` (`message` first, else a humanised `error_code`).
+ *
  * @param error - Unknown error shape from the generated client.
  */
 export function describeGeneratedError(error: unknown): string {
@@ -75,8 +78,29 @@ export function describeGeneratedError(error: unknown): string {
         return messages.join(" ");
       }
     }
+    // Org routes raise a structured `{ error_code, message }` dict. The
+    // message is written for people; the code is a stable identifier, so it
+    // is only shown (humanised) when no message accompanies it.
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const { error_code: errorCode, message } = detail as {
+        error_code?: unknown;
+        message?: unknown;
+      };
+      if (typeof message === "string" && message.trim()) {
+        return message;
+      }
+      if (typeof errorCode === "string" && errorCode.trim()) {
+        return humaniseErrorCode(errorCode);
+      }
+    }
   }
   return "The request could not be completed.";
+}
+
+/** Turn a snake_case error code (`step_up_required`) into sentence case. */
+function humaniseErrorCode(code: string): string {
+  const words = code.trim().split(/[_\s]+/).filter(Boolean).join(" ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /**

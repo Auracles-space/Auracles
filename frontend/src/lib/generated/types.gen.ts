@@ -542,9 +542,11 @@ export type AdminFinancialEventsResponse = {
  * One Framework in the admin directory used to pick a delist target.
  */
 export type AdminFrameworkDirectoryItem = {
-    contributor_id: string;
-    contributor_name: string;
+    contributor_id?: (string | null);
+    contributor_name?: (string | null);
     framework_id: string;
+    organization_id?: (string | null);
+    organization_name?: (string | null);
     published_at?: (string | null);
     status: string;
     title: string;
@@ -717,13 +719,15 @@ export type AdminModerationQueueItem = {
     action_links: Array<AdminModerationActionLink>;
     artifact_id?: (string | null);
     artifact_name?: (string | null);
-    contributor_id: string;
-    contributor_name: string;
+    contributor_id?: (string | null);
+    contributor_name?: (string | null);
     details: {
         [key: string]: unknown;
     };
     framework_id: string;
     framework_title: string;
+    organization_id?: (string | null);
+    organization_name?: (string | null);
     queue_type: 'rarity_review' | 'near_duplicate_block' | 'pii_review';
     signal_at: string;
     signal_id: string;
@@ -872,9 +876,11 @@ export type AdminStartTrialRequest = {
  * One suspended Framework awaiting possible reinstatement.
  */
 export type AdminSuspendedFrameworkItem = {
-    contributor_id: string;
-    contributor_name: string;
+    contributor_id?: (string | null);
+    contributor_name?: (string | null);
     framework_id: string;
+    organization_id?: (string | null);
+    organization_name?: (string | null);
     reason?: (string | null);
     suspended_at?: (string | null);
     title: string;
@@ -3275,6 +3281,9 @@ export type OrganizationCreateRequest = {
     description?: (string | null);
     name: string;
     slug: string;
+    /**
+     * Absolute http(s) URL; whitespace is stripped and blank clears it.
+     */
     website?: (string | null);
 };
 
@@ -3309,6 +3318,9 @@ export type OrganizationResponse = {
 export type OrganizationUpdateRequest = {
     description?: (string | null);
     name?: (string | null);
+    /**
+     * Absolute http(s) URL; whitespace is stripped and blank clears it.
+     */
     website?: (string | null);
 };
 
@@ -7853,7 +7865,7 @@ export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostData = {
 
 export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostResponse = (PayoutResponse);
 
-export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostError = (HTTPValidationError);
+export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostError = (unknown | HTTPValidationError);
 
 export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetData = {
     path: {
@@ -8679,7 +8691,7 @@ export type GetPublicOrgV1OrgsSlugGetData = {
 
 export type GetPublicOrgV1OrgsSlugGetResponse = (PublicOrganizationResponse);
 
-export type GetPublicOrgV1OrgsSlugGetError = (HTTPValidationError);
+export type GetPublicOrgV1OrgsSlugGetError = (HTTPValidationError | unknown);
 
 export type ListPartnerCatalogV1PartnerCatalogGetData = {
     headers?: {

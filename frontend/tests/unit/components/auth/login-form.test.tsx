@@ -46,6 +46,21 @@ describe("LoginForm", () => {
     expect(submit).toBeEnabled();
   });
 
+  it("carries the next path onto the sign-up link so a redirect survives registration", () => {
+    render(<LoginForm next="/org-invitations/abc" />);
+
+    expect(screen.getByRole("link", { name: /sign up/i })).toHaveAttribute(
+      "href",
+      "/register?next=%2Forg-invitations%2Fabc",
+    );
+  });
+
+  it("links to plain /register when no next path is given", () => {
+    render(<LoginForm />);
+
+    expect(screen.getByRole("link", { name: /sign up/i })).toHaveAttribute("href", "/register");
+  });
+
   it("defaults remember_me to false and sends true when the box is checked", async () => {
     vi.mocked(login).mockResolvedValue({
       data: undefined,

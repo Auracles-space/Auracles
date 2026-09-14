@@ -22,7 +22,7 @@ import {
   listOrgPaymentMethods,
 } from "@/lib/generated/sdk.gen";
 import type { OrgPaymentMethodResponse, OrgInvoiceListItem } from "@/lib/generated/types.gen";
-import { formatLabel } from "@/lib/marketplace/format";
+import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
 type SetupSession = {
@@ -272,7 +272,7 @@ export function OrgBillingSection() {
                 <div className="flex items-center justify-end gap-4">
                   <div className="text-right">
                     <p className="text-sm font-semibold text-foreground">
-                      {invoice.currency.toUpperCase()}
+                      {formatMoney(invoice.total, invoice.currency.toUpperCase())}
                     </p>
                     <p className="text-xs text-foreground-muted capitalize">
                       {invoice.doc_type}

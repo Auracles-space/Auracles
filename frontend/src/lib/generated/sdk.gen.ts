@@ -2916,7 +2916,7 @@ export const deleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMet
 
 /**
  * Onboard an organization payout account
- * Create a provider-held payout destination owned by the organization. Provider routing follows the org's registered country. Owner/admin only.
+ * Create a provider-held payout destination owned by the organization. Provider routing follows the org's registered country. Requires an open step-up 2FA window. Owner only.
  */
 export const onboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostResponse, OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostError, ThrowOnError>({
@@ -2927,7 +2927,7 @@ export const onboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPost = <T
 
 /**
  * Request an organization payout
- * Request a payout of the org's available earnings. TOTP-gated (requester's own TOTP); requires a verified org payout account and an eligible active capability path. Owner/admin only.
+ * Request a payout of the org's available earnings. Requires an open step-up 2FA window, a verified org payout account and an eligible active capability path. One payout in flight per organization. Owner only.
  */
 export const requestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostResponse, RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostError, ThrowOnError>({
@@ -3103,7 +3103,7 @@ export const publishOrgFrameworkV1OrgsOrgIdFrameworksFrameworkIdPublishPost = <T
 
 /**
  * Purchase a Framework as an organization
- * Start Stripe checkout for a Framework purchased on behalf of the organization. The resulting License is owned by the organization. Requires an active Operator capability and a payment method on file. Owner/admin only.
+ * Start Stripe checkout for a Framework purchased on behalf of the organization. The resulting License is owned by the organization. Requires an open step-up 2FA window, an active Operator capability and a payment method on file. Owner/admin only.
  */
 export const createOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostData, ThrowOnError>) => {
     return (options?.client ?? client).post<CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostResponse, CreateOrgFrameworkPurchaseV1OrgsOrgIdFrameworksFrameworkIdPurchasePostError, ThrowOnError>({
@@ -3235,7 +3235,7 @@ export const getOrgKybV1OrgsOrgIdKybGet = <ThrowOnError extends boolean = false>
 
 /**
  * Remove an incorporation document
- * Detach one incorporation document from the organization by its S3 key. Owner/admin only, and refused once verified.
+ * Detach one incorporation document from the organization by its S3 key. Requires an open step-up 2FA window. Owner/admin only, and refused once verified.
  */
 export const removeOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDelete = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<RemoveOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDeleteData, ThrowOnError>) => {
     return (options?.client ?? client).delete<RemoveOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDeleteResponse, RemoveOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDeleteError, ThrowOnError>({
@@ -3246,7 +3246,7 @@ export const removeOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentDe
 
 /**
  * Create an incorporation-document upload session
- * Create a presigned upload session for one incorporation document and attach its S3 key to the organization. Owner/admin only.
+ * Create a presigned upload session for one incorporation document and attach its S3 key to the organization. Requires an open step-up 2FA window. Owner/admin only.
  */
 export const addOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<AddOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<AddOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPostResponse, AddOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPostError, ThrowOnError>({
@@ -3257,7 +3257,7 @@ export const addOrgIncorporationDocumentV1OrgsOrgIdKybIncorporationDocumentPost 
 
 /**
  * Submit the organization for verification
- * Send the organization's legal details and incorporation documents for admin review. Owner/admin only.
+ * Send the organization's legal details and incorporation documents for admin review. Requires an open step-up 2FA window. Owner/admin only.
  */
 export const submitOrgKybV1OrgsOrgIdKybSubmitPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<SubmitOrgKybV1OrgsOrgIdKybSubmitPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<SubmitOrgKybV1OrgsOrgIdKybSubmitPostResponse, SubmitOrgKybV1OrgsOrgIdKybSubmitPostError, ThrowOnError>({

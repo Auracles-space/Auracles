@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import {
   previewInvitationV1OrgInvitationsTokenGet,
   acceptInvitationV1OrgInvitationsTokenAcceptPost,
+  declineInvitationV1OrgInvitationsTokenDeclinePost,
   getOrgNda,
   signOrgNda
 } from "@/lib/generated/sdk.gen";
 import type { OrgInvitationPreviewResponse } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
@@ -26,6 +27,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
   const [error, setError] = useState<string | null>(null);
 
   const [accepting, setAccepting] = useState(false);
+  const [declining, setDeclining] = useState(false);
   const [joinedOrg, setJoinedOrg] = useState<{ id: string; name: string } | null>(null);
   const [signingNda, setSigningNda] = useState(false);
   const [ndaSigned, setNdaSigned] = useState(false);
@@ -36,11 +38,8 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
 
   useEffect(() => {
     async function loadPreview() {
-      // First, we check if the user is logged in. If not, we could redirect them,
-      // but `previewInvitation` might be a public endpoint so they can see what it is before login.
-      // Wait, the plan says: "Auth check: must be logged in. (If not, push to `/login?next=...`)".
-      // We will rely on our standard fetch headers. If they are not logged in, we get a 401.
-      
+      // The preview endpoint requires a session, so an anonymous visitor is
+      // sent through login with this page as the return path.
       const headers = getAccessTokenHeaders();
       if (!headers.Authorization) {
         // Not logged in -> redirect to login with `next`
@@ -57,7 +56,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
         if (result.response.ok && result.data) {
           setPreview(result.data);
         } else {
-          setError(result.error?.detail?.error_code || "Invalid or expired invitation.");
+          setError(describeGeneratedError(result.error));
         }
       } catch {
         setError("An error occurred loading the invitation.");
@@ -79,7 +78,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
       });
 
       if (!result.response.ok) {
-        setError(result.error?.detail?.error_code || "Failed to accept invitation");
+        setError(describeGeneratedError(result.error));
         setAccepting(false);
       } else {
         if (result.data?.nda_required) {
@@ -103,6 +102,28 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
     }
   }
 
+  async function handleDecline() {
+    setDeclining(true);
+    setError(null);
+
+    try {
+      const result = await declineInvitationV1OrgInvitationsTokenDeclinePost({
+        path: { token },
+        headers: getAccessTokenHeaders(),
+      });
+
+      if (!result.response.ok) {
+        setError(describeGeneratedError(result.error));
+        setDeclining(false);
+      } else {
+        router.push("/");
+      }
+    } catch (error) {
+      setError(describeGeneratedError(error));
+      setDeclining(false);
+    }
+  }
+
   async function handleSignNda() {
     if (!joinedOrg) return;
     setSigningNda(true);
@@ -113,7 +134,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
         headers: getAccessTokenHeaders(),
       });
       if (!result.response.ok) {
-        setError(result.error?.detail?.error_code || "Failed to sign NDA");
+        setError(describeGeneratedError(result.error));
         setSigningNda(false);
       } else {
         setNdaSigned(true);
@@ -149,7 +170,7 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
             <p className="mb-8 text-sm text-foreground-muted">
               {error}
             </p>
-            <Link href="/" className="inline-flex h-10 items-center justify-center rounded-xl bg-surface-2 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-3 w-full">
+            <Link href="/" className="inline-flex min-h-11 items-center justify-center rounded-xl bg-surface-2 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-3 w-full">
               Return home
             </Link>
           </>
@@ -211,12 +232,23 @@ export function InvitationAccept({ token }: InvitationAcceptProps) {
             </p>
             
             <div className="flex flex-col gap-3">
-              <Button onClick={handleAccept} loading={accepting} className="w-full min-h-12 text-base">
+              <Button
+                onClick={handleAccept}
+                loading={accepting}
+                disabled={declining}
+                className="w-full min-h-12 text-base"
+              >
                 Accept Invitation
               </Button>
-              <Link href="/" className="inline-flex items-center justify-center rounded-xl bg-surface-2 px-4 py-2 font-medium text-foreground transition-colors hover:bg-surface-3 w-full min-h-12 text-base">
-                Decline & Return Home
-              </Link>
+              <Button
+                variant="secondary"
+                onClick={handleDecline}
+                loading={declining}
+                disabled={accepting}
+                className="w-full min-h-12 text-base text-foreground-muted"
+              >
+                Decline &amp; Return Home
+              </Button>
             </div>
           </>
         ) : null}

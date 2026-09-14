@@ -77,6 +77,7 @@ from app.modules.organizations.models import (
     OrgMember,
 )
 from app.modules.organizations.operator_service import operator_capability_active
+from app.shared.errors import error_detail
 from app.shared.schemas.download import DownloadUrlResponse
 from app.workers.tasks.financials import generate_invoice_pdf
 from app.workers.tasks.payouts import process_payout
@@ -1530,7 +1531,10 @@ async def create_org_framework_purchase(
     if not await operator_capability_active(db, org_id=org_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={"error_code": "capability_suspended"},
+            detail=error_detail(
+                "capability_suspended",
+                "The organization's Operator capability is not active.",
+            ),
         )
 
     framework = await db.scalar(
@@ -2876,9 +2880,13 @@ async def request_org_payout(
 ) -> PayoutResponse:
     """Create a pending org payout and queue provider transfer processing.
 
-    The route requires an open step-up window for the acting org owner/admin.
-    Gates: the org owns a verified payout account and satisfies at least one
-    eligible capability payout path.
+    The route requires an open step-up window for the acting org owner
+    (Decision 3: payout authority is owner-only). Gates: no payout already
+    pending or processing for the org, the org owns a verified payout
+    account, and it satisfies at least one eligible capability payout path.
+
+    Raises:
+        HTTPException(409): A payout for the org is already in flight.
     """
     actor_id = actor.id
     currency = payload.currency.upper()
@@ -2900,6 +2908,21 @@ async def request_org_payout(
         await db.rollback()
     async with db.begin():
         await _lock_org_financials(db, org_id=org_id)
+        # One payout in flight per org: a double-submit (or two owners
+        # acting at once) must not draw the same balance down twice.
+        in_flight = await db.scalar(
+            select(Payout.id)
+            .where(
+                Payout.org_id == org_id,
+                Payout.status.in_(("pending", "processing")),
+            )
+            .limit(1)
+        )
+        if in_flight is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A payout is already in progress for this organization.",
+            )
         if not await _org_is_payout_eligible(db, org_id=org_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

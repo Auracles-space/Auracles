@@ -42,6 +42,11 @@ type LoginFormProps = {
  */
 export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps) {
   const safeNext = safeInternalPath(next);
+  // A deep link (e.g. an invitation) that lands on login must survive the
+  // detour through registration rather than being dropped at the sign-up link.
+  const registerHref = safeNext
+    ? `/register?next=${encodeURIComponent(safeNext)}`
+    : "/register";
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -199,7 +204,7 @@ export function LoginForm({ next, onAuthenticated, onChallenge }: LoginFormProps
             Reset password
           </a>
           <span className="text-sm text-foreground-subtle">•</span>
-          <a className="text-sm font-medium text-accent hover:underline" href="/register">
+          <a className="text-sm font-medium text-accent hover:underline" href={registerHref}>
             Sign up
           </a>
         </div>

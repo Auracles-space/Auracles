@@ -377,7 +377,7 @@ async def test_org_purchase_blocks_when_capability_suspended(
             )
 
     assert exc_info.value.status_code == 403
-    assert exc_info.value.detail == {"error_code": "capability_suspended"}
+    assert exc_info.value.detail["error_code"] == "capability_suspended"
 
 
 @pytest.mark.asyncio
@@ -479,9 +479,10 @@ async def test_webhook_org_branch_grants_org_license_and_completes_transaction(
 
     async with async_session_factory() as session:
         async with session.begin():
-            invoice_transaction_id, after_commit_work = (
-                await webhooks_service._handle_purchase_succeeded(session, event)
-            )
+            (
+                invoice_transaction_id,
+                after_commit_work,
+            ) = await webhooks_service._handle_purchase_succeeded(session, event)
 
     # The first return value is the transaction whose invoice PDF is queued.
     # Settlement issues the invoice for org buyers too (billed to the org's

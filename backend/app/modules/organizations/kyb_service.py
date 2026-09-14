@@ -39,6 +39,7 @@ from app.modules.attestation.credential_service import (
     _safe_file_name,
 )
 from app.modules.organizations.models import Organization, OrgLegalProfile, OrgMember
+from app.shared.errors import error_detail
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
 # Incorporation uploads reuse the shared private-bucket evidence limits.
@@ -102,10 +103,11 @@ async def require_org_kyb_verified(db: AsyncSession, *, org_id: UUID) -> None:
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail={
-            "error_code": "org_kyb_required",
-            "onboarding_url": f"/dashboard/organizations/{org_id}/verification",
-        },
+        detail=error_detail(
+            "org_kyb_required",
+            "The organization must complete business verification first.",
+            onboarding_url=f"/dashboard/organizations/{org_id}/verification",
+        ),
     )
 
 

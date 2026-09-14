@@ -167,17 +167,34 @@ def notify_capability_status(
     )
 
 
-def notify_member_removed(user_id: UUID, *, org_id: UUID, org_name: str) -> None:
-    """Tell a member an owner or admin removed them from the organization."""
+def notify_member_removed(
+    user_id: UUID,
+    *,
+    org_id: UUID,
+    org_name: str,
+    revoked_grant_count: int = 0,
+) -> None:
+    """Tell a member an owner or admin removed them from the organization.
+
+    When the removal also revoked shared-library grants, say so explicitly so
+    the member knows why Frameworks they could open yesterday are gone.
+    """
+    body = (
+        f"An administrator of {org_name} removed you. You no longer have "
+        "access to its workspaces, queues, or libraries."
+    )
+    if revoked_grant_count > 0:
+        noun = "Framework" if revoked_grant_count == 1 else "Frameworks"
+        body += (
+            f" Your shared library access to {revoked_grant_count} {noun} "
+            "ended with your membership."
+        )
     notify_users(
         [user_id],
         org_id=org_id,
         notification_type="org_member_removed",
         title=f"You were removed from {org_name}",
-        body=(
-            f"An administrator of {org_name} removed you. You no longer have "
-            "access to its workspaces, queues, or libraries."
-        ),
+        body=body,
         link="/dashboard/organizations",
     )
 

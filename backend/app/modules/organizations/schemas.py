@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import (
@@ -60,6 +61,25 @@ def _ensure_safe_prose(value: str) -> str:
     return value
 
 
+def _validate_website(value: str | None) -> str | None:
+    """Accept only absolute http(s) URLs; blank clears the field.
+
+    The website is rendered as a link on the public profile, so a
+    ``javascript:`` or bare-host value would either script the page or
+    resolve relative to it. Whitespace is stripped and an empty string
+    means "no website" rather than an invalid one.
+    """
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    parsed = urlsplit(cleaned)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Website must be an absolute http:// or https:// URL.")
+    return cleaned
+
+
 def _clean_labels(values: list[str]) -> list[str]:
     """Trim, drop empties, and de-duplicate free-text labels (first-seen)."""
     cleaned: list[str] = []
@@ -79,7 +99,11 @@ class OrganizationCreateRequest(BaseModel):
     slug: str = Field(min_length=3, max_length=80, pattern=r"^[a-zA-Z0-9-]+$")
     name: str = Field(min_length=2, max_length=120)
     country: str = Field(min_length=2, max_length=2)
-    website: str | None = Field(default=None, max_length=255)
+    website: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Absolute http(s) URL; whitespace is stripped and blank clears it.",
+    )
     description: str | None = Field(default=None, max_length=2000)
 
     @field_validator("slug")
@@ -100,11 +124,17 @@ class OrganizationCreateRequest(BaseModel):
         """Trim organization names before persistence."""
         return value.strip()
 
-    @field_validator("website", "description")
+    @field_validator("description")
     @classmethod
     def strip_optional_text(cls, value: str | None) -> str | None:
         """Trim optional text fields while preserving nulls."""
         return value.strip() if value is not None else None
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, value: str | None) -> str | None:
+        """Require an absolute http(s) website; blank clears it."""
+        return _validate_website(value)
 
 
 class OrganizationResponse(BaseModel):
@@ -198,14 +228,24 @@ class OrganizationUpdateRequest(BaseModel):
     """
 
     name: str | None = Field(default=None, min_length=2, max_length=120)
-    website: str | None = Field(default=None, max_length=255)
+    website: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Absolute http(s) URL; whitespace is stripped and blank clears it.",
+    )
     description: str | None = Field(default=None, max_length=2000)
 
-    @field_validator("name", "website", "description")
+    @field_validator("name", "description")
     @classmethod
     def strip_optional_value(cls, value: str | None) -> str | None:
         """Trim optional fields while preserving null values."""
         return value.strip() if value is not None else None
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, value: str | None) -> str | None:
+        """Require an absolute http(s) website; blank clears it."""
+        return _validate_website(value)
 
 
 class LogoUploadUrlRequest(BaseModel):

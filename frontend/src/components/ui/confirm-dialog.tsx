@@ -30,6 +30,11 @@ type ConfirmDialogProps = {
   tone?: ConfirmTone;
   /** Disables the confirm button (e.g. while the request is in flight). */
   busy?: boolean;
+  /**
+   * Disables the confirm button without the in-flight styling — for dialogs
+   * whose action is gated on input (a typed confirmation phrase, a reason).
+   */
+  confirmDisabled?: boolean;
   /** Optional inline error shown above the action row. */
   error?: string | null;
   /** Called when the user confirms the action. */
@@ -52,6 +57,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   tone = "default",
   busy = false,
+  confirmDisabled = false,
   error = null,
   onConfirm,
   onClose,
@@ -139,7 +145,8 @@ export function ConfirmDialog({
           </button>
           <button
             className={`min-h-12 rounded-xl px-5 py-2 text-sm font-semibold shadow-sm outline-none transition focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 ${confirmClasses}`}
-            disabled={busy}
+            aria-busy={busy || undefined}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
             ref={confirmRef}
             type="button"

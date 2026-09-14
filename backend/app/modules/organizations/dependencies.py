@@ -28,8 +28,17 @@ from app.modules.organizations.models import (
     OrgTeamCapability,
     OrgTeamMember,
 )
+from app.shared.errors import error_detail
 
 _ROLE_RANK = {"member": 0, "admin": 1, "owner": 2}
+# One sentence per denial code, shown verbatim by the frontend.
+_DENIAL_MESSAGES = {
+    "org_role_required": "You do not have the required role in this organization.",
+    "org_suspended": "This organization is suspended.",
+    "capability_grant_required": (
+        "You have not been granted this capability in the organization."
+    ),
+}
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 
 
@@ -88,7 +97,7 @@ async def _deny(
     await db.commit()
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail={"error_code": error_code},
+        detail=error_detail(error_code, _DENIAL_MESSAGES[error_code]),
     )
 
 
@@ -172,7 +181,11 @@ def require_org_capability(capability: str) -> Callable[..., object]:
         if row is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"error_code": "capability_required", "capability": capability},
+                detail=error_detail(
+                    "capability_required",
+                    f"The organization's {capability} capability is not active.",
+                    capability=capability,
+                ),
             )
 
     return checker
@@ -223,7 +236,11 @@ def require_org_capability_grant(capability: str) -> Callable[..., object]:
         if active is None:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail={"error_code": "capability_required", "capability": capability},
+                detail=error_detail(
+                    "capability_required",
+                    f"The organization's {capability} capability is not active.",
+                    capability=capability,
+                ),
             )
 
         if membership.role in {"owner", "admin"}:

@@ -24,6 +24,7 @@ from sqlalchemy import create_engine, delete, select
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
+from app.core.redis import get_redis
 from app.core.security import (
     create_access_token,
     encrypt_payout_provider_account_id,
@@ -31,6 +32,7 @@ from app.core.security import (
     hash_password,
     hash_payout_provider_account_id,
 )
+from app.main import app
 from app.modules.attestation import document_service, release_service
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User
@@ -53,6 +55,8 @@ from app.modules.organizations.models import (
     OrgMemberNda,
 )
 from app.shared.models.audit_log import AuditLog
+from tests.conftest import open_step_up_window
+from tests.integration.test_auth_sessions import FakeRedis
 
 pytestmark = pytest.mark.asyncio
 
@@ -111,6 +115,20 @@ async def db_session(clean_state: None) -> AsyncIterator:
     del clean_state
     async with async_session_factory() as session:
         yield session
+
+
+@pytest.fixture
+def override_redis() -> Iterator[FakeRedis]:
+    """Install a fake Redis for step-up gated routes.
+
+    The real client is cached across tests while pytest-asyncio opens a new
+    event loop per test, so a window seeded through it lands on a
+    connection bound to a closed loop.
+    """
+    fake_redis = FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: fake_redis
+    yield fake_redis
+    app.dependency_overrides.pop(get_redis, None)
 
 
 class _FakePayoutTask:
@@ -531,7 +549,10 @@ async def test_earnings_endpoint_rbac(client: AsyncClient, clean_state: None) ->
 
 
 async def test_onboard_org_payout_account_endpoint(
-    client: AsyncClient, clean_state: None, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient,
+    clean_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+    override_redis: FakeRedis,
 ) -> None:
     """Owner onboards an org-owned Stripe payout account."""
     del clean_state
@@ -549,6 +570,7 @@ async def test_onboard_org_payout_account_endpoint(
     )
     monkeypatch.setattr(financials_service.stripe, "create_account_link", _fake_link)
     org_id, owner_id, _secret = await _attestor_org()
+    await open_step_up_window(override_redis, owner_id)
 
     response = await client.post(
         f"/v1/orgs/{org_id}/financials/payout-accounts",
@@ -572,7 +594,10 @@ async def test_onboard_org_payout_account_endpoint(
 
 
 async def test_onboard_org_payout_account_logs_provider_detail_on_failure(
-    client: AsyncClient, clean_state: None, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient,
+    clean_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+    override_redis: FakeRedis,
 ) -> None:
     """A provider rejection returns 502 and logs the Stripe detail for triage.
 
@@ -593,6 +618,7 @@ async def test_onboard_org_payout_account_logs_provider_detail_on_failure(
         financials_service.stripe, "create_express_account", _boom_express
     )
     org_id, owner_id, _secret = await _attestor_org()
+    await open_step_up_window(override_redis, owner_id)
 
     messages: list[str] = []
     sink_id = loguru_logger.add(messages.append, format="{message}")
@@ -668,7 +694,10 @@ async def _seed_invoice(attestation_id: UUID) -> None:
 
 
 async def test_onboard_nigerian_org_payout_account_uses_paystack(
-    client: AsyncClient, clean_state: None, monkeypatch: pytest.MonkeyPatch
+    client: AsyncClient,
+    clean_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+    override_redis: FakeRedis,
 ) -> None:
     """A Nigerian organization settles on Paystack, not Stripe Connect.
 
@@ -689,6 +718,7 @@ async def test_onboard_nigerian_org_payout_account_uses_paystack(
         financials_service.paystack, "create_transfer_recipient", _fake_recipient
     )
     org_id, owner_id, _secret = await _attestor_org(country="NG")
+    await open_step_up_window(override_redis, owner_id)
 
     response = await client.post(
         f"/v1/orgs/{org_id}/financials/payout-accounts",
@@ -717,7 +747,9 @@ async def test_onboard_nigerian_org_payout_account_uses_paystack(
 
 
 async def test_onboard_org_payout_account_rejects_mismatched_provider(
-    client: AsyncClient, clean_state: None
+    client: AsyncClient,
+    clean_state: None,
+    override_redis: FakeRedis,
 ) -> None:
     """An NG org asking for Stripe is refused rather than silently rerouted.
 
@@ -726,6 +758,7 @@ async def test_onboard_org_payout_account_rejects_mismatched_provider(
     """
     del clean_state
     org_id, owner_id, _secret = await _attestor_org(country="NG")
+    await open_step_up_window(override_redis, owner_id)
 
     response = await client.post(
         f"/v1/orgs/{org_id}/financials/payout-accounts",
@@ -741,11 +774,14 @@ async def test_onboard_org_payout_account_rejects_mismatched_provider(
 
 
 async def test_onboard_org_paystack_payout_account_requires_bank_details(
-    client: AsyncClient, clean_state: None
+    client: AsyncClient,
+    clean_state: None,
+    override_redis: FakeRedis,
 ) -> None:
     """Without bank details there is nothing to register, so reject at the schema."""
     del clean_state
     org_id, owner_id, _secret = await _attestor_org(country="NG")
+    await open_step_up_window(override_redis, owner_id)
 
     response = await client.post(
         f"/v1/orgs/{org_id}/financials/payout-accounts",

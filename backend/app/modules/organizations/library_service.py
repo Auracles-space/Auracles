@@ -167,8 +167,22 @@ async def revoke_license_grant(
     org_id: UUID,
     license_id: UUID,
     grant_id: UUID,
+    actor_id: UUID | None = None,
 ) -> None:
-    """Delete one org License grant inside the org namespace."""
+    """Delete one org License grant inside the org namespace.
+
+    Args:
+        db: Async database session.
+        org_id: Organization that owns the License.
+        license_id: License the grant belongs to.
+        grant_id: Grant row to delete.
+        actor_id: User performing the revocation, recorded on the audit row.
+            ``None`` only when no acting user is known (legacy callers).
+
+    Raises:
+        HTTPException(404): The License is not owned by the org or the grant
+            does not belong to the License.
+    """
     if db.in_transaction():
         await db.rollback()
 
@@ -188,7 +202,7 @@ async def revoke_license_grant(
         await db.delete(grant)
         await write_audit(
             db=db,
-            actor_id=None,
+            actor_id=actor_id,
             action="license_grant_revoked",
             target_type="license",
             target_id=license_id,

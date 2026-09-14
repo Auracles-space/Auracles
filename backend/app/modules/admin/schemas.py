@@ -103,8 +103,12 @@ class AdminSuspendedFrameworkItem(BaseModel):
 
     framework_id: UUID
     title: str
-    contributor_id: UUID
-    contributor_name: str
+    # Exactly one seller owns a Framework (ck_frameworks_seller_xor): a
+    # Contributor-owned row nulls the organization fields and vice versa.
+    contributor_id: UUID | None = None
+    contributor_name: str | None = None
+    organization_id: UUID | None = None
+    organization_name: str | None = None
     reason: str | None = None
     suspended_at: datetime | None = None
 
@@ -120,8 +124,12 @@ class AdminFrameworkDirectoryItem(BaseModel):
 
     framework_id: UUID
     title: str
-    contributor_id: UUID
-    contributor_name: str
+    # Exactly one seller owns a Framework (ck_frameworks_seller_xor): a
+    # Contributor-owned row nulls the organization fields and vice versa.
+    contributor_id: UUID | None = None
+    contributor_name: str | None = None
+    organization_id: UUID | None = None
+    organization_name: str | None = None
     status: str
     published_at: datetime | None = None
 
@@ -410,8 +418,12 @@ class AdminModerationQueueItem(BaseModel):
     queue_type: Literal["rarity_review", "near_duplicate_block", "pii_review"]
     framework_id: UUID
     framework_title: str
-    contributor_id: UUID
-    contributor_name: str
+    # Exactly one seller owns a Framework (ck_frameworks_seller_xor): a
+    # Contributor-owned row nulls the organization fields and vice versa.
+    contributor_id: UUID | None = None
+    contributor_name: str | None = None
+    organization_id: UUID | None = None
+    organization_name: str | None = None
     artifact_id: UUID | None = None
     artifact_name: str | None = None
     signal_at: datetime

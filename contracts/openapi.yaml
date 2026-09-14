@@ -1554,16 +1554,31 @@ components:
       description: One Framework in the admin directory used to pick a delist target.
       properties:
         contributor_id:
-          format: uuid
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
           title: Contributor Id
-          type: string
         contributor_name:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Contributor Name
-          type: string
         framework_id:
           format: uuid
           title: Framework Id
           type: string
+        organization_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Organization Id
+        organization_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Name
         published_at:
           anyOf:
           - format: date-time
@@ -1579,8 +1594,6 @@ components:
       required:
       - framework_id
       - title
-      - contributor_id
-      - contributor_name
       - status
       title: AdminFrameworkDirectoryItem
       type: object
@@ -1995,12 +2008,16 @@ components:
           - type: 'null'
           title: Artifact Name
         contributor_id:
-          format: uuid
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
           title: Contributor Id
-          type: string
         contributor_name:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Contributor Name
-          type: string
         details:
           additionalProperties: true
           title: Details
@@ -2012,6 +2029,17 @@ components:
         framework_title:
           title: Framework Title
           type: string
+        organization_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Organization Id
+        organization_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Name
         queue_type:
           enum:
           - rarity_review
@@ -2031,8 +2059,6 @@ components:
       - queue_type
       - framework_id
       - framework_title
-      - contributor_id
-      - contributor_name
       - signal_at
       - details
       - action_links
@@ -2379,16 +2405,31 @@ components:
       description: One suspended Framework awaiting possible reinstatement.
       properties:
         contributor_id:
-          format: uuid
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
           title: Contributor Id
-          type: string
         contributor_name:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Contributor Name
-          type: string
         framework_id:
           format: uuid
           title: Framework Id
           type: string
+        organization_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Organization Id
+        organization_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Name
         reason:
           anyOf:
           - type: string
@@ -2406,8 +2447,6 @@ components:
       required:
       - framework_id
       - title
-      - contributor_id
-      - contributor_name
       title: AdminSuspendedFrameworkItem
       type: object
     AdminSuspendedFrameworksResponse:
@@ -11195,6 +11234,7 @@ components:
           - maxLength: 255
             type: string
           - type: 'null'
+          description: Absolute http(s) URL; whitespace is stripped and blank clears it.
           title: Website
       required:
       - slug
@@ -11297,6 +11337,7 @@ components:
           - maxLength: 255
             type: string
           - type: 'null'
+          description: Absolute http(s) URL; whitespace is stripped and blank clears it.
           title: Website
       title: OrganizationUpdateRequest
       type: object
@@ -23580,7 +23621,8 @@ paths:
   /v1/orgs/{org_id}/financials/payout-accounts:
     post:
       description: Create a provider-held payout destination owned by the organization.
-        Provider routing follows the org's registered country. Owner/admin only.
+        Provider routing follows the org's registered country. Requires an open
+        step-up 2FA window. Owner only.
       operationId: onboard_org_payout_account_v1_orgs__org_id__financials_payout_accounts_post
       parameters:
       - in: path
@@ -23616,9 +23658,9 @@ paths:
       - Organizations
   /v1/orgs/{org_id}/financials/payouts:
     post:
-      description: Request a payout of the org's available earnings. TOTP-gated (requester's
-        own TOTP); requires a verified org payout account and an eligible active capability
-        path. Owner/admin only.
+      description: Request a payout of the org's available earnings. Requires an open
+        step-up 2FA window, a verified org payout account and an eligible active
+        capability path. One payout in flight per organization. Owner only.
       operationId: request_org_payout_v1_orgs__org_id__financials_payouts_post
       parameters:
       - in: path
@@ -23641,6 +23683,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/PayoutResponse'
           description: Successful Response
+        '409':
+          description: A payout is already pending or processing for the organization.
         '422':
           content:
             application/json:
@@ -24272,7 +24316,8 @@ paths:
     post:
       description: Start Stripe checkout for a Framework purchased on behalf of the
         organization. The resulting License is owned by the organization. Requires
-        an active Operator capability and a payment method on file. Owner/admin only.
+        an open step-up 2FA window, an active Operator capability and a payment
+        method on file. Owner/admin only.
       operationId: create_org_framework_purchase_v1_orgs__org_id__frameworks__framework_id__purchase_post
       parameters:
       - in: path
@@ -24735,7 +24780,8 @@ paths:
   /v1/orgs/{org_id}/kyb/incorporation-document:
     delete:
       description: Detach one incorporation document from the organization by its
-        S3 key. Owner/admin only, and refused once verified.
+        S3 key. Requires an open step-up 2FA window. Owner/admin only, and refused
+        once verified.
       operationId: remove_org_incorporation_document_v1_orgs__org_id__kyb_incorporation_document_delete
       parameters:
       - in: path
@@ -24771,7 +24817,8 @@ paths:
       - Organizations
     post:
       description: Create a presigned upload session for one incorporation document
-        and attach its S3 key to the organization. Owner/admin only.
+        and attach its S3 key to the organization. Requires an open step-up 2FA
+        window. Owner/admin only.
       operationId: add_org_incorporation_document_v1_orgs__org_id__kyb_incorporation_document_post
       parameters:
       - in: path
@@ -24808,7 +24855,7 @@ paths:
   /v1/orgs/{org_id}/kyb/submit:
     post:
       description: Send the organization's legal details and incorporation documents
-        for admin review. Owner/admin only.
+        for admin review. Requires an open step-up 2FA window. Owner/admin only.
       operationId: submit_org_kyb_v1_orgs__org_id__kyb_submit_post
       parameters:
       - in: path
@@ -26481,6 +26528,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
+        '429':
+          description: Too many attempts; see the Retry-After header.
       summary: Public organization profile
       tags:
       - Organizations

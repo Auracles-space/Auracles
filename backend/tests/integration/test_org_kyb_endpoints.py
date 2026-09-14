@@ -243,8 +243,8 @@ async def test_submit_requires_a_registration_number_and_document(
     client: AsyncClient, clean_state: FakeRedis
 ) -> None:
     """An admin should never be handed an empty application to judge."""
-    del clean_state
-    owner_id = await _user("owner")
+    owner_id = await _user("owner", totp_secret=pyotp.random_base32())
+    await open_step_up_window(clean_state, owner_id)
     org_id = await _org(owner_id)
     await _profile(org_id, registration_number=None, doc_keys=[])
 
@@ -261,8 +261,8 @@ async def test_verified_identity_cannot_be_edited(
     Without this the badge survives a change of identity, which on a platform
     selling provenance is worse than having no badge.
     """
-    del clean_state
-    owner_id = await _user("owner")
+    owner_id = await _user("owner", totp_secret=pyotp.random_base32())
+    await open_step_up_window(clean_state, owner_id)
     org_id = await _org(owner_id)
     await _profile(org_id, kyb_status="verified")
 
@@ -280,7 +280,8 @@ async def test_admin_rejection_requires_a_reason_and_is_not_terminal(
     client: AsyncClient, clean_state: FakeRedis
 ) -> None:
     """A rejected org learns why and may fix it and resubmit."""
-    owner_id = await _user("owner")
+    owner_id = await _user("owner", totp_secret=pyotp.random_base32())
+    await open_step_up_window(clean_state, owner_id)
     admin_secret = pyotp.random_base32()
     admin_id = await _user("admin", totp_secret=admin_secret)
     org_id = await _org(owner_id)
@@ -401,14 +402,14 @@ async def test_submit_pings_admins_for_review(
     Attestor applications already ping admins on submit; KYB gates every
     capability, so an unnoticed submission blocks the whole org.
     """
-    del clean_state
     from app.modules.organizations import kyb_service as _svc
 
     pings: list[dict[str, object]] = []
     monkeypatch.setattr(
         _svc, "notify_admins_review_pending", lambda **kwargs: pings.append(kwargs)
     )
-    owner_id = await _user("owner")
+    owner_id = await _user("owner", totp_secret=pyotp.random_base32())
+    await open_step_up_window(clean_state, owner_id)
     org_id = await _org(owner_id)
     await _profile(org_id, kyb_status="unverified")
 

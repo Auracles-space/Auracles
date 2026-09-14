@@ -1,14 +1,23 @@
 "use client";
 
+/**
+ * Organization danger zone — owner-only ownership transfer and deactivation.
+ *
+ * Both actions are step-up gated on the API; this component only collects
+ * the choice (new owner, typed confirmation phrase) and surfaces server
+ * errors through `describeGeneratedError`.
+ *
+ * Maps to: FR-ORG ownership transfer and deactivation (spec §Slice A).
+ */
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { 
+import {
   listMembersV1OrgsOrgIdMembersGet,
   transferOwnershipV1OrgsOrgIdTransferOwnershipPost,
-  deactivateOrganizationV1OrgsOrgIdDelete
+  deactivateOrganizationV1OrgsOrgIdDelete,
 } from "@/lib/generated/sdk.gen";
 import type { OrgMemberResponse } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -16,6 +25,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useOrganization } from "./organization-context";
 import { Spinner } from "@/components/ui/spinner";
 
+/**
+ * Render the transfer-ownership form and the deactivate-organization guard.
+ *
+ * Non-owners see a single denial line; owners see both panels. The member
+ * select excludes the current owner because transferring to oneself is a
+ * no-op the API rejects.
+ */
 export function OrganizationDangerZone() {
   const { orgId, org, role, isSuspended } = useOrganization();
   const isOwner = role === "owner";
@@ -23,13 +39,12 @@ export function OrganizationDangerZone() {
 
   const [members, setMembers] = useState<OrgMemberResponse[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
+  const [membersError, setMembersError] = useState<string | null>(null);
 
-  // Transfer State
   const [transferMemberId, setTransferMemberId] = useState("");
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
 
-  // Deactivate State
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [deactivateConfirmText, setDeactivateConfirmText] = useState("");
   const [deactivateLoading, setDeactivateLoading] = useState(false);
@@ -39,17 +54,19 @@ export function OrganizationDangerZone() {
     if (!isOwner) return;
 
     async function fetchMembers() {
+      setMembersError(null);
       try {
         const result = await listMembersV1OrgsOrgIdMembersGet({
           path: { org_id: orgId },
           headers: getAccessTokenHeaders(),
         });
         if (result.response.ok && result.data) {
-          // Exclude self from potential new owners
-          setMembers(result.data.filter((m: OrgMemberResponse) => m.role !== "owner"));
+          setMembers(result.data.members.filter((m: OrgMemberResponse) => m.role !== "owner"));
+        } else {
+          setMembersError(describeGeneratedError(result.error));
         }
-      } catch {
-        // Ignore error for now
+      } catch (error) {
+        setMembersError(describeGeneratedError(error));
       } finally {
         setLoadingMembers(false);
       }
@@ -72,22 +89,25 @@ export function OrganizationDangerZone() {
       });
 
       if (!result.response.ok) {
-        setTransferError(result.error?.detail?.error_code || "Failed to transfer ownership.");
+        setTransferError(describeGeneratedError(result.error));
         setTransferLoading(false);
       } else {
-        // Successfully transferred ownership -> refresh page to see new role
+        // The caller is no longer the owner, so the whole org shell
+        // (navigation, role gates) must re-render from the server.
         router.refresh();
         window.location.reload();
       }
-    } catch {
-      setTransferError("An unexpected error occurred during transfer.");
+    } catch (error) {
+      setTransferError(describeGeneratedError(error));
       setTransferLoading(false);
     }
   }
 
+  const expectedConfirmText = `Delete ${org.name}`;
+  const deactivateConfirmed = deactivateConfirmText === expectedConfirmText;
+
   async function handleDeactivate() {
-    const expectedConfirmText = `Delete ${org.name}`;
-    if (!isOwner || isSuspended || deactivateConfirmText !== expectedConfirmText) return;
+    if (!isOwner || isSuspended || !deactivateConfirmed) return;
 
     setDeactivateLoading(true);
     setDeactivateError(null);
@@ -99,14 +119,14 @@ export function OrganizationDangerZone() {
       });
 
       if (!result.response.ok) {
-        setDeactivateError(result.error?.detail?.error_code || "Failed to deactivate organization.");
+        setDeactivateError(describeGeneratedError(result.error));
         setDeactivateLoading(false);
         setShowDeactivateDialog(false);
       } else {
         router.push("/dashboard/organizations");
       }
-    } catch {
-      setDeactivateError("An unexpected error occurred during deactivation.");
+    } catch (error) {
+      setDeactivateError(describeGeneratedError(error));
       setDeactivateLoading(false);
       setShowDeactivateDialog(false);
     }
@@ -120,9 +140,6 @@ export function OrganizationDangerZone() {
     );
   }
 
-  const expectedConfirmText = `Delete ${org.name}`;
-
-
   return (
     <div className="flex flex-col gap-8 max-w-4xl">
       {/* Transfer Ownership */}
@@ -135,7 +152,7 @@ export function OrganizationDangerZone() {
         </p>
 
         {transferError && (
-          <div className="mb-4 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
+          <div className="mb-4 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error" role="alert">
             {transferError}
           </div>
         )}
@@ -147,6 +164,10 @@ export function OrganizationDangerZone() {
             </label>
             {loadingMembers ? (
               <Spinner className="h-6 w-6 text-accent" />
+            ) : membersError ? (
+              <p className="text-sm text-error" role="alert">
+                {membersError}
+              </p>
             ) : (
               <Select
                 id="newOwner"
@@ -155,7 +176,7 @@ export function OrganizationDangerZone() {
                 onChange={(e) => setTransferMemberId(e.target.value)}
               >
                 <option value="">Select a member...</option>
-                {members.map((m: OrgMemberResponse) => (
+                {members.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.display_name} ({m.email})
                   </option>
@@ -164,11 +185,11 @@ export function OrganizationDangerZone() {
             )}
           </div>
 
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             variant="primary"
-            loading={transferLoading} 
-            disabled={isSuspended || !transferMemberId} 
+            loading={transferLoading}
+            disabled={isSuspended || !transferMemberId}
             className="mt-2"
           >
             Transfer Ownership
@@ -182,18 +203,18 @@ export function OrganizationDangerZone() {
           Deactivate Organization
         </h2>
         <p className="mb-6 text-sm text-error/80">
-          This will permanently delete the organization and all its data. This action cannot be undone. 
+          This will permanently delete the organization and all its data. This action cannot be undone.
           You can only deactivate the organization if there are no active capabilities or escrow funds.
         </p>
 
         {deactivateError && (
-          <div className="mb-4 rounded-xl border border-error bg-error/10 p-4 text-sm text-error font-semibold">
+          <div className="mb-4 rounded-xl border border-error bg-error/10 p-4 text-sm text-error font-semibold" role="alert">
             {deactivateError}
           </div>
         )}
 
-        <Button 
-          variant="destructive" 
+        <Button
+          variant="destructive"
           disabled={isSuspended}
           onClick={() => setShowDeactivateDialog(true)}
         >
@@ -213,6 +234,7 @@ export function OrganizationDangerZone() {
               To confirm, type <strong className="select-all bg-surface-2 px-1 py-0.5 rounded text-foreground">{expectedConfirmText}</strong> below:
             </p>
             <Input
+              aria-label="Confirmation phrase"
               value={deactivateConfirmText}
               onChange={(e) => setDeactivateConfirmText(e.target.value)}
               placeholder={expectedConfirmText}
@@ -222,16 +244,12 @@ export function OrganizationDangerZone() {
         confirmLabel="Deactivate"
         tone="danger"
         busy={deactivateLoading}
+        confirmDisabled={!deactivateConfirmed}
         onConfirm={handleDeactivate}
         onClose={() => {
           setShowDeactivateDialog(false);
           setDeactivateConfirmText("");
         }}
-        // Prevent default confirm if text doesn't match by intercepting, 
-        // but ConfirmDialog triggers `onConfirm` when confirm button clicked.
-        // We can just check `isDeactivateConfirmValid` inside `handleDeactivate`
-        // Wait, ConfirmDialog doesn't let us disable the button easily unless it supports it.
-        // We will just do the check in `handleDeactivate`.
       />
     </div>
   );
