@@ -601,6 +601,8 @@ export type AdminInvoiceItem = {
     invoice_id: string;
     invoice_number: string;
     issue_date: string;
+    organization_id?: (string | null);
+    organization_name?: (string | null);
     seller_name: string;
     source_ref_id: string;
     source_ref_type: string;
@@ -1070,6 +1072,7 @@ export type AdminPayoutDirectoryResponse = {
 export type AdminPayoutItem = {
     amount: string;
     beneficiary_id: string;
+    beneficiary_name?: (string | null);
     beneficiary_type: 'contributor' | 'org';
     commission_deducted: string;
     completed_at: (string | null);
@@ -1199,8 +1202,10 @@ export type AdminTransactionItem = {
     net_amount: string;
     payee_id: (string | null);
     payee_org_id: (string | null);
+    payee_org_name?: (string | null);
     payer_id: (string | null);
     payer_org_id: (string | null);
+    payer_org_name?: (string | null);
     platform_commission: string;
     provider: ('stripe' | 'paystack' | null);
     provider_ref: (string | null);
@@ -4266,6 +4271,16 @@ export type OrgReassignReviewerRequest = {
 };
 
 /**
+ * Request body to change an organization's slug (Decision 5).
+ *
+ * Applies exactly the slug rules ``OrganizationCreateRequest`` does, so a
+ * slug that could not be chosen at creation cannot be chosen later either.
+ */
+export type OrgSlugChangeRequest = {
+    slug: string;
+};
+
+/**
  * Admin reason for suspending an org or suspending/revoking a capability.
  *
  * The text is stored on the row and shown to the organization's owner, so
@@ -5007,6 +5022,7 @@ export type PublicCredentialResponse = {
  */
 export type PublicOrganizationResponse = {
     active_capabilities: Array<(string)>;
+    canonical_slug: string;
     country: string;
     created_at: string;
     description: (string | null);
@@ -6010,6 +6026,10 @@ export type ListAdminExportRequestsV1AdminGdprExportRequestsGetError = (HTTPVali
 
 export type ListAdminInvoicesV1AdminInvoicesGetData = {
     query?: {
+        /**
+         * Only invoices involving this organization.
+         */
+        org_id?: (string | null);
         page?: number;
         page_size?: number;
         query?: (string | null);
@@ -6355,6 +6375,10 @@ export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationErr
 
 export type ListAdminPayoutsV1AdminPayoutsGetData = {
     query?: {
+        /**
+         * Only payouts to this organization.
+         */
+        org_id?: (string | null);
         page?: number;
         page_size?: number;
         provider?: string;
@@ -6400,6 +6424,10 @@ export type RecomputeReputationSubjectV1AdminReputationRecomputePostError = (HTT
 
 export type ListAdminTransactionsV1AdminTransactionsGetData = {
     query?: {
+        /**
+         * Only transactions this organization paid or was paid.
+         */
+        org_id?: (string | null);
         page?: number;
         page_size?: number;
         provider?: string;
@@ -9065,6 +9093,17 @@ export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostData = 
 export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostResponse = (ProposalResponse);
 
 export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostError = (HTTPValidationError);
+
+export type ChangeOrgSlugV1OrgsOrgIdSlugPatchData = {
+    body: OrgSlugChangeRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type ChangeOrgSlugV1OrgsOrgIdSlugPatchResponse = (OrganizationResponse);
+
+export type ChangeOrgSlugV1OrgsOrgIdSlugPatchError = (HTTPValidationError | unknown);
 
 export type ListTeamsV1OrgsOrgIdTeamsGetData = {
     path: {
