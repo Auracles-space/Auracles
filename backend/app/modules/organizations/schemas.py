@@ -204,6 +204,10 @@ class MyOrganizationResponse(BaseModel):
     # become-attestor entry need it here to route an unverified org to
     # verification rather than into a flow that will refuse it.
     kyb_status: str = "unverified"
+    # Shown on the profile summary: when the business was verified (None
+    # until it is) and how many people belong to the organization.
+    kyb_verified_at: datetime | None = None
+    member_count: int = 0
     grants: dict[str, bool] = Field(default_factory=dict)
     # True when the org's attestor capability is pending/active, so the
     # frontend can chain invitation acceptance straight into NDA signing.
@@ -462,8 +466,18 @@ class OrgInvitationCreateRequest(BaseModel):
         return self
 
 
+OrgInvitationStatusFilter = Literal[
+    "pending", "accepted", "declined", "revoked", "expired", "all"
+]
+
+
 class OrgInvitationResponse(BaseModel):
-    """One organization invitation row."""
+    """One organization invitation row.
+
+    ``status`` is computed: a row still stored as ``pending`` whose
+    ``expires_at`` has passed reads as ``expired`` so the list never shows a
+    dead invitation as live between nightly sweeps.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -476,7 +490,7 @@ class OrgInvitationResponse(BaseModel):
 
 
 class OrgInvitationsResponse(BaseModel):
-    """List wrapper for pending organization invitations."""
+    """List wrapper for organization invitations (filtered by status)."""
 
     invitations: list[OrgInvitationResponse]
 
@@ -617,7 +631,13 @@ class AdminOrgResponse(BaseModel):
     registration_number: str | None = None
     kyb_submitted_at: datetime | None = None
     suspended_at: datetime | None = None
+    # Which admin suspended the org and why; both cleared on reinstate.
+    suspended_by: UUID | None = None
+    suspension_reason: str | None = None
     deactivated_at: datetime | None = None
+    # Who closed the org and the reason they gave; cleared on reactivate.
+    deactivated_by: UUID | None = None
+    deactivation_reason: str | None = None
     created_at: datetime
 
 
@@ -788,6 +808,25 @@ class OrgKybStatusResponse(BaseModel):
     kyb_submitted_at: datetime | None = None
     kyb_verified_at: datetime | None = None
     kyb_review_notes: str | None = None
+
+
+class OrgDeactivateRequest(BaseModel):
+    """Optional owner note on why the organization is being closed.
+
+    Stored on the row for the admin console and repeated in the members'
+    closure notification, so it should be written for them.
+    """
+
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str | None) -> str | None:
+        """Trim the note; a blank note is no note."""
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class OrgStatusReasonRequest(BaseModel):

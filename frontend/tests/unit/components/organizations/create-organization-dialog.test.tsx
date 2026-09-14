@@ -8,6 +8,10 @@ const push = vi.fn();
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/lib/auth/form-client", () => ({
+  describeGeneratedError: vi.fn(
+    (error: { detail?: { message?: string } } | undefined) =>
+      error?.detail?.message ?? "The request could not be completed.",
+  ),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer t" })),
 }));
 vi.mock("@/lib/generated/sdk.gen", () => ({ createOrganizationV1OrgsPost: vi.fn() }));
@@ -95,5 +99,62 @@ describe("CreateOrganizationDialog redirect intent", () => {
     ).toBeInTheDocument();
     fireEvent.change(country, { target: { value: "JP" } });
     expect(country.value).toBe("JP");
+  });
+});
+
+describe("CreateOrganizationDialog slug preview and server errors", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("previews the public URL live as the slug is typed", async () => {
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+
+    const preview = await screen.findByTestId("slug-preview");
+    expect(preview).toHaveTextContent(`${window.location.origin}/orgs/`);
+
+    fireEvent.change(screen.getByLabelText(/Slug/i), {
+      target: { value: "Meridian-Audit" },
+    });
+
+    // The slug is lower-cased on input, so the preview shows the real URL.
+    expect(preview).toHaveTextContent(`${window.location.origin}/orgs/meridian-audit`);
+  });
+
+  it("says the slug and country cannot be changed after creation", () => {
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+
+    expect(
+      screen.getByText(/slug and country cannot be changed after/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the server message on a slug conflict instead of a raw code", async () => {
+    vi.mocked(createOrganizationV1OrgsPost).mockResolvedValue({
+      data: undefined,
+      error: { detail: { error_code: "slug_taken", message: "That slug is already in use." } },
+      request: new Request("http://t"),
+      response: new Response(null, { status: 409 }),
+    } as never);
+
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+    await fillAndSubmit();
+
+    expect(await screen.findByText("That slug is already in use.")).toBeInTheDocument();
+    expect(screen.queryByText("slug_taken")).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("shows the server message for any other failure", async () => {
+    vi.mocked(createOrganizationV1OrgsPost).mockResolvedValue({
+      data: undefined,
+      error: { detail: { error_code: "step_up_required", message: "Confirm your identity first." } },
+      request: new Request("http://t"),
+      response: new Response(null, { status: 403 }),
+    } as never);
+
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+    await fillAndSubmit();
+
+    expect(await screen.findByText("Confirm your identity first.")).toBeInTheDocument();
+    expect(screen.queryByText("step_up_required")).toBeNull();
   });
 });

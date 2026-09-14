@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -111,10 +112,12 @@ from app.modules.organizations.schemas import (
     OrgAttestorTaxDocumentRequest,
     OrgCapabilityName,
     OrgCapabilityResponse,
+    OrgDeactivateRequest,
     OrgInvitationCreateRequest,
     OrgInvitationPreviewResponse,
     OrgInvitationResponse,
     OrgInvitationsResponse,
+    OrgInvitationStatusFilter,
     OrgKybReviewRequest,
     OrgKybStatusResponse,
     OrgLegalProfileResponse,
@@ -157,10 +160,11 @@ public_router = APIRouter(prefix="/contributors", tags=["Organizations"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
-# Unverified organizations reach only the routes that lead out of the shell:
-# verification itself, the legal profile it checks, the org's own profile, and
-# reads. Everything else takes a Verified* context, so business verification is
-# enforced once at the dependency layer rather than remembered per service.
+# Business verification gates the capabilities and the money: activation,
+# purchases, payment methods, payouts, attestor work take a Verified* context.
+# The people surfaces (members, invitations, member search, teams) and the
+# org's own profile are open from day one (Decision 2) so an owner can staff
+# the organization while verification is in review.
 OrgMemberCtx = Annotated[OrgContext, Depends(require_org_role("member"))]
 OrgAdmin = Annotated[OrgContext, Depends(require_org_role("admin"))]
 OrgOwner = Annotated[OrgContext, Depends(require_org_role("owner"))]
@@ -319,13 +323,26 @@ async def list_my_organizations(
         user_id=user.id,
         org_ids=org_ids,
     )
-    kyb_by_org = {
-        org_id: kyb_status
-        for org_id, kyb_status in (
+    kyb_by_org: dict[UUID, str] = {}
+    verified_by_org: dict[UUID, datetime | None] = {}
+    for org_id, kyb_status, verified_at in (
+        await db.execute(
+            select(
+                OrgLegalProfile.org_id,
+                OrgLegalProfile.kyb_status,
+                OrgLegalProfile.kyb_verified_at,
+            ).where(OrgLegalProfile.org_id.in_(org_ids))
+        )
+    ).all():
+        kyb_by_org[org_id] = kyb_status
+        verified_by_org[org_id] = verified_at
+    member_count_by_org = {
+        org_id: count
+        for org_id, count in (
             await db.execute(
-                select(OrgLegalProfile.org_id, OrgLegalProfile.kyb_status).where(
-                    OrgLegalProfile.org_id.in_(org_ids)
-                )
+                select(OrgMember.org_id, func.count(OrgMember.id))
+                .where(OrgMember.org_id.in_(org_ids))
+                .group_by(OrgMember.org_id)
             )
         ).all()
     }
@@ -349,6 +366,8 @@ async def list_my_organizations(
                 },
                 counts=counts_by_org.get(organization.id, OrgActionCounts()),
                 kyb_status=kyb_by_org.get(organization.id, "unverified"),
+                kyb_verified_at=verified_by_org.get(organization.id),
+                member_count=member_count_by_org.get(organization.id, 0),
             )
             for organization, role, capabilities in organizations
         ]
@@ -476,18 +495,23 @@ async def confirm_org_logo_upload(
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Deactivate an organization",
     description=(
-        "Soft-delete an organization once the owner has wound down all active "
-        "capabilities."
+        "Soft-close an organization: it is hidden and its data retained; an "
+        "administrator can reopen it. Refused with 409 while any capability is "
+        "active or a payment, escrow, or payout is still pending. The optional "
+        "body carries a reason shown to members and admins. Org owner only."
     ),
 )
 async def deactivate_organization(
     org_id: UUID,
     context: OrgOwner,
     db: DatabaseSession,
+    payload: OrgDeactivateRequest | None = None,
 ) -> None:
     """Deactivate one organization as its owner."""
     del org_id
-    await service.deactivate_organization(db=db, context=context)
+    await service.deactivate_organization(
+        db=db, context=context, reason=payload.reason if payload else None
+    )
 
 
 @router.get(
@@ -501,7 +525,7 @@ async def deactivate_organization(
 )
 async def list_members(
     org_id: UUID,
-    context: VerifiedOrgMemberCtx,
+    context: OrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgMembersResponse:
     """List members of one organization."""
@@ -713,7 +737,7 @@ async def request_org_library_artifact_download(
 async def remove_member(
     org_id: UUID,
     member_id: UUID,
-    context: VerifiedOrgMemberCtx,
+    context: OrgMemberCtx,
     db: DatabaseSession,
 ) -> None:
     """Remove one member or leave the organization."""
@@ -734,7 +758,7 @@ async def change_member_role(
     org_id: UUID,
     member_id: UUID,
     payload: OrgMemberRoleUpdateRequest,
-    context: VerifiedOrgOwner,
+    context: OrgOwner,
     db: DatabaseSession,
 ) -> OrgMemberResponse:
     """Change one member between member and admin roles."""
@@ -760,7 +784,7 @@ async def change_member_role(
 async def transfer_ownership(
     org_id: UUID,
     payload: OrgOwnershipTransferRequest,
-    context: VerifiedOrgOwner,
+    context: OrgOwner,
     db: DatabaseSession,
 ) -> None:
     """Transfer organization ownership to another member."""
@@ -785,7 +809,7 @@ async def transfer_ownership(
 async def create_invitation(
     org_id: UUID,
     payload: OrgInvitationCreateRequest,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> OrgInvitationResponse:
@@ -812,7 +836,7 @@ async def create_invitation(
 async def search_org_members(
     org_id: UUID,
     q: str,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
     redis: RedisClient,
 ) -> MemberSearchResponse:
@@ -824,17 +848,27 @@ async def search_org_members(
 @router.get(
     "/{org_id}/invitations",
     response_model=OrgInvitationsResponse,
-    summary="List pending organization invitations",
-    description="List pending invitations for one organization.",
+    summary="List organization invitations",
+    description=(
+        "List one organization's invitations filtered by status: pending "
+        "(default, live only), accepted, declined, revoked, expired, or all. "
+        "Each item's status is computed live, so a pending row past its "
+        "expiry reads as expired before the nightly sweep runs. Org admin only."
+    ),
 )
 async def list_invitations(
     org_id: UUID,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
+    status_filter: OrgInvitationStatusFilter = Query(  # noqa: B008
+        default="pending", alias="status"
+    ),
 ) -> OrgInvitationsResponse:
-    """List pending invitations for one organization."""
+    """List invitations for one organization by effective status."""
     del org_id
-    return await service.list_invitations(db=db, context=context)
+    return await service.list_invitations(
+        db=db, context=context, status_filter=status_filter
+    )
 
 
 @router.delete(
@@ -846,13 +880,41 @@ async def list_invitations(
 async def revoke_invitation(
     org_id: UUID,
     invitation_id: UUID,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Revoke one pending invitation."""
     del org_id
     await service.revoke_invitation(
         db=db,
+        context=context,
+        invitation_id=invitation_id,
+    )
+
+
+@router.post(
+    "/{org_id}/invitations/{invitation_id}/resend",
+    response_model=OrgInvitationResponse,
+    summary="Resend an organization invitation",
+    description=(
+        "Re-send one pending invitation: the deadline is extended, the token "
+        "rotated so earlier links stop working, the email and in-app "
+        "notification re-delivered, and the resend audited. Counts against "
+        "the same per-organization hourly invite budget. Org admin only."
+    ),
+)
+async def resend_invitation(
+    org_id: UUID,
+    invitation_id: UUID,
+    context: OrgAdmin,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrgInvitationResponse:
+    """Resend one pending invitation with a fresh token and deadline."""
+    del org_id
+    return await service.resend_invitation(
+        db=db,
+        redis=redis,
         context=context,
         invitation_id=invitation_id,
     )
@@ -868,7 +930,7 @@ async def revoke_invitation(
 async def create_team(
     org_id: UUID,
     payload: OrgTeamCreateRequest,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
 ) -> OrgTeamResponse:
     """Create a new team in the organization."""
@@ -884,7 +946,7 @@ async def create_team(
 )
 async def list_teams(
     org_id: UUID,
-    context: VerifiedOrgMemberCtx,
+    context: OrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgTeamsResponse:
     """List teams in the organization."""
@@ -902,7 +964,7 @@ async def rename_team(
     org_id: UUID,
     team_id: UUID,
     payload: OrgTeamRenameRequest,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
 ) -> OrgTeamResponse:
     """Rename a team in the organization."""
@@ -921,7 +983,7 @@ async def rename_team(
 async def delete_team(
     org_id: UUID,
     team_id: UUID,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Delete a team in the organization."""
@@ -938,7 +1000,7 @@ async def delete_team(
 async def list_team_members(
     org_id: UUID,
     team_id: UUID,
-    context: VerifiedOrgMemberCtx,
+    context: OrgMemberCtx,
     db: DatabaseSession,
 ) -> OrgTeamMembersResponse:
     """List the members of one team."""
@@ -956,7 +1018,7 @@ async def add_team_member(
     org_id: UUID,
     team_id: UUID,
     member_id: UUID,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Add a member to a team."""
@@ -976,7 +1038,7 @@ async def remove_team_member(
     org_id: UUID,
     team_id: UUID,
     member_id: UUID,
-    context: VerifiedOrgAdmin,
+    context: OrgAdmin,
     db: DatabaseSession,
 ) -> None:
     """Remove a member from a team."""
@@ -2246,6 +2308,24 @@ async def admin_reinstate_org(
 ) -> None:
     """Reinstate a suspended organization platform-wide (idempotent)."""
     await service.admin_reinstate_org(db=db, admin=admin, org_id=org_id)
+
+
+@admin_orgs_router.post(
+    "/{org_id}/reactivate",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reactivate a deactivated organization (platform admin)",
+    description=(
+        "Reopen an organization its owner closed. Idempotent; clears the "
+        "closure record, re-evaluates members' derived roles, and notifies "
+        "the owners. Requires an open step-up 2FA window."
+    ),
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
+)
+async def admin_reactivate_org(
+    org_id: UUID, admin: PlatformAdmin, db: DatabaseSession
+) -> None:
+    """Reopen a deactivated organization (idempotent)."""
+    await service.admin_reactivate_org(db=db, admin=admin, org_id=org_id)
 
 
 @admin_orgs_router.post(

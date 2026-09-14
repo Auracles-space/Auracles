@@ -32,7 +32,7 @@ import {
   isFrameworkApiErrorCode,
   type FrameworkSeller,
 } from "@/lib/frameworks/framework-api";
-import { formatFrameworkStatus } from "@/lib/marketplace/format";
+import { StatusPill } from "@/components/ui/status-pill";
 import { deriveSubmitBlock } from "@/lib/frameworks/submit-block";
 
 type FrameworkEditorProps = {
@@ -292,9 +292,7 @@ export function FrameworkEditor({
         </Link>
         <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-              {formatFrameworkStatus(framework.status)}
-            </p>
+            <StatusPill className="mb-2" status={framework.status} />
             <h1 className="font-heading text-2xl font-bold text-foreground">
               {framework.title}
             </h1>

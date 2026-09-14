@@ -573,7 +573,7 @@ async def register_user(
 
     token = f"{VERIFY_EMAIL_PREFIX}{generate_opaque_token()}"
     await redis.setex(_verification_key(token), VERIFY_EMAIL_TTL_SECONDS, str(user.id))
-    send_verification_email.delay(email, token)
+    send_verification_email.delay(email, token, request.next)
     log.bind(user_id=user.id).info("register_success")
 
 

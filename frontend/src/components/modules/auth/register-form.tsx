@@ -5,12 +5,17 @@
  *
  * Implements FR-AUTH-001 and FR-AUTH-003 from the frontend side. Submission
  * uses only the generated OpenAPI client; backend validation remains the
- * authority for password policy and role eligibility.
+ * authority for password policy and role eligibility. A safe `?next=` path
+ * (an invitation deep link, say) is forwarded in the register body so the
+ * verification email can carry it back to login.
  */
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { registerUser } from "@/lib/generated/sdk.gen";
+import type { RegisterRequest } from "@/lib/generated/types.gen";
+import { safeInternalPath } from "@/lib/url/safe-href";
 
 import {
   configureBrowserClient,
@@ -48,6 +53,12 @@ const roleOptions: Array<{ description: string; label: string; value: Assignable
  * Render the account creation form and submit valid payloads to the API.
  */
 export function RegisterForm() {
+  // Only a single-slash internal path is honoured; anything else is dropped
+  // so the register body can never carry an open redirect.
+  const safeNext = safeInternalPath(useSearchParams()?.get("next"));
+  const verifyHref = safeNext
+    ? `/verify-email?next=${encodeURIComponent(safeNext)}`
+    : "/verify-email";
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -95,14 +106,14 @@ export function RegisterForm() {
 
     setIsSubmitting(true);
     configureBrowserClient();
-    const result = await registerUser({
-      body: {
-        display_name: displayName.trim(),
-        email: email.trim(),
-        password,
-        roles,
-      },
-    });
+    const body: RegisterRequest = {
+      display_name: displayName.trim(),
+      email: email.trim(),
+      password,
+      roles,
+      ...(safeNext ? { next: safeNext } : {}),
+    };
+    const result = await registerUser({ body });
     setIsSubmitting(false);
 
     if (!result.response.ok) {
@@ -134,7 +145,7 @@ export function RegisterForm() {
           Prefer to enter the token manually?{" "}
           <a
             className="font-medium text-accent hover:underline"
-            href="/verify-email"
+            href={verifyHref}
           >
             Go to verification
           </a>

@@ -1,20 +1,37 @@
 "use client";
 
+/**
+ * Organization members tab.
+ *
+ * Lists everyone with access to the organization with their role. Owners can
+ * switch members between admin and member; owners and admins can remove
+ * anyone but the owner. The invite call-to-action sends admins to the
+ * invitations tab rather than duplicating the form here.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
+ */
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { 
-  listMembersV1OrgsOrgIdMembersGet, 
+
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Select } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { StatusPill } from "@/components/ui/status-pill";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
+import {
   changeMemberRoleV1OrgsOrgIdMembersMemberIdPatch,
-  removeMemberV1OrgsOrgIdMembersMemberIdDelete
+  listMembersV1OrgsOrgIdMembersGet,
+  removeMemberV1OrgsOrgIdMembersMemberIdDelete,
 } from "@/lib/generated/sdk.gen";
 import type { OrgMemberResponse } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { Select } from "@/components/ui/select";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { formatShortDate } from "@/lib/marketplace/format";
 import { useOrganization } from "./organization-context";
-import { useRouter } from "next/navigation";
 
+/**
+ * Render the member list with role controls and removal.
+ */
 export function OrganizationMembers() {
   const { orgId, role: myRole, isSuspended } = useOrganization();
   const router = useRouter();
@@ -22,10 +39,7 @@ export function OrganizationMembers() {
   const [members, setMembers] = useState<OrgMemberResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const [actionError, setActionError] = useState<string | null>(null);
-  
-  // Removal Confirmation State
   const [memberToRemove, setMemberToRemove] = useState<OrgMemberResponse | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
 
@@ -41,7 +55,7 @@ export function OrganizationMembers() {
       if (result.response.ok && result.data) {
         setMembers(result.data.members);
       } else {
-        setError("Failed to load members.");
+        setError(describeGeneratedError(result.error));
       }
     } catch {
       setError("An error occurred loading members.");
@@ -50,24 +64,22 @@ export function OrganizationMembers() {
     }
   }
 
-    useEffect(() => {
-    loadMembers();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void loadMembers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
   async function handleRoleChange(memberId: string, newRole: "admin" | "member") {
     if (!isOwner || isSuspended) return;
     setActionError(null);
-
     try {
       const result = await changeMemberRoleV1OrgsOrgIdMembersMemberIdPatch({
         path: { org_id: orgId, member_id: memberId },
         body: { role: newRole },
         headers: getAccessTokenHeaders(),
       });
-
       if (!result.response.ok) {
-        setActionError(result.error?.detail?.error_code || "Failed to update role");
+        setActionError(describeGeneratedError(result.error));
       } else {
         await loadMembers();
       }
@@ -80,39 +92,29 @@ export function OrganizationMembers() {
     if (!isAdmin || !memberToRemove || isSuspended) return;
     setIsRemoving(true);
     setActionError(null);
-
     try {
       const result = await removeMemberV1OrgsOrgIdMembersMemberIdDelete({
         path: { org_id: orgId, member_id: memberToRemove.id },
         headers: getAccessTokenHeaders(),
       });
-
       if (!result.response.ok) {
-        setActionError(result.error?.detail?.error_code || "Failed to remove member");
-        setIsRemoving(false);
-        setMemberToRemove(null);
-      } else {
-        setMemberToRemove(null);
-        setIsRemoving(false);
-        // Self-removal = leaving the org
-        // Currently we don't have user_id of the current viewer natively in this context,
-        // but if the user removes themselves, they will get a 403 on reload or we can assume
-        // that if it succeeded and it was them, we'd better navigate them away.
-        // For simplicity, if we redirect to /dashboard/organizations on any removal, that might be jarring.
-        // Let's just reload. If they removed themselves, the loadMembers will 403 or return empty.
-        // Wait, we can check if the member removed has the same role. But best is to rely on reload.
-        const res = await listMembersV1OrgsOrgIdMembersGet({
-          path: { org_id: orgId },
-          headers: getAccessTokenHeaders(),
-        });
-        if (res.response.status === 403) {
-          router.push("/dashboard/organizations");
-        } else if (res.data) {
-          setMembers(res.data.members);
-        }
+        setActionError(describeGeneratedError(result.error));
+        return;
+      }
+      // Removing yourself ends your access: the reload comes back 403, which
+      // is the cue to leave the organization's pages.
+      const reload = await listMembersV1OrgsOrgIdMembersGet({
+        path: { org_id: orgId },
+        headers: getAccessTokenHeaders(),
+      });
+      if (reload.response.status === 403) {
+        router.push("/dashboard/organizations");
+      } else if (reload.data) {
+        setMembers(reload.data.members);
       }
     } catch {
       setActionError("Unexpected error occurred while removing member.");
+    } finally {
       setIsRemoving(false);
       setMemberToRemove(null);
     }
@@ -127,18 +129,26 @@ export function OrganizationMembers() {
   }
 
   if (error) {
-    return <p className="text-error">{error}</p>;
+    return <p className="text-sm text-error">{error}</p>;
   }
 
   return (
     <div className="max-w-4xl rounded-2xl border border-border-default bg-surface-1 shadow-sm">
-      <div className="border-b border-border-default p-6">
-        <h2 className="font-heading text-xl font-bold text-foreground">
-          Organization Members
-        </h2>
-        <p className="mt-1 text-sm text-foreground-muted">
-          People with access to this organization.
-        </p>
+      <div className="flex flex-col gap-4 border-b border-border-default p-6 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-heading text-xl font-bold text-foreground">Organization Members</h2>
+          <p className="mt-1 text-sm text-foreground-muted">
+            People with access to this organization.
+          </p>
+        </div>
+        {isAdmin ? (
+          <Link
+            className="inline-flex min-h-11 items-center justify-center rounded-xl border border-transparent bg-foreground px-5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            href={`/dashboard/organizations/${orgId}/invitations`}
+          >
+            Invite a member
+          </Link>
+        ) : null}
       </div>
 
       {actionError && (
@@ -148,51 +158,62 @@ export function OrganizationMembers() {
       )}
 
       <ul className="divide-y divide-border-default">
-        {(!members || members.length === 0) ? (
+        {members.length === 0 ? (
           <li className="p-6 text-center text-foreground-muted">No members found.</li>
         ) : (
           members.map((member) => (
-            <li key={member.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 hover:bg-surface-2 transition-colors">
-            <div>
-              <p className="font-semibold text-foreground">{member.display_name}</p>
-              {member.email && <p className="text-sm text-foreground-muted">{member.email}</p>}
-              <p className="mt-1 text-xs text-foreground-muted">
-                Joined {new Date(member.joined_at).toLocaleDateString()}
-              </p>
-            </div>
+            <li
+              key={member.id}
+              className="flex flex-col justify-between gap-4 p-6 transition-colors hover:bg-surface-2 sm:flex-row sm:items-center"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-foreground">{member.display_name}</p>
+                  <StatusPill status={member.role} />
+                </div>
+                {member.email && (
+                  <p className="mt-1 truncate text-sm text-foreground-muted">{member.email}</p>
+                )}
+                <p className="mt-1 text-xs text-foreground-muted">
+                  Joined {formatShortDate(member.joined_at)}
+                </p>
+              </div>
 
-            <div className="flex items-center gap-3">
-              {/* Role Display / Switcher */}
-              {isOwner && member.role !== "owner" ? (
-                <Select
-                  disabled={isSuspended}
-                  value={member.role}
-                  onChange={(e) => handleRoleChange(member.id, e.target.value as "admin" | "member")}
-                  className="w-32 min-h-10 py-1"
-                >
-                  <option value="admin">Admin</option>
-                  <option value="member">Member</option>
-                </Select>
-              ) : (
-                <span className="rounded-badge bg-surface-2 px-3 py-1 text-xs font-medium uppercase tracking-wider text-foreground-muted">
-                  {member.role}
-                </span>
-              )}
-
-              {/* Remove Action */}
-              {isAdmin && member.role !== "owner" && (
-                <Button
-                  variant="destructive"
-                  className="min-h-10 px-4 py-1"
-                  disabled={isSuspended}
-                  onClick={() => setMemberToRemove(member)}
-                >
-                  Remove
-                </Button>
-              )}
-            </div>
-          </li>
-        )))}
+              {member.role !== "owner" && (isOwner || isAdmin) ? (
+                <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  {isOwner ? (
+                    <>
+                      <label className="sr-only" htmlFor={`role-${member.id}`}>
+                        Role for {member.display_name}
+                      </label>
+                      <Select
+                        id={`role-${member.id}`}
+                        className="min-h-11 w-full sm:w-32"
+                        disabled={isSuspended}
+                        value={member.role}
+                        onChange={(e) =>
+                          void handleRoleChange(member.id, e.target.value as "admin" | "member")
+                        }
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="member">Member</option>
+                      </Select>
+                    </>
+                  ) : null}
+                  <Button
+                    aria-label={`Remove ${member.display_name}`}
+                    className="min-h-11 px-4"
+                    disabled={isSuspended}
+                    onClick={() => setMemberToRemove(member)}
+                    variant="destructive"
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ) : null}
+            </li>
+          ))
+        )}
       </ul>
 
       <ConfirmDialog

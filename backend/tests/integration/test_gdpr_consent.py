@@ -88,8 +88,11 @@ class SentEmails:
         """Create empty dispatch records."""
         self.verification_calls: list[dict[str, str]] = []
 
-    def verification_delay(self, email: str, token: str) -> None:
+    def verification_delay(
+        self, email: str, token: str, next_path: str | None = None
+    ) -> None:
         """Record a verification-email task dispatch."""
+        del next_path
         self.verification_calls.append({"email": email, "token": token})
 
 

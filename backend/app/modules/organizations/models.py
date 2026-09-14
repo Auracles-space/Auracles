@@ -119,8 +119,22 @@ class Organization(UpdatedAtMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Who closed the organization and the optional reason they gave. Cleared
+    # when an admin reactivates it so the record reflects the current state.
+    deactivated_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+    deactivation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     suspended_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+        nullable=True,
+    )
+    # Which admin suspended the org; cleared on reinstate with the reason.
+    suspended_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
         nullable=True,
     )
     # Why the platform suspended the org, written by the admin and shown to

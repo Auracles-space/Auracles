@@ -11,6 +11,8 @@ import {
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
+  describeGeneratedError: (error: { detail?: { message?: string } } | undefined) =>
+    error?.detail?.message ?? "The request could not be completed.",
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer test-token" })),
 }));
 
@@ -143,5 +145,32 @@ describe("TeamMemberManager", () => {
         }),
       );
     });
+  });
+
+  it("shows the server's message when a member cannot be added", async () => {
+    vi.mocked(
+      addTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdPut,
+    ).mockResolvedValue({
+      data: undefined,
+      error: { detail: { error_code: "seat_limit", message: "This team is full." } },
+      request: new Request("http://test.local"),
+      response: new Response(null, { status: 409 }),
+    } as never);
+
+    render(
+      <TeamMemberManager
+        orgId="org-1"
+        teamId="team-1"
+        isAdmin
+        isSuspended={false}
+      />,
+    );
+    await screen.findByText("Ada");
+    fireEvent.change(screen.getByLabelText(/add member to team/i), {
+      target: { value: "m2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add member/i }));
+
+    expect(await screen.findByText("This team is full.")).toBeInTheDocument();
   });
 });

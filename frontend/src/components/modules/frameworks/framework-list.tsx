@@ -4,10 +4,13 @@
  * Contributor Framework list.
  *
  * Fetches owned Framework summaries through the generated client using the
- * in-memory access token.
+ * in-memory access token. Status reads through the shared `StatusPill`
+ * vocabulary; a suspended framework says so and points at support, since
+ * only an administrator can lift the suspension.
  */
 import Link from "next/link";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
+import { StatusPill } from "@/components/ui/status-pill";
 import { useEffect, useMemo, useState } from "react";
 import {
   UploadIcon,
@@ -26,32 +29,9 @@ import {
   isFrameworkApiErrorCode,
   type FrameworkSeller,
 } from "@/lib/frameworks/framework-api";
-import {
-  formatFrameworkStatus,
-  formatLabel,
-  formatMoney,
-} from "@/lib/marketplace/format";
+import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
-/**
- * Maps the framework status to semantic Tailwind classes for styling indicators.
- */
-function getStatusTheme(status: FrameworkListItem["status"]) {
-  switch (status) {
-    case "published":
-      return { classes: "bg-[#16A34A]/10 text-[#16A34A] border-[#16A34A]/30" };
-    case "draft":
-    case "unpublished":
-      return { classes: "bg-surface-2 text-foreground-muted border-border-default" };
-    case "submitted":
-    case "processing":
-    case "pipeline_passed":
-      return { classes: "bg-[#F59E0B]/10 text-[#F59E0B] border-[#F59E0B]/30" };
-    case "pipeline_failed":
-    case "suspended":
-    default:
-      return { classes: "bg-[#DC2626]/10 text-[#DC2626] border-[#DC2626]/30" };
-  }
-}
+const SUPPORT_EMAIL = "support@auracles.space";
 
 /**
  * Render Framework summaries for one personal or organization seller.
@@ -251,7 +231,7 @@ export function FrameworkList({
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredFrameworks.map((framework) => {
-            const statusTheme = getStatusTheme(framework.status);
+            const isSuspended = framework.status === "suspended";
             return (
               <article
                 className="group flex flex-col justify-between rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm transition-all hover:border-accent/40 hover:shadow-bento"
@@ -262,10 +242,22 @@ export function FrameworkList({
                     <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-foreground-subtle">
                       {formatLabel(framework.category)}
                     </span>
-                    <span className={`inline-flex items-center rounded-badge px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.05em] border ${statusTheme.classes}`}>
-                      {formatFrameworkStatus(framework.status)}
-                    </span>
+                    <StatusPill status={framework.status} />
                   </div>
+                  {isSuspended ? (
+                    <p className="rounded-xl border border-error/30 bg-error/5 px-3 py-2 text-xs text-foreground-muted">
+                      Suspended by an administrator. It is hidden from the marketplace until
+                      the suspension is lifted.{" "}
+                      <a
+                        className="font-medium text-foreground underline underline-offset-4"
+                        href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+                          `Suspension of ${framework.title}`,
+                        )}`}
+                      >
+                        Contact support
+                      </a>
+                    </p>
+                  ) : null}
 
                   <Link href={`${basePath}/${framework.id}`} className="block">
                     <h2 className="font-heading text-lg font-bold tracking-tight text-foreground line-clamp-2 group-hover:text-accent transition-colors">

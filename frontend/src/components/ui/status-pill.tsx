@@ -3,7 +3,8 @@
  * organization surfaces.
  *
  * Every operational status the console shows (attestor applications, KYB,
- * capabilities, calibration trials, attestations, disputes, offers) resolves
+ * capabilities, calibration trials, attestations, disputes, offers,
+ * invitations, membership roles, frameworks, licenses) resolves
  * through this single map, so "in review" is the same words and the same
  * colour on every screen. Requestor, attestor-org and admin attestation
  * surfaces read through `attestationStatusKey` so viewer-specific wording
@@ -74,6 +75,17 @@ const PRESENTATION: Record<string, StatusPresentation> = {
   superseded: { label: "Superseded", tone: "neutral" },
   // Organizations
   deactivated: { label: "Deactivated", tone: "neutral" },
+  // Membership roles: neutral on purpose, a role is a fact not a state.
+  owner: { label: "Owner", tone: "neutral" },
+  admin: { label: "Admin", tone: "neutral" },
+  member: { label: "Member", tone: "neutral" },
+  // Frameworks: the pipeline is an implementation detail, so its outcomes
+  // read as what they mean for the contributor's next step.
+  processing: { label: "Processing", tone: "info" },
+  pipeline_passed: { label: "Ready to publish", tone: "success" },
+  pipeline_failed: { label: "Processing failed", tone: "error" },
+  published: { label: "Published", tone: "success" },
+  unpublished: { label: "Unpublished", tone: "neutral" },
 };
 
 const TONE_CLASSES: Record<StatusTone, string> = {

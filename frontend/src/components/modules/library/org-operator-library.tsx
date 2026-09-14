@@ -3,8 +3,9 @@
 /**
  * Org Operator licensed Framework library.
  *
- * Lists active licenses available to the organization and requests short-lived
- * download URLs for artifacts using the org operator capability.
+ * Lists the organization's licenses (active, expired, and revoked read as
+ * such through `StatusPill`) and requests short-lived download URLs for
+ * artifacts using the org operator capability.
  */
 import { useEffect, useState } from "react";
 
@@ -23,11 +24,36 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
-import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import { StatusPill } from "@/components/ui/status-pill";
+import { formatLabel, formatMoney, formatShortDate } from "@/lib/marketplace/format";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
 import { FrameworkReviewPanel } from "./framework-review-panel";
 import { OrgLicenseGrantPanel } from "./org-license-grant-panel";
+
+/** How a license reached the org's library, in plain words. */
+const SOURCE_LABELS: Record<string, string> = {
+  purchase: "Purchased",
+  collection: "Collection",
+};
+
+/** License type names as the pricing page words them. */
+const LICENSE_TYPE_LABELS: Record<string, string> = {
+  single_user: "Single user",
+  team: "Team",
+  organizational: "Organization",
+};
+
+/**
+ * Describe when a license lapses, or when it lapsed.
+ *
+ * @param item - Library item carrying `status` and `expires_at`.
+ */
+function describeLicenseExpiry(item: Pick<LibraryItem, "status" | "expires_at">): string {
+  if (!item.expires_at) return "No expiry";
+  const date = formatShortDate(item.expires_at);
+  return item.status === "expired" ? `Expired ${date}` : `Expires ${date}`;
+}
 
 type LibraryCardState = {
   artifacts: ExploreArtifactSummary[];
@@ -167,7 +193,7 @@ function LibraryCard({ canManage, item, orgId }: LibraryCardProps) {
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-            {formatLabel(item.license_type)} license
+            {LICENSE_TYPE_LABELS[item.license_type] ?? formatLabel(item.license_type)} license
           </p>
           <h2 className="mt-1 font-heading text-xl font-bold text-foreground">
             {item.title}
@@ -183,19 +209,16 @@ function LibraryCard({ canManage, item, orgId }: LibraryCardProps) {
           </p>
         ) : null}
       </div>
-      <div className="mt-4 grid gap-3 text-sm text-foreground-muted sm:grid-cols-3">
-        <span>Status {formatLabel(item.status)}</span>
-        <span>
-          Source{" "}
-          {item.source === "collection" ? "Collection" : formatLabel(item.source)}
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-foreground-muted">
+        <StatusPill status={item.status} />
+        <span className="inline-flex items-center rounded-badge border border-border-default bg-surface-1 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+          {SOURCE_LABELS[item.source] ?? formatLabel(item.source)}
         </span>
         <span>
           Seats {item.seats_used}
           {item.seats_total ? ` / ${item.seats_total}` : ""}
         </span>
-        <span className="sm:col-span-3">
-          Expires {item.expires_at ? new Date(item.expires_at).toLocaleDateString() : "Never"}
-        </span>
+        <span>{describeLicenseExpiry(item)}</span>
       </div>
       {state.error ? <p className="mt-3 text-sm text-error">{state.error}</p> : null}
       <div className="mt-5 grid gap-2">

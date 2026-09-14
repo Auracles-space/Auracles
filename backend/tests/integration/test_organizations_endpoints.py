@@ -114,10 +114,10 @@ async def create_org(
 ) -> dict[str, object]:
     """Create an org via the API; return the response body.
 
-    Business-verified by default. An unverified organization is a shell —
-    members, teams, capabilities and transactions are all refused — so a test
-    that wants a usable org wants a verified one. Pass ``verified=False`` to
-    exercise the gate itself.
+    Business-verified by default: capabilities and transactions are refused
+    until verification passes, so a test that wants a usable org wants a
+    verified one. Pass ``verified=False`` to exercise the gate itself or the
+    people surfaces (members, invitations, teams) that Decision 2 opened.
     """
     response = await client.post(
         "/v1/orgs",
@@ -261,6 +261,10 @@ async def test_list_my_orgs_returns_role_and_capabilities(
     assert len(orgs) == 1
     assert orgs[0]["role"] == "owner"
     assert orgs[0]["capabilities"] == {"attestor": "pending"}
+    # The profile summary shows the member count and the verified date
+    # without a second request.
+    assert orgs[0]["member_count"] == 1
+    assert orgs[0]["kyb_verified_at"] is None
 
 
 async def test_my_orgs_grants_owner(

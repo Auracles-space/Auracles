@@ -128,4 +128,55 @@ describe("FrameworkList", () => {
       "/dashboard/organizations/org-1/frameworks/fw-1",
     );
   });
+
+  it("renders framework status through the shared pill vocabulary", async () => {
+    listFrameworks.mockResolvedValue([
+      {
+        id: "fw-2",
+        title: "Vendor Due Diligence Kit",
+        status: "pipeline_failed",
+        category: "framework",
+        version: "1.0.0",
+        price: "120000.00",
+        currency: "NGN",
+      },
+    ]);
+
+    render(
+      <FrameworkList seller={{ kind: "user" }} basePath="/dashboard/frameworks" />,
+    );
+
+    const pill = await screen.findByText("Processing failed");
+    expect(pill.className).toContain("rounded-badge");
+    expect(pill.className).toContain("text-error");
+    expect(screen.queryByText(/pipeline/i)).not.toBeInTheDocument();
+  });
+
+  it("explains a suspended framework and offers a support contact", async () => {
+    listFrameworks.mockResolvedValue([
+      {
+        id: "fw-3",
+        title: "Board Charter Pack",
+        status: "suspended",
+        category: "framework",
+        version: "2.0.0",
+        price: "80000.00",
+        currency: "NGN",
+      },
+    ]);
+
+    render(
+      <FrameworkList
+        seller={{ kind: "org", orgId: "org-1" }}
+        basePath="/dashboard/organizations/org-1/frameworks"
+      />,
+    );
+
+    expect(await screen.findByText("Suspended")).toBeInTheDocument();
+    expect(screen.getByText(/suspended by an administrator/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /contact support/i })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^mailto:support@auracles\.space\?subject=/),
+    );
+  });
 });

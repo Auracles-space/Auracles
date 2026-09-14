@@ -132,6 +132,11 @@ Frontend
   `org_deactivated`, `org_kyb_submitted` (owner ack). Migration adds the enum labels.
 - Library shows expired/revoked licenses as such; failed purchases listed under billing.
 
+Slice B notes (2026-09-14): per-member team names on the Members tab need `teams` on
+`OrgMemberResponse` and move to slice D with the admin members view; "library shows
+expired/revoked licenses" and "failed purchases under billing" need backend list changes and
+move to slice C. Register → verify → login now carries `next` end to end.
+
 ### Slice C — org money
 
 - `formatMoney` everywhere on org financial surfaces; minimum payout shown; eligibility
@@ -141,7 +146,12 @@ Frontend
 - Org payout history: `GET /orgs/{org}/financials/payouts` and a list on the tab with
   `StatusPill` (`PRESENTATION` gains payout statuses).
 - Notifications: `org_payout_requested` (owners), `org_payout_completed`,
-  `org_payout_failed` (owners + requester), `org_invoice_ready`.
+  `org_payout_failed` (owners + requester), `org_invoice_ready`, `org_purchase_completed`,
+  `org_purchase_failed`, `org_license_granted`, `org_license_revoked`,
+  `org_framework_suspended`, `org_framework_published` (labels already migrated in
+  2026_09_14_0105; slice C adds the senders).
+- Library lists expired and revoked licenses with their status; billing lists failed
+  purchases with the failure reason.
 - Payout authority per Decision 3.
 
 ### Slice D — admin

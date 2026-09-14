@@ -38,6 +38,7 @@ from app.modules.attestation.credential_service import (
     CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
     _safe_file_name,
 )
+from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.models import Organization, OrgLegalProfile, OrgMember
 from app.shared.errors import error_detail
 from app.workers.tasks.project_notifications import dispatch_project_notification
@@ -330,7 +331,15 @@ async def submit_for_verification(
             target_id=org_id,
             metadata={"document_count": len(profile.incorporation_doc_keys)},
         )
+        org_name = await db.scalar(
+            select(Organization.name).where(Organization.id == org_id)
+        )
     await db.refresh(profile)
+    # The submitter gets an acknowledgement so a submission that sits in the
+    # queue for days does not look like it was lost.
+    org_notifications.notify_org_kyb_submitted(
+        actor_id, org_id=org_id, org_name=org_name or "Your organization"
+    )
     # KYB gates every capability, so a submission nobody notices stalls the
     # whole organization. Same inbox the attestor application already uses.
     notify_admins_review_pending(

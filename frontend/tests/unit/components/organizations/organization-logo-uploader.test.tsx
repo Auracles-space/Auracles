@@ -145,6 +145,35 @@ describe("OrganizationLogoUploader", () => {
     expect(onUploaded).not.toHaveBeenCalled();
   });
 
+  it("opens the crop editor as a bottom sheet on mobile with a 44px zoom control", async () => {
+    render(
+      <OrganizationLogoUploader
+        orgId="org-1"
+        logoUrl={null}
+        name="Acme"
+        canEdit
+        onUploaded={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/upload logo/i), {
+      target: { files: [pngFile()] },
+    });
+    await screen.findByAltText(/crop preview/i);
+
+    // Same pattern as ConfirmDialog: the overlay carries the dialog role.
+    const overlay = screen.getByRole("dialog");
+    expect(overlay?.className).toMatch(/place-items-end/);
+    expect(overlay?.className).toMatch(/p-0/);
+    expect(overlay?.className).toMatch(/sm:place-items-center/);
+    expect(overlay?.className).toMatch(/sm:p-4/);
+
+    const slider = screen.getByLabelText(/zoom/i);
+    expect(slider).toHaveAttribute("type", "range");
+    expect(slider.className).toMatch(/\bh-2\b/);
+    expect(slider.closest("label")?.className).toMatch(/py-4/);
+  });
+
   it("hides the upload control when the member cannot edit", () => {
     render(
       <OrganizationLogoUploader

@@ -32,8 +32,14 @@ from app.workers.celery_app import app
 
 
 @app.task(bind=True, max_retries=5, rate_limit="2/s")  # type: ignore[untyped-decorator]
-def send_verification_email(self: Any, email: str, token: str) -> None:
-    """Send a registration verification email."""
+def send_verification_email(
+    self: Any, email: str, token: str, next_path: str | None = None
+) -> None:
+    """Send a registration verification email.
+
+    ``next_path`` is the in-app path the user should land on after verifying
+    (already validated by the register schema); it rides on the link.
+    """
     log = logger.bind(
         module="auth",
         action="send_verification_email",
@@ -41,7 +47,7 @@ def send_verification_email(self: Any, email: str, token: str) -> None:
     )
     log.info("task_started")
     try:
-        send_via_resend(email=email, token=token)
+        send_via_resend(email=email, token=token, next_path=next_path)
     except PermanentEmailError as exc:
         log.error("task_failed_permanent", error=str(exc))
         return

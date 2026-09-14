@@ -672,4 +672,20 @@ describe("FrameworkEditor", () => {
       screen.queryByRole("button", { name: /remove operating model\.pdf/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("renders the workspace status through the shared pill vocabulary", async () => {
+    mockLoad(makeFramework({ status: "pipeline_passed" }), [
+      makeArtifact({ id: "art_1", processing_status: "processed" }),
+    ]);
+
+    renderPersonalEditor();
+
+    await screen.findByText("Test Framework");
+    // The pipeline panel repeats the phrase in prose; the pill is the badge.
+    const pill = screen
+      .getAllByText("Ready to publish")
+      .find((element) => element.className.includes("rounded-badge"));
+    expect(pill).toBeDefined();
+    expect(pill?.className).toContain("text-success");
+  });
 });

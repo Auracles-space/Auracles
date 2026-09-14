@@ -163,7 +163,7 @@ describe("OrgLicenseGrantPanel", () => {
       data: { grants: [] },
     });
 
-    const revokeButton = screen.getByLabelText("Revoke grant");
+    const revokeButton = screen.getByLabelText("Revoke grant for Alice");
     fireEvent.click(revokeButton);
 
     expect(sdk.revokeOrgLicenseGrant).toHaveBeenCalledWith(
@@ -174,5 +174,46 @@ describe("OrgLicenseGrantPanel", () => {
     await waitFor(() => {
       expect(screen.getByText(/No active grants/)).toBeInTheDocument();
     });
+  });
+
+  it("names the revoke control after the grantee and keeps it a full touch target", async () => {
+    vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
+      response: { ok: true } as Response,
+      data: { grants: [mockGrant] },
+    });
+
+    render(<OrgLicenseGrantPanel orgId="org-1" licenseId="license-1" />);
+    await screen.findByText("Alice");
+
+    const revokeButton = screen.getByRole("button", { name: "Revoke grant for Alice" });
+    expect(revokeButton.className).toContain("min-h-11");
+    expect(revokeButton.className).toContain("min-w-11");
+  });
+
+  it("stacks the grant selectors on mobile and pairs them from the sm breakpoint", async () => {
+    vi.mocked(sdk.listOrgLicenseGrants).mockResolvedValueOnce({
+      response: { ok: true } as Response,
+      data: { grants: [] },
+    });
+
+    render(<OrgLicenseGrantPanel orgId="org-1" licenseId="license-1" />);
+    await screen.findByText(/No active grants/);
+
+    const [typeSelect] = screen.getAllByRole("combobox");
+    expect(typeSelect.parentElement?.className).toContain("grid");
+    expect(typeSelect.parentElement?.className).toContain("sm:grid-cols-2");
+  });
+
+  it("shows a safe message when loading throws instead of the raw exception", async () => {
+    vi.mocked(sdk.listOrgLicenseGrants).mockRejectedValueOnce(
+      new TypeError("fetch failed: ECONNRESET 10.0.0.4"),
+    );
+
+    render(<OrgLicenseGrantPanel orgId="org-1" licenseId="license-1" />);
+
+    expect(
+      await screen.findByText("The request could not be completed."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/ECONNRESET/)).not.toBeInTheDocument();
   });
 });

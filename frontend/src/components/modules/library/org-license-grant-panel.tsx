@@ -28,6 +28,11 @@ type OrgLicenseGrantPanelProps = {
   licenseId: string;
 };
 
+/**
+ * Render the grant list and the add-grant form for one org license.
+ *
+ * @param props - Organization and license ids.
+ */
 export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelProps) {
   const [grants, setGrants] = useState<OrgLicenseGrantResponse[]>([]);
   const [members, setMembers] = useState<OrgMemberResponse[]>([]);
@@ -84,8 +89,10 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
       setGrants(grantsRes.data.grants);
       setMembers(membersRes.data.members);
       setTeams(teamsRes.data.teams);
-    } catch (e: unknown) {
-      setError((e as Error).message);
+    } catch (caught: unknown) {
+      // A thrown network error carries hosts and stack detail nobody should
+      // see in the UI; the shared helper reduces it to safe copy.
+      setError(describeGeneratedError(caught));
     }
     setLoading(false);
   }
@@ -151,6 +158,14 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
     await reloadGrants();
   }
 
+  /** Resolve a grant to the person or team it names; falls back to the id. */
+  function granteeName(grant: OrgLicenseGrantResponse): string {
+    if (grant.member_id) {
+      return members.find((m) => m.id === grant.member_id)?.display_name || grant.member_id;
+    }
+    return teams.find((t) => t.id === grant.team_id)?.name || grant.team_id || "Team";
+  }
+
   if (loading) {
     return (
       <div className="mt-6 flex items-center gap-2 text-sm text-foreground-muted">
@@ -180,19 +195,14 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
                   <span className="font-semibold text-foreground">
                     {grant.member_id ? "User" : "Team"}
                   </span>
-                  <span className="ml-2 text-foreground-muted">
-                    {grant.member_id 
-                      ? (members.find((m) => m.id === grant.member_id)?.display_name || grant.member_id)
-                      : (teams.find((t) => t.id === grant.team_id)?.name || grant.team_id)
-                    }
-                  </span>
+                  <span className="ml-2 text-foreground-muted">{granteeName(grant)}</span>
                 </div>
                 <button
                   type="button"
                   disabled={submitting}
                   onClick={() => handleRevokeGrant(grant.id)}
-                  className="text-foreground-muted transition-colors hover:text-error disabled:opacity-50"
-                  aria-label="Revoke grant"
+                  className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl text-foreground-muted transition-colors hover:bg-error/10 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                  aria-label={`Revoke grant for ${granteeName(grant)}`}
                 >
                   <TrashIcon className="h-4 w-4" />
                 </button>
@@ -205,11 +215,11 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
       <form onSubmit={handleAddGrant} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex flex-1 flex-col gap-1">
           <span className="text-xs font-semibold text-foreground-muted">Grant to</span>
-          <div className="flex rounded-xl shadow-sm">
+          <div className="grid gap-2 sm:grid-cols-2">
             <select
               value={grantType}
               onChange={(e) => setGrantType(e.target.value as "member_id" | "team_id")}
-              className="rounded-l-xl border border-r-0 border-border-default bg-surface-2 px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+              className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 text-sm text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <option value="member_id">User</option>
               <option value="team_id">Team</option>
@@ -217,7 +227,7 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
             <select
               value={grantTargetId}
               onChange={(e) => setGrantTargetId(e.target.value)}
-              className="w-full rounded-r-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+              className="min-h-12 w-full rounded-xl border border-border-default bg-background px-3 text-sm text-foreground shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-accent"
               disabled={submitting}
               required
             >
@@ -241,7 +251,7 @@ export function OrgLicenseGrantPanel({ orgId, licenseId }: OrgLicenseGrantPanelP
         <button
           type="submit"
           disabled={submitting || !grantTargetId.trim()}
-          className="rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm transition-colors hover:bg-foreground/90 disabled:opacity-50 sm:mb-[1px]"
+          className="min-h-12 rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
         >
           Add Grant
         </button>

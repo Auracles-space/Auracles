@@ -125,4 +125,54 @@ describe("OrgOperatorLibrary member access", () => {
     expect(screen.getByText("$499")).toBeInTheDocument();
     expect(screen.getByText("License grant controls")).toBeInTheDocument();
   });
+
+  it("labels license status, source, and type in plain words", async () => {
+    renderLibrary("member");
+
+    await screen.findByText("Board Risk Operating System");
+    const status = screen.getByText("Active");
+    expect(status.className).toContain("rounded-badge");
+    expect(status.className).toContain("text-success");
+    expect(screen.getByText("Purchased")).toBeInTheDocument();
+    expect(screen.getByText("Team license")).toBeInTheDocument();
+    expect(screen.queryByText(/status active/i)).not.toBeInTheDocument();
+  });
+
+  it("marks an expired license as expired", async () => {
+    vi.mocked(listOrgLibrary).mockResolvedValue({
+      data: {
+        items: [
+          {
+            license_id: "license-2",
+            framework_id: "framework-2",
+            title: "Procurement Controls",
+            version_at_grant: "1.0.0",
+            current_version: "1.0.0",
+            license_type: "single_user",
+            source: "collection",
+            collection_id: "col-1",
+            status: "expired",
+            seats_used: 0,
+            seats_total: 1,
+            price: "50000.00",
+            currency: "NGN",
+            thumbnail_key: null,
+            granted_at: "2025-09-01T00:00:00Z",
+            expires_at: "2026-09-01T00:00:00Z",
+            grant_count: 0,
+          },
+        ],
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    renderLibrary("member");
+
+    await screen.findByText("Procurement Controls");
+    expect(screen.getByText("Expired").className).toContain("rounded-badge");
+    expect(screen.getByText("Collection")).toBeInTheDocument();
+    expect(screen.getByText("Single user license")).toBeInTheDocument();
+    expect(screen.getByText(/expired 1 sep 2026/i)).toBeInTheDocument();
+  });
 });

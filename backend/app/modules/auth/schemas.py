@@ -19,12 +19,29 @@ class RegisterRequest(BaseModel):
     password: SecretStr
     display_name: str = Field(min_length=1, max_length=100)
     roles: list[AssignableRole] = Field(min_length=1)
+    # In-app path to return to after email verification (an invitation the
+    # user was following, for instance). Carried on the verification link.
+    next: str | None = Field(default=None, max_length=500)
 
     @field_validator("password")
     @classmethod
     def password_meets_policy(cls, value: SecretStr) -> SecretStr:
         """Apply the shared password policy to registration."""
         validate_password_strength(value.get_secret_value())
+        return value
+
+    @field_validator("next")
+    @classmethod
+    def next_is_an_app_path(cls, value: str | None) -> str | None:
+        """Accept only a same-origin path: one leading slash, never ``//``.
+
+        A scheme or a protocol-relative ``//host`` would turn the verification
+        email into an open redirect.
+        """
+        if value is None:
+            return None
+        if not value.startswith("/") or value.startswith("//"):
+            raise ValueError("next must be an in-app path starting with a single '/'.")
         return value
 
     @field_validator("roles")

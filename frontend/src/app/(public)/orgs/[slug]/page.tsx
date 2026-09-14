@@ -1,13 +1,33 @@
+/**
+ * Public organization profile (SSR).
+ *
+ * Renders the public-safe fields of one organization by slug: identity,
+ * description, member count, join date, and active capabilities through the
+ * shared status vocabulary. The website link is rendered only for http(s)
+ * URLs so a stored `javascript:` value can never become a clickable href.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
+ */
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicOrgV1OrgsSlugGet } from "@/lib/generated/sdk.gen";
+import { StatusPill } from "@/components/ui/status-pill";
+import { capabilityLabel } from "@/components/modules/organizations/capability-labels";
 
 import { GlobeIcon, CalendarIcon, PersonIcon } from "@radix-ui/react-icons";
+
+/** Accept only absolute http(s) URLs as a clickable website. */
+function httpWebsite(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
+}
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
+/** Build the page title and description from the public org record. */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   try {
@@ -24,9 +44,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 }
 
+/**
+ * Render the public profile for the organization at `/orgs/[slug]`.
+ *
+ * @param props - Route params carrying the organization slug.
+ */
 export default async function PublicOrganizationPage({ params }: Props) {
   const { slug } = await params;
-  
+
   let org;
   try {
     const res = await getPublicOrgV1OrgsSlugGet({ path: { slug } });
@@ -42,6 +67,7 @@ export default async function PublicOrganizationPage({ params }: Props) {
     month: "long",
     year: "numeric"
   });
+  const website = httpWebsite(org.website);
 
   return (
     <div className="min-h-screen bg-background pt-24 pb-16">
@@ -78,8 +104,8 @@ export default async function PublicOrganizationPage({ params }: Props) {
               </div>
               
               <div className="flex gap-2">
-                {org.website && (
-                  <ButtonLink href={org.website} target="_blank" rel="noopener noreferrer">
+                {website && (
+                  <ButtonLink href={website} target="_blank" rel="noopener noreferrer">
                     <GlobeIcon className="mr-2 h-4 w-4" />
                     Website
                   </ButtonLink>
@@ -117,12 +143,7 @@ export default async function PublicOrganizationPage({ params }: Props) {
                 </h3>
                 <div className="flex flex-wrap gap-2">
                   {org.active_capabilities.map((cap: string) => (
-                    <span 
-                      key={cap} 
-                      className="inline-flex items-center rounded-full bg-accent/10 px-3 py-1 text-sm font-medium text-accent"
-                    >
-                      {cap.charAt(0).toUpperCase() + cap.slice(1)}
-                    </span>
+                    <StatusPill key={cap} label={capabilityLabel(cap)} status="active" />
                   ))}
                 </div>
               </div>
@@ -134,11 +155,12 @@ export default async function PublicOrganizationPage({ params }: Props) {
   );
 }
 
+/** Secondary-style anchor with a 44px touch target. */
 function ButtonLink({ children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   return (
     <a
       {...props}
-      className="inline-flex h-10 items-center justify-center rounded-xl bg-surface-2 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {children}
     </a>

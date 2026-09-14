@@ -25,6 +25,8 @@ const { refreshOrganization, toastSuccess, toastError } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/form-client", () => ({
+  describeGeneratedError: (error: { detail?: { message?: string } } | undefined) =>
+    error?.detail?.message ?? "The request could not be completed.",
   getAccessTokenHeaders: () => ({ Authorization: "Bearer test" }),
 }));
 vi.mock("@/components/ui/toast", () => ({
@@ -138,5 +140,23 @@ describe("OrganizationTeams", () => {
       }),
     );
     expect(refreshOrganization).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the server's message when a team cannot be created", async () => {
+    setOrg();
+    vi.mocked(createTeamV1OrgsOrgIdTeamsPost).mockResolvedValue({
+      response: { ok: false, status: 409 },
+      error: { detail: { error_code: "team_exists", message: "A team named Sellers already exists." } },
+    } as never);
+
+    render(<OrganizationTeams />);
+    await screen.findByText("Sellers");
+
+    fireEvent.change(screen.getByLabelText(/team name/i), { target: { value: "Sellers" } });
+    fireEvent.click(screen.getByRole("button", { name: /create team/i }));
+
+    expect(
+      await screen.findByText("A team named Sellers already exists."),
+    ).toBeInTheDocument();
   });
 });

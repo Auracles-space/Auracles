@@ -49,7 +49,9 @@ def test_send_verification_email_dispatches_to_resend(
         args=["user@auracles.space", "tok-1"]
     ).get()
 
-    assert recorder.calls == [{"email": "user@auracles.space", "token": "tok-1"}]
+    assert recorder.calls == [
+        {"email": "user@auracles.space", "token": "tok-1", "next_path": None}
+    ]
 
 
 def test_send_password_reset_email_dispatches_to_resend(

@@ -761,6 +761,14 @@ export type AdminOrgResponse = {
     country: string;
     created_at: string;
     deactivated_at?: (string | null);
+    /**
+     * Who closed the org; cleared on reactivate.
+     */
+    deactivated_by?: (string | null);
+    /**
+     * The reason the owner gave when closing; cleared on reactivate.
+     */
+    deactivation_reason?: (string | null);
     id: string;
     kyb_status?: string;
     kyb_submitted_at?: (string | null);
@@ -770,6 +778,14 @@ export type AdminOrgResponse = {
     registration_number?: (string | null);
     slug: string;
     suspended_at?: (string | null);
+    /**
+     * Which admin suspended the org; cleared on reinstate.
+     */
+    suspended_by?: (string | null);
+    /**
+     * The admin's reason for the suspension; cleared on reinstate.
+     */
+    suspension_reason?: (string | null);
 };
 
 /**
@@ -3149,7 +3165,12 @@ export type MyOrganizationResponse = {
     grants?: {
         [key: string]: (boolean);
     };
+    /**
+     * When the business was verified; null until it is.
+     */
+    kyb_verified_at?: (string | null);
     kyb_status?: string;
+    member_count?: number;
     nda_required?: boolean;
     org: OrganizationResponse;
     role: string;
@@ -3570,6 +3591,13 @@ export type OrgCapabilityResponse = {
 };
 
 /**
+ * Optional owner note on why the organization is being closed. Stored on the row for the admin console and repeated in the members' closure notification, so it should be written for them.
+ */
+export type OrgDeactivateRequest = {
+    reason?: (string | null);
+};
+
+/**
  * List of active organization delivery workspaces.
  */
 export type OrgDeliveriesResponse = {
@@ -3613,6 +3641,8 @@ export type OrgInvitationPreviewResponse = {
 
 /**
  * One organization invitation row.
+ *
+ * status is computed: a row still stored as pending whose expires_at has passed reads as expired so the list never shows a dead invitation as live between nightly sweeps.
  */
 export type OrgInvitationResponse = {
     created_at: string;
@@ -3624,7 +3654,7 @@ export type OrgInvitationResponse = {
 };
 
 /**
- * List wrapper for pending organization invitations.
+ * List wrapper for organization invitations (filtered by status).
  */
 export type OrgInvitationsResponse = {
     invitations: Array<OrgInvitationResponse>;
@@ -4772,6 +4802,10 @@ export type RefundResponse = {
 export type RegisterRequest = {
     display_name: string;
     email: string;
+    /**
+     * In-app path to return to after email verification (an invitation the user was following, for instance). Must start with a single '/'; a scheme or '//host' is refused with 422. Carried on the verification link as '&next='.
+     */
+    next?: (string | null);
     password: string;
     roles: Array<('contributor' | 'operator' | 'attestor')>;
 };
@@ -5880,6 +5914,16 @@ export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySusp
 export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostResponse = (void);
 
 export type AdminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPostError = (HTTPValidationError);
+
+export type AdminReactivateOrgV1AdminOrgsOrgIdReactivatePostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminReactivateOrgV1AdminOrgsOrgIdReactivatePostResponse = (void);
+
+export type AdminReactivateOrgV1AdminOrgsOrgIdReactivatePostError = (unknown | HTTPValidationError);
 
 export type AdminReinstateOrgV1AdminOrgsOrgIdReinstatePostData = {
     path: {
@@ -7600,6 +7644,7 @@ export type ListMyOrganizationsV1OrgsMineGetResponse = (MyOrganizationsResponse)
 export type ListMyOrganizationsV1OrgsMineGetError = unknown;
 
 export type DeactivateOrganizationV1OrgsOrgIdDeleteData = {
+    body?: (OrgDeactivateRequest | null);
     path: {
         org_id: string;
     };
@@ -7607,7 +7652,7 @@ export type DeactivateOrganizationV1OrgsOrgIdDeleteData = {
 
 export type DeactivateOrganizationV1OrgsOrgIdDeleteResponse = (void);
 
-export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (HTTPValidationError);
+export type DeactivateOrganizationV1OrgsOrgIdDeleteError = (unknown | HTTPValidationError);
 
 export type UpdateOrganizationV1OrgsOrgIdPatchData = {
     body: OrganizationUpdateRequest;
@@ -8135,6 +8180,9 @@ export type ListInvitationsV1OrgsOrgIdInvitationsGetData = {
     path: {
         org_id: string;
     };
+    query?: {
+        status?: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired' | 'all';
+    };
 };
 
 export type ListInvitationsV1OrgsOrgIdInvitationsGetResponse = (OrgInvitationsResponse);
@@ -8162,6 +8210,17 @@ export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteData = {
 export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteResponse = (void);
 
 export type RevokeInvitationV1OrgsOrgIdInvitationsInvitationIdDeleteError = (HTTPValidationError);
+
+export type ResendInvitationV1OrgsOrgIdInvitationsInvitationIdResendPostData = {
+    path: {
+        invitation_id: string;
+        org_id: string;
+    };
+};
+
+export type ResendInvitationV1OrgsOrgIdInvitationsInvitationIdResendPostResponse = (OrgInvitationResponse);
+
+export type ResendInvitationV1OrgsOrgIdInvitationsInvitationIdResendPostError = (unknown | HTTPValidationError);
 
 export type GetOrgKybV1OrgsOrgIdKybGetData = {
     path: {

@@ -1,21 +1,25 @@
 """Celery Beat tasks for organization invitation expiry.
 
 Marks pending invitations past their expires_at timestamp as 'expired'
-in a single daily sweep. Runs idempotently — re-running on an empty
-result set is a safe no-op.
+in a single daily sweep and tells invitees who hold an account that the
+offer lapsed. Runs idempotently — re-running on an empty result set is a
+safe no-op.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
-from app.modules.organizations.models import OrgInvitation
+from app.modules.auth.models import User
+from app.modules.organizations import notifications as org_notifications
+from app.modules.organizations.models import Organization, OrgInvitation
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -27,21 +31,40 @@ async def _expire_pending_invitations_impl() -> dict[str, int]:
         Dict with 'expired_count' for observability logging.
     """
     now = datetime.now(UTC)
+    # (invitee user id, org id, org name) for invitees who hold an account,
+    # collected inside the transaction and dispatched after it commits.
+    to_notify: list[tuple[UUID, UUID, str]] = []
     async with async_session_factory() as db:
         async with db.begin():
-            # Fetch IDs of pending invitations past their expiry window
-            due_ids = list(
-                (
-                    await db.scalars(
-                        select(OrgInvitation.id).where(
-                            OrgInvitation.status == "pending",
-                            OrgInvitation.expires_at < now,
-                        )
+            # Fetch pending invitations past their expiry window
+            due = (
+                await db.execute(
+                    select(
+                        OrgInvitation.id,
+                        OrgInvitation.org_id,
+                        Organization.name,
+                        User.id,
                     )
-                ).all()
-            )
+                    .join(Organization, Organization.id == OrgInvitation.org_id)
+                    .join(
+                        User,
+                        func.lower(User.email) == func.lower(OrgInvitation.email),
+                        isouter=True,
+                    )
+                    .where(
+                        OrgInvitation.status == "pending",
+                        OrgInvitation.expires_at < now,
+                    )
+                )
+            ).all()
+            due_ids = [invitation_id for invitation_id, _, _, _ in due]
             if not due_ids:
                 return {"expired_count": 0}
+            to_notify = [
+                (user_id, org_id, org_name)
+                for _, org_id, org_name, user_id in due
+                if user_id is not None
+            ]
 
             await db.execute(
                 update(OrgInvitation)
@@ -57,6 +80,10 @@ async def _expire_pending_invitations_impl() -> dict[str, int]:
                     target_type="org_invitation",
                     target_id=invitation_id,
                 )
+    for user_id, org_id, org_name in to_notify:
+        org_notifications.notify_invitation_expired(
+            user_id, org_id=org_id, org_name=org_name
+        )
     return {"expired_count": len(due_ids)}
 
 

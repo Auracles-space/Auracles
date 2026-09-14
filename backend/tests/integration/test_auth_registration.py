@@ -76,8 +76,9 @@ class SentVerificationEmails:
         """Create an empty task dispatch recorder."""
         self.calls: list[dict[str, str]] = []
 
-    def delay(self, email: str, token: str) -> None:
+    def delay(self, email: str, token: str, next_path: str | None = None) -> None:
         """Record a Celery-style async task dispatch."""
+        del next_path
         self.calls.append({"email": email, "token": token})
 
 

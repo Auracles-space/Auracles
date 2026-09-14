@@ -25,7 +25,10 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/lib/auth/form-client", () => ({
-  describeGeneratedError: vi.fn(() => "described server error"),
+  describeGeneratedError: vi.fn(
+    (error: { detail?: { message?: string } } | undefined) =>
+      error?.detail?.message ?? "described server error",
+  ),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer test-token" })),
 }));
 
@@ -175,7 +178,7 @@ describe("OrganizationDangerZone", () => {
     expect(screen.queryByText("step_up_required")).toBeNull();
   });
 
-  it("keeps Deactivate disabled until the confirmation phrase is typed", async () => {
+  it("keeps Close disabled until the confirmation phrase is typed", async () => {
     vi.mocked(deactivateOrganizationV1OrgsOrgIdDelete).mockResolvedValue(
       ok(undefined) as never,
     );
@@ -183,16 +186,16 @@ describe("OrganizationDangerZone", () => {
     render(<OrganizationDangerZone />);
     await screen.findByLabelText(/new owner/i);
 
-    fireEvent.click(screen.getByRole("button", { name: /deactivate organization/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close organization/i }));
 
-    const confirm = screen.getByRole("button", { name: /^deactivate$/i });
+    const confirm = screen.getByRole("button", { name: /^close$/i });
     expect(confirm).toBeDisabled();
 
-    const input = screen.getByPlaceholderText("Delete Lagos Audit Collective");
-    fireEvent.change(input, { target: { value: "Delete Lagos" } });
+    const input = screen.getByPlaceholderText("Close Lagos Audit Collective");
+    fireEvent.change(input, { target: { value: "Close Lagos" } });
     expect(confirm).toBeDisabled();
 
-    fireEvent.change(input, { target: { value: "Delete Lagos Audit Collective" } });
+    fireEvent.change(input, { target: { value: "Close Lagos Audit Collective" } });
     expect(confirm).toBeEnabled();
 
     fireEvent.click(confirm);
@@ -201,5 +204,71 @@ describe("OrganizationDangerZone", () => {
         expect.objectContaining({ path: { org_id: "org-1" } }),
       ),
     );
+    expect(routerPush).toHaveBeenCalledWith("/dashboard/organizations");
+  });
+
+  it("describes a close as soft: hidden, data retained, members notified, admin reopens", async () => {
+    render(<OrganizationDangerZone />);
+    await screen.findByLabelText(/new owner/i);
+
+    expect(screen.getByRole("heading", { name: /close organization/i })).toBeInTheDocument();
+    const copy = screen.getByTestId("close-organization-copy").textContent ?? "";
+    expect(copy).toMatch(/closed and hidden/i);
+    expect(copy).toMatch(/data is retained/i);
+    expect(copy).toMatch(/members are notified/i);
+    expect(copy).toMatch(/administrator can reopen/i);
+    expect(copy).not.toMatch(/permanently|cannot be undone/i);
+  });
+
+  it("sends the optional reason with the close request", async () => {
+    vi.mocked(deactivateOrganizationV1OrgsOrgIdDelete).mockResolvedValue(
+      ok(undefined) as never,
+    );
+
+    render(<OrganizationDangerZone />);
+    await screen.findByLabelText(/new owner/i);
+    fireEvent.click(screen.getByRole("button", { name: /close organization/i }));
+
+    const reason = screen.getByLabelText(/reason/i);
+    expect(reason).toHaveAttribute("maxlength", "500");
+    fireEvent.change(reason, { target: { value: "Merging into the parent company." } });
+    fireEvent.change(screen.getByPlaceholderText("Close Lagos Audit Collective"), {
+      target: { value: "Close Lagos Audit Collective" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+
+    await waitFor(() =>
+      expect(deactivateOrganizationV1OrgsOrgIdDelete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { org_id: "org-1" },
+          body: { reason: "Merging into the parent company." },
+        }),
+      ),
+    );
+  });
+
+  it("shows the server's blocked message when the close is refused with 409", async () => {
+    vi.mocked(deactivateOrganizationV1OrgsOrgIdDelete).mockResolvedValue(
+      failed(409, {
+        detail: {
+          error_code: "deactivation_blocked",
+          message: "Close is blocked while the Operator capability is active.",
+        },
+      }) as never,
+    );
+
+    render(<OrganizationDangerZone />);
+    await screen.findByLabelText(/new owner/i);
+    fireEvent.click(screen.getByRole("button", { name: /close organization/i }));
+    fireEvent.change(screen.getByPlaceholderText("Close Lagos Audit Collective"), {
+      target: { value: "Close Lagos Audit Collective" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^close$/i }));
+
+    expect(
+      await screen.findByText("Close is blocked while the Operator capability is active."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("deactivation_blocked")).toBeNull();
+    expect(routerPush).not.toHaveBeenCalled();
   });
 });

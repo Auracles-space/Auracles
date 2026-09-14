@@ -482,9 +482,9 @@ describe("OrganizationShell unverified organization", () => {
     } as never);
   });
 
-  it("collapses the shell to Profile and Verification only", async () => {
-    // Every other tab fronts an API the backend refuses for an unverified
-    // org, so offering them is offering a wall of 403s.
+  it("keeps people tabs open and gates only capability tabs (Decision 2)", async () => {
+    // Members, invitations and teams are open from day one; capability
+    // surfaces (frameworks, operator, NDA, calibration) wait on verification.
     vi.mocked(listMyOrgs).mockResolvedValue({
       response: { ok: true },
       data: {
@@ -503,9 +503,10 @@ describe("OrganizationShell unverified organization", () => {
 
     expect(await screen.findByText("Verification")).toBeInTheDocument();
     expect(screen.getByText("Profile")).toBeInTheDocument();
-    expect(screen.queryByText("Members")).toBeNull();
-    expect(screen.queryByText("Teams")).toBeNull();
-    expect(screen.queryByText("Invitations")).toBeNull();
+    expect(screen.getByRole("tab", { name: /^Members$/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Teams$/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Invitations/ })).toBeInTheDocument();
+    expect(screen.queryByText("Calibration Trial")).toBeNull();
     expect(screen.queryByText("Frameworks")).toBeNull();
     expect(screen.queryByText("Operator")).toBeNull();
     expect(screen.queryByText("NDA")).toBeNull();
@@ -584,5 +585,40 @@ describe("OrganizationShell status banners", () => {
     expect(screen.getByText(/attestor capability revoked/i)).toBeInTheDocument();
     expect(screen.getByText("Calibration drift after two disputes.")).toBeInTheDocument();
     expect(screen.queryByText(/operator capability/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("OrganizationShell header", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: { required: false, current_version: "1.0", signed_version: null, signed_at: null },
+    } as never);
+  });
+
+  it("renders the caller's role as a status pill", async () => {
+    mockOrg({});
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    const pill = await screen.findByText("Member");
+    expect(pill.className).toMatch(/rounded-badge/);
+  });
+
+  it("does not send an unverified org's members deep link to verification", async () => {
+    mockPathname = "/dashboard/organizations/org-1/members";
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          { org: { id: "org-1", name: "Test Org" }, role: "owner", kyb_status: "unverified", capabilities: {} },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">members-page</OrganizationShell>);
+
+    expect(await screen.findByText("members-page")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Members$/ })).toHaveAttribute("aria-selected", "true");
   });
 });

@@ -1,5 +1,16 @@
 "use client";
 
+/**
+ * Organization shell: header, status banners, and the tab bar.
+ *
+ * Loads the caller's membership entry from `GET /v1/orgs/mine`, decides
+ * which tabs the caller may reach, and provides the membership to every tab
+ * through `OrganizationProvider`. People tabs (members, invitations, teams)
+ * are open from day one; capability tabs wait on business verification.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md
+ * §Decisions 2, §Slice B.
+ */
 import { useCallback, useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
@@ -12,6 +23,8 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { Spinner } from "@/components/ui/spinner";
 import { ExclamationTriangleIcon } from "@radix-ui/react-icons";
 import { StepUpPill } from "@/components/modules/auth/step-up-pill";
+import { StatusPill } from "@/components/ui/status-pill";
+import { capabilityLabel } from "./capability-labels";
 import { useOrganization } from "./organization-context";
 
 type OrganizationShellProps = {
@@ -19,6 +32,11 @@ type OrganizationShellProps = {
   children: ReactNode;
 };
 
+/**
+ * Render the organization header, banners, tab bar, and the active tab.
+ *
+ * @param props - Organization id from the route and the tab page to render.
+ */
 export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -126,9 +144,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 
   const isVerified = myOrg.kyb_status === "verified";
 
-  // An unverified organization is a shell: the API refuses everything except
-  // its profile and verification, so the shell offers exactly those rather
-  // than a full tab bar of buttons that would all 403.
+  // People tabs are open from day one (Decision 2): an owner can invite the
+  // team while verification is in review. Only capability tabs, which front
+  // APIs the backend refuses for an unverified org, stay gated.
   const tabs: TabItem[] = [
     { id: "", label: "Profile" },
     // Business verification gates every capability, so it is the first thing a
@@ -139,9 +157,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
       dot: !isVerified,
       dotLabel: "Verification required",
     },
+    { id: "members", label: "Members" },
   ];
   if (isVerified) {
-    tabs.push({ id: "members", label: "Members" });
     // Any member may be nominated for the attestor calibration trial; the page
     // resolves to a friendly "no active trial" state for non-nominees.
     tabs.push({ id: "attestor-trial", label: "Calibration Trial" });
@@ -162,13 +180,15 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   }
   
   const counts = myOrg.counts;
-  if (isVerified && isAdmin) {
+  if (isAdmin) {
     tabs.push({
       id: "invitations",
       label: "Invitations",
       count: counts?.invitations,
     });
     tabs.push({ id: "teams", label: "Teams" });
+  }
+  if (isVerified && isAdmin) {
     tabs.push({ id: "attestor", label: "Attestor" });
 
     if (isOperator) {
@@ -208,7 +228,14 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 
   // A deep link into a gated tab on an unverified org would render a page
   // whose every request 403s; send it to the page that unblocks the org.
-  const OPEN_SEGMENTS = new Set(["", "verification", "danger-zone"]);
+  const OPEN_SEGMENTS = new Set([
+    "",
+    "verification",
+    "members",
+    "invitations",
+    "teams",
+    "danger-zone",
+  ]);
   if (!isVerified && !OPEN_SEGMENTS.has(rawSegment)) {
     router.replace(`/dashboard/organizations/${orgId}/verification`);
     return (
@@ -226,6 +253,8 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
       capabilities={myOrg.capabilities}
       capabilityReasons={myOrg.capability_reasons ?? {}}
       kybStatus={myOrg.kyb_status ?? "unverified"}
+      kybVerifiedAt={myOrg.kyb_verified_at ?? null}
+      memberCount={myOrg.member_count ?? null}
       refreshOrganization={loadOrg}
     >
       <div className="mx-auto w-full max-w-7xl px-4 py-8 md:py-12">
@@ -238,8 +267,9 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
               </h1>
               <StepUpPill />
             </div>
-            <p className="mt-2 text-foreground-muted">
-              Manage organization settings and members. Your role: <span className="font-semibold text-foreground capitalize">{role}</span>
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-foreground-muted">
+              <span>Manage organization settings and members. Your role:</span>
+              <StatusPill status={role} />
             </p>
           </div>
         </div>
@@ -250,8 +280,8 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
               <span className="font-semibold">
                 This organization is not verified yet.
               </span>{" "}
-              Members, capabilities, and transactions unlock once its business
-              verification is approved.
+              You can invite members now; capabilities and transactions
+              unlock once its business verification is approved.
             </p>
             <button
               className="min-h-11 shrink-0 rounded-xl bg-foreground px-5 text-sm font-semibold text-background transition hover:bg-foreground/90"
@@ -284,12 +314,6 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 }
 
 const SUPPORT_EMAIL = "support@auracles.space";
-
-const CAPABILITY_LABELS: Record<string, string> = {
-  attestor: "Attestor",
-  contributor: "Contributor",
-  operator: "Operator",
-};
 
 /** Format an ISO timestamp as a short readable date. */
 function formatDate(value: string): string {
@@ -359,7 +383,7 @@ function CapabilityStatusBanners() {
   return (
     <div className="mb-6 grid gap-3">
       {affected.map(([capability, status]) => {
-        const label = CAPABILITY_LABELS[capability] ?? capability;
+        const label = capabilityLabel(capability);
         const revoked = status === "revoked";
         return (
           <div

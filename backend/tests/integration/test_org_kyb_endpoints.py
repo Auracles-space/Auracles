@@ -192,23 +192,23 @@ async def test_verified_org_can_activate_a_capability(
 @pytest.mark.parametrize(
     ("method", "path", "body"),
     [
-        ("post", "/invitations", {"email": "x@auracles.space", "role": "member"}),
-        ("post", "/teams", {"name": "Reviewers"}),
+        ("post", "/contributor-capability/activate", None),
+        ("post", "/operator-capability/activate", None),
         ("post", "/nda/sign", None),
     ],
 )
-async def test_unverified_org_cannot_use_its_other_features(
+async def test_unverified_org_cannot_use_its_capabilities(
     client: AsyncClient,
     clean_state: FakeRedis,
     method: str,
     path: str,
     body: dict[str, str] | None,
 ) -> None:
-    """An unverified organization is a shell: nothing works until it passes.
+    """Capabilities and attestor work stay behind business verification.
 
-    Gating only capability activation left the rest of the org — members,
-    teams, the NDA — usable by an organization whose legal identity had never
-    been checked.
+    Decision 2 opened the people surfaces (members, invitations, teams) to
+    unverified organizations so an owner can staff up while verification is
+    in review; what an unverified org still cannot do is sell, buy, or attest.
     """
     del clean_state
     owner_id = await _user("owner")

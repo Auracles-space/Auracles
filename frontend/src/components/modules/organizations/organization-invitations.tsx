@@ -3,136 +3,143 @@
 /**
  * Organization invitation management panel for org admins.
  *
- * Lists pending invitations and provides the invite form with masked member
- * search for existing users plus the manual outsider-email fallback.
+ * Composes the invite form with the invitation history, filtered by status.
+ * Pending and expired invitations can be resent; pending ones can be revoked.
+ * Server refusals are shown with their own message.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Select } from "@/components/ui/select";
+import { SegmentedControl, type SegmentOption } from "@/components/ui/segmented-control";
 import { Spinner } from "@/components/ui/spinner";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { useToast } from "@/components/ui/toast";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import {
-  createInvitationV1OrgsOrgIdInvitationsPost,
   listInvitationsV1OrgsOrgIdInvitationsGet,
-  revokeInvitationV1OrgsOrgIdInvitationsInvitationIdDelete
+  resendInvitationV1OrgsOrgIdInvitationsInvitationIdResendPost,
+  revokeInvitationV1OrgsOrgIdInvitationsInvitationIdDelete,
 } from "@/lib/generated/sdk.gen";
-import type { OrgInvitationResponse, OrgInvitationCreateRequest } from "@/lib/generated/types.gen";
-import { InviteMemberTypeahead } from "./invite-member-typeahead";
+import type { OrgInvitationResponse } from "@/lib/generated/types.gen";
 import { useOrganization } from "./organization-context";
+import { OrganizationInvitationRow } from "./organization-invitation-row";
+import { OrganizationInviteForm } from "./organization-invite-form";
+
+type InvitationFilter = "pending" | "accepted" | "declined" | "revoked" | "expired" | "all";
+
+const FILTER_OPTIONS: SegmentOption<InvitationFilter>[] = [
+  { value: "pending", label: "Pending" },
+  { value: "accepted", label: "Accepted" },
+  { value: "declined", label: "Declined" },
+  { value: "revoked", label: "Revoked" },
+  { value: "expired", label: "Expired" },
+  { value: "all", label: "All" },
+];
+
+const EMPTY_COPY: Record<InvitationFilter, string> = {
+  pending: "No pending invitations.",
+  accepted: "No accepted invitations yet.",
+  declined: "No declined invitations.",
+  revoked: "No revoked invitations.",
+  expired: "No expired invitations.",
+  all: "No invitations have been sent yet.",
+};
 
 /**
- * Render the organization invite form and pending invitation list.
+ * Render the organization invite form and filtered invitation history.
  */
 export function OrganizationInvitations() {
   const { orgId, role, isSuspended } = useOrganization();
   const isAdmin = role === "admin" || role === "owner";
+  const toast = useToast();
 
   const [invitations, setInvitations] = useState<OrgInvitationResponse[]>([]);
+  const [filter, setFilter] = useState<InvitationFilter>("pending");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Invite Form State
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-
-  // Revoke State
   const [invitationToRevoke, setInvitationToRevoke] = useState<OrgInvitationResponse | null>(null);
   const [revokeLoading, setRevokeLoading] = useState(false);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  async function loadInvitations() {
+  const loadInvitations = useCallback(async () => {
     if (!isAdmin) {
       setLoading(false);
       return;
     }
-    
     try {
       const result = await listInvitationsV1OrgsOrgIdInvitationsGet({
         path: { org_id: orgId },
+        query: { status: filter },
         headers: getAccessTokenHeaders(),
       });
       if (result.response.ok && result.data) {
         setInvitations(result.data.invitations);
+        setError(null);
       } else {
-        setError("Failed to load invitations.");
+        setError(describeGeneratedError(result.error));
       }
     } catch {
       setError("An error occurred loading invitations.");
     } finally {
       setLoading(false);
     }
+  }, [orgId, isAdmin, filter]);
+
+  useEffect(() => {
+    void loadInvitations();
+  }, [loadInvitations]);
+
+  /** A fresh invitation is pending, so jump the history to where it lands. */
+  async function handleInvited() {
+    if (filter === "pending" || filter === "all") {
+      await loadInvitations();
+    } else {
+      setFilter("pending");
+    }
   }
 
-    useEffect(() => {
-    loadInvitations();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, isAdmin]);
-
-  async function handleInvite(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleResend(invitation: OrgInvitationResponse) {
     if (!isAdmin || isSuspended) return;
-    if (!selectedUserId && inviteEmail.trim() === "") {
-      setInviteError("Enter an email address or choose a suggested member.");
-      return;
-    }
-
-    setInviteLoading(true);
-    setInviteError(null);
-
+    setResendingId(invitation.id);
+    setActionError(null);
     try {
-      const body: OrgInvitationCreateRequest = selectedUserId
-        ? { user_id: selectedUserId, role: inviteRole }
-        : { email: inviteEmail, role: inviteRole };
-      const result = await createInvitationV1OrgsOrgIdInvitationsPost({
-        path: { org_id: orgId },
-        body,
+      const result = await resendInvitationV1OrgsOrgIdInvitationsInvitationIdResendPost({
+        path: { org_id: orgId, invitation_id: invitation.id },
         headers: getAccessTokenHeaders(),
       });
-
       if (!result.response.ok) {
-        setInviteError(result.error?.detail?.error_code || "Failed to invite user");
-      } else {
-        setInviteEmail("");
-        setSelectedUserId(null);
-        setInviteRole("member");
-        await loadInvitations();
+        setActionError(describeGeneratedError(result.error));
+        return;
       }
+      toast.success(`Invitation resent to ${invitation.email}.`);
+      await loadInvitations();
     } catch {
-      setInviteError("Unexpected error occurred while inviting.");
+      setActionError("Unexpected error occurred while resending.");
     } finally {
-      setInviteLoading(false);
+      setResendingId(null);
     }
   }
 
   async function handleRevoke() {
     if (!isAdmin || !invitationToRevoke || isSuspended) return;
-
     setRevokeLoading(true);
-    setRevokeError(null);
-
+    setActionError(null);
     try {
       const result = await revokeInvitationV1OrgsOrgIdInvitationsInvitationIdDelete({
         path: { org_id: orgId, invitation_id: invitationToRevoke.id },
         headers: getAccessTokenHeaders(),
       });
-
       if (!result.response.ok) {
-        setRevokeError(result.error?.detail?.error_code || "Failed to revoke invitation");
-        setRevokeLoading(false);
-        setInvitationToRevoke(null);
+        setActionError(describeGeneratedError(result.error));
       } else {
-        setInvitationToRevoke(null);
-        setRevokeLoading(false);
         await loadInvitations();
       }
     } catch {
-      setRevokeError("Unexpected error occurred while revoking.");
+      setActionError("Unexpected error occurred while revoking.");
+    } finally {
       setRevokeLoading(false);
       setInvitationToRevoke(null);
     }
@@ -146,123 +153,54 @@ export function OrganizationInvitations() {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="flex h-32 items-center justify-center">
-        <Spinner className="h-6 w-6 text-accent" />
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-8 max-w-4xl">
-      {/* Invite Form */}
-      <div className="rounded-2xl border border-border-default bg-surface-1 shadow-sm p-6">
-        <h2 className="mb-4 font-heading text-xl font-bold text-foreground">
-          Invite Member
-        </h2>
-        {inviteError && (
-          <div className="mb-4 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
-            {inviteError}
-          </div>
-        )}
-        <form onSubmit={handleInvite} className="flex flex-col sm:flex-row gap-4 items-end">
-          <div className="flex-grow w-full sm:w-auto">
-            <InviteMemberTypeahead
-              disabled={isSuspended}
-              orgId={orgId}
-              value={inviteEmail}
-              onEmailChange={(nextValue) => {
-                setInviteEmail(nextValue);
-                setSelectedUserId(null);
-              }}
-              onSelect={(userId) => {
-                setSelectedUserId(userId);
-                setInviteError(null);
-              }}
-            />
-          </div>
-          <div className="w-full sm:w-40 shrink-0">
-            <label htmlFor="role" className="mb-1 block text-sm font-semibold text-foreground">
-              Role
-            </label>
-            <Select
-              id="role"
-              disabled={isSuspended}
-              value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value as "admin" | "member")}
-            >
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-            </Select>
-          </div>
-          <Button type="submit" loading={inviteLoading} disabled={isSuspended} className="w-full sm:w-auto mt-4 sm:mt-0">
-            Send Invite
-          </Button>
-        </form>
-      </div>
+    <div className="flex max-w-4xl flex-col gap-8">
+      <OrganizationInviteForm disabled={isSuspended} onInvited={handleInvited} orgId={orgId} />
 
-      {/* Invitations List */}
       <div className="rounded-2xl border border-border-default bg-surface-1 shadow-sm">
         <div className="border-b border-border-default p-6">
-          <h2 className="font-heading text-xl font-bold text-foreground">
-            Pending Invitations
-          </h2>
+          <h2 className="font-heading text-xl font-bold text-foreground">Invitations</h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            Invitations that have not yet been accepted.
+            Everyone invited to this organization, by outcome. Pending links expire after a
+            while; resend one to issue a fresh link.
           </p>
+          <SegmentedControl
+            className="mt-4"
+            label="Filter invitations by status"
+            onChange={setFilter}
+            options={FILTER_OPTIONS}
+            value={filter}
+          />
         </div>
 
-        {error && (
+        {(error || actionError) && (
           <div className="m-6 mb-0 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
-            {error}
-          </div>
-        )}
-        {revokeError && (
-          <div className="m-6 mb-0 rounded-xl border border-error/50 bg-error/5 p-4 text-sm text-error">
-            {revokeError}
+            {error || actionError}
           </div>
         )}
 
-        <ul className="divide-y divide-border-default">
-          {(!invitations || invitations.length === 0) ? (
-            <li className="p-6 text-center text-foreground-muted">No pending invitations.</li>
-          ) : (
-            invitations.map((invitation) => (
-              <li key={invitation.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 hover:bg-surface-2 transition-colors">
-                <div>
-                  <p className="font-semibold text-foreground">{invitation.email}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="text-xs uppercase tracking-wider text-foreground-muted font-medium">
-                      {invitation.role}
-                    </span>
-                    <span className="text-foreground-muted text-xs">•</span>
-                    <span className="text-xs text-foreground-muted">
-                      Expires {new Date(invitation.expires_at).toLocaleDateString()}
-                    </span>
-                    {invitation.status && (
-                      <>
-                        <span className="text-foreground-muted text-xs">•</span>
-                        <Badge variant={invitation.status === "pending" ? "info" : "default"}>
-                          {invitation.status}
-                        </Badge>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                <Button
-                  variant="secondary"
-                  className="min-h-10 px-4 py-1"
+        {loading ? (
+          <div className="flex h-32 items-center justify-center">
+            <Spinner className="h-6 w-6 text-accent" />
+          </div>
+        ) : (
+          <ul className="divide-y divide-border-default">
+            {invitations.length === 0 ? (
+              <li className="p-6 text-center text-foreground-muted">{EMPTY_COPY[filter]}</li>
+            ) : (
+              invitations.map((invitation) => (
+                <OrganizationInvitationRow
                   disabled={isSuspended}
-                  onClick={() => setInvitationToRevoke(invitation)}
-                >
-                  Revoke
-                </Button>
-              </li>
-            ))
-          )}
-        </ul>
+                  invitation={invitation}
+                  key={invitation.id}
+                  onResend={(target) => void handleResend(target)}
+                  onRevoke={setInvitationToRevoke}
+                  resending={resendingId === invitation.id}
+                />
+              ))
+            )}
+          </ul>
+        )}
       </div>
 
       <ConfirmDialog

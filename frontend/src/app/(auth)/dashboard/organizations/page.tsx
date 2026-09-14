@@ -20,12 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { StatusPill, ownerStatusKey } from "@/components/ui/status-pill";
 import { CreateOrganizationDialog } from "@/components/modules/organizations/create-organization-dialog";
 import { ReceivedInvitationsInbox } from "@/components/modules/organizations/received-invitations-inbox";
-
-const CAPABILITY_LABELS: Record<string, string> = {
-  attestor: "Attestor",
-  contributor: "Contributor",
-  operator: "Operator",
-};
+import { capabilityLabel } from "@/components/modules/organizations/capability-labels";
 
 /**
  * Render the organizations the user belongs to and their invitation inbox.
@@ -123,9 +118,7 @@ export default function OrganizationsPage() {
                       title="Attestation offers to review"
                     />
                   ) : null}
-                  <div className="inline-flex items-center justify-center rounded-full bg-surface-3 px-3 py-1 text-xs font-bold uppercase tracking-wider text-foreground-muted">
-                    {item.role}
-                  </div>
+                  <StatusPill status={item.role} />
                 </div>
               </div>
               
@@ -140,7 +133,7 @@ export default function OrganizationsPage() {
                   {Object.entries(item.capabilities).map(([cap, status]) => (
                     <span className="inline-flex items-center gap-1.5" key={cap}>
                       <span className="text-xs font-medium text-foreground-muted">
-                        {CAPABILITY_LABELS[cap] ?? cap}
+                        {capabilityLabel(cap)}
                       </span>
                       <StatusPill status={status} />
                     </span>

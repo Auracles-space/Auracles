@@ -19,7 +19,7 @@ import {
   renameTeamV1OrgsOrgIdTeamsTeamIdPatch,
 } from "@/lib/generated/sdk.gen";
 import type { OrgTeamResponse } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -46,6 +46,10 @@ type PendingTeamCapabilityAction = {
   enabled: boolean;
 };
 
+/**
+ * Render the create-team form and the team list with roster and capability
+ * controls.
+ */
 export function OrganizationTeams() {
   const { orgId, role, isSuspended, capabilities, refreshOrganization } =
     useOrganization();
@@ -95,7 +99,7 @@ export function OrganizationTeams() {
       if (result.response.ok && result.data) {
         setTeams(result.data.teams);
       } else {
-        setError("Failed to load teams.");
+        setError(describeGeneratedError(result.error));
       }
     } catch {
       setError("An error occurred loading teams.");
@@ -146,7 +150,7 @@ export function OrganizationTeams() {
       });
 
       if (!result.response.ok) {
-        setCreateError(result.error?.detail?.error_code || "Failed to create team");
+        setCreateError(describeGeneratedError(result.error));
       } else {
         setNewTeamName("");
         await loadTeams();
@@ -173,7 +177,7 @@ export function OrganizationTeams() {
       });
 
       if (!result.response.ok) {
-        setEditError(result.error?.detail?.error_code || "Failed to rename team");
+        setEditError(describeGeneratedError(result.error));
         setEditLoading(false);
       } else {
         setEditingTeam(null);
@@ -199,7 +203,7 @@ export function OrganizationTeams() {
       });
 
       if (!result.response.ok) {
-        setDeleteError(result.error?.detail?.error_code || "Failed to delete team");
+        setDeleteError(describeGeneratedError(result.error));
         setDeleteLoading(false);
         setTeamToDelete(null);
       } else {
@@ -244,9 +248,7 @@ export function OrganizationTeams() {
           });
 
       if (!result.response.ok) {
-        setCapabilityError(
-          result.error?.detail?.error_code || "Failed to update team capability",
-        );
+        setCapabilityError(describeGeneratedError(result.error));
         return;
       }
 
@@ -347,7 +349,7 @@ export function OrganizationTeams() {
               </p>
             </div>
             {teams.length > 0 && (
-              <span className="shrink-0 rounded-full border border-border-default bg-surface-2 px-3 py-1 text-sm font-semibold text-foreground-muted">
+              <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-badge border border-border-default bg-surface-2 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-foreground-muted">
                 {teams.length} {teams.length === 1 ? "team" : "teams"}
               </span>
             )}
@@ -397,14 +399,14 @@ export function OrganizationTeams() {
                         type="submit"
                         loading={editLoading}
                         disabled={isSuspended || !editName.trim()}
-                        className="min-h-10 px-5 text-sm"
+                        className="min-h-11 px-5 text-sm"
                       >
                         Save
                       </Button>
                       <Button
                         type="button"
                         variant="secondary"
-                        className="min-h-10 px-5 text-sm"
+                        className="min-h-11 px-5 text-sm"
                         onClick={() => setEditingTeam(null)}
                       >
                         Cancel
@@ -423,7 +425,7 @@ export function OrganizationTeams() {
                           )
                         }
                         aria-expanded={expandedTeamId === team.id}
-                        className="flex w-full items-center gap-4 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="flex min-h-11 w-full items-center gap-4 rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {/* Avatar / icon */}
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 font-heading text-sm font-bold text-foreground-muted">
@@ -462,7 +464,7 @@ export function OrganizationTeams() {
                         }
                         aria-expanded={expandedTeamId === team.id}
                         title="Add or remove members"
-                        className="flex min-h-9 items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-3 text-sm font-semibold text-accent transition-colors hover:bg-accent/20"
+                        className="flex min-h-11 items-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-3 text-sm font-semibold text-accent transition-colors hover:bg-accent/20"
                       >
                         <PlusIcon className="h-4 w-4" />
                         <span className="hidden sm:inline">
@@ -477,7 +479,8 @@ export function OrganizationTeams() {
                           setEditingTeam(team);
                           setEditName(team.name);
                         }}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-default bg-surface-1 text-foreground-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Rename ${team.name}`}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-border-default bg-surface-1 text-foreground-muted transition-colors hover:border-border-strong hover:bg-surface-2 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Pencil1Icon className="h-4 w-4" />
                       </button>
@@ -486,7 +489,8 @@ export function OrganizationTeams() {
                         disabled={isSuspended}
                         title="Delete team"
                         onClick={() => setTeamToDelete(team)}
-                        className="flex h-9 w-9 items-center justify-center rounded-xl border border-error/30 bg-error/5 text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label={`Delete ${team.name}`}
+                        className="flex h-11 w-11 items-center justify-center rounded-xl border border-error/30 bg-error/5 text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <TrashIcon className="h-4 w-4" />
                       </button>

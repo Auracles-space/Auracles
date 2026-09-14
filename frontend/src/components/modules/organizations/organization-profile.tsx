@@ -1,10 +1,20 @@
 "use client";
 
+/**
+ * Organization profile tab.
+ *
+ * Read-only summary (public URL, dates, member count, caller role) above the
+ * editable profile form (logo, name, website, description), followed by the
+ * capabilities card. Slug and country are immutable and therefore absent
+ * from the form.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
+ */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateOrganizationV1OrgsOrgIdPatch } from "@/lib/generated/sdk.gen";
 import type { OrganizationUpdateRequest } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +22,11 @@ import { useOrganization } from "./organization-context";
 import { OrganizationLogoUploader } from "./organization-logo-uploader";
 import { useToast } from "@/components/ui/toast";
 import { OrganizationCapabilities } from "./organization-capabilities";
+import { OrganizationProfileSummary } from "./organization-profile-summary";
 
+/**
+ * Render the profile summary, the edit form, and the capabilities card.
+ */
 export function OrganizationProfile() {
   const { orgId, org, role, isSuspended } = useOrganization();
   const router = useRouter();
@@ -47,7 +61,7 @@ export function OrganizationProfile() {
       });
 
       if (!result.response.ok) {
-        toast.error(result.error?.detail?.error_code || "Failed to update profile");
+        toast.error(describeGeneratedError(result.error));
       } else {
         toast.success("Profile updated successfully.");
         router.refresh(); // Refresh page data to reflect the changes everywhere
@@ -61,6 +75,7 @@ export function OrganizationProfile() {
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
+      <OrganizationProfileSummary />
       <div className="overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-sm transition hover:shadow-bento">
         <div className="border-b border-border-default bg-surface-2/50 px-8 py-6">
           <h2 className="font-heading text-xl font-bold text-foreground tracking-tight">

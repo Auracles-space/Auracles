@@ -21,6 +21,7 @@ import {
   activateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePost as activateContributor,
   activateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePost as activateOperator,
 } from "@/lib/generated/sdk.gen";
+import { capabilityLabel } from "./capability-labels";
 import { useOrganization } from "./organization-context";
 
 type CapabilityKey = "contributor" | "operator";
@@ -34,12 +35,12 @@ type CapabilityMeta = {
 const CAPABILITIES: CapabilityMeta[] = [
   {
     key: "contributor",
-    label: "Contributor",
+    label: capabilityLabel("contributor"),
     description: "Create and sell frameworks under the organization's identity.",
   },
   {
     key: "operator",
-    label: "Operator",
+    label: capabilityLabel("operator"),
     description: "Purchase frameworks and post projects as the organization.",
   },
 ];

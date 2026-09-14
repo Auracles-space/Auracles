@@ -82,4 +82,15 @@ describe("ReceivedInvitationsInbox", () => {
 
     await waitFor(() => expect(screen.queryByText("Meridian")).not.toBeInTheDocument());
   });
+
+  it("shows an error line when the inbox cannot be loaded", async () => {
+    vi.mocked(loadReceivedInvitations).mockRejectedValue(new Error("boom"));
+
+    render(<ReceivedInvitationsInbox />);
+
+    expect(
+      await screen.findByText(/could not load your invitations/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+  });
 });

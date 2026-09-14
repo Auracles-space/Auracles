@@ -19,7 +19,7 @@ import {
   removeTeamMemberV1OrgsOrgIdTeamsTeamIdMembersMemberIdDelete,
 } from "@/lib/generated/sdk.gen";
 import type { OrgMemberResponse } from "@/lib/generated/types.gen";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Cross2Icon } from "@radix-ui/react-icons";
@@ -74,7 +74,7 @@ export function TeamMemberManager({
       if (rosterRes.response.ok && rosterRes.data) {
         setRoster(rosterRes.data.members);
       } else {
-        setError("Failed to load team members.");
+        setError(describeGeneratedError(rosterRes.error));
       }
       if (membersRes.response.ok && membersRes.data) {
         setOrgMembers(membersRes.data.members);
@@ -108,7 +108,7 @@ export function TeamMemberManager({
         await load();
         onChange?.();
       } else {
-        setError("Failed to add member.");
+        setError(describeGeneratedError(res.error));
       }
     } catch {
       setError("Unexpected error occurred while adding member.");
@@ -131,7 +131,7 @@ export function TeamMemberManager({
         setRoster((prev) => prev.filter((member) => member.id !== memberId));
         onChange?.();
       } else {
-        setError("Failed to remove member.");
+        setError(describeGeneratedError(res.error));
       }
     } catch {
       setError("Unexpected error occurred while removing member.");
@@ -180,8 +180,9 @@ export function TeamMemberManager({
                   type="button"
                   disabled={isSuspended || busyId === member.id}
                   title={`Remove ${member.display_name} from team`}
+                  aria-label={`Remove ${member.display_name} from team`}
                   onClick={() => handleRemove(member.id)}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-error/30 bg-error/5 text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-error/30 bg-error/5 text-error transition-colors hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {busyId === member.id ? (
                     <Spinner className="h-4 w-4" />

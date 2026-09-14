@@ -111,11 +111,11 @@ def require_org_role(
     Args:
         minimum_role: Lowest allowed role: ``member``, ``admin``, or ``owner``.
         verified: Also require the organization to have passed business
-            verification. An unverified organization is a shell — it cannot
-            invite, staff, sell, or transact — so almost every route sets this.
-            The exceptions are the routes that lead *out* of the shell:
-            verification itself, the legal profile it verifies, the org's own
-            profile, and reads.
+            verification. Business verification gates the capabilities and
+            the money (activation, purchases, payouts, attestor work); the
+            people surfaces — members, invitations, member search, teams —
+            are open from day one so an owner can staff the organization
+            while verification is in review (Decision 2).
     """
     user_dependency = get_current_user
 

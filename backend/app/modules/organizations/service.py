@@ -27,6 +27,7 @@ from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import hash_token
 from app.integrations import s3
 from app.modules.auth.models import User
+from app.modules.financials.models import Escrow, Payout, Transaction
 from app.modules.frameworks.models import LicenseGrant
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.notifications.service import create_notification
@@ -62,6 +63,7 @@ from app.modules.organizations.schemas import (
     OrgInvitationPreviewResponse,
     OrgInvitationResponse,
     OrgInvitationsResponse,
+    OrgInvitationStatusFilter,
     OrgMemberResponse,
     OrgMembersResponse,
     OrgTeamCreateRequest,
@@ -161,6 +163,9 @@ async def create_organization(
         user_id=user_id,
         org_id=organization.id,
     ).info("organization_created")
+    org_notifications.notify_org_created(
+        user_id, org_id=organization.id, org_name=organization.name
+    )
     return organization
 
 
@@ -451,6 +456,10 @@ async def update_organization(
 ) -> OrganizationResponse:
     """Apply a partial organization profile update.
 
+    Writes an ``org_profile_updated`` audit row naming the fields that
+    changed (never their values) and tells the other owners after commit. A
+    request that changes nothing is a read: no audit row, no notification.
+
     Args:
         db: Async database session.
         context: Resolved organization/member/user context from RBAC dependency.
@@ -460,20 +469,48 @@ async def update_organization(
         The updated organization response.
     """
     org_id = context.org.id
+    actor_id = context.user.id
+    actor_name = context.user.display_name
     if db.in_transaction():
         await db.rollback()
 
+    changed_fields: list[str] = []
+    other_owner_ids: list[UUID] = []
     async with db.begin():
         organization = await db.scalar(
-            select(Organization).where(Organization.id == org_id)
+            select(Organization).where(Organization.id == org_id).with_for_update()
         )
         assert organization is not None
         for field in ("name", "website", "description"):
             value = getattr(payload, field)
-            if value is not None:
+            if value is not None and value != getattr(organization, field):
                 setattr(organization, field, value)
+                changed_fields.append(field)
+        org_name = organization.name
+        if changed_fields:
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="org_profile_updated",
+                target_type="organization",
+                target_id=org_id,
+                metadata={"fields": changed_fields},
+            )
+            other_owner_ids = [
+                owner_id
+                for owner_id in await org_notifications.org_owner_ids(db, org_id)
+                if owner_id != actor_id
+            ]
 
     await db.refresh(organization)
+    if changed_fields:
+        org_notifications.notify_org_profile_updated(
+            other_owner_ids,
+            org_id=org_id,
+            org_name=org_name,
+            actor_name=actor_name,
+            changed_fields=changed_fields,
+        )
     return OrganizationResponse.model_validate(organization)
 
 
@@ -617,22 +654,61 @@ async def confirm_org_logo_upload(
     return OrganizationResponse.model_validate(organization)
 
 
+async def _org_money_pending(db: AsyncSession, org_id: UUID) -> bool:
+    """Return whether any money is still in motion for ``org_id``.
+
+    A pending transaction on either side, a held escrow on one of the org's
+    transactions, or a payout still pending or processing all count: closing
+    the organization under any of them would orphan funds.
+    """
+    org_transactions = or_(
+        Transaction.payer_org_id == org_id,
+        Transaction.payee_org_id == org_id,
+    )
+    pending_transaction = (
+        select(Transaction.id)
+        .where(org_transactions, Transaction.status == "pending")
+        .exists()
+    )
+    held_escrow = (
+        select(Escrow.id)
+        .join(Transaction, Transaction.id == Escrow.transaction_id)
+        .where(org_transactions, Escrow.status == "held")
+        .exists()
+    )
+    open_payout = (
+        select(Payout.id)
+        .where(Payout.org_id == org_id, Payout.status.in_(["pending", "processing"]))
+        .exists()
+    )
+    row = await db.execute(select(pending_transaction, held_escrow, open_payout))
+    return any(row.one())
+
+
 async def deactivate_organization(
     db: AsyncSession,
     *,
     context: OrgContext,
+    reason: str | None = None,
 ) -> None:
-    """Soft-delete an organization once all active capabilities are wound down.
+    """Soft-close an organization: hidden, data retained, admin can reopen.
+
+    Refused while a capability is active or money is pending (Decision 4).
+    Records who closed it and the optional reason, then tells every member
+    after commit.
 
     Args:
         db: Async database session.
         context: Resolved organization/member/user context from RBAC dependency.
+        reason: Optional owner note stored on the row and repeated to members.
 
     Raises:
-        HTTPException(409): If any capability remains active.
+        HTTPException(409): A capability is still active, or a transaction,
+            escrow, or payout for the organization is still in flight.
     """
     org_id = context.org.id
     actor_id = context.user.id
+    actor_name = context.user.display_name
     if db.in_transaction():
         await db.rollback()
 
@@ -653,19 +729,47 @@ async def deactivate_organization(
                     "organization."
                 ),
             )
+        if await _org_money_pending(db, org_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "This organization still has pending money: a payment, "
+                    "escrow, or payout has not settled. Wait for it to complete "
+                    "before closing the organization."
+                ),
+            )
 
         organization = await db.scalar(
             select(Organization).where(Organization.id == org_id).with_for_update()
         )
         assert organization is not None
         organization.deactivated_at = datetime.now(UTC)
+        organization.deactivated_by = actor_id
+        organization.deactivation_reason = reason
+        org_name = organization.name
         await write_audit(
             db=db,
             actor_id=actor_id,
             action="org_deactivated",
             target_type="organization",
             target_id=organization.id,
+            metadata={"reason_given": reason is not None},
         )
+        member_ids = list(
+            (
+                await db.scalars(
+                    select(OrgMember.user_id).where(OrgMember.org_id == org_id)
+                )
+            ).all()
+        )
+
+    org_notifications.notify_org_deactivated(
+        member_ids,
+        org_id=org_id,
+        org_name=org_name,
+        closed_by_name=actor_name,
+        reason=reason,
+    )
 
 
 async def list_members(
@@ -1428,6 +1532,10 @@ async def search_members(
                 ),
                 User.id.not_in(member_subquery),
                 ~pending_invitation_exists,
+                # A closed or suspended account cannot accept, so offering
+                # it would only produce an invitation that dies unanswered.
+                User.deactivated_at.is_(None),
+                User.suspended_at.is_(None),
             )
             .order_by(User.display_name.asc(), User.id.asc())
             .limit(10)
@@ -1457,36 +1565,168 @@ async def search_members(
     )
 
 
+def _effective_invitation_status(invitation: OrgInvitation, now: datetime) -> str:
+    """Return the status the row should read as right now.
+
+    The nightly sweep flips overdue rows to ``expired``; until it runs, a
+    ``pending`` row past its deadline is dead and must not be shown as live.
+    """
+    if invitation.status == "pending" and invitation.expires_at < now:
+        return "expired"
+    return invitation.status
+
+
+def _invitation_response(
+    invitation: OrgInvitation, *, now: datetime
+) -> OrgInvitationResponse:
+    """Map one invitation row with its live-computed status."""
+    return OrgInvitationResponse(
+        id=invitation.id,
+        email=invitation.email,
+        role=invitation.role,
+        status=_effective_invitation_status(invitation, now),
+        expires_at=invitation.expires_at,
+        created_at=invitation.created_at,
+    )
+
+
 async def list_invitations(
     db: AsyncSession,
     *,
     context: OrgContext,
+    status_filter: OrgInvitationStatusFilter = "pending",
 ) -> OrgInvitationsResponse:
-    """List pending invitations for one organization.
+    """List one organization's invitations by effective status.
 
     Args:
         db: Async database session.
         context: Resolved organization/member/user context from RBAC dependency.
+        status_filter: ``pending`` (default: live only), one of the terminal
+            statuses, ``expired`` (stored or overdue), or ``all``.
 
     Returns:
-        Pending invitations ordered newest-first.
+        Invitations ordered newest-first with their live-computed status.
     """
+    now = datetime.now(UTC)
+    filters = [OrgInvitation.org_id == context.org.id]
+    if status_filter == "pending":
+        filters.append(OrgInvitation.status == "pending")
+        filters.append(OrgInvitation.expires_at >= now)
+    elif status_filter == "expired":
+        filters.append(
+            or_(
+                OrgInvitation.status == "expired",
+                (OrgInvitation.status == "pending") & (OrgInvitation.expires_at < now),
+            )
+        )
+    elif status_filter != "all":
+        filters.append(OrgInvitation.status == status_filter)
     invitations = (
         await db.scalars(
             select(OrgInvitation)
-            .where(
-                OrgInvitation.org_id == context.org.id,
-                OrgInvitation.status == "pending",
-            )
+            .where(*filters)
             .order_by(OrgInvitation.created_at.desc(), OrgInvitation.id.desc())
         )
     ).all()
     return OrgInvitationsResponse(
         invitations=[
-            OrgInvitationResponse.model_validate(invitation)
-            for invitation in invitations
+            _invitation_response(invitation, now=now) for invitation in invitations
         ]
     )
+
+
+async def resend_invitation(
+    db: AsyncSession,
+    redis: Redis,
+    *,
+    context: OrgContext,
+    invitation_id: UUID,
+) -> OrgInvitationResponse:
+    """Re-send a pending invitation with a fresh token and deadline.
+
+    Shares the per-org hourly budget with :func:`create_invitation` so a
+    resend loop cannot be used to spam an address. The token is rotated, so
+    the link in the earlier email stops working and only the newest message
+    admits the invitee. An overdue-but-still-pending row may be resent; that
+    is the point of the button.
+
+    Args:
+        db: Async database session.
+        redis: Redis client used by the per-org invitation rate limiter.
+        context: Resolved organization/member/user context from RBAC dependency.
+        invitation_id: Invitation id scoped to this organization.
+
+    Returns:
+        The refreshed invitation.
+
+    Raises:
+        HTTPException(404): Invitation does not belong to this organization.
+        HTTPException(409): The invitation is no longer pending.
+        HTTPException(429): This organization exceeded its hourly invite budget.
+    """
+    org_id = context.org.id
+    org_name = context.org.name
+    actor_id = context.user.id
+    await INVITE_RATE_LIMITER.check(cast(RedisCounter, redis), str(org_id))
+    if db.in_transaction():
+        await db.rollback()
+
+    raw_token = secrets.token_urlsafe(32)
+    now = datetime.now(UTC)
+    async with db.begin():
+        invitation = await db.scalar(
+            select(OrgInvitation)
+            .where(
+                OrgInvitation.id == invitation_id,
+                OrgInvitation.org_id == org_id,
+            )
+            .with_for_update()
+        )
+        if invitation is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invitation not found.",
+            )
+        if invitation.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Only pending invitations can be resent.",
+            )
+        invitation.token_hash = hash_token(raw_token)
+        invitation.expires_at = now + timedelta(days=INVITATION_TTL_DAYS)
+        email = invitation.email
+        role = invitation.role
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_invitation_resent",
+            target_type="org_invitation",
+            target_id=invitation.id,
+            metadata={"org_id": str(org_id), "role": role},
+        )
+        invitee = await db.scalar(select(User).where(func.lower(User.email) == email))
+        if invitee is not None:
+            await create_notification(
+                db=db,
+                user_id=invitee.id,
+                notification_type="org_invitation_received",
+                title=f"Reminder: invitation to join {org_name}",
+                body=f"You've been invited to join {org_name} as {role}.",
+                link="/settings/organizations",
+                payload={"org_id": str(org_id)},
+                dedupe_key=f"org-invitation-resent:{invitation.id}:{now.isoformat()}",
+            )
+        response = _invitation_response(invitation, now=now)
+
+    send_org_invitation.delay(email, org_name, role, raw_token)
+    logger.bind(
+        module="organizations",
+        action="resend_invitation",
+        user_id=actor_id,
+        org_id=org_id,
+        invitation_id=invitation_id,
+    ).info("org_invitation_resent")
+    return response
 
 
 async def list_received_invitations(
@@ -1551,6 +1791,7 @@ async def revoke_invitation(
         HTTPException(409): Only pending invitations can be revoked.
     """
     org_id = context.org.id
+    org_name = context.org.name
     if db.in_transaction():
         await db.rollback()
 
@@ -1575,6 +1816,16 @@ async def revoke_invitation(
             )
         invitation.status = "revoked"
         invitation.responded_at = datetime.now(UTC)
+        invitee_id = await db.scalar(
+            select(User.id).where(func.lower(User.email) == invitation.email)
+        )
+
+    # An invitee without an account has nothing to be notified on; the email
+    # they received simply stops working.
+    if invitee_id is not None:
+        org_notifications.notify_invitation_revoked(
+            invitee_id, org_id=org_id, org_name=org_name
+        )
 
 
 async def _get_live_invitation(
@@ -1761,7 +2012,7 @@ async def _finalize_accept(
                 notification_type="org_invitation_accepted",
                 title=f"{user_display_name} joined {org_name}",
                 body=f"{user_display_name} accepted the invitation to join {org_name}.",
-                link="/settings/organizations",
+                link=f"/dashboard/organizations/{org_id}/members",
                 payload={"org_id": str(org_id)},
                 dedupe_key=f"org-invite-accepted:{invitation_id}",
             )
@@ -1832,7 +2083,7 @@ async def _finalize_decline(
             notification_type="org_invitation_declined",
             title=f"{user_display_name} declined the invitation",
             body=f"{user_display_name} declined the invitation to join {org_name}.",
-            link="/settings/organizations",
+            link=f"/dashboard/organizations/{org_id}/members",
             payload={"org_id": str(org_id)},
             dedupe_key=f"org-invite-declined:{invitation_id}",
         )
@@ -2475,7 +2726,11 @@ async def admin_list_orgs(
                     profiles[org.id].kyb_submitted_at if org.id in profiles else None
                 ),
                 suspended_at=org.suspended_at,
+                suspended_by=org.suspended_by,
+                suspension_reason=org.suspension_reason,
                 deactivated_at=org.deactivated_at,
+                deactivated_by=org.deactivated_by,
+                deactivation_reason=org.deactivation_reason,
                 created_at=org.created_at,
             )
         )
@@ -2516,6 +2771,7 @@ async def admin_suspend_org(
             return
 
         org.suspended_at = datetime.now(UTC)
+        org.suspended_by = admin_id
         org.suspension_reason = reason
         org_name = org.name
         await write_audit(
@@ -2567,6 +2823,7 @@ async def admin_reinstate_org(
             return
 
         org.suspended_at = None
+        org.suspended_by = None
         org.suspension_reason = None
         org_name = org.name
         await write_audit(
@@ -2591,6 +2848,69 @@ async def admin_reinstate_org(
     for user_id in members:
         await sync_derived_roles(db, user_id=user_id)
     org_notifications.notify_org_reinstated(owner_ids, org_id=org_id, org_name=org_name)
+
+
+async def admin_reactivate_org(
+    db: AsyncSession,
+    *,
+    admin: User,
+    org_id: UUID,
+) -> None:
+    """Reopen a deactivated organization (idempotent).
+
+    Decision 4: deactivation is a soft close, so an admin can undo it. Clears
+    the closure record, audits ``org_reactivated``, re-evaluates members'
+    derived roles, and tells the owners after commit. Reopening an open
+    organization changes nothing and sends nothing.
+
+    Raises:
+        HTTPException(404): No organization with that id.
+    """
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        org = await db.scalar(
+            select(Organization).where(Organization.id == org_id).with_for_update()
+        )
+        if not org:
+            raise HTTPException(status_code=404, detail="Organization not found.")
+
+        if org.deactivated_at is None:
+            return
+
+        org.deactivated_at = None
+        org.deactivated_by = None
+        org.deactivation_reason = None
+        org_name = org.name
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="org_reactivated",
+            target_type="organization",
+            target_id=org_id,
+        )
+        members = list(
+            (
+                await db.scalars(
+                    select(OrgMember.user_id).where(OrgMember.org_id == org_id)
+                )
+            ).all()
+        )
+        owner_ids = await org_notifications.org_owner_ids(db, org_id)
+
+    for user_id in members:
+        await sync_derived_roles(db, user_id=user_id)
+    org_notifications.notify_org_reactivated(
+        owner_ids, org_id=org_id, org_name=org_name
+    )
+    logger.bind(
+        module="organizations",
+        action="admin_reactivate_org",
+        user_id=admin_id,
+        org_id=org_id,
+    ).info("org_reactivated")
 
 
 async def export_user_org_memberships(

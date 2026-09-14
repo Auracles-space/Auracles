@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+/**
+ * Organization logo uploader with an in-browser crop step.
+ *
+ * Validates the selection, lets the member pan and zoom inside a square
+ * mask, then crops to 400x400 JPEG and runs the presigned S3 upload plus
+ * confirm call. The crop editor is a bottom sheet on mobile and a centred
+ * modal from `sm:` up; the zoom slider sits inside a 44px-tall label.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
+ */
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -43,6 +53,7 @@ export function OrganizationLogoUploader({
   onUploaded,
 }: OrganizationLogoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cropTitleId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -379,15 +390,20 @@ export function OrganizationLogoUploader({
 
       {/* LinkedIn-style Crop Modal overlay portalled to body to escape parent stacking context */}
       {mounted && tempImageSrc && createPortal(
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4 animate-[fade-in_120ms_ease-out]">
+        <div
+          aria-labelledby={cropTitleId}
+          aria-modal="true"
+          className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
+          role="dialog"
+        >
           <div
-            className="w-full max-w-sm rounded-2xl border border-border-default bg-surface-1 p-5 shadow-xl"
+            className="w-full rounded-t-2xl border border-border-default bg-surface-1 p-5 shadow-xl sm:max-w-sm sm:rounded-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
               Edit Logo
             </p>
-            <h2 className="mt-1 font-heading text-lg font-bold text-foreground">
+            <h2 className="mt-1 font-heading text-lg font-bold text-foreground" id={cropTitleId}>
               Crop and focus your logo
             </h2>
 
@@ -421,12 +437,13 @@ export function OrganizationLogoUploader({
               </div>
             </div>
 
-            {/* Zoom Slider */}
-            <div className="mt-4 space-y-1">
-              <div className="flex items-center justify-between text-xs text-foreground-muted font-medium">
+            {/* Zoom slider: the label's vertical padding gives the thin
+                track a 44px hit area without a fat visual track. */}
+            <label className="mt-2 block py-4">
+              <span className="flex items-center justify-between text-xs font-medium text-foreground-muted">
                 <span>Zoom</span>
                 <span>{Math.round(zoom * 100)}%</span>
-              </div>
+              </span>
               <input
                 type="range"
                 min="1"
@@ -434,12 +451,12 @@ export function OrganizationLogoUploader({
                 step="0.01"
                 value={zoom}
                 onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
-                className="w-full accent-accent h-1 bg-surface-3 rounded-lg appearance-none cursor-pointer"
+                className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-lg bg-surface-3 accent-accent"
               />
-            </div>
+            </label>
 
             {/* Action buttons */}
-            <div className="mt-5 flex gap-2 justify-end">
+            <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
                 variant="secondary"
                 onClick={() => {

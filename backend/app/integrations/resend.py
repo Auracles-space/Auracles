@@ -222,10 +222,21 @@ def _render_email_html(
 """
 
 
-def send_verification_email(email: str, token: str) -> None:
-    """Send a verification email through Resend when configured."""
+def send_verification_email(
+    email: str, token: str, next_path: str | None = None
+) -> None:
+    """Send a verification email through Resend when configured.
+
+    Args:
+        email: Recipient address.
+        token: One-time verification token.
+        next_path: Optional in-app path appended as ``&next=`` so the
+            verification page can send the user on (an invitation, say).
+    """
     settings = get_settings()
     verify_url = f"{_frontend_base_url()}/verify-email?token={quote(token, safe='')}"
+    if next_path:
+        verify_url = f"{verify_url}&next={quote(next_path, safe='')}"
     if _delivery_disabled(
         "auth", "send_verification_email", email, token=token, link=verify_url
     ):
@@ -556,9 +567,7 @@ def send_kyc_verdict_email(*, email: str, verified: bool) -> None:
     """
     settings = get_settings()
     action_url = f"{_frontend_base_url()}/settings/kyc"
-    if _delivery_disabled(
-        "settings", "send_kyc_verdict_email", email, link=action_url
-    ):
+    if _delivery_disabled("settings", "send_kyc_verdict_email", email, link=action_url):
         return
     if settings.resend_api_key is None:
         logger.bind(module="settings", action="send_kyc_verdict_email").info(
@@ -573,17 +582,17 @@ def send_kyc_verdict_email(*, email: str, verified: bool) -> None:
     if verified:
         subject = "Your identity is verified"
         content_html = (
-            "<p style=\"margin: 0 0 16px 0;\">Your identity has been verified.</p>"
-            "<p style=\"margin: 0;\">Payouts and paid work are now open to you. "
+            '<p style="margin: 0 0 16px 0;">Your identity has been verified.</p>'
+            '<p style="margin: 0;">Payouts and paid work are now open to you. '
             "Nothing further is needed.</p>"
         )
         action_text = "Go to your account"
     else:
         subject = "Your identity verification needs attention"
         content_html = (
-            "<p style=\"margin: 0 0 16px 0;\">We could not verify your identity "
+            '<p style="margin: 0 0 16px 0;">We could not verify your identity '
             "from the document you submitted.</p>"
-            "<p style=\"margin: 0;\">The most common reason is a photo that is "
+            '<p style="margin: 0;">The most common reason is a photo that is '
             "blurred, cropped, or too dark to read. You can submit another "
             "document at any time.</p>"
         )

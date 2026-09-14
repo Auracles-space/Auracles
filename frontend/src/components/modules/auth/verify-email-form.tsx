@@ -5,8 +5,11 @@
  *
  * Accepts a token from the URL or manual entry, then calls the generated
  * verification endpoint. The backend remains responsible for token validity.
+ * A safe `?next=` path is carried on to login so an invitation deep link
+ * survives the register -> verify -> login detour.
  */
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { isNonEmpty } from "@/lib/forms/validators";
@@ -15,6 +18,7 @@ import {
   describeGeneratedError,
 } from "@/lib/auth/form-client";
 import { verifyEmail } from "@/lib/generated/sdk.gen";
+import { safeInternalPath } from "@/lib/url/safe-href";
 
 import { FormField } from "./form-field";
 import { FormMessage } from "./form-message";
@@ -32,7 +36,7 @@ type VerifyEmailFormProps = {
  * The primary path is the magic link in the verification email (which prefills
  * the token via search params). The manual token field and the resend control
  * are fallbacks for when the link is lost or expired. On success the user is
- * redirected to the login page.
+ * redirected to the login page, carrying a safe `next` path when one is set.
  *
  * @param props - Optional token/email from search params, and an optional
  *   navigation callback (injected in tests; defaults to a hard redirect).
@@ -42,6 +46,11 @@ export function VerifyEmailForm({
   initialEmail = "",
   onVerified,
 }: VerifyEmailFormProps) {
+  // Only a single-slash internal path is honoured (open-redirect guard).
+  const safeNext = safeInternalPath(useSearchParams()?.get("next"));
+  const loginHref = safeNext
+    ? `/login?next=${encodeURIComponent(safeNext)}`
+    : "/login";
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -69,10 +78,10 @@ export function VerifyEmailForm({
     setSuccess(result.data?.message ?? "Email verified.");
     // Hard navigation re-runs auth middleware (matches login-form).
     if (onVerified) {
-      onVerified("/login");
+      onVerified(loginHref);
       return;
     }
-    window.location.assign("/login");
+    window.location.assign(loginHref);
   }
 
   return (

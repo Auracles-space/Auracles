@@ -1,5 +1,14 @@
 "use client";
 
+/**
+ * Organization NDA panel.
+ *
+ * Shows whether the caller has signed the current NDA version, the document
+ * text, and a sign action. Signing emits `NDA_SIGNED_EVENT` so the shell can
+ * clear its NDA dot without a refresh.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
+ */
 import { useState, useEffect } from "react";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { getOrgNda, signOrgNda } from "@/lib/generated/sdk.gen";
@@ -8,6 +17,11 @@ import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-c
 import { OrgNdaStatusResponse } from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
 
+/**
+ * Render the NDA status card for the current organization member.
+ *
+ * @param props - Optional callback fired after a successful signature.
+ */
 export function OrgNdaPanel({ onSigned }: { onSigned?: () => void }) {
   const { orgId } = useOrganization();
   const [nda, setNda] = useState<OrgNdaStatusResponse | null>(null);
@@ -58,34 +72,47 @@ export function OrgNdaPanel({ onSigned }: { onSigned?: () => void }) {
   };
 
   if (loading) {
-    return <div className="p-4 text-sm text-neutral-500">Loading NDA status...</div>;
+    return <p className="p-4 text-sm text-foreground-muted">Loading NDA status...</p>;
   }
 
   if (error) {
-    return <div className="p-4 text-sm text-red-500">{error}</div>;
+    return (
+      <p className="rounded-2xl border border-error/50 bg-error/5 p-4 text-sm text-error" role="alert">
+        {error}
+      </p>
+    );
   }
 
   if (!nda || !nda.required) {
-    return <div className="p-4 text-sm text-neutral-500">No NDA is required for this organization at this time.</div>;
+    return (
+      <p className="p-4 text-sm text-foreground-muted">
+        No NDA is required for this organization at this time.
+      </p>
+    );
   }
 
   const isSigned = nda.signed_version === nda.current_version;
 
   return (
-    <div className="w-full max-w-2xl border rounded-lg overflow-hidden bg-white shadow-sm">
-      <div className="p-6 border-b border-neutral-200">
-        <h2 className="text-lg font-semibold tracking-tight text-neutral-900">Non-Disclosure Agreement</h2>
+    <section className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border-default bg-surface-1 shadow-sm">
+      <div className="border-b border-border-default px-6 py-5">
+        <h2 className="font-heading text-lg font-bold tracking-tight text-foreground">
+          Non-Disclosure Agreement
+        </h2>
       </div>
-      <div className="p-6 space-y-4">
+      <div className="space-y-4 p-6">
         {isSigned ? (
-          <div className="bg-green-50 text-green-700 p-4 rounded-md border border-green-100">
-            <p className="font-medium">NDA Signed</p>
-            <p className="text-sm mt-1">You have signed the latest version ({nda.current_version}) of the NDA on {nda.signed_at ? new Date(nda.signed_at).toLocaleDateString() : "unknown date"}.</p>
+          <div className="rounded-xl border border-success/30 bg-success/10 p-4 text-success">
+            <p className="font-semibold">NDA Signed</p>
+            <p className="mt-1 text-sm">
+              You have signed the latest version ({nda.current_version}) of the NDA on{" "}
+              {nda.signed_at ? new Date(nda.signed_at).toLocaleDateString() : "unknown date"}.
+            </p>
           </div>
         ) : (
-          <div className="bg-amber-50 text-amber-800 p-4 rounded-md border border-amber-100">
-            <p className="font-medium">Signature Required</p>
-            <p className="text-sm mt-1">
+          <div className="rounded-xl border border-warning/30 bg-warning/10 p-4 text-warning">
+            <p className="font-semibold">Signature Required</p>
+            <p className="mt-1 text-sm">
               You must sign the latest NDA (version {nda.current_version}) to participate in attestations and access confidential materials.
             </p>
           </div>
@@ -96,12 +123,12 @@ export function OrgNdaPanel({ onSigned }: { onSigned?: () => void }) {
         </div>
       </div>
       {!isSigned && (
-        <div className="flex justify-end gap-2 border-t border-neutral-200 p-6 bg-neutral-50/50">
-          <Button onClick={handleSign} disabled={signing}>
+        <div className="flex justify-end gap-2 border-t border-border-default bg-surface-2/50 p-6">
+          <Button className="min-h-12 w-full sm:w-auto" onClick={handleSign} disabled={signing}>
             {signing ? "Signing..." : "Sign NDA"}
           </Button>
         </div>
       )}
-    </div>
+    </section>
   );
 }

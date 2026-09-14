@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RegisterForm } from "@/components/modules/auth/register-form";
 import { registerUser } from "@/lib/generated/sdk.gen";
 
+const searchParams = vi.hoisted(() => ({ value: new URLSearchParams() }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams.value,
+}));
+
 vi.mock("@/lib/generated/sdk.gen", () => ({
   client: {
     interceptors: { response: { use: vi.fn() } },
@@ -16,6 +21,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
 describe("RegisterForm", () => {
   beforeEach(() => {
     vi.mocked(registerUser).mockReset();
+    searchParams.value = new URLSearchParams();
   });
 
   it("keeps the submit button disabled until all fields are valid", () => {
@@ -171,4 +177,63 @@ describe("RegisterForm", () => {
       (screen.getByLabelText(/contributor/i) as HTMLInputElement).checked,
     ).toBe(true);
   });
+
+  it("forwards a safe next path from the URL in the registration body", async () => {
+    searchParams.value = new URLSearchParams("next=%2Forganizations%2Finvite%2Fabc");
+    vi.mocked(registerUser).mockResolvedValue({
+      data: { message: "Check your inbox." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<RegisterForm />);
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(registerUser).toHaveBeenCalledWith({
+        body: expect.objectContaining({ next: "/organizations/invite/abc" }),
+      });
+    });
+    // The manual-verification fallback link keeps the intent too.
+    expect(screen.getByRole("link", { name: /go to verification/i })).toHaveAttribute(
+      "href",
+      "/verify-email?next=%2Forganizations%2Finvite%2Fabc",
+    );
+  });
+
+  it("drops an unsafe next value instead of forwarding it", async () => {
+    searchParams.value = new URLSearchParams("next=https%3A%2F%2Fevil.example%2Fphish");
+    vi.mocked(registerUser).mockResolvedValue({
+      data: { message: "Check your inbox." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<RegisterForm />);
+    fillValidForm();
+    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => expect(registerUser).toHaveBeenCalled());
+    const body = vi.mocked(registerUser).mock.calls[0]?.[0]?.body as Record<string, unknown>;
+    expect(body).not.toHaveProperty("next");
+  });
 });
+
+/** Fill every field so the submit button enables. */
+function fillValidForm(): void {
+  fireEvent.change(screen.getByLabelText(/display name/i), {
+    target: { value: "Ada Markets" },
+  });
+  fireEvent.change(screen.getByLabelText(/email/i), {
+    target: { value: "ada@example.com" },
+  });
+  fireEvent.change(screen.getByLabelText(/^password/i), {
+    target: { value: "StrongerPass123!" },
+  });
+  fireEvent.change(screen.getByLabelText(/confirm password/i), {
+    target: { value: "StrongerPass123!" },
+  });
+  fireEvent.click(screen.getByLabelText(/contributor/i));
+  fireEvent.click(screen.getByLabelText(/terms of service/i));
+}

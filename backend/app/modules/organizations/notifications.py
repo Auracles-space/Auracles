@@ -7,7 +7,8 @@ the transaction that made the change has committed, so the worker reads
 persisted state, and a queue failure is logged rather than raised so it can
 never roll a decision back.
 
-Maps to: docs/superpowers/specs/2026-09-13-org-onboarding-journey-design.md §1.
+Maps to: docs/superpowers/specs/2026-09-13-org-onboarding-journey-design.md §1
+and docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
 """
 
 from __future__ import annotations
@@ -270,4 +271,132 @@ def notify_trial_decided(
         ),
         link=f"/dashboard/organizations/{org_id}/attestor",
         extra_payload={"result": "pass" if passed else "fail"},
+    )
+
+
+def notify_org_created(user_id: UUID, *, org_id: UUID, org_name: str) -> None:
+    """Acknowledge a new organization to the member who created it."""
+    notify_users(
+        [user_id],
+        org_id=org_id,
+        notification_type="org_created",
+        title=f"{org_name} is ready",
+        body=(
+            f"You created {org_name}. Invite your team, complete business "
+            "verification, and activate the capabilities you need."
+        ),
+        link=f"/dashboard/organizations/{org_id}",
+    )
+
+
+def notify_org_profile_updated(
+    owner_ids: list[UUID],
+    *,
+    org_id: UUID,
+    org_name: str,
+    actor_name: str,
+    changed_fields: list[str],
+) -> None:
+    """Tell the other owners which profile fields changed, never the values.
+
+    The acting owner is excluded by the caller; a notification about one's
+    own edit is noise.
+    """
+    fields = ", ".join(changed_fields)
+    notify_users(
+        owner_ids,
+        org_id=org_id,
+        notification_type="org_profile_updated",
+        title=f"{org_name}'s profile was updated",
+        body=f"{actor_name} changed the organization's {fields}.",
+        link=f"/dashboard/organizations/{org_id}",
+        extra_payload={"fields": fields},
+    )
+
+
+def notify_org_deactivated(
+    member_ids: list[UUID],
+    *,
+    org_id: UUID,
+    org_name: str,
+    closed_by_name: str,
+    reason: str | None,
+) -> None:
+    """Tell every member the organization is closed and hidden, data retained."""
+    reason_clause = f" Reason: {reason}" if reason else ""
+    notify_users(
+        member_ids,
+        org_id=org_id,
+        notification_type="org_deactivated",
+        title=f"{org_name} has been closed",
+        body=(
+            f"{closed_by_name} closed {org_name}. It is now hidden from the "
+            "marketplace and your dashboard; its data is retained and an "
+            f"administrator can reopen it.{reason_clause} Contact "
+            f"{closed_by_name} or support if you have questions."
+        ),
+        link="/dashboard/organizations",
+    )
+
+
+def notify_org_reactivated(
+    owner_ids: list[UUID], *, org_id: UUID, org_name: str
+) -> None:
+    """Tell owners an administrator reopened the organization."""
+    notify_users(
+        owner_ids,
+        org_id=org_id,
+        notification_type="org_reactivated",
+        title=f"{org_name} has been reopened",
+        body=(
+            f"An administrator reactivated {org_name}. It is visible again and "
+            "every member has their access back."
+        ),
+        link=f"/dashboard/organizations/{org_id}",
+    )
+
+
+def notify_org_kyb_submitted(user_id: UUID, *, org_id: UUID, org_name: str) -> None:
+    """Acknowledge a business-verification submission to the submitter."""
+    notify_users(
+        [user_id],
+        org_id=org_id,
+        notification_type="org_kyb_submitted",
+        title=f"{org_name}'s verification is in review",
+        body=(
+            f"The business details for {org_name} are in review. We will "
+            "notify you as soon as an administrator reaches a decision."
+        ),
+        link=f"/dashboard/organizations/{org_id}/verification",
+    )
+
+
+def notify_invitation_revoked(user_id: UUID, *, org_id: UUID, org_name: str) -> None:
+    """Tell an invitee with an account that the invitation was withdrawn."""
+    notify_users(
+        [user_id],
+        org_id=org_id,
+        notification_type="org_invitation_revoked",
+        title=f"Your invitation to {org_name} was withdrawn",
+        body=(
+            f"An administrator of {org_name} withdrew your invitation. "
+            "Ask them for a new one if you still expect to join."
+        ),
+        link="/settings/organizations",
+    )
+
+
+def notify_invitation_expired(user_id: UUID, *, org_id: UUID, org_name: str) -> None:
+    """Tell an invitee with an account that the invitation lapsed."""
+    notify_users(
+        [user_id],
+        org_id=org_id,
+        notification_type="org_invitation_expired",
+        title=f"Your invitation to {org_name} expired",
+        body=(
+            f"The invitation to join {org_name} expired before it was "
+            "accepted. Ask an administrator of the organization to send a "
+            "new one."
+        ),
+        link="/settings/organizations",
     )

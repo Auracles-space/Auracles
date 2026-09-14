@@ -6,7 +6,8 @@
  * Lists the organization invitations addressed to the signed-in user and lets
  * them accept or decline in place. Accepting routes into the organization.
  * Renders nothing when there is nothing to resolve, so the list page stays
- * clean for the common case.
+ * clean for the common case; a failed load shows a single error line so a
+ * pending invitation is never silently hidden.
  *
  * Maps to: docs/superpowers/specs/2026-09-13-org-onboarding-journey-design.md §2.
  */
@@ -45,15 +46,18 @@ export function ReceivedInvitationsInbox({ onResolved }: ReceivedInvitationsInbo
     null,
   );
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const data = await loadReceivedInvitations();
       setInvitations(data ?? []);
+      setLoadFailed(false);
     } catch {
-      // A failed inbox load must never break the organizations page; the
-      // toast on the app shell still announces pending invitations.
+      // A failed inbox load must never break the organizations page, but it
+      // must say so: an invitation the user is waiting on could be behind it.
       setInvitations([]);
+      setLoadFailed(true);
     }
   }, []);
 
@@ -96,6 +100,14 @@ export function ReceivedInvitationsInbox({ onResolved }: ReceivedInvitationsInbo
     setInvitations((current) => current.filter((item) => item.id !== invitationId));
     invalidateReceivedInvitations();
     onResolved?.();
+  }
+
+  if (loadFailed) {
+    return (
+      <p className="mb-6 text-sm text-error" role="alert">
+        We could not load your invitations. Refresh the page to try again.
+      </p>
+    );
   }
 
   if (invitations.length === 0) {

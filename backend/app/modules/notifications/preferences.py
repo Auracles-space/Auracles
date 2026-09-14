@@ -118,6 +118,23 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "org_member_removed": "account",
     "org_member_role_changed": "account",
     "org_ownership_transferred": "account",
+    "org_created": "account",
+    "org_profile_updated": "account",
+    "org_deactivated": "account",
+    "org_reactivated": "account",
+    "org_kyb_submitted": "account",
+    "org_invitation_revoked": "account",
+    "org_invitation_expired": "account",
+    "org_license_granted": "account",
+    "org_license_revoked": "account",
+    "org_framework_suspended": "account",
+    "org_framework_published": "account",
+    "org_purchase_completed": "financial",
+    "org_purchase_failed": "financial",
+    "org_payout_requested": "financial",
+    "org_payout_completed": "financial",
+    "org_payout_failed": "financial",
+    "org_invoice_ready": "financial",
 }
 NOTIFICATION_TYPE_LABELS: Final[dict[str, str]] = {
     notification_type: notification_type.replace("_", " ").title()

@@ -7,6 +7,11 @@ import {
   verifyEmail,
 } from "@/lib/generated/sdk.gen";
 
+const searchParams = vi.hoisted(() => ({ value: new URLSearchParams() }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams.value,
+}));
+
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
   describeGeneratedError: (error: { detail?: string } | undefined) =>
@@ -23,6 +28,7 @@ describe("VerifyEmailForm", () => {
   beforeEach(() => {
     vi.mocked(verifyEmail).mockReset();
     vi.mocked(resendVerificationV1AuthResendVerificationPost).mockReset();
+    searchParams.value = new URLSearchParams();
   });
 
   it("keeps the submit button disabled until a token is present", () => {
@@ -102,6 +108,42 @@ describe("VerifyEmailForm", () => {
       expect(
         vi.mocked(resendVerificationV1AuthResendVerificationPost),
       ).toHaveBeenCalledWith({ body: { email: "ada@example.com" } });
+    });
+  });
+
+  it("carries a safe next path through to the login page after verifying", async () => {
+    searchParams.value = new URLSearchParams("next=%2Fdashboard%2Forganizations%2Forg-1");
+    vi.mocked(verifyEmail).mockResolvedValue({
+      data: { message: "Email verified." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    const onVerified = vi.fn();
+
+    render(<VerifyEmailForm initialToken="verify-token-9" onVerified={onVerified} />);
+    fireEvent.click(screen.getByRole("button", { name: /verify email/i }));
+
+    await waitFor(() => {
+      expect(onVerified).toHaveBeenCalledWith(
+        "/login?next=%2Fdashboard%2Forganizations%2Forg-1",
+      );
+    });
+  });
+
+  it("ignores a protocol-relative next and lands on plain login", async () => {
+    searchParams.value = new URLSearchParams("next=%2F%2Fevil.example");
+    vi.mocked(verifyEmail).mockResolvedValue({
+      data: { message: "Email verified." },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    const onVerified = vi.fn();
+
+    render(<VerifyEmailForm initialToken="verify-token-9" onVerified={onVerified} />);
+    fireEvent.click(screen.getByRole("button", { name: /verify email/i }));
+
+    await waitFor(() => {
+      expect(onVerified).toHaveBeenCalledWith("/login");
     });
   });
 });

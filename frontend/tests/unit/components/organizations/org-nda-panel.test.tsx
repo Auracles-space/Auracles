@@ -33,4 +33,27 @@ describe("OrgNdaPanel", () => {
     // Verify it updates state (might render signed message instead)
     await waitFor(() => screen.getByText(/NDA Signed/i));
   });
+
+  it("styles the panel with design tokens rather than raw palette classes", async () => {
+    vi.mocked(getOrgNda).mockResolvedValue(ok({ required: true, current_version: "v2", signed_version: "v2", signed_at: "2026-09-01T00:00:00Z", document: "Terms" }));
+    const { container } = render(<OrgNdaPanel />);
+
+    await screen.findByText(/NDA Signed/i);
+    const html = container.innerHTML;
+    expect(html).not.toMatch(/bg-white|text-neutral-|bg-green-|bg-amber-|border-neutral-|bg-neutral-/);
+    const signed = screen.getByText(/NDA Signed/i).closest("div");
+    expect(signed?.className).toMatch(/bg-success\/10/);
+    expect(signed?.className).toMatch(/text-success/);
+    const card = container.querySelector("section");
+    expect(card?.className).toMatch(/rounded-2xl/);
+    expect(card?.className).toMatch(/bg-surface-1/);
+  });
+
+  it("keeps the sign button at a 44px touch target", async () => {
+    vi.mocked(getOrgNda).mockResolvedValue(ok({ required: true, current_version: "v2", signed_version: null, signed_at: null, document: "Terms" }));
+    render(<OrgNdaPanel />);
+
+    const button = await screen.findByRole("button", { name: /sign nda/i });
+    expect(button.className).toMatch(/min-h-1[12]/);
+  });
 });

@@ -1,5 +1,15 @@
 "use client";
 
+/**
+ * Create-organization dialog.
+ *
+ * Collects the immutable identity (slug, country) plus editable profile
+ * fields, previews the public URL the slug will resolve to, and surfaces
+ * server errors as people-readable messages. On success it routes into the
+ * new organization (or its attestor onboarding when so intended).
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
+ */
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -10,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { PAYOUT_COUNTRIES } from "@/lib/marketplace/countries";
-import { getAccessTokenHeaders } from "@/lib/auth/form-client";
+import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 
 type CreateOrganizationDialogProps = {
   open: boolean;
@@ -19,7 +29,11 @@ type CreateOrganizationDialogProps = {
   redirectIntent?: "attestor";
 };
 
-
+/**
+ * Render the create-organization modal.
+ *
+ * @param props - Open state, close callback, optional post-create intent.
+ */
 export function CreateOrganizationDialog({
   open,
   onClose,
@@ -48,6 +62,10 @@ export function CreateOrganizationDialog({
 
   if (!open || !mounted) return null;
 
+  // The public profile lives at /orgs/{slug}; previewing it makes the
+  // permanence of the slug concrete before the owner commits to it.
+  const publicUrl = `${window.location.origin}/orgs/${formData.slug}`;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -68,12 +86,14 @@ export function CreateOrganizationDialog({
       });
 
       if (!result.response.ok) {
+        // 409 is the one failure tied to a single field (slug already
+        // taken); everything else reads as a form-level message. Both come
+        // from the server's own wording, never a raw error code.
+        const message = describeGeneratedError(result.error);
         if (result.response.status === 409) {
-          setSlugError("This slug is already taken.");
-        } else if (result.response.status === 422) {
-           setError("Please check your input values.");
+          setSlugError(message);
         } else {
-          setError(result.error?.detail?.error_code || "Failed to create organization");
+          setError(message);
         }
         setLoading(false);
         return;
@@ -148,7 +168,14 @@ export function CreateOrganizationDialog({
             />
             {slugError && <p className="mt-1 text-sm text-error">{slugError}</p>}
             <p className="mt-1 text-xs text-foreground-muted">
-              Used in URLs. Lowercase, numbers, hyphens only.
+              Lowercase letters, numbers, and hyphens only.
+            </p>
+            <p
+              className="mt-2 break-all rounded-xl border border-border-default bg-surface-2 px-3 py-2 text-xs text-foreground-muted"
+              data-testid="slug-preview"
+            >
+              Public profile:{" "}
+              <span className="font-medium text-foreground">{publicUrl}</span>
             </p>
           </div>
 
@@ -194,6 +221,11 @@ export function CreateOrganizationDialog({
               placeholder="A brief description of your organization."
             />
           </div>
+
+          <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs leading-5 text-foreground-muted">
+            The slug and country cannot be changed after the organization is
+            created. Name, website, and description can be edited later.
+          </p>
 
           <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="secondary" onClick={onClose} disabled={loading}>
