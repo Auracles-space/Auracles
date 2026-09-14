@@ -127,4 +127,31 @@ describe("AdminPaymentTrace", () => {
       "Transaction not found.",
     );
   });
+
+  const PAYER_ORG = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  
+  it("names the payer organization with a link and falls back to the payee user", async () => {
+    vi.mocked(
+      getAdminTransactionDetailV1AdminTransactionsTransactionIdGet,
+    ).mockResolvedValue({
+      data: {
+        ...detail,
+        transaction: {
+          ...detail.transaction,
+          payer_org_id: PAYER_ORG,
+          payer_org_name: "Lagos Clearing House",
+          payee_id: "66666666-6666-6666-6666-666666666666",
+        },
+      },
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    render(<AdminPaymentTrace transactionId={TRANSACTION_ID} />);
+
+    const payer = await screen.findByRole("link", { name: "Lagos Clearing House" });
+    expect(payer).toHaveAttribute("href", `/admin/organizations/${PAYER_ORG}`);
+    expect(screen.getByText("66666666")).toBeInTheDocument();
+  });
 });

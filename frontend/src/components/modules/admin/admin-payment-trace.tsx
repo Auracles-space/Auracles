@@ -7,7 +7,7 @@
  * recorded state change in order, with the normalized cause attached to each
  * failure. This is the only place intermediate states survive — the status
  * column keeps just the final value — so the timeline is the page, not a
- * footnote to it.
+ * footnote to it. Payer and payee organizations are named and linked.
  *
  * Maps to: admin financial oversight (per-payment traceability).
  */
@@ -31,6 +31,7 @@ import {
   formatTimestamp,
   toneForStatus,
 } from "./admin-money-primitives";
+import { PartyName } from "./admin-org-party";
 
 type AdminPaymentTraceProps = {
   transactionId: string;
@@ -119,6 +120,20 @@ export function AdminPaymentTrace({ transactionId }: AdminPaymentTraceProps) {
             label="Platform commission"
             value={formatAmount(transaction.platform_commission, transaction.currency)}
           />
+          <PartyDetail label="Payer">
+            <PartyName
+              orgId={transaction.payer_org_id}
+              orgName={transaction.payer_org_name}
+              userId={transaction.payer_id}
+            />
+          </PartyDetail>
+          <PartyDetail label="Payee">
+            <PartyName
+              orgId={transaction.payee_org_id}
+              orgName={transaction.payee_org_name}
+              userId={transaction.payee_id}
+            />
+          </PartyDetail>
           <Detail label="Created" value={formatTimestamp(transaction.created_at)} />
           <Detail label="Transaction ID" mono value={transaction.transaction_id} />
           {transaction.provider_ref ? (
@@ -266,6 +281,23 @@ function Detail({
       >
         {value}
       </dd>
+    </div>
+  );
+}
+
+/**
+ * Render a labelled detail whose value is a component (a link or id).
+ *
+ * @param props.label - Field caption.
+ * @param props.children - Rendered value.
+ */
+function PartyDetail({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-0.5">
+      <dt className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">
+        {label}
+      </dt>
+      <dd>{children}</dd>
     </div>
   );
 }

@@ -158,4 +158,48 @@ describe("AdminMoneyPanel", () => {
       "The request could not be completed.",
     );
   });
+
+  const PAYER_ORG = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const PAYEE_ORG = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  
+  it("names payer and payee organizations and links them to the org detail page", async () => {
+    vi.mocked(listAdminTransactionsV1AdminTransactionsGet).mockResolvedValue(
+      ok(
+        page([
+          {
+            ...failedPayment,
+            payer_org_id: PAYER_ORG,
+            payer_org_name: "Lagos Clearing House",
+            payee_org_id: PAYEE_ORG,
+            payee_org_name: null,
+          },
+        ]),
+      ) as never,
+    );
+    render(<AdminMoneyPanel />);
+
+    const payer = await screen.findByRole("link", { name: "Lagos Clearing House" });
+    expect(payer).toHaveAttribute("href", `/admin/organizations/${PAYER_ORG}`);
+    const payee = screen.getByRole("link", { name: /dddddddd/ });
+    expect(payee).toHaveAttribute("href", `/admin/organizations/${PAYEE_ORG}`);
+  });
+
+  it("shows the payer user when no organization paid", async () => {
+    render(<AdminMoneyPanel />);
+
+    expect(await screen.findByText("22222222")).toBeInTheDocument();
+  });
+
+  it("passes the organization ID filter to the transactions query", async () => {
+    render(<AdminMoneyPanel />);
+    await screen.findByText("insufficient_funds");
+
+    fireEvent.change(screen.getByLabelText("Organization ID"), { target: { value: PAYER_ORG } });
+
+    await waitFor(() => {
+      expect(vi.mocked(listAdminTransactionsV1AdminTransactionsGet)).toHaveBeenLastCalledWith(
+        expect.objectContaining({ query: expect.objectContaining({ org_id: PAYER_ORG }) }),
+      );
+    });
+  });
 });

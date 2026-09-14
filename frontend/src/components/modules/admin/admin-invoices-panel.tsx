@@ -4,7 +4,9 @@
  * Admin invoice oversight panel.
  *
  * Read-only: administrators list and search issued invoices for financial
- * reconciliation. The internal PDF storage key is never returned by the API.
+ * reconciliation, optionally narrowed to one organization; an invoice's
+ * organization links to its admin detail page. The internal PDF storage key
+ * is never returned by the API.
  * Renders as a table on desktop and stacked cards on mobile.
  *
  * Maps to: admin issued-invoice oversight.
@@ -20,6 +22,8 @@ import { listAdminInvoicesV1AdminInvoicesGet } from "@/lib/generated/sdk.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import type { AdminInvoicesResponse } from "@/lib/generated/types.gen";
 import { formatMoney } from "@/lib/marketplace/format";
+
+import { OrgIdFilter, OrgLink, isUuid } from "./admin-org-party";
 
 /**
  * Format an invoice date for compact admin copy.
@@ -42,6 +46,8 @@ export function AdminInvoicesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
+  const orgId = isUuid(orgFilter) ? orgFilter : "";
 
   useEffect(() => {
     let mounted = true;
@@ -54,6 +60,7 @@ export function AdminInvoicesPanel() {
           page: 1,
           page_size: 20,
           query: query.trim() || undefined,
+          ...(orgId ? { org_id: orgId } : {}),
         },
       });
 
@@ -73,7 +80,7 @@ export function AdminInvoicesPanel() {
     return () => {
       mounted = false;
     };
-  }, [query]);
+  }, [query, orgId]);
 
   if (loading) {
     return <TableSkeleton />;
@@ -97,7 +104,7 @@ export function AdminInvoicesPanel() {
         </p>
       </header>
 
-      <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm md:max-w-md">
+      <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm md:grid-cols-2">
         <label className="grid gap-2 text-sm font-semibold text-foreground">
           Search
           <input
@@ -107,6 +114,7 @@ export function AdminInvoicesPanel() {
             value={query}
           />
         </label>
+        <OrgIdFilter onChange={setOrgFilter} value={orgFilter} />
       </section>
 
       {error ? (
@@ -121,9 +129,10 @@ export function AdminInvoicesPanel() {
         </div>
       ) : (
         <div className="grid gap-4 md:gap-0 md:divide-y md:divide-border-default/40 md:rounded-2xl md:border md:border-border-default md:bg-surface-1 md:shadow-sm overflow-hidden">
-          <div className="hidden md:grid md:grid-cols-[1.2fr_1.4fr_0.9fr_0.8fr_1fr] md:gap-4 md:bg-surface-2/40 md:p-4 md:pl-6 md:pr-6 text-xs font-semibold uppercase tracking-wider text-foreground-muted select-none">
+          <div className="hidden md:grid md:grid-cols-[1.2fr_1.4fr_1.2fr_0.9fr_0.8fr_1fr] md:gap-4 md:bg-surface-2/40 md:p-4 md:pl-6 md:pr-6 text-xs font-semibold uppercase tracking-wider text-foreground-muted select-none">
             <div>Invoice</div>
             <div>Buyer</div>
+            <div>Organization</div>
             <div>Total</div>
             <div>Type</div>
             <div className="text-right">Issued</div>
@@ -133,7 +142,7 @@ export function AdminInvoicesPanel() {
             <article
               className="
                 flex flex-col gap-3 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm
-                md:grid md:grid-cols-[1.2fr_1.4fr_0.9fr_0.8fr_1fr] md:items-center md:gap-4
+                md:grid md:grid-cols-[1.2fr_1.4fr_1.2fr_0.9fr_0.8fr_1fr] md:items-center md:gap-4
                 md:rounded-none md:border-none md:bg-transparent md:p-4 md:pl-6 md:pr-6 md:shadow-none
                 md:hover:bg-surface-2/30 transition-colors
               "
@@ -152,6 +161,17 @@ export function AdminInvoicesPanel() {
                 <p className="text-xs text-foreground-muted break-all">
                   {item.buyer_email}
                 </p>
+              </div>
+
+              <div className="grid gap-0.5">
+                <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">
+                  Organization
+                </span>
+                {item.organization_id ? (
+                  <OrgLink name={item.organization_name} orgId={item.organization_id} />
+                ) : (
+                  <span className="text-xs text-foreground-subtle">—</span>
+                )}
               </div>
 
               <div className="text-sm text-foreground md:text-xs">

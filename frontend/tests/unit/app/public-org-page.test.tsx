@@ -8,13 +8,17 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import PublicOrganizationPage from "@/app/(public)/orgs/[slug]/page";
+import PublicOrganizationPage, { generateMetadata } from "@/app/(public)/orgs/[slug]/page";
 import { getPublicOrgV1OrgsSlugGet } from "@/lib/generated/sdk.gen";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
+import { permanentRedirect } from "next/navigation";
 
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
+  }),
+  permanentRedirect: vi.fn(() => {
+    throw new Error("NEXT_REDIRECT");
   }),
 }));
 vi.mock("@/lib/generated/sdk.gen", () => ({ getPublicOrgV1OrgsSlugGet: vi.fn() }));
@@ -24,6 +28,7 @@ function org(overrides: Record<string, unknown> = {}) {
   return {
     name: "Meridian Audit",
     slug: "meridian",
+    canonical_slug: "meridian",
     country: "NG",
     description: "Independent assurance for Lagos operators.",
     logo_key: null,
@@ -112,5 +117,35 @@ describe("PublicOrganizationPage", () => {
     const main = container.querySelector("main");
     expect(main).not.toBeNull();
     expect(main?.className).toContain("mx-auto");
+  });
+
+  it("permanently redirects a past slug to the canonical address", async () => {
+    // Decision 5: an old link keeps working by 308-redirecting to the new one.
+    vi.mocked(getPublicOrgV1OrgsSlugGet).mockResolvedValue(
+      ok(org({ slug: "meridian-ng", canonical_slug: "meridian-ng" })) as never,
+    );
+
+    await expect(
+      PublicOrganizationPage({ params: Promise.resolve({ slug: "meridian" }) }),
+    ).rejects.toThrow("NEXT_REDIRECT");
+    expect(permanentRedirect).toHaveBeenCalledWith("/orgs/meridian-ng");
+  });
+
+  it("does not redirect when the requested slug is canonical", async () => {
+    vi.mocked(getPublicOrgV1OrgsSlugGet).mockResolvedValue(ok(org()) as never);
+    await renderPage();
+
+    expect(permanentRedirect).not.toHaveBeenCalled();
+  });
+
+  it("points metadata at the canonical address", async () => {
+    vi.mocked(getPublicOrgV1OrgsSlugGet).mockResolvedValue(
+      ok(org({ slug: "meridian-ng", canonical_slug: "meridian-ng" })) as never,
+    );
+
+    const metadata = await generateMetadata({ params: Promise.resolve({ slug: "meridian" }) });
+
+    expect(metadata.title).toBe("Meridian Audit - Auracles");
+    expect(metadata.alternates?.canonical).toBe("/orgs/meridian-ng");
   });
 });

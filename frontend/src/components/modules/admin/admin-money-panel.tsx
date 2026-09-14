@@ -8,6 +8,9 @@
  * audit log. They are tabs rather than separate routes because an admin
  * chasing one failed payment moves between them continuously.
  *
+ * Payments name payer and payee organizations (linked to the org detail
+ * page) and can be narrowed to one organization.
+ *
  * Read-only throughout. Payment credentials, payout destinations, and raw
  * webhook payloads are absent from these APIs by construction, so nothing
  * sensitive can render here.
@@ -51,6 +54,7 @@ import {
   toneForStatus,
   type MoneyTab,
 } from "./admin-money-primitives";
+import { OrgIdFilter, PartyName, isUuid } from "./admin-org-party";
 
 const PAGE_SIZE = 20;
 
@@ -66,6 +70,8 @@ export function AdminMoneyPanel() {
   const [providerFilter, setProviderFilter] = useState("all");
   const [reasonFilter, setReasonFilter] = useState("");
   const [providerRef, setProviderRef] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
+  const orgId = isUuid(orgFilter) ? orgFilter : "";
 
   const [payments, setPayments] =
     useState<AdminTransactionDirectoryResponse | null>(null);
@@ -81,6 +87,7 @@ export function AdminMoneyPanel() {
     setProviderFilter("all");
     setReasonFilter("");
     setProviderRef("");
+    setOrgFilter("");
   }, []);
 
   useEffect(() => {
@@ -101,6 +108,7 @@ export function AdminMoneyPanel() {
               status: statusFilter,
               provider: providerFilter,
               ...(providerRef ? { provider_ref: providerRef } : {}),
+              ...(orgId ? { org_id: orgId } : {}),
             },
           });
         }
@@ -160,7 +168,7 @@ export function AdminMoneyPanel() {
     return () => {
       mounted = false;
     };
-  }, [tab, statusFilter, providerFilter, reasonFilter, providerRef]);
+  }, [tab, statusFilter, providerFilter, reasonFilter, providerRef, orgId]);
 
   return (
     <section className="grid gap-6">
@@ -201,6 +209,8 @@ export function AdminMoneyPanel() {
       </nav>
 
       <MoneyFilters
+        onOrgChange={setOrgFilter}
+        orgFilter={orgFilter}
         onProviderChange={setProviderFilter}
         onProviderRefChange={setProviderRef}
         onReasonChange={setReasonFilter}
@@ -237,6 +247,8 @@ type MoneyFiltersProps = {
   providerFilter: string;
   reasonFilter: string;
   providerRef: string;
+  orgFilter: string;
+  onOrgChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onProviderChange: (value: string) => void;
   onReasonChange: (value: string) => void;
@@ -279,6 +291,8 @@ function MoneyFilters({
   providerFilter,
   reasonFilter,
   providerRef,
+  orgFilter,
+  onOrgChange,
   onStatusChange,
   onProviderChange,
   onReasonChange,
@@ -345,6 +359,7 @@ function MoneyFilters({
           />
         </label>
       ) : null}
+      {showRef ? <OrgIdFilter onChange={onOrgChange} value={orgFilter} /> : null}
     </section>
   );
 }
@@ -374,54 +389,79 @@ function PaymentsView({ data }: { data: AdminTransactionDirectoryResponse | null
       </div>
       <ul className="grid gap-4 md:gap-0 md:divide-y md:divide-border-default/40 md:overflow-hidden md:rounded-2xl md:border md:border-border-default md:bg-surface-1 md:shadow-sm">
         {items.map((item) => (
-          <li key={item.transaction_id}>
-            <Link
-              className="flex flex-col gap-3 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm transition-colors md:grid md:grid-cols-[1.5fr_1fr_0.9fr_1.4fr] md:items-center md:gap-4 md:rounded-none md:border-none md:bg-transparent md:p-4 md:px-6 md:shadow-none md:hover:bg-surface-2/30"
-              href={`/admin/money/${item.transaction_id}`}
-            >
-              <div className="grid gap-0.5">
-                <Pill>{item.transaction_type}</Pill>
-                <p className="break-all font-mono text-xs text-foreground-muted">
-                  {item.transaction_id}
+          <li
+            className="relative flex flex-col gap-3 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm transition-colors md:grid md:grid-cols-[1.5fr_1.3fr_1fr_0.9fr_1.4fr] md:items-center md:gap-4 md:rounded-none md:border-none md:bg-transparent md:p-4 md:px-6 md:shadow-none md:hover:bg-surface-2/30"
+            key={item.transaction_id}
+          >
+            <div className="grid gap-0.5">
+              <Pill>{item.transaction_type}</Pill>
+              {/* Stretched link: the whole row opens the trace, while the
+                  org links above it (z-10) stay independently clickable. */}
+              <Link
+                className="break-all font-mono text-xs text-foreground-muted after:absolute after:inset-0 after:content-['']"
+                href={`/admin/money/${item.transaction_id}`}
+              >
+                {item.transaction_id}
+              </Link>
+              {item.provider_ref ? (
+                <p className="break-all font-mono text-[11px] text-foreground-subtle">
+                  ref: {item.provider_ref}
                 </p>
-                {item.provider_ref ? (
-                  <p className="break-all font-mono text-[11px] text-foreground-subtle">
-                    ref: {item.provider_ref}
-                  </p>
-                ) : null}
-              </div>
-              <div className="text-sm text-foreground md:text-xs">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-foreground-muted md:hidden">
-                  Amount
+              ) : null}
+            </div>
+            <div className="grid gap-1 text-xs">
+              <span className="flex flex-wrap items-center gap-x-2">
+                <span className="font-semibold uppercase tracking-wider text-foreground-muted">
+                  Payer
                 </span>
-                <span className="font-semibold">
-                  {formatAmount(item.amount, item.currency)}
+                <PartyName
+                  orgId={item.payer_org_id}
+                  orgName={item.payer_org_name}
+                  userId={item.payer_id}
+                />
+              </span>
+              <span className="flex flex-wrap items-center gap-x-2">
+                <span className="font-semibold uppercase tracking-wider text-foreground-muted">
+                  Payee
                 </span>
-                <span className="block text-xs text-foreground-muted">
-                  net {formatAmount(item.net_amount, item.currency)}
+                <PartyName
+                  orgId={item.payee_org_id}
+                  orgName={item.payee_org_name}
+                  userId={item.payee_id}
+                />
+              </span>
+            </div>
+            <div className="text-sm text-foreground md:text-xs">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-foreground-muted md:hidden">
+                Amount
+              </span>
+              <span className="font-semibold">
+                {formatAmount(item.amount, item.currency)}
+              </span>
+              <span className="block text-xs text-foreground-muted">
+                net {formatAmount(item.net_amount, item.currency)}
+              </span>
+            </div>
+            <div>
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-foreground-muted md:hidden">
+                Status
+              </span>
+              <Pill tone={toneForStatus(item.status)}>{item.status}</Pill>
+            </div>
+            <div className="text-sm md:text-right md:text-xs">
+              {item.failure_reason_code ? (
+                <span className="font-semibold text-error">
+                  {item.failure_reason_code}
                 </span>
-              </div>
-              <div>
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-foreground-muted md:hidden">
-                  Status
+              ) : (
+                <span className="text-foreground-muted">
+                  {item.provider ?? "—"}
                 </span>
-                <Pill tone={toneForStatus(item.status)}>{item.status}</Pill>
-              </div>
-              <div className="text-sm md:text-right md:text-xs">
-                {item.failure_reason_code ? (
-                  <span className="font-semibold text-error">
-                    {item.failure_reason_code}
-                  </span>
-                ) : (
-                  <span className="text-foreground-muted">
-                    {item.provider ?? "—"}
-                  </span>
-                )}
-                <span className="block text-xs text-foreground-subtle">
-                  {formatTimestamp(item.created_at)}
-                </span>
-              </div>
-            </Link>
+              )}
+              <span className="block text-xs text-foreground-subtle">
+                {formatTimestamp(item.created_at)}
+              </span>
+            </div>
           </li>
         ))}
       </ul>

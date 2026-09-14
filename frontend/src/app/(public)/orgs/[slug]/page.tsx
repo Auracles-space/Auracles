@@ -5,11 +5,13 @@
  * description, member count, join date, and active capabilities through the
  * shared status vocabulary. The website link is rendered only for http(s)
  * URLs so a stored `javascript:` value can never become a clickable href.
+ * A past slug permanently redirects to the organization's current one.
  *
- * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
+ * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md
+ * §Slice B, §Slug change (Decision 5).
  */
 import { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { getPublicOrgV1OrgsSlugGet } from "@/lib/generated/sdk.gen";
 import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -42,6 +44,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return {
       title: `${res.data.name} - Auracles`,
       description: res.data.description || `Public profile for ${res.data.name}`,
+      alternates: { canonical: `/orgs/${res.data.canonical_slug}` },
     };
   } catch {
     return { title: "Organization Not Found - Auracles" };
@@ -66,6 +69,12 @@ export default async function PublicOrganizationPage({ params }: Props) {
     org = res.data;
   } catch {
     notFound();
+  }
+
+  // Outside the try: permanentRedirect throws a control-flow error that the
+  // catch above would otherwise turn into a 404.
+  if (org.canonical_slug && org.canonical_slug !== slug) {
+    permanentRedirect(`/orgs/${org.canonical_slug}`);
   }
 
   const joinDate = new Date(org.created_at).toLocaleDateString("en-US", {

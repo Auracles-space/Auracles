@@ -4,7 +4,9 @@
  * Admin payouts oversight panel.
  *
  * Read-only financial oversight: administrators list and filter payouts by
- * status and provider to investigate failures and reconcile transfers. Payout
+ * status, provider, and organization to investigate failures and reconcile
+ * transfers. Beneficiaries are named; organizations link to their admin
+ * detail page. Payout
  * destination account details are never returned by the API, so nothing
  * sensitive renders here. Styled as a responsive directory that reads as a
  * table on desktop and stacked cards on mobile.
@@ -25,6 +27,8 @@ import type {
   AdminPayoutDirectoryResponse,
   AdminPayoutItem,
 } from "@/lib/generated/types.gen";
+
+import { OrgIdFilter, OrgLink, isUuid, shortId } from "./admin-org-party";
 
 type PayoutStatusFilter = "all" | "pending" | "processing" | "completed" | "failed";
 type PayoutProviderFilter = "all" | "stripe" | "paystack";
@@ -76,7 +80,7 @@ function formatAmount(amount: string, currency: string): string {
 }
 
 /**
- * Render the read-only admin payout directory with status/provider filters.
+ * Render the read-only admin payout directory with status/provider/org filters.
  */
 export function AdminPayoutsPanel() {
   const [directory, setDirectory] = useState<AdminPayoutDirectoryResponse | null>(
@@ -86,6 +90,8 @@ export function AdminPayoutsPanel() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<PayoutStatusFilter>("all");
   const [providerFilter, setProviderFilter] = useState<PayoutProviderFilter>("all");
+  const [orgFilter, setOrgFilter] = useState("");
+  const orgId = isUuid(orgFilter) ? orgFilter : "";
 
   useEffect(() => {
     let mounted = true;
@@ -99,6 +105,7 @@ export function AdminPayoutsPanel() {
           page_size: 20,
           status: statusFilter,
           provider: providerFilter,
+          ...(orgId ? { org_id: orgId } : {}),
         },
       });
 
@@ -120,7 +127,7 @@ export function AdminPayoutsPanel() {
     return () => {
       mounted = false;
     };
-  }, [statusFilter, providerFilter]);
+  }, [statusFilter, providerFilter, orgId]);
 
   if (loading) {
     return <TableSkeleton />;
@@ -144,7 +151,7 @@ export function AdminPayoutsPanel() {
         </p>
       </header>
 
-      <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm md:grid-cols-2">
+      <section className="grid gap-4 rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm md:grid-cols-2 lg:grid-cols-3">
         <label className="grid gap-2 text-sm font-semibold text-foreground">
           Status
           <select
@@ -175,6 +182,7 @@ export function AdminPayoutsPanel() {
             <option value="paystack">Paystack</option>
           </select>
         </label>
+        <OrgIdFilter onChange={setOrgFilter} value={orgFilter} />
       </section>
 
       {error ? (
@@ -214,9 +222,16 @@ export function AdminPayoutsPanel() {
                 <span className="inline-flex w-fit items-center rounded-md border border-border-default bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-foreground-muted">
                   {item.beneficiary_type}
                 </span>
-                <p className="font-mono text-xs text-foreground-muted break-all">
-                  {item.beneficiary_id}
-                </p>
+                {item.beneficiary_type === "org" ? (
+                  <OrgLink name={item.beneficiary_name} orgId={item.beneficiary_id} />
+                ) : (
+                  <p
+                    className="text-sm font-semibold text-foreground break-all md:text-xs"
+                    title={item.beneficiary_id}
+                  >
+                    {item.beneficiary_name || shortId(item.beneficiary_id)}
+                  </p>
+                )}
                 {item.provider_ref ? (
                   <p className="font-mono text-[11px] text-foreground-subtle break-all">
                     ref: {item.provider_ref}
