@@ -76,7 +76,7 @@ export default async function PublicOrganizationPage({ params }: Props) {
 
   return (
     <div className="min-h-screen bg-background pt-24 pb-16">
-      <main className="container max-w-4xl px-4 sm:px-6">
+      <main className="mx-auto w-full max-w-4xl px-4 sm:px-6">
         <div className="rounded-3xl border border-border-default bg-surface-1 shadow-sm overflow-hidden">
           {/* Cover Photo Area (Solid Color) */}
           <div className="h-32 sm:h-48 bg-accent/10 relative">

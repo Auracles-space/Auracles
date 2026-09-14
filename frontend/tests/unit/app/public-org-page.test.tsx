@@ -99,4 +99,18 @@ describe("PublicOrganizationPage", () => {
     expect(order[0]).toBe("configure");
     expect(order).toContain("fetch");
   });
+
+  it("centers the profile column on the page", async () => {
+    // The page used `container` without `mx-auto`; the Tailwind config does
+    // not center containers, so the profile hugged the left edge.
+    vi.mocked(getPublicOrgV1OrgsSlugGet).mockResolvedValue(ok(org()) as never);
+
+    const { container } = render(
+      await PublicOrganizationPage({ params: Promise.resolve({ slug: "meridian" }) }),
+    );
+
+    const main = container.querySelector("main");
+    expect(main).not.toBeNull();
+    expect(main?.className).toContain("mx-auto");
+  });
 });
