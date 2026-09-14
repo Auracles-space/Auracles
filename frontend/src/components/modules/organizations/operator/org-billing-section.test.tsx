@@ -39,6 +39,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   listOrgPaymentMethods: vi.fn(),
 }));
 
+// The failed-payments section fetches on its own; pinned in its own test.
+vi.mock("./org-failed-payments", () => ({
+  OrgFailedPayments: ({ orgId }: { orgId: string }) => <div>Failed payments for {orgId}</div>,
+}));
+
 describe("OrgBillingSection invoices", () => {
   const originalLocation = window.location;
 
@@ -127,5 +132,11 @@ describe("OrgBillingSection invoices", () => {
         name: /download invoice AUR-ERN-2026-000001/i,
       }),
     ).toBeNull();
+  });
+
+  it("includes the failed payments section for the org", async () => {
+    render(<OrgBillingSection />);
+
+    expect(await screen.findByText("Failed payments for org-1")).toBeInTheDocument();
   });
 });

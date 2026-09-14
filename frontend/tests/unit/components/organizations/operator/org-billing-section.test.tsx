@@ -21,6 +21,9 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   listOrgInvoices: vi.fn(),
   getOrgPurchaseInvoice: vi.fn(),
 }));
+vi.mock("@/components/modules/organizations/operator/org-failed-payments", () => ({
+  OrgFailedPayments: () => null,
+}));
 const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
 
 describe("OrgBillingSection", () => {

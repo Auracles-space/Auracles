@@ -10,6 +10,17 @@ import {
 import { formatMoney } from "@/lib/marketplace/format";
 import { OrgAttestorFinancialsTab } from "./org-attestor-financials-tab";
 
+const orgContext = vi.hoisted(() => ({ role: "owner" }));
+
+vi.mock("@/components/modules/organizations/organization-context", () => ({
+  useOrganization: () => ({ orgId: "org-1", role: orgContext.role }),
+}));
+
+// Payout history fetches on its own; its behaviour is pinned in its own test.
+vi.mock("./org-payout-history", () => ({
+  OrgPayoutHistory: () => <div>Payout history</div>,
+}));
+
 vi.mock("@/lib/generated/sdk.gen", () => ({
   getOrgAttestorEarnings: vi.fn(),
   onboardOrgPayoutAccount: vi.fn(),
@@ -28,6 +39,7 @@ vi.mock("@/lib/auth/form-client", async (importOriginal) => ({
 describe("OrgAttestorFinancialsTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    orgContext.role = "owner";
 
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: {
@@ -46,6 +58,7 @@ describe("OrgAttestorFinancialsTab", () => {
         available_balance: "450.00",
         commission_rate: "0.20",
         minimum_payout: "50.00",
+        payout_eligibility: { eligible: true, reasons: [] },
       },
     } as never);
 
@@ -273,5 +286,79 @@ describe("OrgAttestorFinancialsTab", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Organization earnings are unavailable.");
+  });
+
+  const approvedWithAccount = {
+    data: {
+      id: "app-id",
+      org_id: "org-1",
+      status: "approved",
+      payout_account_id: "payout-acc-id",
+    },
+  };
+
+  it("lists unmet payout conditions and keeps Request Payout disabled", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue(approvedWithAccount as never);
+    vi.mocked(getOrgAttestorEarnings).mockResolvedValue({
+      data: {
+        currency: "NGN",
+        gross_revenue: "90000.00",
+        pending_clearance: "0.00",
+        available_balance: "90000.00",
+        commission_rate: "0.20",
+        minimum_payout: "5000.00",
+        payout_eligibility: {
+          eligible: false,
+          reasons: [
+            {
+              code: "tax_document_missing",
+              message: "Upload your tax document.",
+              action_path: "/dashboard/organizations/org-1/settings",
+            },
+          ],
+        },
+      },
+    } as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Before you can request a payout" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Upload your tax document.")).toBeInTheDocument();
+    expect(screen.getByRole("link")).toHaveAttribute(
+      "href",
+      "/dashboard/organizations/org-1/settings",
+    );
+    expect(screen.getByRole("button", { name: "Request Payout" })).toBeDisabled();
+  });
+
+  it("hides the checklist when the organization is eligible", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue(approvedWithAccount as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    expect(await screen.findByRole("button", { name: "Request Payout" })).toBeEnabled();
+    expect(
+      screen.queryByRole("heading", { name: "Before you can request a payout" }),
+    ).toBeNull();
+  });
+
+  it("tells a non-owner that only the owner can request payouts", async () => {
+    orgContext.role = "admin";
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue(approvedWithAccount as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    expect(
+      await screen.findByText("Only the organization owner can request payouts."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Request Payout" })).toBeNull();
+  });
+
+  it("shows the payout history under earnings", async () => {
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    expect(await screen.findByText("Payout history")).toBeInTheDocument();
   });
 });

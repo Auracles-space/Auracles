@@ -3,7 +3,8 @@
 /**
  * Organization operator billing section.
  *
- * Starts Stripe SetupIntents for org payment methods and renders invoices.
+ * Starts Stripe SetupIntents for org payment methods and renders failed
+ * payments and invoices.
  */
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { useEffect, useMemo, useState } from "react";
@@ -24,6 +25,8 @@ import {
 import type { OrgPaymentMethodResponse, OrgInvoiceListItem } from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
+
+import { OrgFailedPayments } from "./org-failed-payments";
 
 type SetupSession = {
   clientSecret: string;
@@ -245,6 +248,8 @@ export function OrgBillingSection() {
           )}
         </div>
       </div>
+
+      <OrgFailedPayments orgId={orgId} />
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
         <h2 className="font-heading text-xl font-bold text-foreground">

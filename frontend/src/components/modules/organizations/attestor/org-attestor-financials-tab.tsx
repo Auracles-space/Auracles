@@ -5,9 +5,12 @@
  *
  * Shows the org's attestation earnings, lets an org admin link a payout
  * account (Paystack bank details on the NGN rail, Stripe Connect elsewhere),
- * request a payout of the available balance, and browse invoices. Requesting a
- * payout is a sensitive action: the API requires a step-up 2FA window, which
- * the global step-up prompt handles when the call is refused.
+ * request a payout of the available balance, and browse payouts and invoices.
+ * The earnings response carries a payout eligibility checklist; while any
+ * condition is unmet the checklist explains it and the request stays disabled.
+ * Only the organization owner may request a payout (spec 2026-09-14,
+ * Decision 3). Requesting a payout is a sensitive action: the API requires a
+ * step-up 2FA window, which the global step-up prompt handles when refused.
  *
  * Every amount is formatted in the currency the earnings or invoice response
  * carries (naira on the NGN rail), never an assumed default.
@@ -22,7 +25,11 @@ import {
   listOrgInvoices,
   getOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
-import type { EarningsResponse, OrgAttestorApplicationResponse, OrgInvoiceListItem } from "@/lib/generated/types.gen";
+import type {
+  OrgAttestorApplicationResponse,
+  OrgEarningsResponse,
+  OrgInvoiceListItem,
+} from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
 import {
   PaystackBankFields,
@@ -37,6 +44,11 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
+import { useOrganization } from "@/components/modules/organizations/organization-context";
+
+import { OrgInvoiceList } from "./org-invoice-list";
+import { OrgPayoutHistory } from "./org-payout-history";
+import { PayoutEligibilityChecklist } from "./payout-eligibility-checklist";
 
 interface OrgAttestorFinancialsTabProps {
   /** Organization whose earnings, payout account, and invoices are shown. */
@@ -49,7 +61,9 @@ interface OrgAttestorFinancialsTabProps {
  * @param orgId - Organization whose financials are shown.
  */
 export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProps) {
-  const [earnings, setEarnings] = useState<EarningsResponse | null>(null);
+  const { role } = useOrganization();
+  const isOwner = role === "owner";
+  const [earnings, setEarnings] = useState<OrgEarningsResponse | null>(null);
   const [application, setApplication] = useState<OrgAttestorApplicationResponse | null>(null);
   const [invoices, setInvoices] = useState<OrgInvoiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -181,6 +195,8 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   // Same threshold the API enforces; checked here so the org learns why the
   // button is off instead of meeting a refusal after a step-up prompt.
   const belowMinimum = !hasNoBalance && availableAmount < minimumAmount;
+  const eligibility = earnings?.payout_eligibility;
+  const notEligible = eligibility ? !eligibility.eligible : false;
 
   return (
     <div className="space-y-8">
@@ -261,14 +277,17 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
             </Button>
           </div>
         ) : (
-          <div>
+          <div className="grid gap-4">
+            {eligibility ? <PayoutEligibilityChecklist eligibility={eligibility} /> : null}
             <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={handleRequestPayout}
-                disabled={isActionLoading || hasNoBalance || belowMinimum}
-              >
-                Request Payout
-              </Button>
+              {isOwner ? (
+                <Button
+                  onClick={handleRequestPayout}
+                  disabled={isActionLoading || hasNoBalance || belowMinimum || notEligible}
+                >
+                  Request Payout
+                </Button>
+              ) : null}
               <Button
                 className={isPaystackRail ? "hidden" : undefined}
                 variant="secondary"
@@ -278,13 +297,18 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
                 Manage payout account
               </Button>
             </div>
+            {!isOwner && (
+              <p className="text-sm text-foreground-subtle">
+                Only the organization owner can request payouts.
+              </p>
+            )}
             {hasNoBalance && (
-              <p className="text-sm text-foreground-subtle mt-2">
+              <p className="text-sm text-foreground-subtle">
                 No available balance to payout.
               </p>
             )}
             {belowMinimum && earnings && (
-              <p className="text-sm text-foreground-subtle mt-2">
+              <p className="text-sm text-foreground-subtle">
                 Your available balance is below the minimum payout of{" "}
                 {formatMoney(earnings.minimum_payout, earnings.currency)}.
               </p>
@@ -293,34 +317,9 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
         )}
       </div>
 
-      <div>
-        <h3 className="text-lg font-medium mb-4">Invoices</h3>
-        {invoices.length === 0 ? (
-          <p className="text-sm text-foreground-subtle">No invoices found.</p>
-        ) : (
-          <div className="space-y-4">
-            {invoices.map((invoice) => (
-              <div
-                key={invoice.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-strong bg-surface-2 p-4"
-              >
-                <div className="min-w-0">
-                  <p className="break-all font-medium">{invoice.invoice_number}</p>
-                  <p className="text-sm text-foreground-subtle">
-                    {new Date(invoice.issue_date).toLocaleDateString()}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="font-bold">
-                    {formatMoney(invoice.total, invoice.currency.toUpperCase())}
-                  </p>
-                  <p className="text-xs text-foreground-subtle uppercase">{invoice.doc_type}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      <OrgPayoutHistory orgId={orgId} />
+
+      <OrgInvoiceList invoices={invoices} />
     </div>
   );
 }

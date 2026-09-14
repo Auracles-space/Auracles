@@ -4,7 +4,7 @@
  * Verifies that granted members can consume Frameworks without receiving
  * organization-admin review or license-allocation controls.
  */
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OrgOperatorLibrary } from "@/components/modules/library/org-operator-library";
@@ -130,7 +130,8 @@ describe("OrgOperatorLibrary member access", () => {
     renderLibrary("member");
 
     await screen.findByText("Board Risk Operating System");
-    const status = screen.getByText("Active");
+    // Scoped to the card: the "Active" filter segment shares the label.
+    const status = within(screen.getByRole("article")).getByText("Active");
     expect(status.className).toContain("rounded-badge");
     expect(status.className).toContain("text-success");
     expect(screen.getByText("Purchased")).toBeInTheDocument();
@@ -174,5 +175,79 @@ describe("OrgOperatorLibrary member access", () => {
     expect(screen.getByText("Collection")).toBeInTheDocument();
     expect(screen.getByText("Single user license")).toBeInTheDocument();
     expect(screen.getByText(/expired 1 sep 2026/i)).toBeInTheDocument();
+  });
+
+  const revokedItem = {
+    license_id: "license-3",
+    framework_id: "framework-3",
+    title: "Vendor Due Diligence",
+    version_at_grant: "1.0.0",
+    current_version: "1.0.0",
+    license_type: "team",
+    source: "purchase",
+    collection_id: null,
+    status: "revoked",
+    seats_used: 0,
+    seats_total: 5,
+    price: "75000.00",
+    currency: "NGN",
+    thumbnail_key: null,
+    granted_at: "2025-09-01T00:00:00Z",
+    expires_at: null,
+    grant_count: 0,
+  };
+
+  it("asks for active licenses only by default", async () => {
+    renderLibrary("admin");
+
+    await screen.findByText("Board Risk Operating System");
+    expect(listOrgLibrary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { org_id: "org-1" },
+        query: expect.objectContaining({ include_inactive: false }),
+      }),
+    );
+    expect(screen.getByRole("button", { name: "Active" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("includes expired and revoked licenses when All is selected", async () => {
+    renderLibrary("admin");
+    await screen.findByText("Board Risk Operating System");
+
+    vi.mocked(listOrgLibrary).mockResolvedValue({
+      data: { items: [revokedItem] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+
+    await waitFor(() =>
+      expect(listOrgLibrary).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          query: expect.objectContaining({ include_inactive: true }),
+        }),
+      ),
+    );
+    expect(await screen.findByText("Vendor Due Diligence")).toBeInTheDocument();
+  });
+
+  it("offers no download or grant on an inactive license", async () => {
+    vi.mocked(listOrgLibrary).mockResolvedValue({
+      data: { items: [revokedItem] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    renderLibrary("admin");
+
+    await screen.findByText("Vendor Due Diligence");
+    expect(screen.getByText("Revoked").className).toContain("rounded-badge");
+    expect(screen.getByText("This license is no longer active.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /risk-playbook\.pdf/i })).toBeNull();
+    expect(screen.queryByText("License grant controls")).toBeNull();
+    expect(getExploreFrameworkDetail).not.toHaveBeenCalled();
   });
 });
