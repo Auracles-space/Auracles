@@ -34,6 +34,7 @@ from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import (
     Escrow,
+    FinancialEvent,
     Payout,
     PayoutAccount,
     PlatformConfig,
@@ -42,9 +43,14 @@ from app.modules.financials.models import (
 from app.modules.financials.schemas import (
     EarningsResponse,
     InvoiceGenerationResponse,
+    OrgEarningsResponse,
     OrgInvoiceListItem,
     OrgInvoicesResponse,
     OrgPayoutAccountOnboardRequest,
+    OrgPayoutHistoryItem,
+    OrgPayoutHistoryResponse,
+    OrgPurchaseListItem,
+    OrgPurchasesResponse,
     PaymentMethodDeleteResponse,
     PaymentMethodResponse,
     PaymentMethodSetupResponse,
@@ -56,6 +62,8 @@ from app.modules.financials.schemas import (
     PayoutAccountsResponse,
     PayoutBank,
     PayoutBanksResponse,
+    PayoutEligibility,
+    PayoutEligibilityReason,
     PayoutRequest,
     PayoutResponse,
     PayoutsResponse,
@@ -69,6 +77,7 @@ from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import ArtifactDownload
 from app.modules.frameworks.pricing import resolve_license_price
 from app.modules.invoicing.models import Invoice
+from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.models import (
     Organization,
     OrgAttestorApplication,
@@ -1007,7 +1016,13 @@ async def _mark_purchase_failed(
     license_type: str,
     provider: PaymentProvider = "stripe",
 ) -> None:
-    """Mark checkout failure without granting a License."""
+    """Mark checkout failure without granting a License.
+
+    For an organization purchase the owners and the initiating member are told
+    after commit (Slice C ``org_purchase_failed``); the notice never affects
+    the status change itself.
+    """
+    org_notice: dict[str, object] | None = None
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -1029,6 +1044,27 @@ async def _mark_purchase_failed(
                 "framework_id": str(framework_id),
                 "license_type": license_type,
             },
+        )
+        if transaction.payer_org_id is not None:
+            payer_org_id = transaction.payer_org_id
+            org_notice = {
+                "owner_ids": await org_notifications.org_owner_ids(db, payer_org_id),
+                "initiator_id": operator_id,
+                "org_id": payer_org_id,
+                "org_name": await org_notifications.org_name(db, payer_org_id),
+                "transaction_id": transaction.id,
+                "framework_title": await db.scalar(
+                    select(Framework.title).where(Framework.id == framework_id)
+                )
+                or "a Framework",
+                "amount": transaction.amount,
+                "currency": transaction.currency,
+                "failure_reason": "The payment provider could not start checkout.",
+            }
+    if org_notice is not None:
+        org_notifications.notify_org_purchase_failed(
+            org_notice.pop("owner_ids"),  # type: ignore[arg-type]
+            **org_notice,  # type: ignore[arg-type]
         )
 
 
@@ -2402,8 +2438,13 @@ async def get_org_earnings(
     db: AsyncSession,
     *,
     org_id: UUID,
-) -> EarningsResponse:
-    """Return an organization's released earnings balances."""
+) -> OrgEarningsResponse:
+    """Return an organization's released earnings and payout eligibility.
+
+    The eligibility checklist is computed by `_org_payout_blockers`, the same
+    helper `request_org_payout` refuses on, so the checklist the owner sees
+    cannot drift from what the request path enforces.
+    """
     currency = platform_currency()
     (
         gross_revenue,
@@ -2412,14 +2453,152 @@ async def get_org_earnings(
         _,
         commission_rate,
     ) = await _available_org_payout_balance(db, org_id=org_id, currency=currency)
-    return EarningsResponse(
+    reasons = await _org_payout_blockers(
+        db, org_id=org_id, currency=currency, available=available
+    )
+    return OrgEarningsResponse(
         currency=currency,
         gross_revenue=gross_revenue,
         pending_clearance=pending_clearance,
         available_balance=available,
         commission_rate=commission_rate,
         minimum_payout=await _minimum_payout(db, currency),
+        payout_eligibility=PayoutEligibility(
+            eligible=not reasons,
+            reasons=reasons,
+        ),
     )
+
+
+async def list_org_payouts(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    page: int,
+    page_size: int,
+) -> OrgPayoutHistoryResponse:
+    """Return one organization's payouts, newest first, with failure reasons.
+
+    Read-only. The failure reason is the latest normalized ledger message for
+    a failed payout; the payout row itself stores none.
+    """
+    total = int(
+        await db.scalar(select(func.count(Payout.id)).where(Payout.org_id == org_id))
+        or 0
+    )
+    rows = (
+        await db.execute(
+            select(Payout, PayoutAccount.provider)
+            .join(PayoutAccount, PayoutAccount.id == Payout.payout_account_id)
+            .where(Payout.org_id == org_id)
+            .order_by(Payout.initiated_at.desc(), Payout.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    ).all()
+    failed_ids = [payout.id for payout, _ in rows if payout.status == "failed"]
+    reasons = await _latest_failure_reasons(
+        db, entity_type="payout", event_type="payout_failed", entity_ids=failed_ids
+    )
+    return OrgPayoutHistoryResponse(
+        payouts=[
+            OrgPayoutHistoryItem(
+                id=payout.id,
+                amount=payout.net_amount,
+                currency=payout.currency,
+                status=payout.status,
+                provider=provider,
+                requested_at=payout.initiated_at,
+                completed_at=payout.completed_at,
+                failure_reason=reasons.get(payout.id),
+            )
+            for payout, provider in rows
+        ],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+async def list_org_purchases(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    status_filter: str | None,
+    limit: int,
+) -> OrgPurchasesResponse:
+    """Return the organization's Framework purchases, newest first.
+
+    Read-only billing view. ``status_filter`` narrows to one transaction
+    status (``failed`` for the failed-purchases list); failure reasons come
+    from the normalized ledger entry the settlement webhook wrote.
+    """
+    query = (
+        select(Transaction, Framework.title)
+        .outerjoin(Framework, Framework.id == Transaction.ref_id)
+        .where(
+            Transaction.payer_org_id == org_id,
+            Transaction.transaction_type == "purchase",
+            Transaction.ref_type == "framework",
+        )
+    )
+    if status_filter is not None:
+        query = query.where(Transaction.status == status_filter)
+    rows = (
+        await db.execute(
+            query.order_by(Transaction.created_at.desc(), Transaction.id.desc()).limit(
+                limit
+            )
+        )
+    ).all()
+    failed_ids = [row.id for row, _ in rows if row.status == "failed"]
+    reasons = await _latest_failure_reasons(
+        db,
+        entity_type="transaction",
+        event_type="purchase_failed",
+        entity_ids=failed_ids,
+    )
+    return OrgPurchasesResponse(
+        purchases=[
+            OrgPurchaseListItem(
+                transaction_id=row.id,
+                framework_id=row.ref_id,
+                framework_title=title,
+                amount=row.amount,
+                currency=row.currency,
+                status=row.status,
+                failure_reason=reasons.get(row.id),
+                created_at=row.created_at,
+            )
+            for row, title in rows
+        ]
+    )
+
+
+async def _latest_failure_reasons(
+    db: AsyncSession,
+    *,
+    entity_type: str,
+    event_type: str,
+    entity_ids: list[UUID],
+) -> dict[UUID, str]:
+    """Map each entity to its most recent ledger failure message, if any."""
+    if not entity_ids:
+        return {}
+    events = (
+        await db.execute(
+            select(FinancialEvent.entity_id, FinancialEvent.reason_message)
+            .where(
+                FinancialEvent.entity_type == entity_type,
+                FinancialEvent.event_type == event_type,
+                FinancialEvent.entity_id.in_(entity_ids),
+                FinancialEvent.reason_message.is_not(None),
+            )
+            .order_by(FinancialEvent.occurred_at.asc())
+        )
+    ).all()
+    # Ascending order lets the latest message overwrite earlier ones.
+    return {entity_id: message for entity_id, message in events}
 
 
 async def list_org_invoices(
@@ -2856,19 +3035,135 @@ async def _org_has_legal_tax_document(
     return profile_id is not None
 
 
-async def _org_is_payout_eligible(
+# Blockers request_org_payout answers with 403, unchanged from before Slice C.
+# Suspension and business verification are also in the checklist, but on the
+# request path they are refused earlier by `require_org_role(..., verified=True)`
+# with their own error codes, so the service does not re-decide them.
+_ORG_PAYOUT_FORBIDDEN_CODES = frozenset(
+    {"no_payout_capability", "tax_document_missing"}
+)
+
+
+async def _org_payout_blockers(
     db: AsyncSession,
     *,
     org_id: UUID,
-) -> bool:
-    """Return whether the org satisfies at least one payout eligibility path."""
-    if await _org_has_approved_attestor_application(db, org_id=org_id):
-        return True
-    return await _org_has_active_capability(
-        db,
-        org_id=org_id,
-        capability="contributor",
-    ) and await _org_has_legal_tax_document(db, org_id=org_id)
+    currency: str,
+    available: Decimal | None,
+) -> list[PayoutEligibilityReason]:
+    """Return every unmet org payout condition, in checklist order.
+
+    The single source of the org payout rules: `get_org_earnings` renders the
+    result as the eligibility checklist and `request_org_payout` refuses on
+    it, so the two cannot drift. Payout paths: an approved attestor
+    application, or an active contributor capability plus a tax document on
+    the shared legal profile.
+
+    Args:
+        db: Async session (inside the payout lock on the request path).
+        org_id: Organization being checked.
+        currency: Settlement currency, for the minimum payout message.
+        available: Available net balance; ``None`` skips the minimum check
+            (the request path checks the requested amount instead).
+
+    Returns:
+        Reasons with an app ``action_path`` where the owner can fix them; an
+        empty list means the org can request a payout.
+    """
+    from app.modules.organizations.kyb_service import org_kyb_verified
+
+    base = f"/dashboard/organizations/{org_id}"
+    reasons: list[PayoutEligibilityReason] = []
+    suspended_at = await db.scalar(
+        select(Organization.suspended_at).where(Organization.id == org_id)
+    )
+    if suspended_at is not None:
+        reasons.append(
+            PayoutEligibilityReason(
+                code="org_suspended",
+                message="The organization is suspended, so payouts are paused.",
+                action_path=None,
+            )
+        )
+    if not await org_kyb_verified(db, org_id=org_id):
+        reasons.append(
+            PayoutEligibilityReason(
+                code="kyb_not_verified",
+                message="Complete business verification before requesting a payout.",
+                action_path=f"{base}/verification",
+            )
+        )
+    if not await _org_has_approved_attestor_application(db, org_id=org_id):
+        if not await _org_has_active_capability(
+            db, org_id=org_id, capability="contributor"
+        ):
+            reasons.append(
+                PayoutEligibilityReason(
+                    code="no_payout_capability",
+                    message=(
+                        "Payouts need an approved attestor application or an "
+                        "active contributor capability."
+                    ),
+                    action_path=base,
+                )
+            )
+        elif not await _org_has_legal_tax_document(db, org_id=org_id):
+            reasons.append(
+                PayoutEligibilityReason(
+                    code="tax_document_missing",
+                    message="Upload the organization's tax document.",
+                    action_path=f"{base}/verification",
+                )
+            )
+    in_flight = await db.scalar(
+        select(Payout.id)
+        .where(
+            Payout.org_id == org_id,
+            Payout.status.in_(("pending", "processing")),
+        )
+        .limit(1)
+    )
+    if in_flight is not None:
+        reasons.append(
+            PayoutEligibilityReason(
+                code="payout_in_progress",
+                message="A payout is already in progress for this organization.",
+                action_path=None,
+            )
+        )
+    verified_account = await db.scalar(
+        select(PayoutAccount.id)
+        .where(
+            PayoutAccount.org_id == org_id,
+            PayoutAccount.deleted_at.is_(None),
+            PayoutAccount.verified_at.is_not(None),
+        )
+        .limit(1)
+    )
+    if verified_account is None:
+        reasons.append(
+            PayoutEligibilityReason(
+                code="no_verified_payout_account",
+                message="Add and verify a payout account.",
+                action_path=f"{base}/financials",
+            )
+        )
+    if available is not None:
+        minimum = await _minimum_payout(db, currency)
+        if available < minimum:
+            from app.modules.organizations.notifications import format_money
+
+            reasons.append(
+                PayoutEligibilityReason(
+                    code="below_minimum_payout",
+                    message=(
+                        "The available balance is below the minimum payout of "
+                        f"{format_money(minimum, currency)} ({currency.upper()})."
+                    ),
+                    action_path=None,
+                )
+            )
+    return reasons
 
 
 async def request_org_payout(
@@ -2885,7 +3180,12 @@ async def request_org_payout(
     pending or processing for the org, the org owns a verified payout
     account, and it satisfies at least one eligible capability payout path.
 
+    The in-flight and eligibility refusals come from `_org_payout_blockers`,
+    the same helper that renders the earnings checklist. Owners are told after
+    commit (``org_payout_requested``).
+
     Raises:
+        HTTPException(403): The org is not payout-eligible.
         HTTPException(409): A payout for the org is already in flight.
     """
     actor_id = actor.id
@@ -2909,21 +3209,21 @@ async def request_org_payout(
     async with db.begin():
         await _lock_org_financials(db, org_id=org_id)
         # One payout in flight per org: a double-submit (or two owners
-        # acting at once) must not draw the same balance down twice.
-        in_flight = await db.scalar(
-            select(Payout.id)
-            .where(
-                Payout.org_id == org_id,
-                Payout.status.in_(("pending", "processing")),
+        # acting at once) must not draw the same balance down twice. The
+        # account and amount blockers are checked below against the specific
+        # request, which is stricter than the org-wide checklist.
+        blockers = {
+            reason.code
+            for reason in await _org_payout_blockers(
+                db, org_id=org_id, currency=currency, available=None
             )
-            .limit(1)
-        )
-        if in_flight is not None:
+        }
+        if "payout_in_progress" in blockers:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A payout is already in progress for this organization.",
             )
-        if not await _org_is_payout_eligible(db, org_id=org_id):
+        if blockers & _ORG_PAYOUT_FORBIDDEN_CODES:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Organization is not payout-eligible.",
@@ -2989,6 +3289,8 @@ async def request_org_payout(
             },
         )
         payout_id = payout.id
+        owner_ids = await org_notifications.org_owner_ids(db, org_id)
+        requested_org_name = await org_notifications.org_name(db, org_id)
 
     try:
         process_payout.delay(str(payout_id))
@@ -3007,6 +3309,14 @@ async def request_org_payout(
         user_id=actor_id,
         payout_id=payout_id,
     ).info("payout_requested")
+    org_notifications.notify_org_payout_requested(
+        owner_ids,
+        org_id=org_id,
+        org_name=requested_org_name,
+        payout_id=payout_id,
+        amount=requested_net,
+        currency=currency,
+    )
     refreshed = await db.get(Payout, payout_id)
     assert refreshed is not None
     return _payout_response(refreshed)

@@ -58,6 +58,7 @@ from app.modules.gdpr.models import AccountDeletionRequest, DataExportRequest
 from app.modules.integrations.models import OAuthConnection
 from app.modules.invoicing.models import Invoice
 from app.modules.notifications.service import create_notification
+from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.models import Organization
 from app.modules.projects.models import Dispute
 from app.modules.reputation import weights as reputation_weights
@@ -2112,7 +2113,24 @@ async def suspend_framework(
         target_id=framework.id,
         metadata={"reason": framework.rejection_reason},
     )
+    seller_org_id = framework.contributor_org_id
+    suspended_title = framework.title
+    suspended_reason = framework.rejection_reason
+    seller_owner_ids: list[UUID] = []
+    seller_org_name = ""
+    if seller_org_id is not None:
+        seller_owner_ids = await org_notifications.org_owner_ids(db, seller_org_id)
+        seller_org_name = await org_notifications.org_name(db, seller_org_id)
     await db.commit()
+    if seller_org_id is not None:
+        org_notifications.notify_org_framework_suspended(
+            seller_owner_ids,
+            org_id=seller_org_id,
+            org_name=seller_org_name,
+            framework_id=framework_id,
+            framework_title=suspended_title,
+            reason=suspended_reason,
+        )
     try:
         await remove_framework_artifacts_from_index(framework.id)
     except Exception as exc:

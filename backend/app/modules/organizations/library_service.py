@@ -1,7 +1,8 @@
 """Org shared-library service helpers.
 
 Provides the entitlement checks and org-library flows that sit in front of
-presigned Artifact downloads for org-owned Licenses.
+presigned Artifact downloads for org-owned Licenses, and tells grantees after
+commit when their access to a Framework starts or ends (Slice C).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from app.integrations import s3
 from app.modules.frameworks.models import Framework, License, LicenseGrant
 from app.modules.frameworks.models_artifact import Artifact, ArtifactDownload
 from app.modules.library.schemas import ArtifactDownloadResponse, LibraryItem
+from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.models import OrgMember, OrgTeam, OrgTeamMember
 
 
@@ -67,6 +69,41 @@ async def _load_org_license(
             detail="License not found.",
         )
     return license_row
+
+
+async def grantee_user_ids(
+    db: AsyncSession,
+    *,
+    member_id: UUID | None,
+    team_id: UUID | None,
+) -> list[UUID]:
+    """Return the users a grant reaches: the member, or every member of the team."""
+    if member_id is not None:
+        user_id = await db.scalar(
+            select(OrgMember.user_id).where(OrgMember.id == member_id)
+        )
+        return [user_id] if user_id is not None else []
+    if team_id is None:
+        return []
+    return list(
+        (
+            await db.scalars(
+                select(OrgMember.user_id)
+                .join(OrgTeamMember, OrgTeamMember.member_id == OrgMember.id)
+                .where(OrgTeamMember.team_id == team_id)
+            )
+        ).all()
+    )
+
+
+async def license_framework_title(db: AsyncSession, license_id: UUID) -> str:
+    """Return the title of the Framework a License covers."""
+    title = await db.scalar(
+        select(Framework.title)
+        .join(License, License.framework_id == Framework.id)
+        .where(License.id == license_id)
+    )
+    return title or "a Framework"
 
 
 async def _load_org_member(
@@ -151,12 +188,26 @@ async def add_license_grant(
                     "grant_id": str(grant.id),
                 },
             )
+            actor_user_id = actor_member.user_id
+            recipients = await grantee_user_ids(
+                db, member_id=member_id, team_id=team_id
+            )
+            framework_title = await license_framework_title(db, license_id)
+            granting_org_name = await org_notifications.org_name(db, org_id)
     except IntegrityError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="License grant already exists.",
         ) from exc
 
+    org_notifications.notify_org_license_granted(
+        recipients,
+        actor_id=actor_user_id,
+        org_id=org_id,
+        org_name=granting_org_name,
+        license_id=license_id,
+        framework_title=framework_title,
+    )
     await db.refresh(grant)
     return grant
 
@@ -199,6 +250,11 @@ async def revoke_license_grant(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="License grant not found.",
             )
+        recipients = await grantee_user_ids(
+            db, member_id=grant.member_id, team_id=grant.team_id
+        )
+        framework_title = await license_framework_title(db, license_id)
+        revoking_org_name = await org_notifications.org_name(db, org_id)
         await db.delete(grant)
         await write_audit(
             db=db,
@@ -208,6 +264,15 @@ async def revoke_license_grant(
             target_id=license_id,
             metadata={"org_id": str(org_id)},
         )
+
+    org_notifications.notify_org_license_revoked(
+        recipients,
+        actor_id=actor_id,
+        org_id=org_id,
+        org_name=revoking_org_name,
+        license_id=license_id,
+        framework_title=framework_title,
+    )
 
 
 async def list_license_grants(
@@ -234,18 +299,28 @@ async def list_org_library(
     *,
     org_id: UUID,
     member: OrgMember,
+    include_inactive: bool = False,
 ) -> list[tuple[LibraryItem, int]]:
-    """Return org-library items visible to one member plus grant counts."""
+    """Return org-library items visible to one member plus grant counts.
+
+    Args:
+        db: Async database session.
+        org_id: Organization whose Licenses are listed.
+        member: Calling member; plain members see only granted Licenses.
+        include_inactive: Also return expired and revoked Licenses (each
+            carries its ``status``). Listing never unlocks downloads, which
+            still require an active License.
+    """
     from app.modules.library.service import _library_item
 
+    filters = [License.licensee_org_id == org_id]
+    if not include_inactive:
+        filters.append(License.status == "active")
     rows = (
         await db.execute(
             select(License, Framework)
             .join(Framework, Framework.id == License.framework_id)
-            .where(
-                License.licensee_org_id == org_id,
-                License.status == "active",
-            )
+            .where(*filters)
             .order_by(License.granted_at.desc())
         )
     ).all()

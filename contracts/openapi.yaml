@@ -6414,6 +6414,231 @@ components:
       - minimum_payout
       title: EarningsResponse
       type: object
+    OrgEarningsResponse:
+      description: Organization earnings plus the payout eligibility checklist (Slice
+        C).
+      properties:
+        available_balance:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Available Balance
+          type: string
+        commission_rate:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Rate
+          type: string
+        currency:
+          title: Currency
+          type: string
+        gross_revenue:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Gross Revenue
+          type: string
+        minimum_payout:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Minimum Payout
+          type: string
+        payout_eligibility:
+          $ref: '#/components/schemas/PayoutEligibility'
+        pending_clearance:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Pending Clearance
+          type: string
+      required:
+      - currency
+      - gross_revenue
+      - pending_clearance
+      - available_balance
+      - commission_rate
+      - minimum_payout
+      - payout_eligibility
+      title: OrgEarningsResponse
+      type: object
+    OrgPayoutHistoryItem:
+      description: 'One organization payout in the owner-facing history.
+
+
+        ``amount`` is the net amount requested (what reaches the payout account).'
+      properties:
+        amount:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Amount
+          type: string
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completed At
+        currency:
+          title: Currency
+          type: string
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+        id:
+          format: uuid
+          title: Id
+          type: string
+        provider:
+          title: Provider
+          type: string
+        requested_at:
+          format: date-time
+          title: Requested At
+          type: string
+        status:
+          title: Status
+          type: string
+      required:
+      - id
+      - amount
+      - currency
+      - status
+      - provider
+      - requested_at
+      - completed_at
+      - failure_reason
+      title: OrgPayoutHistoryItem
+      type: object
+    OrgPayoutHistoryResponse:
+      description: Paginated organization payout history, newest first.
+      properties:
+        page:
+          minimum: 1
+          title: Page
+          type: integer
+        page_size:
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+        payouts:
+          items:
+            $ref: '#/components/schemas/OrgPayoutHistoryItem'
+          title: Payouts
+          type: array
+        total:
+          title: Total
+          type: integer
+      required:
+      - payouts
+      - total
+      - page
+      - page_size
+      title: OrgPayoutHistoryResponse
+      type: object
+    OrgPurchaseListItem:
+      description: One Framework purchase the organization attempted, with its outcome.
+      properties:
+        amount:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Amount
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        currency:
+          title: Currency
+          type: string
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+        framework_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Framework Id
+        framework_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Framework Title
+        status:
+          title: Status
+          type: string
+        transaction_id:
+          format: uuid
+          title: Transaction Id
+          type: string
+      required:
+      - transaction_id
+      - framework_id
+      - framework_title
+      - amount
+      - currency
+      - status
+      - failure_reason
+      - created_at
+      title: OrgPurchaseListItem
+      type: object
+    OrgPurchasesResponse:
+      description: Organization Framework purchases, newest first.
+      properties:
+        purchases:
+          items:
+            $ref: '#/components/schemas/OrgPurchaseListItem'
+          title: Purchases
+          type: array
+      required:
+      - purchases
+      title: OrgPurchasesResponse
+      type: object
+    PayoutEligibility:
+      description: Whether an organization can request a payout right now, and why
+        not.
+      properties:
+        eligible:
+          title: Eligible
+          type: boolean
+        reasons:
+          items:
+            $ref: '#/components/schemas/PayoutEligibilityReason'
+          title: Reasons
+          type: array
+      required:
+      - eligible
+      - reasons
+      title: PayoutEligibility
+      type: object
+    PayoutEligibilityReason:
+      description: 'One unmet org payout condition and where it can be fixed.
+
+
+        ``action_path`` is an app path (starting with ``/``) to the surface that
+        clears the condition, or ``None`` when nothing the owner can do resolves
+        it directly (suspension, an in-flight payout, a balance under the minimum).'
+      properties:
+        action_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Action Path
+        code:
+          enum:
+          - org_suspended
+          - kyb_not_verified
+          - no_payout_capability
+          - tax_document_missing
+          - payout_in_progress
+          - no_verified_payout_account
+          - below_minimum_payout
+          title: Code
+          type: string
+        message:
+          title: Message
+          type: string
+      required:
+      - code
+      - message
+      - action_path
+      title: PayoutEligibilityReason
+      type: object
     EmailChangeConfirmRequest:
       description: Request body for confirming a new account email address.
       properties:
@@ -23559,7 +23784,8 @@ paths:
   /v1/orgs/{org_id}/financials/earnings:
     get:
       description: Released organization earnings and available payout balance across
-        supported commercial capabilities. Owner/admin only.
+        supported commercial capabilities, plus a payout eligibility checklist naming
+        each unmet condition. Owner/admin only.
       operationId: get_org_earnings_v1_orgs__org_id__financials_earnings_get
       parameters:
       - in: path
@@ -23574,7 +23800,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EarningsResponse'
+                $ref: '#/components/schemas/OrgEarningsResponse'
           description: Successful Response
         '422':
           content:
@@ -23768,6 +23994,53 @@ paths:
       tags:
       - Organizations
   /v1/orgs/{org_id}/financials/payouts:
+    get:
+      description: List the organization's payouts newest first with status, provider
+        and failure reason. Read-only; no step-up required. Owner/admin only.
+      operationId: list_org_payouts_v1_orgs__org_id__financials_payouts_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgPayoutHistoryResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization payout history
+      tags:
+      - Organizations
     post:
       description: Request a payout of the org's available earnings. Requires an open
         step-up 2FA window, a verified org payout account and an eligible active
@@ -23805,6 +24078,60 @@ paths:
       security:
       - HTTPBearer: []
       summary: Request an organization payout
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/financials/purchases:
+    get:
+      description: List the organization's Framework purchases newest first, optionally
+        filtered by status (e.g. `failed`, with the provider's failure reason). Owner/admin
+        only.
+      operationId: list_org_purchases_v1_orgs__org_id__financials_purchases_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - pending
+            - completed
+            - failed
+            - refunded
+            type: string
+          - type: 'null'
+          title: Status
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 50
+          maximum: 200
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgPurchasesResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization Framework purchases
       tags:
       - Organizations
   /v1/orgs/{org_id}/financials/purchases/{transaction_id}/invoice:
@@ -25164,7 +25491,9 @@ paths:
   /v1/orgs/{org_id}/library:
     get:
       description: Return the org-owned Licenses visible to the caller. Admins and
-        owners see the full library; plain members see only granted Licenses.
+        owners see the full library; plain members see only granted Licenses. `include_inactive=true`
+        also lists expired and revoked Licenses with their status; downloads stay
+        refused for them.
       operationId: list_org_library_v1_orgs__org_id__library_get
       parameters:
       - in: path
@@ -25174,6 +25503,13 @@ paths:
           format: uuid
           title: Org Id
           type: string
+      - in: query
+        name: include_inactive
+        required: false
+        schema:
+          default: false
+          title: Include Inactive
+          type: boolean
       responses:
         '200':
           content:

@@ -129,8 +129,10 @@ def _reauth_conflict() -> HTTPException:
     """Return the standard 409 telling the caller to reconnect the source."""
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
-        detail={"error_code": "reauth_required",
-                "message": "The connection is no longer authorized. Reconnect it."},
+        detail={
+            "error_code": "reauth_required",
+            "message": "The connection is no longer authorized. Reconnect it.",
+        },
     )
 
 
@@ -647,11 +649,7 @@ async def list_frameworks_for_owner(
     else:
         statement = statement.where(Framework.contributor_id == owner.user_id)
     frameworks = (
-        (
-            await db.execute(
-                statement.order_by(desc(Framework.created_at))
-            )
-        )
+        (await db.execute(statement.order_by(desc(Framework.created_at))))
         .scalars()
         .all()
     )
@@ -1458,9 +1456,7 @@ async def import_artifact_from_connector(
         source_connection_id=connection.id,
         source_last_synced_at=datetime.now(UTC),
         source_synced_revision=(
-            str(metadata.get("modifiedTime"))
-            if metadata.get("modifiedTime")
-            else None
+            str(metadata.get("modifiedTime")) if metadata.get("modifiedTime") else None
         ),
     )
     db.add(artifact)
@@ -1637,9 +1633,7 @@ async def get_source_preview(
     settings = get_settings()
     bucket = settings.s3_artifacts_bucket
     if thumbnail_link and modified_time:
-        prefix = (
-            f"frameworks/{framework.id}/artifacts/{artifact.id}/source-preview/"
-        )
+        prefix = f"frameworks/{framework.id}/artifacts/{artifact.id}/source-preview/"
         key = f"{prefix}{modified_time}.png"
         if not s3.storage.object_exists(bucket, key):
             try:
@@ -1736,9 +1730,7 @@ async def bind_and_sync(
     connection, access_token = await get_active_connection_with_fresh_token(
         db, user_id=contributor_id, connection_id=connection_id
     )
-    framework = await _load_owned_framework_by_user_id(
-        db, contributor_id, framework_id
-    )
+    framework = await _load_owned_framework_by_user_id(db, contributor_id, framework_id)
     _require_editable_artifacts(framework)
 
     artifact = await db.scalar(
@@ -1765,8 +1757,10 @@ async def bind_and_sync(
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": "artifact_processing",
-                    "message": "This artifact is still processing."},
+            detail={
+                "error_code": "artifact_processing",
+                "message": "This artifact is still processing.",
+            },
         )
 
     log = logger.bind(
@@ -1786,8 +1780,10 @@ async def bind_and_sync(
     except GoogleDriveNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": "source_unavailable",
-                    "message": "The source file is no longer available."},
+            detail={
+                "error_code": "source_unavailable",
+                "message": "The source file is no longer available.",
+            },
         ) from None
     except GoogleDriveError as exc:
         log.error("connector_metadata_failed")
@@ -1802,8 +1798,10 @@ async def bind_and_sync(
     if allow_noop_skip and modified_time == (artifact.source_synced_revision or None):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": "already_up_to_date",
-                    "message": "The source has not changed."},
+            detail={
+                "error_code": "already_up_to_date",
+                "message": "The source has not changed.",
+            },
         )
 
     source_mime = str(metadata.get("mimeType", ""))
@@ -1853,8 +1851,10 @@ async def bind_and_sync(
     except GoogleDriveNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": "source_unavailable",
-                    "message": "The source file is no longer available."},
+            detail={
+                "error_code": "source_unavailable",
+                "message": "The source file is no longer available.",
+            },
         ) from None
     except GoogleDriveError as exc:
         log.error("connector_download_failed")
@@ -1871,8 +1871,11 @@ async def bind_and_sync(
         artifact.source_last_synced_at = datetime.now(UTC)
         artifact.source_synced_revision = modified_time
         await write_audit(
-            db=db, actor_id=contributor_id, action="artifact_resynced",
-            target_type="artifact", target_id=artifact.id,
+            db=db,
+            actor_id=contributor_id,
+            action="artifact_resynced",
+            target_type="artifact",
+            target_id=artifact.id,
             metadata={"framework_id": str(framework.id), "result": "content_unchanged"},
         )
         await db.commit()
@@ -1930,11 +1933,15 @@ async def bind_and_sync(
         mime_type=effective_mime,
     )
     await write_audit(
-        db=db, actor_id=contributor_id,
+        db=db,
+        actor_id=contributor_id,
         action="artifact_resynced" if allow_noop_skip else "artifact_source_bound",
-        target_type="artifact", target_id=new_artifact_id,
-        metadata={"framework_id": str(framework.id),
-                  "replaced_artifact_id": str(artifact_id)},
+        target_type="artifact",
+        target_id=new_artifact_id,
+        metadata={
+            "framework_id": str(framework.id),
+            "replaced_artifact_id": str(artifact_id),
+        },
     )
     await db.commit()
 
@@ -1995,8 +2002,10 @@ async def detach_artifact_source(
     if artifact.source_kind != "google_drive":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error_code": "not_bound",
-                    "message": "This artifact has no connector source."},
+            detail={
+                "error_code": "not_bound",
+                "message": "This artifact has no connector source.",
+            },
         )
 
     artifact.source_kind = "upload"
@@ -2005,8 +2014,11 @@ async def detach_artifact_source(
     artifact.source_last_synced_at = None
     artifact.source_synced_revision = None
     await write_audit(
-        db=db, actor_id=contributor.id, action="artifact_source_detached",
-        target_type="artifact", target_id=artifact.id,
+        db=db,
+        actor_id=contributor.id,
+        action="artifact_source_detached",
+        target_type="artifact",
+        target_id=artifact.id,
         metadata={"framework_id": str(framework.id)},
     )
     await db.commit()
@@ -2888,8 +2900,7 @@ async def publish_framework(
             # (no eligible Artifact) stays publishable without a preview so it
             # is never trapped. Applies to personal and org sellers alike.
             if framework.preview_artifact_id is None and any(
-                _artifact_preview_eligible(artifact)
-                for artifact in current_artifacts
+                _artifact_preview_eligible(artifact) for artifact in current_artifacts
             ):
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -2955,6 +2966,17 @@ async def publish_framework(
         user_id=contributor_id,
         framework_id=framework.id,
     ).info("framework_published")
+    if owner.org_id is not None:
+        from app.modules.organizations import notifications as org_notifications
+
+        org_notifications.notify_org_framework_published(
+            await org_notifications.org_owner_ids(db, owner.org_id),
+            actor_id=contributor_id,
+            org_id=owner.org_id,
+            org_name=await org_notifications.org_name(db, owner.org_id),
+            framework_id=framework.id,
+            framework_title=framework.title,
+        )
     return framework_to_response(framework)
 
 
@@ -2992,8 +3014,7 @@ async def revise_framework(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    "Only a framework that has passed checks can be returned "
-                    "to draft."
+                    "Only a framework that has passed checks can be returned to draft."
                 ),
             )
         framework.status = "draft"

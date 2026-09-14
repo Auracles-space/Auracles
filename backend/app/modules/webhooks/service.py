@@ -52,6 +52,7 @@ from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transac
 from app.modules.financials.refunds import reverse_refund, settle_refund
 from app.modules.frameworks.models import Framework, License
 from app.modules.notifications.service import create_notification
+from app.modules.organizations import notifications as org_notifications
 from app.modules.projects import notifications as project_notifications
 from app.modules.projects.models import Milestone, Project
 from app.modules.webhooks.models import WebhookEvent
@@ -382,11 +383,97 @@ async def _mark_event_status(
         event_row.processed_at = datetime.now(UTC)
 
 
+async def _org_purchase_notice(
+    db: AsyncSession,
+    *,
+    transaction: Transaction,
+    outcome: str,
+    failure_reason: str | None = None,
+) -> Callable[[], None]:
+    """Build the post-commit org purchase notice for owners and the initiator.
+
+    Values are read now, inside the webhook transaction, and captured by the
+    returned closure so nothing touches the session after commit.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        transaction: Org-payer purchase transaction (``payer_org_id`` set).
+        outcome: ``completed`` or ``failed``.
+        failure_reason: Normalized provider message for a failed charge.
+    """
+    org_id = transaction.payer_org_id
+    assert org_id is not None
+    owner_ids = await org_notifications.org_owner_ids(db, org_id)
+    initiator_id = await org_notifications.audit_actor_id(
+        db,
+        action="purchase_initiated",
+        target_type="transaction",
+        target_id=transaction.id,
+    )
+    kwargs: dict[str, Any] = {
+        "initiator_id": initiator_id,
+        "org_id": org_id,
+        "org_name": await org_notifications.org_name(db, org_id),
+        "transaction_id": transaction.id,
+        "framework_title": await db.scalar(
+            select(Framework.title).where(Framework.id == transaction.ref_id)
+        )
+        or "a Framework",
+        "amount": transaction.amount,
+        "currency": transaction.currency,
+    }
+    if outcome == "completed":
+        return lambda: org_notifications.notify_org_purchase_completed(
+            owner_ids, **kwargs
+        )
+    return lambda: org_notifications.notify_org_purchase_failed(
+        owner_ids, failure_reason=failure_reason, **kwargs
+    )
+
+
+async def _org_payout_notice(
+    db: AsyncSession,
+    *,
+    payout: Payout,
+    outcome: str,
+    failure_reason: str | None = None,
+) -> Callable[[], None]:
+    """Build the post-commit org payout outcome notice (owners + requester).
+
+    Args:
+        db: Session inside the webhook's transaction.
+        payout: Org payout whose status just became terminal.
+        outcome: ``completed`` or ``failed``.
+        failure_reason: Normalized provider message for a failed transfer.
+    """
+    org_id = payout.org_id
+    assert org_id is not None
+    owner_ids = await org_notifications.org_owner_ids(db, org_id)
+    kwargs: dict[str, Any] = {
+        "requester_id": await org_notifications.audit_actor_id(
+            db, action="payout_requested", target_type="payout", target_id=payout.id
+        ),
+        "org_id": org_id,
+        "org_name": await org_notifications.org_name(db, org_id),
+        "payout_id": payout.id,
+        "amount": payout.net_amount,
+        "currency": payout.currency,
+    }
+    if outcome == "completed":
+        return lambda: org_notifications.notify_org_payout_completed(
+            owner_ids, **kwargs
+        )
+    return lambda: org_notifications.notify_org_payout_failed(
+        owner_ids, failure_reason=failure_reason, **kwargs
+    )
+
+
 async def _handle_purchase_succeeded(
     db: AsyncSession,
     event: dict[str, Any],
     *,
     provider: str = "stripe",
+    notifications: list[Callable[[], None]] | None = None,
 ) -> tuple[UUID | None, list[Callable[[], None]]]:
     """Mark a purchase complete and grant its Framework License.
 
@@ -396,6 +483,10 @@ async def _handle_purchase_succeeded(
         provider: Rail that delivered the event. Checked against the
             transaction so a Paystack event can never settle a charge booked
             to Stripe (or the reverse) on the strength of forgeable metadata.
+        notifications: Optional sink for post-commit user notifications. An
+            org purchase settling for the first time appends the
+            ``org_purchase_completed`` notice here. Kept apart from the
+            returned partner work so each rail decides what it runs.
     """
     transaction_id = _purchase_transaction_id(event)
     charge_ref = _event_object_id(event)
@@ -501,6 +592,12 @@ async def _handle_purchase_succeeded(
                 "payer_org_id": str(transaction.payer_org_id),
             },
         )
+        if notifications is not None and previous_status != "completed":
+            notifications.append(
+                await _org_purchase_notice(
+                    db, transaction=transaction, outcome="completed"
+                )
+            )
     else:
         existing_license = await db.scalar(
             select(License).where(
@@ -692,7 +789,7 @@ async def _handle_purchase_failed(
     *,
     provider: str = "stripe",
     reason: str = "payment_intent.payment_failed",
-) -> None:
+) -> list[Callable[[], None]]:
     """Mark a purchase transaction failed after a provider payment failure.
 
     Args:
@@ -701,6 +798,10 @@ async def _handle_purchase_failed(
         provider: Rail that delivered the event, checked against the
             transaction before any state change.
         reason: Provider event name recorded on the audit entry.
+
+    Returns:
+        Post-commit notices: the ``org_purchase_failed`` notice when an org
+        purchase newly fails, otherwise an empty list.
     """
     transaction_id = _purchase_transaction_id(event)
     charge_ref = _event_object_id(event)
@@ -728,6 +829,22 @@ async def _handle_purchase_failed(
         from_status=previous_status,
         failure_object=_event_object(event),
     )
+    if transaction.payer_org_id is None or previous_status == "failed":
+        return []
+    failure_object = _event_object(event)
+    failure = (
+        normalize_paystack_failure(failure_object)
+        if transaction.provider == "paystack"
+        else normalize_stripe_failure(failure_object)
+    )
+    return [
+        await _org_purchase_notice(
+            db,
+            transaction=transaction,
+            outcome="failed",
+            failure_reason=failure.message,
+        )
+    ]
 
 
 async def _handle_escrow_failed(
@@ -1103,7 +1220,7 @@ async def _connected_payout_account(
 async def _handle_connected_payout_paid(
     db: AsyncSession,
     event: dict[str, Any],
-) -> None:
+) -> list[Callable[[], None]]:
     """Settle the payouts a connected account's bank payout carried.
 
     This is the only Stripe event on the payout path meaning the contributor's
@@ -1121,12 +1238,16 @@ async def _handle_connected_payout_paid(
     Args:
         db: Session inside the webhook's transaction.
         event: The verified Stripe event.
+
+    Returns:
+        Post-commit ``org_payout_completed`` notices for any org payouts it
+        settled; individual Contributor payouts add none here.
     """
     payout_account = await _connected_payout_account(
         db, event, action="connected_payout_paid"
     )
     if payout_account is None:
-        return
+        return []
 
     event_object = _event_object(event)
     created_raw = event_object.get("created")
@@ -1154,8 +1275,7 @@ async def _handle_connected_payout_paid(
     if received_minor is not None and payouts:
         try:
             expected_minor = sum(
-                to_minor_units(payout.net_amount, payout.currency)
-                for payout in payouts
+                to_minor_units(payout.net_amount, payout.currency) for payout in payouts
             )
         except MoneyAmountError:
             expected_minor = None
@@ -1197,8 +1317,9 @@ async def _handle_connected_payout_paid(
                     "candidate_payout_ids": [str(p.id) for p in payouts],
                 },
             )
-            return
+            return []
     completed_at = datetime.now(UTC)
+    notices: list[Callable[[], None]] = []
     for payout in payouts:
         payout.status = "completed"
         payout.completed_at = completed_at
@@ -1226,6 +1347,11 @@ async def _handle_connected_payout_paid(
             if payout.provider_ref
             else {},
         )
+        if payout.org_id is not None:
+            notices.append(
+                await _org_payout_notice(db, payout=payout, outcome="completed")
+            )
+    return notices
 
 
 async def _handle_connected_payout_failed(
@@ -1488,10 +1614,20 @@ async def _handle_transfer_event(
             else {}
         ),
     )
+    notices: list[Callable[[], None]] = []
+    if payout.org_id is not None and payout_status in {"completed", "failed"}:
+        notices.append(
+            await _org_payout_notice(
+                db,
+                payout=payout,
+                outcome=payout_status,
+                failure_reason=failure.message if failure else None,
+            )
+        )
     if payout_status != "failed":
-        return []
+        return notices
     failed_payout_id = payout.id
-    return [
+    return notices + [
         lambda: notify_admins_review_pending(
             domain="payout",
             target_id=failed_payout_id,
@@ -1511,12 +1647,17 @@ async def _dispatch_verified_event(
     """Dispatch a verified event and return status plus post-commit work."""
     metadata = _event_metadata(event)
     if event_type == "payment_intent.succeeded" and metadata.get("kind") == "purchase":
+        purchase_notices: list[Callable[[], None]] = []
         (
             invoice_transaction_id,
             after_commit_notifications,
-        ) = await _handle_purchase_succeeded(db, event)
+        ) = await _handle_purchase_succeeded(db, event, notifications=purchase_notices)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", invoice_transaction_id, after_commit_notifications
+        return (
+            "processed",
+            invoice_transaction_id,
+            after_commit_notifications + purchase_notices,
+        )
     if (
         event_type == "payment_intent.succeeded"
         and metadata.get("kind") == "collection"
@@ -1540,9 +1681,9 @@ async def _dispatch_verified_event(
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
     if event_type == "payment_intent.payment_failed":
-        await _handle_purchase_failed(db, event)
+        failure_notices = await _handle_purchase_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None, []
+        return "processed", None, failure_notices
     if event_type == "payment_intent.canceled" and metadata.get("kind") == "escrow":
         await _handle_escrow_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
@@ -1552,9 +1693,9 @@ async def _dispatch_verified_event(
         await _mark_event_status(db, event_id=event_id, status_="processed")
         return "processed", None, []
     if event_type == "payout.paid":
-        await _handle_connected_payout_paid(db, event)
+        paid_notices = await _handle_connected_payout_paid(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
-        return "processed", None, []
+        return "processed", None, paid_notices
     if event_type == "payout.failed":
         payout_notifications = await _handle_connected_payout_failed(db, event)
         await _mark_event_status(db, event_id=event_id, status_="processed")
@@ -1817,13 +1958,14 @@ async def _dispatch_paystack_event(
     """Dispatch a verified Paystack event and return status plus follow-up work."""
     metadata = _event_metadata(envelope)
     if event_type == "charge.success" and metadata.get("kind") == "purchase":
+        purchase_notices: list[Callable[[], None]] = []
         invoice_transaction_id, _ = await _handle_purchase_succeeded(
-            db, envelope, provider="paystack"
+            db, envelope, provider="paystack", notifications=purchase_notices
         )
         await _mark_event_status(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
-        return "processed", invoice_transaction_id, []
+        return "processed", invoice_transaction_id, purchase_notices
     if event_type == "charge.success" and metadata.get("kind") == "escrow":
         after_commit_notifications = await _handle_escrow_succeeded(
             db, envelope, provider="paystack"
@@ -1842,24 +1984,24 @@ async def _dispatch_paystack_event(
         )
         return "processed", None, []
     if event_type in {"charge.failed", "charge.abandoned"}:
-        await _handle_purchase_failed(
+        failure_notices = await _handle_purchase_failed(
             db, envelope, provider="paystack", reason=event_type
         )
         await _mark_event_status(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
-        return "processed", None, []
+        return "processed", None, failure_notices
     if event_type == "transfer.success":
         # Terminal on this rail, unlike Stripe. A Paystack transfer settles
         # directly to the beneficiary's bank rather than into a provider-held
         # balance, so there is no later bank-payout event to wait for.
-        await _handle_transfer_event(
+        success_notices = await _handle_transfer_event(
             db, envelope, payout_status="completed", provider="paystack"
         )
         await _mark_event_status(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
-        return "processed", None, []
+        return "processed", None, success_notices
     if event_type in {"transfer.failed", "transfer.reversed"}:
         transfer_notifications = await _handle_transfer_event(
             db, envelope, payout_status="failed", provider="paystack"

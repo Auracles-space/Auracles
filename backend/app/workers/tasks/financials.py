@@ -1,4 +1,9 @@
-"""Financial Celery tasks for invoices and future payout processing."""
+"""Financial Celery tasks for invoices and future payout processing.
+
+After an organization purchase invoice PDF is uploaded, the org owners are told
+it is ready (Slice C ``org_invoice_ready``); the notice is deduped per
+transaction so a re-render never repeats it.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +20,7 @@ from app.modules.financials.models import Transaction
 from app.modules.frameworks.models import Framework
 from app.modules.invoicing import service as invoicing_service
 from app.modules.invoicing.render import render_invoice_pdf
+from app.modules.organizations import notifications as org_notifications
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -51,6 +57,41 @@ async def _render_purchase_invoice_pdf(transaction_id: str) -> tuple[str, bytes]
     return invoice.s3_key, pdf_bytes
 
 
+async def _notify_org_invoice_ready(transaction_id: str) -> None:
+    """Tell the paying organization's owners its purchase invoice is ready.
+
+    No-op for individual purchases and for anything that is not a Framework
+    purchase.
+
+    Args:
+        transaction_id: String UUID of the purchase whose PDF was uploaded.
+    """
+    async with async_session_factory() as db:
+        row = (
+            await db.execute(
+                select(Transaction, Framework.title)
+                .outerjoin(Framework, Framework.id == Transaction.ref_id)
+                .where(
+                    Transaction.id == UUID(transaction_id),
+                    Transaction.transaction_type == "purchase",
+                )
+            )
+        ).one_or_none()
+        if row is None or row[0].payer_org_id is None:
+            return
+        transaction, framework_title = row
+        org_id = transaction.payer_org_id
+        owner_ids = await org_notifications.org_owner_ids(db, org_id)
+        name = await org_notifications.org_name(db, org_id)
+    org_notifications.notify_org_invoice_ready(
+        owner_ids,
+        org_id=org_id,
+        org_name=name,
+        transaction_id=transaction.id,
+        framework_title=framework_title or "a Framework",
+    )
+
+
 @app.task(bind=True, max_retries=3)  # type: ignore[untyped-decorator]
 def generate_invoice_pdf(self: Any, transaction_id: str) -> dict[str, str]:
     """Generate and upload a purchase invoice PDF to private S3."""
@@ -73,6 +114,11 @@ def generate_invoice_pdf(self: Any, transaction_id: str) -> dict[str, str]:
     except Exception as exc:
         log.error("task_failed", error=str(exc))
         raise self.retry(exc=exc, countdown=60) from exc
+    try:
+        run_async(_notify_org_invoice_ready(transaction_id))
+    except Exception as exc:
+        # The PDF is already uploaded; a notice failure must not re-render it.
+        log.error("org_invoice_notice_failed", error=str(exc))
     result = {
         "transaction_id": transaction_id,
         "invoice_key": invoice_key,

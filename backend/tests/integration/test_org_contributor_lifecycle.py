@@ -703,7 +703,16 @@ async def test_org_contributor_full_lifecycle(
         headers=auth(owner_token),
     )
     assert earnings.status_code == 200
-    assert earnings.json() == {
+    earnings_body = earnings.json()
+    # Slice C: the checklist explains why a payout is not yet possible here —
+    # no tax document on the legal profile and no payout account configured.
+    eligibility = earnings_body.pop("payout_eligibility")
+    assert eligibility["eligible"] is False
+    assert {reason["code"] for reason in eligibility["reasons"]} == {
+        "tax_document_missing",
+        "no_verified_payout_account",
+    }
+    assert earnings_body == {
         "currency": "USD",
         "gross_revenue": "499.00",
         "pending_clearance": "0.00",
@@ -931,7 +940,14 @@ async def test_org_contributor_full_lifecycle(
         headers=auth(owner_token),
     )
     assert earnings_after_project.status_code == 200
-    assert earnings_after_project.json() == {
+    after_project_body = earnings_after_project.json()
+    # The payout requested earlier is still in flight, so the checklist says so.
+    after_project_eligibility = after_project_body.pop("payout_eligibility")
+    assert after_project_eligibility["eligible"] is False
+    assert "payout_in_progress" in {
+        reason["code"] for reason in after_project_eligibility["reasons"]
+    }
+    assert after_project_body == {
         "currency": "USD",
         "gross_revenue": "1999.00",
         "pending_clearance": "1500.00",

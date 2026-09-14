@@ -258,6 +258,84 @@ class EarningsResponse(BaseModel):
     minimum_payout: Decimal
 
 
+class PayoutEligibilityReason(BaseModel):
+    """One unmet org payout condition and where it can be fixed.
+
+    ``action_path`` is an app path (starting with ``/``) to the surface that
+    clears the condition, or ``None`` when nothing the owner can do resolves it
+    directly (suspension, an in-flight payout, a balance under the minimum).
+    """
+
+    code: Literal[
+        "org_suspended",
+        "kyb_not_verified",
+        "no_payout_capability",
+        "tax_document_missing",
+        "payout_in_progress",
+        "no_verified_payout_account",
+        "below_minimum_payout",
+    ]
+    message: str
+    action_path: str | None
+
+
+class PayoutEligibility(BaseModel):
+    """Whether an organization can request a payout right now, and why not."""
+
+    eligible: bool
+    reasons: list[PayoutEligibilityReason]
+
+
+class OrgEarningsResponse(EarningsResponse):
+    """Organization earnings plus the payout eligibility checklist (Slice C)."""
+
+    payout_eligibility: PayoutEligibility
+
+
+class OrgPayoutHistoryItem(BaseModel):
+    """One organization payout in the owner-facing history.
+
+    ``amount`` is the net amount requested (what reaches the payout account).
+    """
+
+    id: UUID
+    amount: Decimal
+    currency: str
+    status: str
+    provider: str
+    requested_at: datetime
+    completed_at: datetime | None
+    failure_reason: str | None
+
+
+class OrgPayoutHistoryResponse(BaseModel):
+    """Paginated organization payout history, newest first."""
+
+    payouts: list[OrgPayoutHistoryItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
+class OrgPurchaseListItem(BaseModel):
+    """One Framework purchase the organization attempted, with its outcome."""
+
+    transaction_id: UUID
+    framework_id: UUID | None
+    framework_title: str | None
+    amount: Decimal
+    currency: str
+    status: str
+    failure_reason: str | None
+    created_at: datetime
+
+
+class OrgPurchasesResponse(BaseModel):
+    """Organization Framework purchases, newest first."""
+
+    purchases: list[OrgPurchaseListItem]
+
+
 class PayoutRequest(BaseModel):
     """Request body for a Contributor payout request."""
 

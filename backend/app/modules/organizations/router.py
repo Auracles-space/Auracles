@@ -28,9 +28,11 @@ from app.modules.attestation.schemas import (
 from app.modules.auth.models import User
 from app.modules.financials import service as financials_service
 from app.modules.financials.schemas import (
-    EarningsResponse,
+    OrgEarningsResponse,
     OrgInvoicesResponse,
     OrgPayoutAccountOnboardRequest,
+    OrgPayoutHistoryResponse,
+    OrgPurchasesResponse,
     PayoutAccountOnboardResponse,
     PayoutRequest,
     PayoutResponse,
@@ -671,13 +673,16 @@ async def list_org_license_grants(
     summary="List one organization's shared library",
     description=(
         "Return the org-owned Licenses visible to the caller. Admins and owners "
-        "see the full library; plain members see only granted Licenses."
+        "see the full library; plain members see only granted Licenses. "
+        "`include_inactive=true` also lists expired and revoked Licenses with "
+        "their status; downloads stay refused for them."
     ),
 )
 async def list_org_library(
     org_id: UUID,
     context: VerifiedOrgMemberCtx,
     db: DatabaseSession,
+    include_inactive: bool = Query(default=False),
 ) -> OrgLibraryResponse:
     """Return the org shared library for the current member."""
     del org_id
@@ -685,6 +690,7 @@ async def list_org_library(
         db,
         org_id=context.org.id,
         member=context.member,
+        include_inactive=include_inactive,
     )
     return OrgLibraryResponse(
         items=[
@@ -1932,19 +1938,20 @@ async def set_legal_profile_tax_document(
 
 @router.get(
     "/{org_id}/financials/earnings",
-    response_model=EarningsResponse,
+    response_model=OrgEarningsResponse,
     summary="Organization earnings",
     description=(
         "Released organization earnings and available payout balance across "
-        "supported commercial capabilities. Owner/admin only."
+        "supported commercial capabilities, plus a payout eligibility "
+        "checklist naming each unmet condition. Owner/admin only."
     ),
 )
 async def get_org_earnings(
     org_id: UUID,
     context: VerifiedOrgAdmin,
     db: DatabaseSession,
-) -> EarningsResponse:
-    """Return the org's released earnings balances."""
+) -> OrgEarningsResponse:
+    """Return the org's released earnings balances and payout eligibility."""
     del context
     return await financials_service.get_org_earnings(db, org_id=org_id)
 
@@ -2086,6 +2093,55 @@ async def request_org_payout(
     """Request an org payout inside an open step-up window."""
     return await financials_service.request_org_payout(
         db, org_id=org_id, actor=context.user, payload=payload
+    )
+
+
+@router.get(
+    "/{org_id}/financials/payouts",
+    response_model=OrgPayoutHistoryResponse,
+    summary="Organization payout history",
+    description=(
+        "List the organization's payouts newest first with status, provider "
+        "and failure reason. Read-only; no step-up required. Owner/admin only."
+    ),
+)
+async def list_org_payouts(
+    org_id: UUID,
+    context: VerifiedOrgAdmin,
+    db: DatabaseSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> OrgPayoutHistoryResponse:
+    """Return the org's payout history, newest first."""
+    del context
+    return await financials_service.list_org_payouts(
+        db, org_id=org_id, page=page, page_size=page_size
+    )
+
+
+@router.get(
+    "/{org_id}/financials/purchases",
+    response_model=OrgPurchasesResponse,
+    summary="Organization Framework purchases",
+    description=(
+        "List the organization's Framework purchases newest first, optionally "
+        "filtered by status (e.g. `failed`, with the provider's failure "
+        "reason). Owner/admin only."
+    ),
+)
+async def list_org_purchases(
+    org_id: UUID,
+    context: VerifiedOrgAdmin,
+    db: DatabaseSession,
+    status_filter: Literal["pending", "completed", "failed", "refunded"] | None = Query(
+        default=None, alias="status"
+    ),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> OrgPurchasesResponse:
+    """Return the org's Framework purchases, newest first."""
+    del context
+    return await financials_service.list_org_purchases(
+        db, org_id=org_id, status_filter=status_filter, limit=limit
     )
 
 

@@ -905,9 +905,10 @@ async def remove_member(
 
         await _guard_and_release_member_reviews(db, member_id=target.id)
         await _guard_and_release_member_deliveries(db, member_id=target.id)
-        revoked_grant_count = await _revoke_member_license_grants(
+        revoked_grants = await _revoke_member_license_grants(
             db, org_id=org_id, member_id=target.id, actor_id=actor_id
         )
+        revoked_grant_count = len(revoked_grants)
 
         removed_user_id = target.user_id
         await db.delete(target)
@@ -932,6 +933,9 @@ async def remove_member(
             org_name=org_name,
             revoked_grant_count=revoked_grant_count,
         )
+    # The removal notice already says how many shared frameworks the member
+    # lost; per-grant "access ended" notices would repeat it and link to a
+    # library the former member can no longer open.
 
 
 async def _revoke_member_license_grants(
@@ -940,15 +944,18 @@ async def _revoke_member_license_grants(
     org_id: UUID,
     member_id: UUID,
     actor_id: UUID,
-) -> int:
+) -> list[tuple[UUID, str]]:
     """Delete every direct grant held by one member and audit each revocation.
 
     Runs inside the caller's ``remove_member`` transaction. Team grants are
     untouched: they belong to the team, not the departing member.
 
     Returns:
-        The number of grants revoked.
+        ``(license_id, framework_title)`` for each revoked grant, so the
+        caller can tell the member after commit which access ended.
     """
+    from app.modules.organizations.library_service import license_framework_title
+
     grants = list(
         (
             await db.scalars(
@@ -956,7 +963,11 @@ async def _revoke_member_license_grants(
             )
         ).all()
     )
+    revoked: list[tuple[UUID, str]] = []
     for grant in grants:
+        revoked.append(
+            (grant.license_id, await license_framework_title(db, grant.license_id))
+        )
         await db.delete(grant)
         await write_audit(
             db=db,
@@ -979,7 +990,7 @@ async def _revoke_member_license_grants(
             org_id=str(org_id),
             member_id=str(member_id),
         ).info("license_grants_revoked", count=len(grants))
-    return len(grants)
+    return revoked
 
 
 _IN_FLIGHT_REVIEW_STATUSES = (
