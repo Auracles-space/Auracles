@@ -60,3 +60,30 @@ def test_logo_falls_back_to_frontend_origin(
     )
 
     assert "https://auracles.space/images/logo-text-black.png" in html
+
+
+def test_relative_action_link_is_absolutised_to_frontend_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A path-only action link becomes an absolute URL on the frontend origin.
+
+    Notification links are stored as app paths (``/dashboard/...``). Rendered
+    as-is into an email, mail clients resolve them against no host and open
+    ``http:///dashboard/...`` (staging, 2026-09-14: every "Open in Auracles"
+    button was broken). The renderer owns the origin so no sender can forget.
+    """
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://staging.auracles.space")
+    monkeypatch.delenv("EMAIL_ASSET_BASE_URL", raising=False)
+
+    html = resend_integration._render_email_html(
+        title="Verified",
+        content_html="<p>hi</p>",
+        action_url="/dashboard/organizations/abc/verification",
+        action_text="Open in Auracles",
+    )
+
+    assert (
+        'href="https://staging.auracles.space/dashboard/organizations/abc/verification"'
+        in html
+    )
+    assert 'href="/dashboard' not in html

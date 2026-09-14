@@ -143,6 +143,12 @@ def _render_email_html(
     asset_base = get_settings().email_asset_base_url or frontend_url
     logo_url = f"{asset_base}/images/logo-text-black.png"
 
+    # Notification links are stored as app paths; a relative href in an email
+    # resolves against no host, so the renderer pins every action to the
+    # frontend origin here rather than trusting each sender to remember.
+    if action_url and action_url.startswith("/"):
+        action_url = f"{frontend_url}{action_url}"
+
     action_btn_html = ""
     if action_url and action_text:
         action_btn_html = f"""
