@@ -86,6 +86,13 @@ recorded in §Decisions once the human has chosen.
    organization is closed and hidden with data retained; members are notified; admins get
    reactivate; blocked while a capability is active or money is pending.
 
+5. **Owners can change the slug** (human, 2026-09-14, after seeing their org stuck on the old
+   placeholder `acme-corp`). Owner only, behind step-up. Previous slugs stay reserved to the
+   organization and `/orgs/{old}` redirects to the current slug, so shared links keep working
+   and nobody else can claim an old slug to impersonate the organization. Taken or reserved
+   slugs are refused with 409; the change is audited and other owners are notified. Admins do
+   not get a slug editor.
+
 Also fixed on the way (1350c29c): every "Open in Auracles" email button rendered a
 path-only href; the renderer now pins action links to the frontend origin.
 
@@ -136,6 +143,17 @@ Slice B notes (2026-09-14): per-member team names on the Members tab need `teams
 `OrgMemberResponse` and move to slice D with the admin members view; "library shows
 expired/revoked licenses" and "failed purchases under billing" need backend list changes and
 move to slice C. Register → verify → login now carries `next` end to end.
+
+### Slug change (Decision 5)
+
+Backend: migration adds `org_slug_history (org_id, slug unique, created_at)` and the
+`org_slug_changed` notification label; `PATCH /v1/orgs/{org_id}/slug {slug}` owner-only with
+step-up, same slug rules as creation, 409 when the slug belongs to another org now or in
+history; old slug written to history, audit `org_slug_changed` {from, to}, other owners
+notified. `GET /v1/orgs/{slug}` resolves a historical slug and returns the org with
+`canonical_slug`. Frontend: the profile summary gains "Change slug" for owners (dialog with
+the new public URL preview and a warning that the old link will redirect); `/orgs/[slug]`
+redirects permanently when `canonical_slug` differs.
 
 ### Slice C — org money
 
