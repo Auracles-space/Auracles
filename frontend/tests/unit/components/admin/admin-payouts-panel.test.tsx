@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminPayoutsPanel } from "@/components/modules/admin/admin-payouts-panel";
 import { listAdminPayoutsV1AdminPayoutsGet } from "@/lib/generated/sdk.gen";
+import { formatMoney } from "@/lib/marketplace/format";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -102,5 +103,31 @@ describe("AdminPayoutsPanel", () => {
       ),
     );
     expect(screen.getByLabelText("Organization ID")).toHaveValue("");
+  });
+
+  /** NGN and USD rows in one list each render in their own currency (NGN is the primary rail). */
+  it("formats each row in its own currency with the shared formatMoney", async () => {
+    respond([
+      payout({ beneficiary_type: "contributor", beneficiary_id: "cccccccc-1111", beneficiary_name: "Ngozi Eze" }),
+      payout({
+        beneficiary_type: "contributor",
+        beneficiary_id: "dddddddd-2222",
+        beneficiary_name: "Sam Carter",
+        amount: "120.50",
+        net_amount: "108.45",
+        currency: "USD",
+        provider: "stripe",
+      }),
+    ]);
+    render(<AdminPayoutsPanel />);
+    await screen.findByText("Ngozi Eze");
+
+    const nairaNet = formatMoney("45000.00", "NGN");
+    expect(nairaNet).toContain("\u20a6");
+    expect(screen.getByText(nairaNet)).toBeInTheDocument();
+    expect(screen.getByText(`gross ${formatMoney("50000.00", "NGN")}`)).toBeInTheDocument();
+
+    expect(screen.getByText(formatMoney("108.45", "USD"))).toHaveTextContent("$108.45");
+    expect(screen.getByText(`gross ${formatMoney("120.50", "USD")}`)).toBeInTheDocument();
   });
 });

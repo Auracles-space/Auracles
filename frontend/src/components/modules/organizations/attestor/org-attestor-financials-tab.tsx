@@ -15,13 +15,15 @@
  * Every amount is formatted in the currency the earnings or invoice response
  * carries (naira on the NGN rail), never an assumed default.
  *
+ * This file owns loading; the earnings cards, payout actions, and request
+ * controls live in sibling `org-earnings-summary`, `org-payout-actions`, and
+ * `org-payout-request-controls` files.
+ *
  * Maps to: FR-FIN-* (organization payouts).
  */
 import { useEffect, useState } from "react";
 import {
   getOrgAttestorEarnings,
-  onboardOrgPayoutAccount,
-  requestOrgPayout,
   listOrgInvoices,
   getOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
@@ -30,15 +32,7 @@ import type {
   OrgEarningsResponse,
   OrgInvoiceListItem,
 } from "@/lib/generated/types.gen";
-import { Button } from "@/components/ui/button";
-import {
-  PaystackBankFields,
-  paystackDetailsComplete,
-} from "@/components/modules/financials/paystack-bank-fields";
-import { payoutProviderForCountry } from "@/lib/marketplace/currency";
-import { formatMoney } from "@/lib/marketplace/format";
 import { Spinner } from "@/components/ui/spinner";
-import { ownerStatusKey, StatusPill } from "@/components/ui/status-pill";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -46,9 +40,10 @@ import {
 } from "@/lib/auth/form-client";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
+import { OrgEarningsSummary } from "./org-earnings-summary";
 import { OrgInvoiceList } from "./org-invoice-list";
+import { OrgPayoutActions } from "./org-payout-actions";
 import { OrgPayoutHistory } from "./org-payout-history";
-import { PayoutEligibilityChecklist } from "./payout-eligibility-checklist";
 
 interface OrgAttestorFinancialsTabProps {
   /** Organization whose earnings, payout account, and invoices are shown. */
@@ -68,14 +63,6 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   const [invoices, setInvoices] = useState<OrgInvoiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [isActionLoading, setIsActionLoading] = useState(false);
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-
-  // Mirrors the backend routing. On an NGN deployment Stripe Connect cannot pay
-  // out at all, so bank details are collected here instead of redirecting.
-  const isPaystackRail = payoutProviderForCountry("") === "paystack";
-  const [payoutError, setPayoutError] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
@@ -110,77 +97,6 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  const handleSetupPayoutAccount = async () => {
-    setIsActionLoading(true);
-    setPayoutError(null);
-    try {
-      configureBrowserClient();
-      const res = await onboardOrgPayoutAccount({
-        headers: getAccessTokenHeaders(),
-        path: { org_id: orgId },
-        body: isPaystackRail
-          ? {
-              account_number: accountNumber,
-              bank_code: bankCode,
-              provider: "paystack" as const,
-            }
-          : {
-              provider: "stripe" as const,
-              refresh_url: window.location.href,
-              return_url: window.location.href,
-            },
-      });
-      if (res.data?.onboarding_url) {
-        window.location.href = res.data.onboarding_url;
-        return;
-      }
-      if (res.data) {
-        // Paystack registers the account outright — there is no redirect, so
-        // refresh in place to pick up the now-linked payout account.
-        await fetchData();
-        return;
-      }
-      // Non-2xx responses resolve with `error` (the generated client does not
-      // throw); surface the reason instead of failing silently.
-      setPayoutError(describeGeneratedError(res.error));
-    } catch (error) {
-      console.error("Failed to onboard payout account:", error);
-      setPayoutError("The request could not be completed.");
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  const handleRequestPayout = async () => {
-    if (!earnings || !application?.payout_account_id) return;
-    setIsActionLoading(true);
-    setPayoutError(null);
-    try {
-      configureBrowserClient();
-      const res = await requestOrgPayout({
-        headers: getAccessTokenHeaders(),
-        path: { org_id: orgId },
-        body: {
-          amount: earnings.available_balance,
-          currency: earnings.currency,
-          payout_account_id: application.payout_account_id,
-        },
-      });
-      if (!res.response.ok || !res.data) {
-        // Non-2xx responses resolve with `error` (the generated client does not
-        // throw); surface the reason instead of failing silently.
-        setPayoutError(describeGeneratedError(res.error));
-        return;
-      }
-      await fetchData(); // Refresh data
-    } catch (error) {
-      console.error("Failed to request payout:", error);
-      setPayoutError("The request could not be completed.");
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
   if (isLoading) {
     return (
       <div className="flex justify-center p-8">
@@ -188,15 +104,6 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
       </div>
     );
   }
-
-  const availableAmount = Number(earnings?.available_balance ?? "0");
-  const minimumAmount = Number(earnings?.minimum_payout ?? "0");
-  const hasNoBalance = !(availableAmount > 0);
-  // Same threshold the API enforces; checked here so the org learns why the
-  // button is off instead of meeting a refusal after a step-up prompt.
-  const belowMinimum = !hasNoBalance && availableAmount < minimumAmount;
-  const eligibility = earnings?.payout_eligibility;
-  const notEligible = eligibility ? !eligibility.eligible : false;
 
   return (
     <div className="space-y-8">
@@ -208,114 +115,15 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
           {loadError}
         </p>
       )}
-      {earnings && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
-            <p className="text-sm text-foreground-subtle mb-1">Available Balance</p>
-            <p className="text-2xl font-bold">
-              {formatMoney(earnings.available_balance, earnings.currency)}
-            </p>
-            <p className="mt-1 text-xs text-foreground-subtle">
-              Minimum payout {formatMoney(earnings.minimum_payout, earnings.currency)}
-            </p>
-          </div>
-          <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
-            <p className="text-sm text-foreground-subtle mb-1">Pending Clearance</p>
-            <p className="text-2xl font-bold">
-              {formatMoney(earnings.pending_clearance, earnings.currency)}
-            </p>
-          </div>
-          <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
-            <p className="text-sm text-foreground-subtle mb-1">Gross Revenue</p>
-            <p className="text-2xl font-bold">
-              {formatMoney(earnings.gross_revenue, earnings.currency)}
-            </p>
-          </div>
-        </div>
-      )}
+      {earnings && <OrgEarningsSummary earnings={earnings} />}
 
-      <div className="p-6 rounded-lg bg-surface-2 border border-border-strong">
-        <h3 className="text-lg font-medium mb-4">Payout Actions</h3>
-        {payoutError && (
-          <p className="text-sm text-error mb-4" role="alert">
-            {payoutError}
-          </p>
-        )}
-        {application?.status !== "approved" ? (
-          <div className="grid justify-items-start gap-2 text-sm text-foreground-subtle">
-            {application ? (
-              <StatusPill status={ownerStatusKey(application.status, "application")} />
-            ) : null}
-            <p>Your application must be approved before you can setup payouts.</p>
-          </div>
-        ) : !application.payout_account_id ? (
-          <div>
-            <p className="text-sm text-foreground-subtle mb-4">
-              You need to configure a payout account to receive earnings.
-            </p>
-            {isPaystackRail ? (
-              <div className="mb-4">
-                <PaystackBankFields
-                  accountNumber={accountNumber}
-                  bankCode={bankCode}
-                  disabled={isActionLoading}
-                  idPrefix="org-financials-payout"
-                  onAccountNumberChange={setAccountNumber}
-                  onBankCodeChange={setBankCode}
-                />
-              </div>
-            ) : null}
-            <Button
-              onClick={handleSetupPayoutAccount}
-              disabled={
-                isActionLoading ||
-                (isPaystackRail &&
-                  !paystackDetailsComplete(bankCode, accountNumber))
-              }
-            >
-              Setup Payout Account
-            </Button>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {eligibility ? <PayoutEligibilityChecklist eligibility={eligibility} /> : null}
-            <div className="flex flex-wrap gap-2">
-              {isOwner ? (
-                <Button
-                  onClick={handleRequestPayout}
-                  disabled={isActionLoading || hasNoBalance || belowMinimum || notEligible}
-                >
-                  Request Payout
-                </Button>
-              ) : null}
-              <Button
-                className={isPaystackRail ? "hidden" : undefined}
-                variant="secondary"
-                onClick={handleSetupPayoutAccount}
-                disabled={isActionLoading}
-              >
-                Manage payout account
-              </Button>
-            </div>
-            {!isOwner && (
-              <p className="text-sm text-foreground-subtle">
-                Only the organization owner can request payouts.
-              </p>
-            )}
-            {hasNoBalance && (
-              <p className="text-sm text-foreground-subtle">
-                No available balance to payout.
-              </p>
-            )}
-            {belowMinimum && earnings && (
-              <p className="text-sm text-foreground-subtle">
-                Your available balance is below the minimum payout of{" "}
-                {formatMoney(earnings.minimum_payout, earnings.currency)}.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+      <OrgPayoutActions
+        application={application}
+        earnings={earnings}
+        isOwner={isOwner}
+        onRefresh={fetchData}
+        orgId={orgId}
+      />
 
       <OrgPayoutHistory orgId={orgId} />
 

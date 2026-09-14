@@ -6,10 +6,11 @@
  * Read-only financial oversight: administrators list and filter payouts by
  * status, provider, and organization to investigate failures and reconcile
  * transfers. Beneficiaries are named; organizations link to their admin
- * detail page. Payout
- * destination account details are never returned by the API, so nothing
- * sensitive renders here. Styled as a responsive directory that reads as a
- * table on desktop and stacked cards on mobile.
+ * detail page. Payout destination account details are never returned by the
+ * API, so nothing sensitive renders here. Every amount is formatted in its own
+ * row's currency (naira on the NGN rail) via the shared `formatMoney`. Styled
+ * as a responsive directory that reads as a table on desktop and stacked cards
+ * on mobile.
  *
  * Maps to: admin financial oversight (payout directory).
  */
@@ -22,7 +23,7 @@ import {
 } from "@/lib/auth/form-client";
 import { listAdminPayoutsV1AdminPayoutsGet } from "@/lib/generated/sdk.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
-import { CURRENCY_DISPLAY } from "@/lib/marketplace/currency";
+import { formatMoney } from "@/lib/marketplace/format";
 import type {
   AdminPayoutDirectoryResponse,
   AdminPayoutItem,
@@ -55,28 +56,6 @@ function formatTimestamp(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsed);
-}
-
-/**
- * Format a minor-unit-free decimal string as a currency amount.
- *
- * @param amount - Decimal string from the API (e.g. "270.00").
- * @param currency - ISO 4217 currency code.
- */
-function formatAmount(amount: string, currency: string): string {
-  const value = Number(amount);
-  if (Number.isNaN(value)) {
-    return `${amount} ${currency}`;
-  }
-  try {
-    return new Intl.NumberFormat(undefined, {
-      currency,
-      currencyDisplay: CURRENCY_DISPLAY,
-      style: "currency",
-    }).format(value);
-  } catch {
-    return `${amount} ${currency}`;
-  }
 }
 
 /**
@@ -245,10 +224,10 @@ export function AdminPayoutsPanel() {
                   Amount
                 </span>
                 <span className="font-semibold">
-                  {formatAmount(item.net_amount, item.currency)}
+                  {formatMoney(item.net_amount, item.currency)}
                 </span>
                 <span className="block text-xs text-foreground-muted">
-                  gross {formatAmount(item.amount, item.currency)}
+                  gross {formatMoney(item.amount, item.currency)}
                 </span>
               </div>
 
