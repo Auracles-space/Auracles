@@ -1262,6 +1262,32 @@ async def list_admin_users(
     }
 
 
+async def _org_names(db: AsyncSession, org_ids: Sequence[UUID]) -> dict[UUID, str]:
+    """Resolve organization names for a page of rows in one query."""
+    unique_ids = set(org_ids)
+    if not unique_ids:
+        return {}
+    rows = await db.execute(
+        select(Organization.id, Organization.name).where(
+            Organization.id.in_(unique_ids)
+        )
+    )
+    return {org_id: name for org_id, name in rows.all()}
+
+
+async def _user_display_names(
+    db: AsyncSession, user_ids: Sequence[UUID]
+) -> dict[UUID, str]:
+    """Resolve user display names for a page of rows in one query."""
+    unique_ids = set(user_ids)
+    if not unique_ids:
+        return {}
+    rows = await db.execute(
+        select(User.id, User.display_name).where(User.id.in_(unique_ids))
+    )
+    return {user_id: name for user_id, name in rows.all() if name}
+
+
 async def list_admin_payouts(
     db: AsyncSession,
     *,
@@ -1269,13 +1295,16 @@ async def list_admin_payouts(
     provider_filter: str,
     page: int,
     page_size: int,
+    org_id: UUID | None = None,
 ) -> dict[str, object]:
     """Return a paginated, read-only payout directory for admin oversight.
 
     Joins each payout to its payout account for the provider label and maps the
-    contributor/org XOR to an explicit beneficiary type. Payout-account details
-    are never included — only the provider and transfer reference — so no
-    sensitive destination data leaks into the list.
+    contributor/org XOR to an explicit beneficiary type. The beneficiary's
+    display name (organization name or contributor display name) is resolved
+    for the whole page in batched lookups. Payout-account details are never
+    included — only the provider and transfer reference — so no sensitive
+    destination data leaks into the list.
 
     Args:
         db: Async database session.
@@ -1283,6 +1312,7 @@ async def list_admin_payouts(
         provider_filter: One of ``ADMIN_PAYOUT_PROVIDERS``.
         page: 1-indexed page number.
         page_size: Rows per page.
+        org_id: When set, only payouts to this organization.
 
     Returns:
         A dict with ``items``, ``total``, ``page``, and ``page_size``.
@@ -1306,6 +1336,8 @@ async def list_admin_payouts(
         filters.append(Payout.status == status_filter)
     if provider_filter != "all":
         filters.append(PayoutAccount.provider == provider_filter)
+    if org_id is not None:
+        filters.append(Payout.org_id == org_id)
 
     base = (
         select(Payout, PayoutAccount)
@@ -1324,8 +1356,17 @@ async def list_admin_payouts(
         .limit(page_size)
     )
 
+    rows = result.all()
+    org_names = await _org_names(
+        db, [payout.org_id for payout, _account in rows if payout.org_id]
+    )
+    contributor_names = await _user_display_names(
+        db,
+        [payout.contributor_id for payout, _account in rows if payout.contributor_id],
+    )
+
     items = []
-    for payout, account in result.all():
+    for payout, account in rows:
         is_contributor = payout.contributor_id is not None
         items.append(
             {
@@ -1333,6 +1374,13 @@ async def list_admin_payouts(
                 "beneficiary_type": "contributor" if is_contributor else "org",
                 "beneficiary_id": (
                     payout.contributor_id if is_contributor else payout.org_id
+                ),
+                "beneficiary_name": (
+                    contributor_names.get(payout.contributor_id)
+                    if payout.contributor_id is not None
+                    else org_names.get(payout.org_id)
+                    if payout.org_id is not None
+                    else None
                 ),
                 "provider": account.provider,
                 "amount": str(payout.amount),
@@ -1547,23 +1595,93 @@ async def list_admin_connectors(
     }
 
 
+async def _invoice_organizations(
+    db: AsyncSession,
+    invoices: Sequence[Invoice],
+    *,
+    preferred_org_id: UUID | None,
+) -> dict[UUID, UUID]:
+    """Map invoice ids to the organization their source involves.
+
+    Two batched lookups (attestations, transactions) cover a page. When a
+    transaction has organizations on both sides the payer wins, unless the
+    caller filtered by the payee organization, in which case that one is shown.
+    """
+    attestation_ids = [
+        invoice.source_ref_id
+        for invoice in invoices
+        if invoice.source_ref_type == "attestation"
+    ]
+    transaction_ids = [
+        invoice.source_ref_id
+        for invoice in invoices
+        if invoice.source_ref_type == "transaction"
+    ]
+    attestor_orgs: dict[UUID, UUID] = {}
+    if attestation_ids:
+        rows = await db.execute(
+            select(Attestation.id, Attestation.attestor_org_id).where(
+                Attestation.id.in_(attestation_ids),
+                Attestation.attestor_org_id.is_not(None),
+            )
+        )
+        attestor_orgs = {row_id: org for row_id, org in rows.all()}
+    transaction_orgs: dict[UUID, UUID] = {}
+    if transaction_ids:
+        rows = await db.execute(
+            select(
+                Transaction.id, Transaction.payer_org_id, Transaction.payee_org_id
+            ).where(Transaction.id.in_(transaction_ids))
+        )
+        for row_id, payer_org_id, payee_org_id in rows.all():
+            if preferred_org_id is not None and preferred_org_id in (
+                payer_org_id,
+                payee_org_id,
+            ):
+                transaction_orgs[row_id] = preferred_org_id
+            elif payer_org_id is not None or payee_org_id is not None:
+                transaction_orgs[row_id] = payer_org_id or payee_org_id
+
+    mapping: dict[UUID, UUID] = {}
+    for invoice in invoices:
+        source = (
+            attestor_orgs
+            if invoice.source_ref_type == "attestation"
+            else transaction_orgs
+            if invoice.source_ref_type == "transaction"
+            else {}
+        )
+        org = source.get(invoice.source_ref_id)
+        if org is not None:
+            mapping[invoice.id] = org
+    return mapping
+
+
 async def list_admin_invoices(
     db: AsyncSession,
     *,
     query: str | None,
     page: int,
     page_size: int,
+    org_id: UUID | None = None,
 ) -> dict[str, object]:
     """Return a paginated, read-only issued-invoice directory.
 
     The internal ``s3_key`` PDF pointer is never included — only invoice
     metadata, parties, and totals surface for reconciliation.
 
+    Invoices store no organization column, so the organization is derived
+    from the invoice source the same way the org invoices tab does: an
+    attestation invoice belongs to the attesting organization, a transaction
+    invoice to the paying organization, else the paid organization.
+
     Args:
         db: Async database session.
         query: Optional case-insensitive filter over invoice number or buyer.
         page: 1-indexed page number.
         page_size: Rows per page.
+        org_id: When set, only invoices whose source involves this
+            organization (as attestor, payer, or payee).
 
     Returns:
         A dict with ``items``, ``total``, ``page``, and ``page_size``.
@@ -1579,6 +1697,24 @@ async def list_admin_invoices(
                 Invoice.buyer_name.ilike(like_value),
             )
         )
+    if org_id is not None:
+        filters.append(
+            or_(
+                (Invoice.source_ref_type == "attestation")
+                & Invoice.source_ref_id.in_(
+                    select(Attestation.id).where(Attestation.attestor_org_id == org_id)
+                ),
+                (Invoice.source_ref_type == "transaction")
+                & Invoice.source_ref_id.in_(
+                    select(Transaction.id).where(
+                        or_(
+                            Transaction.payer_org_id == org_id,
+                            Transaction.payee_org_id == org_id,
+                        )
+                    )
+                ),
+            )
+        )
 
     total = await db.scalar(select(func.count(Invoice.id)).where(*filters))
     result = await db.execute(
@@ -1588,6 +1724,9 @@ async def list_admin_invoices(
         .offset((page - 1) * page_size)
         .limit(page_size)
     )
+    invoices = result.scalars().all()
+    invoice_orgs = await _invoice_organizations(db, invoices, preferred_org_id=org_id)
+    org_names = await _org_names(db, list(invoice_orgs.values()))
 
     return {
         "items": [
@@ -1605,9 +1744,13 @@ async def list_admin_invoices(
                 "buyer_email": invoice.buyer_email,
                 "source_ref_type": invoice.source_ref_type,
                 "source_ref_id": invoice.source_ref_id,
+                "organization_id": invoice_orgs.get(invoice.id),
+                "organization_name": org_names.get(invoice_orgs[invoice.id])
+                if invoice.id in invoice_orgs
+                else None,
                 "created_at": invoice.created_at,
             }
-            for invoice in result.scalars().all()
+            for invoice in invoices
         ],
         "total": int(total or 0),
         "page": page,
@@ -2977,12 +3120,24 @@ def _financial_event_item(event: FinancialEvent) -> dict[str, Any]:
     }
 
 
+def _transaction_org_ids(transactions: Sequence[Transaction]) -> list[UUID]:
+    """Collect every payer and payee organization id on the given rows."""
+    return [
+        org_id
+        for row in transactions
+        for org_id in (row.payer_org_id, row.payee_org_id)
+        if org_id is not None
+    ]
+
+
 def _transaction_item(
     transaction: Transaction,
     *,
     failure_reason_code: str | None,
+    org_names: dict[UUID, str] | None = None,
 ) -> dict[str, Any]:
     """Map a transaction row to the admin directory shape."""
+    names = org_names or {}
     return {
         "transaction_id": transaction.id,
         "transaction_type": transaction.transaction_type,
@@ -2995,8 +3150,14 @@ def _transaction_item(
         "provider_ref": transaction.provider_ref,
         "payer_id": transaction.payer_id,
         "payer_org_id": transaction.payer_org_id,
+        "payer_org_name": names.get(transaction.payer_org_id)
+        if transaction.payer_org_id
+        else None,
         "payee_id": transaction.payee_id,
         "payee_org_id": transaction.payee_org_id,
+        "payee_org_name": names.get(transaction.payee_org_id)
+        if transaction.payee_org_id
+        else None,
         "ref_type": transaction.ref_type,
         "ref_id": transaction.ref_id,
         "failure_reason_code": failure_reason_code,
@@ -3074,6 +3235,7 @@ async def list_admin_transactions(
     provider_ref: str | None,
     page: int,
     page_size: int,
+    org_id: UUID | None = None,
 ) -> dict[str, object]:
     """Return a paginated, read-only transaction directory for admin oversight.
 
@@ -3089,6 +3251,8 @@ async def list_admin_transactions(
             reconciliation against a provider dashboard.
         page: 1-indexed page number.
         page_size: Rows per page.
+        org_id: When set, only transactions this organization paid or was
+            paid for. Payer and payee organization names are batch-resolved.
 
     Returns:
         A dict with ``items``, ``total``, ``page``, and ``page_size``.
@@ -3106,6 +3270,10 @@ async def list_admin_transactions(
         filters.append(Transaction.provider == provider_filter)
     if provider_ref:
         filters.append(Transaction.provider_ref == provider_ref)
+    if org_id is not None:
+        filters.append(
+            or_(Transaction.payer_org_id == org_id, Transaction.payee_org_id == org_id)
+        )
 
     total = await db.scalar(
         select(func.count()).select_from(Transaction).where(*filters)
@@ -3120,10 +3288,13 @@ async def list_admin_transactions(
         )
     ).all()
     reasons = await _latest_failure_reasons(db, [row.id for row in transactions])
+    org_names = await _org_names(db, _transaction_org_ids(transactions))
 
     return {
         "items": [
-            _transaction_item(row, failure_reason_code=reasons.get(row.id))
+            _transaction_item(
+                row, failure_reason_code=reasons.get(row.id), org_names=org_names
+            )
             for row in transactions
         ],
         "total": total or 0,
@@ -3177,11 +3348,13 @@ async def get_admin_transaction_detail(
         )
     ).all()
     reasons = await _latest_failure_reasons(db, [transaction_id])
+    org_names = await _org_names(db, _transaction_org_ids([transaction]))
 
     return {
         "transaction": _transaction_item(
             transaction,
             failure_reason_code=reasons.get(transaction_id),
+            org_names=org_names,
         ),
         "escrows": [_escrow_item(escrow) for escrow in escrows],
         "timeline": [_financial_event_item(event) for event in timeline],

@@ -58,6 +58,7 @@ from app.modules.organizations import (
     nda_service,
     operator_service,
     service,
+    slug_service,
 )
 from app.modules.organizations.dependencies import (
     OrgContext,
@@ -143,6 +144,7 @@ from app.modules.organizations.schemas import (
     OrgPaymentMethodSetupResponse,
     OrgPaymentMethodsResponse,
     OrgReassignReviewerRequest,
+    OrgSlugChangeRequest,
     OrgStatusReasonRequest,
     OrgTeamCreateRequest,
     OrgTeamMembersResponse,
@@ -187,6 +189,12 @@ VerifiedOrgOwner = Annotated[
 ORG_CREATE_LIMIT = 5
 ORG_CREATE_RATE_LIMITER = RateLimiter(
     namespace="org_create", limit=ORG_CREATE_LIMIT, window=86400
+)
+# Every slug change reserves the old slug forever, so an unbounded loop would
+# squat the namespace; the cap mirrors organization creation.
+ORG_SLUG_CHANGE_LIMIT = 5
+ORG_SLUG_CHANGE_RATE_LIMITER = RateLimiter(
+    namespace="org_slug_change", limit=ORG_SLUG_CHANGE_LIMIT, window=86400
 )
 NDA_SIGN_RATE_LIMITER = RateLimiter(namespace="org_nda_sign", limit=5, window=3600)
 ORG_ATTESTOR_APPLY_RATE_LIMITER = RateLimiter(
@@ -800,6 +808,42 @@ async def transfer_ownership(
         context=context,
         new_owner_member_id=payload.new_owner_member_id,
     )
+
+
+@router.patch(
+    "/{org_id}/slug",
+    response_model=OrganizationResponse,
+    summary="Change organization slug",
+    description=(
+        "Change the organization's public slug. The old slug stays reserved to "
+        "the organization and its public profile link redirects to the new one. "
+        "409 when the slug belongs to another organization now or in the past. "
+        "Requires an open step-up 2FA window. Org owner only; rate-limited per "
+        "organization."
+    ),
+    responses={429: {"description": "Too many attempts; see the Retry-After header."}},
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
+)
+async def change_org_slug(
+    org_id: UUID,
+    payload: OrgSlugChangeRequest,
+    context: OrgOwner,
+    db: DatabaseSession,
+    redis: RedisClient,
+) -> OrganizationResponse:
+    """Change an organization's slug (Decision 5).
+
+    The slug service notifies the other owners after commit, so nothing is
+    dispatched here.
+    """
+    await ORG_SLUG_CHANGE_RATE_LIMITER.check(cast(RedisCounter, redis), str(org_id))
+    organization = await slug_service.change_org_slug(
+        db,
+        org_id=org_id,
+        actor_user_id=context.user.id,
+        new_slug=payload.slug,
+    )
+    return OrganizationResponse.model_validate(organization)
 
 
 @router.post(

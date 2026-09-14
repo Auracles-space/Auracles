@@ -2390,6 +2390,17 @@ components:
           format: date-time
           title: Issue Date
           type: string
+        organization_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Organization Id
+        organization_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Organization Name
         seller_name:
           title: Seller Name
           type: string
@@ -2965,6 +2976,11 @@ components:
           format: uuid
           title: Beneficiary Id
           type: string
+        beneficiary_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Beneficiary Name
         beneficiary_type:
           enum:
           - contributor
@@ -3285,6 +3301,11 @@ components:
             type: string
           - type: 'null'
           title: Payee Org Id
+        payee_org_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Payee Org Name
         payer_id:
           anyOf:
           - format: uuid
@@ -3297,6 +3318,11 @@ components:
             type: string
           - type: 'null'
           title: Payer Org Id
+        payer_org_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Payer Org Name
         platform_commission:
           title: Platform Commission
           type: string
@@ -7291,6 +7317,24 @@ components:
       required:
       - purchases
       title: OrgPurchasesResponse
+      type: object
+    OrgSlugChangeRequest:
+      description: 'Request body to change an organization''s slug (Decision 5).
+
+
+        Applies exactly the slug rules ``OrganizationCreateRequest`` does, so a
+
+        slug that could not be chosen at creation cannot be chosen later either.'
+      properties:
+        slug:
+          maxLength: 80
+          minLength: 3
+          pattern: ^[a-zA-Z0-9-]+$
+          title: Slug
+          type: string
+      required:
+      - slug
+      title: OrgSlugChangeRequest
       type: object
     PayoutEligibility:
       description: Whether an organization can request a payout right now, and why
@@ -14122,6 +14166,9 @@ components:
             type: string
           title: Active Capabilities
           type: array
+        canonical_slug:
+          title: Canonical Slug
+          type: string
         country:
           title: Country
           type: string
@@ -14162,6 +14209,7 @@ components:
           title: Website
       required:
       - slug
+      - canonical_slug
       - name
       - logo_key
       - country
@@ -16970,9 +17018,10 @@ paths:
       - Admin
   /v1/admin/invoices:
     get:
-      description: Return a paginated, read-only issued-invoice directory with an
-        optional search over invoice number or buyer. Internal PDF storage keys are
-        never included.
+      description: Return a paginated, read-only issued-invoice directory with an optional
+        search over invoice number or buyer and an optional organization filter. Rows
+        name the organization the invoice involves. Internal PDF storage keys are never
+        included.
       operationId: list_admin_invoices_v1_admin_invoices_get
       parameters:
       - in: query
@@ -16985,6 +17034,17 @@ paths:
             type: string
           - type: 'null'
           title: Query
+      - description: Only invoices involving this organization.
+        in: query
+        name: org_id
+        required: false
+        schema:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          description: Only invoices involving this organization.
+          title: Org Id
       - in: query
         name: page
         required: false
@@ -18098,8 +18158,9 @@ paths:
       - Admin Organizations
   /v1/admin/payouts:
     get:
-      description: Return a paginated, read-only payout directory with status and
-        provider filters. Payout-account destination details are never included.
+      description: Return a paginated, read-only payout directory with status, provider,
+        and organization filters. Each row names its beneficiary (organization or contributor).
+        Payout-account destination details are never included.
       operationId: list_admin_payouts_v1_admin_payouts_get
       parameters:
       - in: query
@@ -18118,6 +18179,17 @@ paths:
           pattern: ^(all|stripe|paystack)$
           title: Provider
           type: string
+      - description: Only payouts to this organization.
+        in: query
+        name: org_id
+        required: false
+        schema:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          description: Only payouts to this organization.
+          title: Org Id
       - in: query
         name: page
         required: false
@@ -18260,9 +18332,10 @@ paths:
   /v1/admin/transactions:
     get:
       description: Return a paginated, read-only transaction directory with status,
-        provider, and exact provider-reference filters. Each row carries the newest
-        normalized failure cause from the financial ledger, so a failed payment can
-        be triaged without opening it.
+        provider, organization, and exact provider-reference filters. Each row carries
+        the payer and payee organization names and the newest normalized failure cause
+        from the financial ledger, so a failed payment can be triaged without opening
+        it.
       operationId: list_admin_transactions_v1_admin_transactions_get
       parameters:
       - in: query
@@ -18292,6 +18365,17 @@ paths:
           - type: 'null'
           description: Exact provider charge or transfer reference.
           title: Provider Ref
+      - description: Only transactions this organization paid or was paid.
+        in: query
+        name: org_id
+        required: false
+        schema:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          description: Only transactions this organization paid or was paid.
+          title: Org Id
       - in: query
         name: page
         required: false
@@ -27571,6 +27655,47 @@ paths:
       summary: Reassign organization delivery member
       tags:
       - Projects
+  /v1/orgs/{org_id}/slug:
+    patch:
+      description: Change the organization's public slug. The old slug stays reserved
+        to the organization and its public profile link redirects to the new one. 409
+        when the slug belongs to another organization now or in the past. Requires an
+        open step-up 2FA window. Org owner only; rate-limited per organization.
+      operationId: change_org_slug_v1_orgs__org_id__slug_patch
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgSlugChangeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+        '429':
+          description: Too many attempts; see the Retry-After header.
+      security:
+      - HTTPBearer: []
+      summary: Change organization slug
+      tags:
+      - Organizations
   /v1/orgs/{org_id}/teams:
     get:
       description: List all teams in the organization, including member counts.
@@ -27948,8 +28073,8 @@ paths:
       - Organizations
   /v1/orgs/{slug}:
     get:
-      description: Return the public organization profile with active capabilities
-        and member count, excluding member identities and private data.
+      description: Return the public organization profile with active capabilities and
+        member count, excluding member identities and private data.
       operationId: get_public_org_v1_orgs__slug__get
       parameters:
       - in: path

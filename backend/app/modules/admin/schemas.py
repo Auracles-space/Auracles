@@ -451,6 +451,8 @@ class AdminPayoutItem(BaseModel):
     payout_id: UUID
     beneficiary_type: Literal["contributor", "org"]
     beneficiary_id: UUID
+    # Organization name for org payouts, display name for contributors.
+    beneficiary_name: str | None = None
     provider: Literal["stripe", "paystack"]
     amount: str
     commission_deducted: str
@@ -583,6 +585,10 @@ class AdminInvoiceItem(BaseModel):
     buyer_email: str
     source_ref_type: str
     source_ref_id: UUID
+    # Derived from the invoice source (attesting, paying, or paid org); null
+    # when no organization is involved.
+    organization_id: UUID | None = None
+    organization_name: str | None = None
     created_at: datetime
 
 
@@ -614,8 +620,10 @@ class AdminTransactionItem(BaseModel):
     provider_ref: str | None
     payer_id: UUID | None
     payer_org_id: UUID | None
+    payer_org_name: str | None = None
     payee_id: UUID | None
     payee_org_id: UUID | None
+    payee_org_name: str | None = None
     ref_type: str | None
     ref_id: UUID | None
     failure_reason_code: str | None

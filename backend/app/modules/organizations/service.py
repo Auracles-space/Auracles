@@ -32,6 +32,7 @@ from app.modules.frameworks.models import LicenseGrant
 from app.modules.gdpr.schemas import AccountDeletionBlockedReason
 from app.modules.notifications.service import create_notification
 from app.modules.organizations import notifications as org_notifications
+from app.modules.organizations import slug_service
 from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import (
     Organization,
@@ -40,6 +41,7 @@ from app.modules.organizations.models import (
     OrgLegalProfile,
     OrgMember,
     OrgMemberNda,
+    OrgSlugHistory,
     OrgTeam,
     OrgTeamCapability,
     OrgTeamMember,
@@ -116,11 +118,26 @@ async def create_organization(
         The created organization row.
 
     Raises:
-        HTTPException(409): If the slug is already in use.
+        HTTPException(409): If the slug is already in use, or is reserved in
+            ``org_slug_history`` by an organization that used to hold it.
     """
     user_id = user.id
     if db.in_transaction():
         await db.rollback()
+
+    # A past slug stays reserved to its organization (Decision 5), so a new
+    # org cannot claim it and impersonate the old public profile address.
+    # Same message as a live collision: which kind of holder is not disclosed.
+    reserved = await db.scalar(
+        select(OrgSlugHistory.org_id).where(OrgSlugHistory.slug == payload.slug)
+    )
+    if db.in_transaction():
+        await db.rollback()
+    if reserved is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Organization slug already exists.",
+        )
 
     organization = Organization(
         slug=payload.slug,
@@ -394,9 +411,13 @@ async def get_public_org(
 ) -> PublicOrganizationResponse:
     """Return the public profile for an active organization by slug.
 
+    Resolves current and historical slugs through
+    ``slug_service.resolve_public_slug`` (Decision 5); ``canonical_slug`` names
+    the current slug so the client can redirect an old link permanently.
+
     Args:
         db: Async database session.
-        slug: Public organization slug from the request path.
+        slug: Public organization slug (current or past) from the request path.
 
     Returns:
         The public-safe organization profile.
@@ -404,18 +425,14 @@ async def get_public_org(
     Raises:
         HTTPException(404): If the organization is unknown, deactivated, or suspended.
     """
-    organization = await db.scalar(
-        select(Organization).where(
-            func.lower(Organization.slug) == slug.lower(),
-            Organization.deactivated_at.is_(None),
-            Organization.suspended_at.is_(None),
-        )
-    )
-    if organization is None:
+    # Slugs are stored lowercase; lowering keeps mixed-case links resolving.
+    resolved = await slug_service.resolve_public_slug(db, slug.strip().lower())
+    if resolved is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Organization not found.",
         )
+    organization, canonical_slug = resolved
 
     member_count = (
         await db.scalar(
@@ -437,6 +454,7 @@ async def get_public_org(
 
     return PublicOrganizationResponse(
         slug=organization.slug,
+        canonical_slug=canonical_slug,
         name=organization.name,
         logo_key=organization.logo_key,
         country=organization.country,

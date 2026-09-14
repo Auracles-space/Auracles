@@ -281,6 +281,9 @@ class PublicOrganizationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     slug: str
+    # The organization's current slug. Differs from the requested slug when a
+    # past slug was requested; clients redirect permanently to it.
+    canonical_slug: str
     name: str
     logo_key: str | None
     country: str

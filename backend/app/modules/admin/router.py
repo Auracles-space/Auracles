@@ -303,8 +303,9 @@ async def list_admin_users(
     response_model=AdminPayoutDirectoryResponse,
     summary="List payouts for admin financial oversight",
     description=(
-        "Return a paginated, read-only payout directory with status and provider "
-        "filters. Payout-account destination details are never included."
+        "Return a paginated, read-only payout directory with status, provider, "
+        "and organization filters. Each row names its beneficiary (organization "
+        "or contributor). Payout-account destination details are never included."
     ),
 )
 async def list_admin_payouts(
@@ -318,6 +319,10 @@ async def list_admin_payouts(
         str,
         Query(alias="provider", pattern="^(all|stripe|paystack)$"),
     ] = "all",
+    org_id: Annotated[
+        UUID | None,
+        Query(description="Only payouts to this organization."),
+    ] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> AdminPayoutDirectoryResponse:
@@ -329,6 +334,7 @@ async def list_admin_payouts(
         provider_filter=provider_filter,
         page=page,
         page_size=page_size,
+        org_id=org_id,
     )
     return AdminPayoutDirectoryResponse.model_validate(payouts)
 
@@ -339,14 +345,19 @@ async def list_admin_payouts(
     summary="List issued invoices for admin oversight",
     description=(
         "Return a paginated, read-only issued-invoice directory with an "
-        "optional search over invoice number or buyer. Internal PDF storage "
-        "keys are never included."
+        "optional search over invoice number or buyer and an optional "
+        "organization filter. Rows name the organization the invoice involves. "
+        "Internal PDF storage keys are never included."
     ),
 )
 async def list_admin_invoices(
     admin: AdminUser,
     db: DatabaseSession,
     query: Annotated[str | None, Query(min_length=1, max_length=255)] = None,
+    org_id: Annotated[
+        UUID | None,
+        Query(description="Only invoices involving this organization."),
+    ] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> AdminInvoicesResponse:
@@ -357,6 +368,7 @@ async def list_admin_invoices(
         query=query,
         page=page,
         page_size=page_size,
+        org_id=org_id,
     )
     return AdminInvoicesResponse.model_validate(invoices)
 
@@ -982,9 +994,10 @@ async def resolve_project_dispute(
     summary="List transactions for admin financial oversight",
     description=(
         "Return a paginated, read-only transaction directory with status, "
-        "provider, and exact provider-reference filters. Each row carries the "
-        "newest normalized failure cause from the financial ledger, so a "
-        "failed payment can be triaged without opening it."
+        "provider, organization, and exact provider-reference filters. Each row "
+        "carries the payer and payee organization names and the newest "
+        "normalized failure cause from the financial ledger, so a failed "
+        "payment can be triaged without opening it."
     ),
 )
 async def list_admin_transactions(
@@ -1005,6 +1018,10 @@ async def list_admin_transactions(
             description="Exact provider charge or transfer reference.",
         ),
     ] = None,
+    org_id: Annotated[
+        UUID | None,
+        Query(description="Only transactions this organization paid or was paid."),
+    ] = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> AdminTransactionDirectoryResponse:
@@ -1017,6 +1034,7 @@ async def list_admin_transactions(
         provider_ref=provider_ref,
         page=page,
         page_size=page_size,
+        org_id=org_id,
     )
     return AdminTransactionDirectoryResponse.model_validate(transactions)
 
