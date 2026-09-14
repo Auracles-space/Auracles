@@ -237,6 +237,29 @@ describe("FrameworkEditor", () => {
     });
   });
 
+  it("offers an attestation request for a published framework", async () => {
+    // Commissioning an attestation is only meaningful once the framework is
+    // live, and only for the people who manage its live state.
+    mockLoad(makeFramework({ status: "published" }));
+
+    renderPersonalEditor();
+
+    await screen.findByText("Test Framework");
+    const link = screen.getByRole("link", { name: "Request attestation" });
+    expect(link).toHaveAttribute("href", "/attestations?target=fw_1");
+  });
+
+  it("offers no attestation request while the framework is a draft", async () => {
+    mockLoad(makeFramework({ status: "draft" }));
+
+    renderPersonalEditor();
+
+    await screen.findByText("Test Framework");
+    expect(
+      screen.queryByRole("link", { name: "Request attestation" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides live-state controls from a non-admin organization author", async () => {
     mockLoad(makeFramework({ status: "published" }));
 

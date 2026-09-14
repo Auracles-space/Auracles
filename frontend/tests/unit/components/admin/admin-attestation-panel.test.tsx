@@ -95,4 +95,44 @@ describe("AdminAttestationPanel", () => {
       vi.mocked(adminAssignAttestation).mock.calls[0][0].body,
     ).not.toHaveProperty("reviewing_member_id");
   });
+
+  it("labels a submitted report in the admin's vocabulary", async () => {
+    vi.mocked(listOrgAttestorApplicationsForAdmin).mockResolvedValue(
+      ok({ applications: [] }) as never,
+    );
+    vi.mocked(listAttestorOrgs).mockResolvedValue(ok({ attestors: [] }) as never);
+    vi.mocked(listAdminAttestations).mockResolvedValue(
+      ok({
+        attestations: [
+          {
+            id: "att-2",
+            target_type: "framework",
+            target_id: "fw-1",
+            requestor_id: "user-1",
+            attestor_org_id: "org-2",
+            status: "report_submitted",
+            outcome: null,
+            review_type: "quality",
+            requested_specializations: [],
+            requested_jurisdictions: [],
+            fee_amount: "500.00",
+            currency: "NGN",
+            escrow_id: "esc-1",
+            created_at: "2026-07-16T00:00:00Z",
+            updated_at: "2026-07-16T00:00:00Z",
+          },
+        ],
+      }) as never,
+    );
+
+    render(<AdminAttestationPanel />);
+
+    // The read-only browse (any status but needs-admin) is what carries pills.
+    fireEvent.change(await screen.findByLabelText("Status"), {
+      target: { value: "report_submitted" },
+    });
+
+    expect(await screen.findByText("Submitted")).toBeInTheDocument();
+    expect(screen.queryByText("Report ready")).toBeNull();
+  });
 });

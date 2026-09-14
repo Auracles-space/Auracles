@@ -12,6 +12,7 @@ import {
   ReviewSummary,
 } from "@/components/modules/explore/framework-card";
 import { FrameworkLicenseCta } from "@/components/modules/explore/framework-license-cta";
+import { RequestAttestationLink } from "@/components/modules/attestation/request-attestation-link";
 import { PreviewArtifactBlock } from "@/components/modules/explore/preview-artifact-block";
 import { RelatedFrameworks } from "@/components/modules/explore/related-frameworks";
 import { RarityBadge } from "@/components/modules/frameworks/rarity-badge";
@@ -149,6 +150,11 @@ export default async function ExploreDetailPage({
               contributorId={framework.contributor_id ?? ""}
               contributorOrgId={framework.contributor_org_id ?? undefined}
               frameworkId={framework.id}
+            />
+            <RequestAttestationLink
+              contributorId={framework.contributor_id ?? ""}
+              frameworkId={framework.id}
+              variant="secondary"
             />
           </aside>
         </div>

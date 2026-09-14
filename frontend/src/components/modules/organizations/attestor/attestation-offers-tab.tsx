@@ -1,41 +1,77 @@
 "use client";
 
+/**
+ * Open attestation offers for one attestor organization.
+ *
+ * One card per offer, carrying what the org is being asked to review, how well
+ * the matcher scored it, and how long is left to answer — the clock is the
+ * whole point of this tab, since an unanswered offer lapses to the next
+ * cohort. Accepting opens the staffing dialog; declining goes through a
+ * confirm step with an optional, admin-only reason.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-attestation-request-to-report-design.md §2
+ * (Attestor org).
+ */
+
+import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
+
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 import { listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet } from "@/lib/generated/sdk.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { OrgAttestationOfferItem } from "@/lib/generated/types.gen";
-import { declineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePost } from "@/lib/generated/sdk.gen";
+import { formatLabel } from "@/lib/marketplace/format";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill, offerStatusKey } from "@/components/ui/status-pill";
 import { AcceptAndStaffDialog } from "./accept-and-staff-dialog";
+import { DeclineOfferDialog } from "./decline-offer-dialog";
+import { describeOfferExpiry } from "./attestation-dates";
 
+/**
+ * Render the matcher's score as a whole percentage.
+ *
+ * The API sends a 0–1 float, and a genuine zero is a real score (a cohort
+ * offer the matcher rated poorly), so it must not be confused with a missing
+ * one.
+ *
+ * @param score - Match score between 0 and 1, or null when unscored.
+ */
+function describeMatchScore(score: number | null): string {
+  if (score === null || score === undefined) {
+    return "No score";
+  }
+  return `${Math.round(score * 100)}% match`;
+}
+
+/**
+ * List and action the organization's attestation offers.
+ */
 export function AttestationOffersTab() {
   const { orgId, role } = useOrganization();
   const [offers, setOffers] = useState<OrgAttestationOfferItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [acceptingOfferId, setAcceptingOfferId] = useState<string | null>(null);
-  const [decliningId, setDecliningId] = useState<string | null>(null);
+  const [decliningOfferId, setDecliningOfferId] = useState<string | null>(null);
 
   async function load(isMounted: () => boolean) {
-      setLoading(true);
-      setError(null);
-      const res = await listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet({
-        path: { org_id: orgId! },
-        headers: getAccessTokenHeaders(),
-      });
-      if (!isMounted()) return;
-      setLoading(false);
-      if (res.error) {
-        setError(describeGeneratedError(res.error));
-      } else if (res.data) {
-        setOffers(res.data.offers);
-      }
+    setLoading(true);
+    setError(null);
+    const res = await listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet({
+      path: { org_id: orgId! },
+      headers: getAccessTokenHeaders(),
+    });
+    if (!isMounted()) return;
+    setLoading(false);
+    if (res.error) {
+      setError(describeGeneratedError(res.error));
+    } else if (res.data) {
+      setOffers(res.data.offers);
     }
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -65,24 +101,6 @@ export function AttestationOffersTab() {
   }, [orgId]);
   useRefetchOnFocus(refreshOffers);
 
-  async function handleDecline(offerId: string) {
-    if (!orgId) return;
-    if (!window.confirm("Are you sure you want to decline this offer?")) return;
-    
-    setDecliningId(offerId);
-    setError(null);
-    const res = await declineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePost({
-      path: { org_id: orgId, offer_id: offerId },
-      headers: getAccessTokenHeaders(),
-    });
-    setDecliningId(null);
-    if (res.error) {
-      setError(describeGeneratedError(res.error));
-    } else {
-      await load(() => true);
-    }
-  }
-
   if (loading) {
     return <div className="p-4 flex items-center gap-2 text-sm text-foreground-muted"><Spinner className="w-4 h-4" /> Loading offers...</div>;
   }
@@ -94,7 +112,7 @@ export function AttestationOffersTab() {
   if (offers.length === 0) {
     return (
       <div className="p-8 text-center text-foreground-muted border border-border-default border-dashed rounded-xl bg-surface-2">
-        <h3 className="font-semibold text-foreground mb-1">No Offers Available</h3>
+        <h3 className="font-semibold text-foreground mb-1">No offers available</h3>
         <p className="text-sm">There are currently no open attestation offers for this organization.</p>
       </div>
     );
@@ -104,55 +122,58 @@ export function AttestationOffersTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold tracking-tight text-foreground">Attestation Offers</h2>
-      </div>
-      
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">
+        Attestation offers
+      </h2>
+
       <div className="grid gap-4">
         {offers.map((offer) => {
-          const expiresAt = new Date(offer.expires_at);
-          const isExpired = expiresAt < new Date();
+          const expiry = describeOfferExpiry(offer.expires_at);
           // Accept/decline only make sense on a live, un-actioned offer. Once
           // accepted (member staffed) or expired, show status only.
-          const isActionable = offer.status === "offered" && !isExpired;
+          const isActionable = offer.status === "offered" && !expiry.expired;
+          // A lapsed offer still reads `offered` server-side until the sweeper
+          // runs; the pill says what it actually is, so no countdown line is
+          // repeated underneath it.
+          const pillStatus =
+            expiry.expired && offer.status === "offered"
+              ? "expired"
+              : offerStatusKey(offer.status);
 
           return (
-            <div key={offer.offer_id} className="border border-border-default rounded-xl p-5 bg-surface-1 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="space-y-1">
+            <article
+              className="flex flex-col gap-4 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm md:flex-row md:items-center md:justify-between"
+              key={offer.offer_id}
+            >
+              <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-foreground">
-                    {offer.target_title ?? (
-                      <span className="capitalize">{offer.target_type}</span>
-                    )}
-                  </span>
-                  <Badge variant="default" className="capitalize">
-                    {offer.target_type}
-                  </Badge>
-                  <Badge variant={isExpired ? "error" : offer.status === "offered" ? "info" : "default"}>
-                    {isExpired ? "expired" : offer.status}
-                  </Badge>
+                  <h3 className="font-heading text-base font-bold text-foreground">
+                    {offer.target_title ?? formatLabel(offer.target_type)}
+                  </h3>
+                  <StatusPill status={pillStatus} />
                 </div>
-                <div className="text-xs text-foreground-muted font-mono">
-                  Attestation ID: {offer.attestation_id}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-foreground-muted">
+                  {offer.target_title ? (
+                    <>
+                      <span>{formatLabel(offer.target_type)}</span>
+                      <span aria-hidden="true">·</span>
+                    </>
+                  ) : null}
+                  <span>{describeMatchScore(offer.match_score)}</span>
                 </div>
-                <div className="text-sm text-foreground-muted">
-                  Match Score: {offer.match_score ? `${offer.match_score}%` : "N/A"}
-                </div>
-                {!isExpired && (
-                  <div className="text-xs font-medium text-amber-600 mt-2">
-                    Expires: {expiresAt.toLocaleString()}
-                  </div>
+                {expiry.expired ? null : (
+                  <p className="text-sm font-medium text-warning">{expiry.label}</p>
                 )}
               </div>
-              
+
               {isActionable ? (
-                <div className="flex gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <Button
-                    variant="secondary"
-                    disabled={!isAdmin || decliningId === offer.offer_id}
-                    onClick={() => handleDecline(offer.offer_id)}
+                    disabled={!isAdmin}
+                    onClick={() => setDecliningOfferId(offer.offer_id)}
+                    variant="destructive"
                   >
-                    {decliningId === offer.offer_id ? "Declining..." : "Decline"}
+                    Decline
                   </Button>
                   <Button
                     disabled={!isAdmin}
@@ -162,11 +183,14 @@ export function AttestationOffersTab() {
                   </Button>
                 </div>
               ) : offer.status === "accepted" ? (
-                <span className="text-sm font-medium text-success">
-                  Accepted &middot; member assigned
-                </span>
+                <Link
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2"
+                  href={`/dashboard/organizations/${orgId}/attestations/${offer.attestation_id}`}
+                >
+                  Open workspace
+                </Link>
               ) : null}
-            </div>
+            </article>
           );
         })}
       </div>
@@ -180,6 +204,18 @@ export function AttestationOffersTab() {
             setAcceptingOfferId(null);
             load(() => true);
           }}
+        />
+      )}
+
+      {decliningOfferId && orgId && (
+        <DeclineOfferDialog
+          offerId={decliningOfferId}
+          onClose={() => setDecliningOfferId(null)}
+          onDone={() => {
+            setDecliningOfferId(null);
+            load(() => true);
+          }}
+          orgId={orgId}
         />
       )}
     </div>

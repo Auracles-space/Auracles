@@ -150,7 +150,50 @@ describe("ReportPanel", () => {
     expect(
       screen.queryByRole("button", { name: /Submit Report/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/already been submitted/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Your report is with the requestor/i),
+    ).toBeInTheDocument();
+  });
+
+  it("explains that an admin is handling a disputed report", () => {
+    render(
+      <ReportPanel attestationId="att-1" canWrite orgId="org-1" status="disputed" />,
+    );
+
+    expect(
+      screen.getByText(/The requestor disputed this report/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Submit Report/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says a settled attestation can no longer be edited", () => {
+    render(
+      <ReportPanel attestationId="att-1" canWrite orgId="org-1" status="released" />,
+    );
+
+    expect(
+      screen.getByText(/This attestation is closed/i),
+    ).toBeInTheDocument();
+  });
+
+  it("reopens the form with revision instructions after a revision request", () => {
+    render(
+      <ReportPanel
+        attestationId="att-1"
+        canWrite
+        orgId="org-1"
+        status="revision_requested"
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Submit Report/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/An admin asked for a revision/i),
+    ).toBeInTheDocument();
   });
 
   it("surfaces quality-gate failures returned on submit", async () => {

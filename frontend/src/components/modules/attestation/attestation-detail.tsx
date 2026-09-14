@@ -3,11 +3,15 @@
 /**
  * Requestor-facing detail view for a single Attestation request.
  *
- * Shows the full submitted brief, the request lifecycle status, the attestor's
- * report when one has been submitted, and the accept / dispute actions that are
- * open within the dispute window. Read-only for every field except those two
- * decisions.
+ * Composes the whole lifecycle on one page: where the request has got to, what
+ * happens next, the submitted brief, the attestor's report, and whichever
+ * action the current status allows — pay, withdraw, accept or dispute, rate
+ * and invoice. Every decision lives here rather than on the list, because each
+ * one needs the report or the refund copy beside it.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-attestation-request-to-report-design.md §2.
  */
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import {
@@ -15,22 +19,24 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import {
-  acceptAttestationReport,
-  createAttestationDispute,
-  getAttestation,
-  getAttestationFeePayment,
-} from "@/lib/generated/sdk.gen";
+import { getAttestation } from "@/lib/generated/sdk.gen";
 import type { AttestationRequestResponse } from "@/lib/generated/types.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
-import { Textarea } from "@/components/ui/textarea";
+import { StatusPill, attestationStatusKey } from "@/components/ui/status-pill";
+import { ErrorMessage } from "@/components/modules/attestation/attestation-status";
+import { AttestationDecisionPanel } from "@/components/modules/attestation/attestation-decision-panel";
+import { AttestationFeePanel } from "@/components/modules/attestation/attestation-fee-panel";
 import {
-  ErrorMessage,
-  StatusTag,
-} from "@/components/modules/attestation/attestation-status";
-import { AttestationFundingPanel } from "@/components/modules/attestation/attestation-funding-panel";
+  AttestationDisputeCard,
+  AttestationSettlementCard,
+} from "@/components/modules/attestation/attestation-outcome-cards";
+import { AttestationProgress } from "@/components/modules/attestation/attestation-progress";
+import { AttestationRatingCard } from "@/components/modules/attestation/attestation-rating-card";
+import { AttestationWithdrawPanel } from "@/components/modules/attestation/attestation-withdraw-panel";
 import { RequestorClarificationsPanel } from "@/components/modules/attestation/requestor-clarifications-panel";
 import { ReportRubricPanel } from "@/components/modules/attestation/report-rubric-panel";
+import { requestorNextStep } from "@/components/modules/attestation/requestor-next-step";
+import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 type AttestationDetailProps = {
   /** Attestation id from the route. */
@@ -45,6 +51,9 @@ const BRIEF_FIELDS: ReadonlyArray<[key: string, label: string]> = [
   ["focus_areas", "Focus areas"],
   ["desired_outcome", "Desired outcome"],
 ];
+
+/** Statuses where the fee has settled with the attestor. */
+const SETTLED_STATUSES = ["released", "closed"];
 
 /**
  * Read a string field from the loosely-typed brief object.
@@ -74,9 +83,6 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
     useState<AttestationRequestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [disputeReason, setDisputeReason] = useState("");
-  const [acting, setActing] = useState(false);
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
 
   useEffect(() => {
     void load();
@@ -99,83 +105,6 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
     setLoading(false);
   }
 
-  /** Resume an unpaid fee on its rail: in-page Stripe, or Paystack redirect. */
-  async function handleStartPayment() {
-    setError(null);
-    setActing(true);
-    let redirecting = false;
-    try {
-      configureBrowserClient();
-      const result = await getAttestationFeePayment({
-        headers: getAccessTokenHeaders(),
-        path: { attestation_id: attestationId },
-      });
-      if (!result.response.ok || !result.data) {
-        setError(describeGeneratedError(result.error));
-        return;
-      }
-      if (result.data.provider === "paystack") {
-        if (!result.data.authorization_url) {
-          setError("Payment could not be started.");
-          return;
-        }
-        // Paystack re-issues a hosted checkout; the browser navigates there.
-        redirecting = true;
-        window.location.assign(result.data.authorization_url);
-        return;
-      }
-      setClientSecret(result.data.client_secret);
-    } finally {
-      // Stay in the acting state through a Paystack navigation so the button
-      // cannot be pressed twice into two charges.
-      if (!redirecting) {
-        setActing(false);
-      }
-    }
-  }
-
-  /** Accept the submitted report and release escrow to the attestor. */
-  async function handleAccept() {
-    setError(null);
-    setActing(true);
-    try {
-      configureBrowserClient();
-      const result = await acceptAttestationReport({
-        headers: getAccessTokenHeaders(),
-        path: { attestation_id: attestationId },
-      });
-      if (!result.response.ok || !result.data) {
-        setError(describeGeneratedError(result.error));
-        return;
-      }
-      setAttestation(result.data);
-    } finally {
-      setActing(false);
-    }
-  }
-
-  /** Raise a dispute against the submitted report. */
-  async function handleDispute() {
-    setError(null);
-    setActing(true);
-    try {
-      configureBrowserClient();
-      const result = await createAttestationDispute({
-        body: { reason: disputeReason, category: "scope_error" },
-        headers: getAccessTokenHeaders(),
-        path: { attestation_id: attestationId },
-      });
-      if (!result.response.ok) {
-        setError(describeGeneratedError(result.error));
-        return;
-      }
-      setDisputeReason("");
-      await load();
-    } finally {
-      setActing(false);
-    }
-  }
-
   if (loading) {
     return <TableSkeleton />;
   }
@@ -184,65 +113,96 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
     return <ErrorMessage message={error ?? "Attestation not found."} />;
   }
 
-  const reportReady = attestation.status === "report_submitted";
+  const nextStep = requestorNextStep(attestation);
   const hasReport = Boolean(attestation.summary || attestation.scope);
-  const awaitingFee = attestation.status === "pending_fee";
 
   return (
     <section className="grid gap-6">
       <ErrorMessage message={error} />
 
-      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-              {attestation.target_type} attestation
+              {attestation.review_type
+                ? `${formatLabel(attestation.review_type)} review`
+                : "Attestation"}
             </p>
             <h1 className="mt-1 font-heading text-2xl font-bold text-foreground">
-              {attestation.review_type
-                ? `${attestation.review_type} review`
-                : "Attestation request"}
+              {attestation.target_title || "Attestation request"}
             </h1>
             <p className="mt-1 text-sm text-foreground-muted">
-              Fee {attestation.currency} {attestation.fee_amount}
+              Fee {formatMoney(attestation.fee_amount, attestation.currency)}
             </p>
+            {attestation.attestor_org_name && attestation.attestor_org_id ? (
+              <p className="mt-1 text-sm text-foreground-muted">
+                Reviewed by{" "}
+                <Link
+                  className="font-semibold text-accent hover:underline"
+                  href={`/attestors/${attestation.attestor_org_id}`}
+                >
+                  {attestation.attestor_org_name}
+                </Link>
+              </p>
+            ) : null}
           </div>
-          <StatusTag value={attestation.status} />
+          <StatusPill
+            status={attestationStatusKey(attestation.status, "requestor")}
+          />
         </div>
       </div>
 
-      {awaitingFee &&
-        (clientSecret ? (
-          <AttestationFundingPanel
-            attestationId={attestationId}
-            clientSecret={clientSecret}
-            onCancel={() => setClientSecret(null)}
-            onPaid={() => {
-              setClientSecret(null);
-              void load();
-            }}
-          />
-        ) : (
-          <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-            <h2 className="font-heading text-xl font-bold text-foreground">
-              Pay attestation fee
-            </h2>
-            <p className="mt-1 text-sm text-foreground-muted">
-              This request is waiting for its fee. Pay it to send the request to
-              matching attestor organizations.
-            </p>
-            <button
-              className="mt-4 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={acting}
-              onClick={handleStartPayment}
-              type="button"
-            >
-              {acting ? "Loading…" : "Pay fee"}
-            </button>
-          </div>
-        ))}
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
+        <h2 className="font-heading text-xl font-bold text-foreground">
+          Progress
+        </h2>
+        <div className="mt-4">
+          <AttestationProgress attestation={attestation} />
+        </div>
+      </div>
 
-      <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
+        <h2 className="font-heading text-xl font-bold text-foreground">
+          Next step
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-foreground">
+          {nextStep.text}
+        </p>
+        <AttestationWithdrawPanel
+          attestationId={attestationId}
+          feePaid={Boolean(attestation.escrow_id)}
+          onWithdrawn={() => void load()}
+          status={attestation.status}
+        />
+      </div>
+
+      {attestation.status === "pending_fee" ? (
+        <AttestationFeePanel
+          attestationId={attestationId}
+          onPaid={() => void load()}
+        />
+      ) : null}
+
+      {attestation.status === "report_submitted" ? (
+        <AttestationDecisionPanel
+          attestationId={attestationId}
+          disputeWindowEndsAt={attestation.dispute_window_ends_at}
+          onAccepted={setAttestation}
+          onDisputed={() => void load()}
+        />
+      ) : null}
+
+      {SETTLED_STATUSES.includes(attestation.status) ? (
+        <AttestationRatingCard attestationId={attestationId} />
+      ) : null}
+
+      <AttestationSettlementCard status={attestation.status} />
+
+      {attestation.dispute ? (
+        <AttestationDisputeCard dispute={attestation.dispute} />
+      ) : null}
+
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
         <h2 className="font-heading text-xl font-bold text-foreground">
           Review brief
         </h2>
@@ -260,65 +220,30 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
 
       <RequestorClarificationsPanel attestationId={attestationId} />
 
-      {hasReport && (
-        <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
+      {hasReport ? (
+        <div className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
           <h2 className="font-heading text-xl font-bold text-foreground">
             Attestor report
           </h2>
-          {attestation.summary && (
+          {attestation.summary ? (
             <div className="mt-4">
               <p className="text-sm font-semibold text-foreground">Summary</p>
-              <p className="mt-1 text-sm text-foreground-muted">
+              <p className="mt-1 text-sm leading-6 text-foreground-muted">
                 {attestation.summary}
               </p>
             </div>
-          )}
-          {attestation.scope && (
+          ) : null}
+          {attestation.scope ? (
             <div className="mt-4">
               <p className="text-sm font-semibold text-foreground">Scope</p>
-              <p className="mt-1 text-sm text-foreground-muted">
+              <p className="mt-1 text-sm leading-6 text-foreground-muted">
                 {attestation.scope}
               </p>
             </div>
-          )}
+          ) : null}
           <ReportRubricPanel attestationId={attestationId} />
         </div>
-      )}
-
-      {reportReady && (
-        <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
-          <h2 className="font-heading text-xl font-bold text-foreground">
-            Decision
-          </h2>
-          <p className="mt-1 text-sm text-foreground-muted">
-            Accept the report to release the fee, or dispute it within the open
-            window.
-          </p>
-          <button
-            className="mt-4 min-h-12 rounded-xl bg-foreground px-6 text-sm font-semibold text-background shadow-sm outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={acting}
-            onClick={handleAccept}
-            type="button"
-          >
-            Accept report
-          </button>
-          <label className="mt-4 grid gap-2 text-sm font-semibold text-foreground">
-            Dispute reason
-            <Textarea
-              onChange={(event) => setDisputeReason(event.target.value)}
-              value={disputeReason}
-            />
-          </label>
-          <button
-            className="mt-3 min-h-12 rounded-xl border border-error px-6 text-sm font-semibold text-error outline-none transition hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={acting || disputeReason.trim().length === 0}
-            onClick={handleDispute}
-            type="button"
-          >
-            Dispute report
-          </button>
-        </div>
-      )}
+      ) : null}
     </section>
   );
 }

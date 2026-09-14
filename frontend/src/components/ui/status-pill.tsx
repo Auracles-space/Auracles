@@ -5,7 +5,9 @@
  * Every operational status the console shows (attestor applications, KYB,
  * capabilities, calibration trials, attestations, disputes, offers) resolves
  * through this single map, so "in review" is the same words and the same
- * colour on every screen. Tones are the brand-book semantic colours via
+ * colour on every screen. Requestor, attestor-org and admin attestation
+ * surfaces read through `attestationStatusKey` so viewer-specific wording
+ * still comes from this one map. Tones are the brand-book semantic colours via
  * tokens, never literal hexes. Unknown statuses fall back to title case in a
  * neutral tone rather than throwing.
  *
@@ -63,6 +65,9 @@ const PRESENTATION: Record<string, StatusPresentation> = {
   // Disputes
   open: { label: "Open", tone: "warning" },
   under_review: { label: "In review", tone: "warning" },
+  // Attestation, viewer-specific keys (see attestationStatusKey/offerStatusKey)
+  report_sent: { label: "Submitted", tone: "info" },
+  offer_open: { label: "Awaiting your response", tone: "warning" },
   // Offers
   declined: { label: "Declined", tone: "error" },
   expired: { label: "Expired", tone: "neutral" },
@@ -98,6 +103,36 @@ export function ownerStatusKey(
   }
   if (status === "rejected" && domain === "kyb") return "needs_changes";
   return status;
+}
+
+export type AttestationViewer = "requestor" | "attestor" | "admin";
+
+/**
+ * Map an attestation status to the key a given viewer should read.
+ *
+ * The requestor never sees the admin step: ``needs_admin`` is still "Finding
+ * attestor" to them. A submitted report is "Report ready" for the requestor
+ * (their action is pending) and "Submitted" for the org and admins.
+ *
+ * @param status - Raw attestation status from the API.
+ * @param viewer - Who is looking at it.
+ */
+export function attestationStatusKey(status: string, viewer: AttestationViewer): string {
+  if (status === "needs_admin" && viewer === "requestor") return "matching";
+  if (status === "report_submitted" && viewer !== "requestor") return "report_sent";
+  return status;
+}
+
+/**
+ * Map an offer status to the key an attestor org should read.
+ *
+ * ``offered`` is the org's own pending decision, so it reads as a prompt
+ * rather than the requestor-facing "Offer sent".
+ *
+ * @param status - Raw offer status from the API.
+ */
+export function offerStatusKey(status: string): string {
+  return status === "offered" ? "offer_open" : status;
 }
 
 /**

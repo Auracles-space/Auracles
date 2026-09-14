@@ -29,7 +29,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   orgAttestorNeedsInfo: vi.fn(),
   rejectOrgAttestor: vi.fn(),
   startOrgAttestorTrial: vi.fn(),
-  adminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGet: vi.fn(),
+  // The grader loads on mount; give it a settled response so the test run
+  // never sees an unhandled rejection from an undefined result.
+  adminGetTrialGradeV1AdminOrgAttestorApplicationsApplicationIdTrialGet: vi.fn(
+    async () => ({ data: undefined, error: { detail: "none" }, response: { ok: false } }),
+  ),
   adminDecideTrialV1AdminOrgAttestorApplicationsApplicationIdTrialDecidePost: vi.fn(),
   suspendOrgAttestorCapability: vi.fn(),
   reinstateOrgAttestorCapability: vi.fn(),

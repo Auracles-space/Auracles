@@ -2,7 +2,10 @@
  * Report submission panel for one attestation review workspace.
  *
  * Lets the assigned attestor upload private evidence and submit the final
- * structured determination.
+ * structured determination. Outside the two submittable states the form is
+ * replaced by a line saying who is holding the report now — waiting
+ * requestor, admin dispute review, or settled — because "already submitted"
+ * told a reviewer nothing about what happens next.
  */
 
 "use client";
@@ -33,6 +36,21 @@ export interface ReportPanelProps {
 // these (e.g. already report_submitted, disputed, resolved) the form is locked
 // so a resubmit can't 409.
 const SUBMITTABLE_STATUSES = ["in_review", "revision_requested"];
+
+/**
+ * Explain who holds the report while the form is locked.
+ *
+ * @param status - Current attestation status.
+ */
+function describeLockedState(status: string): string {
+  if (status === "report_submitted") {
+    return "Your report is with the requestor. They can accept it or raise a dispute until the dispute window closes.";
+  }
+  if (status === "disputed") {
+    return "The requestor disputed this report. An admin is reviewing it — if they ask for a revision, this form reopens.";
+  }
+  return "This attestation is closed. The report can no longer be edited.";
+}
 
 // Mirrors the backend quality gate's `attestation_report_min_words` default.
 // The gate sums rubric comment words + summary words + conditions words (scope
@@ -217,24 +235,31 @@ export function ReportPanel({
   // lock the form so a resubmit can't 409. Revision requests reopen it.
   if (!SUBMITTABLE_STATUSES.includes(status)) {
     return (
-      <div className="rounded-xl border border-border-default bg-surface-elevated p-8 text-center space-y-2 shadow-bento">
-        <h2 className="text-lg font-semibold text-foreground">Final Report</h2>
+      <div className="rounded-2xl border border-border-default bg-surface-1 p-5 text-center space-y-2 shadow-sm">
+        <h2 className="text-lg font-semibold text-foreground">Final report</h2>
         <p className="text-sm text-foreground-muted">
-          This report has already been submitted. It can only be edited if the
-          operator requests a revision.
+          {describeLockedState(status)}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border-default bg-surface-elevated p-6 space-y-6 shadow-bento">
+    <div className="rounded-2xl border border-border-default bg-surface-1 p-5 space-y-6 shadow-sm">
       <div>
-        <h2 className="text-xl font-semibold text-foreground">Final Report</h2>
+        <h2 className="text-xl font-semibold text-foreground">Final report</h2>
         <p className="mt-1 text-sm text-foreground-muted">
-          Submit your final evaluation. This will complete the attestation process.
+          Submit your final evaluation. This completes your part of the
+          attestation and sends the report to the requestor.
         </p>
       </div>
+
+      {status === "revision_requested" && (
+        <p className="rounded-xl bg-surface-2 p-4 text-sm text-foreground">
+          An admin asked for a revision. Update the report below and submit it
+          again — the requestor sees only the resubmitted version.
+        </p>
+      )}
 
       {error && (
         <div className="p-4 text-sm text-error bg-error/5 rounded-xl border border-error/50">
@@ -325,7 +350,7 @@ export function ReportPanel({
             disabled={isSubmitting || !isValid}
             className="w-full sm:w-auto"
           >
-            {isSubmitting ? "Submitting..." : "Submit Report"}
+            {isSubmitting ? "Submitting..." : "Submit report"}
           </Button>
         </div>
       </form>

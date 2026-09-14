@@ -1,47 +1,33 @@
-import type { ReactNode } from "react";
-import type { AttestationRequestResponse } from "@/lib/generated/types.gen";
-import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import type { AttestationDisputeCreateRequest } from "@/lib/generated/types.gen";
+
+/** Dispute categories the backend accepts on a report dispute. */
+export type DisputeCategory = AttestationDisputeCreateRequest["category"];
 
 /**
- * Requestor-facing labels for internal attestation statuses.
+ * Dispute categories in display order, each with its human label.
  *
- * The stored status names are operational (e.g. ``needs_admin`` means auto-match
- * found no attestor and a human must assign one). These map them to plain,
- * requestor-friendly wording; unmapped statuses fall back to title-casing.
+ * Both the requestor's dispute form and the read-only dispute cards (requestor,
+ * attestor workspace) use this one list so the words match everywhere.
  */
-const STATUS_LABELS: Record<string, string> = {
-  pending_fee: "Awaiting payment",
-  pending_owner_consent: "Awaiting owner approval",
-  cancelled: "Withdrawn",
-  matching: "Finding attestor",
-  needs_admin: "Finding attestor",
-  offered: "Offer sent",
-  report_submitted: "Report ready",
-};
+export const DISPUTE_CATEGORIES: readonly (readonly [DisputeCategory, string])[] = [
+  ["scope_error", "Scope error"],
+  ["process_violation", "Process violation"],
+  ["material_inaccuracy", "Material inaccuracy"],
+  ["conflict_of_interest", "Conflict of interest"],
+];
 
 /**
- * Render a compact status tag.
+ * Human label for a dispute category; unknown values are title-cased.
  *
- * @param value - Raw status value from the API.
+ * @param category - Raw category from the API.
  */
-export function StatusTag({ value }: { value: string }) {
-  let classes = "border-info/30 bg-info/10 text-info";
-  if (["pending", "offered", "in_review", "needs_admin"].includes(value)) {
-    classes = "border-warning/30 bg-warning/10 text-warning";
-  } else if (
-    ["approved", "completed", "accepted", "verified", "active", "report_submitted"].includes(value)
-  ) {
-    classes = "border-success/30 bg-success/10 text-success";
-  } else if (["rejected", "declined", "withdrawn", "failed"].includes(value)) {
-    classes = "border-error/30 bg-error/10 text-error";
-  }
-  return (
-    <span
-      className={`inline-flex rounded-badge border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] ${classes}`}
-    >
-      {STATUS_LABELS[value] ?? formatLabel(value)}
-    </span>
-  );
+export function describeDisputeCategory(category: string): string {
+  const match = DISPUTE_CATEGORIES.find(([value]) => value === category);
+  if (match) return match[1];
+  return category
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 /**
@@ -116,51 +102,5 @@ export function HeaderCard({
         {summary}
       </p>
     </div>
-  );
-}
-
-/**
- * Render one Attestation card.
- */
-export function AttestationCard({
-  attestation,
-  children,
-}: {
-  attestation: AttestationRequestResponse;
-  children?: ReactNode;
-}) {
-  return (
-    <article className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="flex items-center gap-2 font-heading text-lg font-bold text-foreground">
-            {attestation.open_clarification ? (
-              <span
-                aria-label="Question awaiting your answer"
-                className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-error"
-                role="img"
-              />
-            ) : null}
-            {formatLabel(attestation.target_type)} · {attestation.target_id}
-          </h2>
-          <p className="mt-1 text-sm text-foreground-muted">
-            Fee {formatMoney(attestation.fee_amount, attestation.currency)} ·{" "}
-            {attestation.outcome ? formatLabel(attestation.outcome) : "No outcome"}
-          </p>
-        </div>
-        <StatusTag value={attestation.status} />
-      </div>
-      {attestation.open_clarification ? (
-        <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-error/40 bg-error/5 px-3 py-1.5 text-sm font-semibold text-error">
-          The attestor asked a question — open details to answer.
-        </p>
-      ) : null}
-      {attestation.summary ? (
-        <p className="mt-4 text-sm leading-6 text-foreground-muted">
-          {attestation.summary}
-        </p>
-      ) : null}
-      {children}
-    </article>
   );
 }

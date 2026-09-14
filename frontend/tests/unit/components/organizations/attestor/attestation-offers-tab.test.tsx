@@ -13,22 +13,24 @@ vi.mock("../../../../../src/lib/auth/form-client", () => ({
 vi.mock("../../../../../src/components/modules/organizations/organization-context", () => ({
   useOrganization: () => ({ orgId: "org-1", role: "owner" }),
 }));
-vi.mock("../../../../../src/lib/generated/sdk.gen", () => ({ 
-  listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet: vi.fn() 
+vi.mock("../../../../../src/lib/generated/sdk.gen", () => ({
+  listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet: vi.fn(),
+  declineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePost: vi.fn(),
 }));
 const ok = <T,>(d: T) => ({ data: d, error: undefined, request: new Request("http://t"), response: new Response(null, { status: 200 }) });
 
 describe("AttestationOffersTab", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("lists offers with target and expiry, empty state otherwise", async () => {
+  it("lists an offer by target and match score, never by raw id", async () => {
     vi.mocked(listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet).mockResolvedValueOnce(
-      ok({ offers: [{ offer_id: "offer-1", attestation_id: "att-1", target_type: "framework", target_id: "fw-1", status: "offered", cohort_index: 0, match_score: 95, offered_at: "2026-07-01T00:00:00Z", expires_at: "2026-07-20T00:00:00Z" }] })
+      ok({ offers: [{ offer_id: "offer-1", attestation_id: "att-1", target_type: "framework", target_id: "fw-1", target_title: "Growth Playbook", status: "offered", cohort_index: 0, match_score: 0.95, offered_at: "2026-07-01T00:00:00Z", expires_at: "2026-07-20T00:00:00Z" }] })
     );
     render(<AttestationOffersTab />);
     await waitFor(() =>
-      expect(screen.getByText(/Attestation ID: att-1/)).toBeInTheDocument(),
+      expect(screen.getByText("Growth Playbook")).toBeInTheDocument(),
     );
-    expect(screen.getByText(/95%/)).toBeInTheDocument();
+    expect(screen.getByText("95% match")).toBeInTheDocument();
+    expect(screen.queryByText(/att-1/)).toBeNull();
   });
 });

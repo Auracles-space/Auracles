@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { listOrgAttestationsV1OrgsOrgIdAttestationsGet as listQueue } from "@/lib/generated/sdk.gen";
 import { AttestationQueueTab } from "./attestation-queue-tab";
 
@@ -45,7 +45,13 @@ function item(overrides: Record<string, unknown>) {
 }
 
 describe("AttestationQueueTab", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));
+  });
+
+  afterEach(() => vi.useRealTimers());
 
   it("splits active reviews from completed history across tabs", async () => {
     vi.mocked(listQueue).mockResolvedValue({
@@ -114,5 +120,100 @@ describe("AttestationQueueTab", () => {
     render(<AttestationQueueTab />);
 
     expect(await screen.findByText("Answer received")).toBeInTheDocument();
+  });
+
+  it("reads a submitted report in the attestor's own vocabulary", async () => {
+    vi.mocked(listQueue).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          item({ status: "report_submitted", target_title: "Submitted Review" }),
+        ],
+      },
+    } as never);
+
+    render(<AttestationQueueTab />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: /history/i }));
+    expect(await screen.findByText("Submitted")).toBeInTheDocument();
+    expect(screen.queryByText("Report ready")).toBeNull();
+  });
+
+  it("shows the completion deadline on an active review", async () => {
+    vi.mocked(listQueue).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          item({
+            status: "in_review",
+            target_title: "Dated Review",
+            completion_due_at: "2026-09-20T00:00:00Z",
+          }),
+        ],
+      },
+    } as never);
+
+    render(<AttestationQueueTab />);
+
+    expect(await screen.findByText("Due 20 Sep 2026")).toBeInTheDocument();
+    expect(screen.queryByText(/Overdue/)).toBeNull();
+  });
+
+  it("flags a review whose deadline has passed", async () => {
+    vi.mocked(listQueue).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          item({
+            status: "in_review",
+            target_title: "Late Review",
+            completion_due_at: "2026-09-10T00:00:00Z",
+          }),
+        ],
+      },
+    } as never);
+
+    render(<AttestationQueueTab />);
+
+    expect(await screen.findByText("Due 10 Sep 2026")).toBeInTheDocument();
+    expect(screen.getByText(/Overdue/)).toHaveClass("text-error");
+  });
+
+  it("does not call a finished review overdue", async () => {
+    vi.mocked(listQueue).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          item({
+            status: "released",
+            target_title: "Old Review",
+            completion_due_at: "2026-09-10T00:00:00Z",
+          }),
+        ],
+      },
+    } as never);
+
+    render(<AttestationQueueTab />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: /history/i }));
+    await screen.findByText("Old Review");
+    expect(screen.queryByText(/Overdue/)).toBeNull();
+  });
+
+  it("files a withdrawn request under History", async () => {
+    vi.mocked(listQueue).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          item({ status: "cancelled", target_title: "Withdrawn Request" }),
+        ],
+      },
+    } as never);
+
+    render(<AttestationQueueTab />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: /history/i }));
+    expect(await screen.findByText("Withdrawn Request")).toBeInTheDocument();
+    expect(screen.getByText("Withdrawn")).toBeInTheDocument();
   });
 });

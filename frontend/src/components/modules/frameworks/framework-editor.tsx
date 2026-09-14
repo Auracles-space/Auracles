@@ -321,11 +321,22 @@ export function FrameworkEditor({
           readOnly={!isMetadataEditable}
           leftActions={
             canManageLiveState && isLive ? (
-              <DelistButton
-                api={api}
-                frameworkId={framework.id}
-                onCompleted={() => void loadWorkspace(true)}
-              />
+              <>
+                <DelistButton
+                  api={api}
+                  frameworkId={framework.id}
+                  onCompleted={() => void loadWorkspace(true)}
+                />
+                {/* Independent verification is only worth commissioning once
+                    the framework is live, so the entry point appears with the
+                    other live-state controls rather than on every draft. */}
+                <Link
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 py-2 text-sm font-semibold text-foreground outline-none transition hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+                  href={`/attestations?target=${framework.id}`}
+                >
+                  Request attestation
+                </Link>
+              </>
             ) : canManageLiveState && isDelisted ? (
               <RelistButton
                 api={api}

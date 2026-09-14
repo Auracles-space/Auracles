@@ -1,7 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { describeStatus, StatusPill } from "@/components/ui/status-pill";
+import {
+  attestationStatusKey,
+  describeStatus,
+  offerStatusKey,
+  StatusPill,
+} from "@/components/ui/status-pill";
 
 describe("describeStatus", () => {
   it("maps operational statuses to one label and tone everywhere", () => {
@@ -43,5 +48,43 @@ describe("owner-facing vocabulary", () => {
       label: "Needs changes",
       tone: "warning",
     });
+  });
+});
+
+describe("attestation vocabulary per viewer", () => {
+  it("hides the admin step from the requestor: needs_admin reads Finding attestor", () => {
+    expect(describeStatus(attestationStatusKey("needs_admin", "requestor"))).toEqual({
+      label: "Finding attestor",
+      tone: "info",
+    });
+    expect(describeStatus(attestationStatusKey("needs_admin", "admin"))).toEqual({
+      label: "Needs admin",
+      tone: "error",
+    });
+  });
+
+  it("reads a submitted report as ready for the requestor and submitted for the org", () => {
+    expect(describeStatus(attestationStatusKey("report_submitted", "requestor")).label).toBe(
+      "Report ready",
+    );
+    expect(describeStatus(attestationStatusKey("report_submitted", "attestor")).label).toBe(
+      "Submitted",
+    );
+    expect(describeStatus(attestationStatusKey("report_submitted", "admin")).label).toBe(
+      "Submitted",
+    );
+  });
+
+  it("leaves every other status untouched", () => {
+    expect(attestationStatusKey("in_review", "requestor")).toBe("in_review");
+    expect(attestationStatusKey("released", "attestor")).toBe("released");
+  });
+
+  it("names an open offer as awaiting the org's response", () => {
+    expect(describeStatus(offerStatusKey("offered"))).toEqual({
+      label: "Awaiting your response",
+      tone: "warning",
+    });
+    expect(offerStatusKey("declined")).toBe("declined");
   });
 });

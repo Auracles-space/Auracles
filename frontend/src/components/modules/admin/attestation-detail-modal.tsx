@@ -4,9 +4,10 @@
  * Admin detail modal for one attestation.
  *
  * Fetches the attestation plus its offer history and shows the current status,
- * key timestamps, and which org each offer went to (or was accepted by). Read
- * only — actioning a request happens from the queue rows. Portal overlay,
- * closes on Escape or backdrop click.
+ * key timestamps, which org each offer went to (or was accepted by), and why
+ * an org declined — the decline reason is admin-only and is the main signal
+ * for why a request is still unmatched. Read only: actioning a request happens
+ * from the queue rows. Portal overlay, closes on Escape or backdrop click.
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -18,7 +19,7 @@ import {
 } from "@/lib/auth/form-client";
 import { getAdminAttestationDetail } from "@/lib/generated/sdk.gen";
 import type { AdminAttestationDetailResponse } from "@/lib/generated/types.gen";
-import { StatusTag } from "@/components/modules/attestation/attestation-status";
+import { StatusPill, attestationStatusKey } from "@/components/ui/status-pill";
 
 type AttestationDetailModalProps = {
   /** Attestation to show detail for. */
@@ -121,7 +122,9 @@ export function AttestationDetailModal({
                   {attestation.fee_amount}
                 </p>
               </div>
-              <StatusTag value={attestation.status} />
+              <StatusPill
+                status={attestationStatusKey(attestation.status, "admin")}
+              />
             </div>
 
             <dl className="grid gap-2 text-sm">
@@ -166,7 +169,7 @@ export function AttestationDetailModal({
                         <span className="font-semibold text-foreground">
                           {offer.org_name ?? "Unknown org"}
                         </span>
-                        <StatusTag value={offer.status} />
+                        <StatusPill status={offer.status} />
                       </div>
                       <p className="mt-1 text-xs text-foreground-muted">
                         Offered {formatWhen(offer.offered_at)}
@@ -174,6 +177,13 @@ export function AttestationDetailModal({
                           ? ` · Responded ${formatWhen(offer.responded_at)}`
                           : ` · Expires ${formatWhen(offer.expires_at)}`}
                       </p>
+                      {offer.decline_reason ? (
+                        // Admin-only: the reason an org gave for declining is
+                        // never shown to the requestor.
+                        <p className="mt-2 rounded-xl bg-surface-2 p-3 text-xs text-foreground">
+                          Reason: {offer.decline_reason}
+                        </p>
+                      ) : null}
                     </div>
                   ))
                 ) : (

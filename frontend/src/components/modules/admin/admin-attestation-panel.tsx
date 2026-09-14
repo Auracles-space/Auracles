@@ -20,7 +20,7 @@ import type {
   AttestorDirectoryEntry,
 } from "@/lib/generated/types.gen";
 import { ErrorMessage, HeaderCard } from "@/components/modules/attestation/attestation-status";
-import { StatusPill } from "@/components/ui/status-pill";
+import { StatusPill, attestationStatusKey } from "@/components/ui/status-pill";
 import { NeedsAdminRow } from "@/components/modules/admin/needs-admin-row";
 import { emitNeedsAdminChanged } from "@/components/modules/admin/admin-events";
 import { AttestationDetailModal } from "@/components/modules/admin/attestation-detail-modal";
@@ -145,7 +145,7 @@ export function AdminAttestationPanel() {
                     {item.id} · {item.currency} {item.fee_amount}
                   </p>
                 </div>
-                <StatusPill status={item.status} />
+                <StatusPill status={attestationStatusKey(item.status, "admin")} />
               </button>
             ))
           )}

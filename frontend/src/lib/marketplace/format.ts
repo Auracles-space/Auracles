@@ -42,6 +42,31 @@ export function formatMoney(
   }
 }
 
+const SHORT_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+/**
+ * Format an ISO timestamp as a short, unambiguous date such as "14 Sep 2026".
+ *
+ * Day-first with a fixed three-letter month so the output never depends on the
+ * runtime's ICU data ("Sept" on Node, "Sep" elsewhere) and "09/10" is never
+ * read as the wrong month. Rendered in UTC, matching stored deadlines.
+ *
+ * @param value - ISO timestamp, or null/undefined when absent.
+ * @param fallback - Text to return when there is no valid date.
+ */
+export function formatShortDate(
+  value: string | null | undefined,
+  fallback = "",
+): string {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+  return `${parsed.getUTCDate()} ${SHORT_MONTHS[parsed.getUTCMonth()]} ${parsed.getUTCFullYear()}`;
+}
+
 /**
  * Convert an API enum/string into readable title case.
  *

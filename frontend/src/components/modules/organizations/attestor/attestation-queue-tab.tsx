@@ -1,5 +1,17 @@
 "use client";
 
+/**
+ * Review queue for one attestor organization.
+ *
+ * Splits the org's attestations into the reviews still owed work and the ones
+ * already finished, and puts the completion deadline on every active card so a
+ * slipping review is visible before the requestor chases it. Cards stack on
+ * mobile — this is never a table.
+ *
+ * Maps to: docs/superpowers/specs/2026-09-14-attestation-request-to-report-design.md §2
+ * (Attestor org).
+ */
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -7,10 +19,9 @@ import { useOrganization } from "@/components/modules/organizations/organization
 import { listOrgAttestationsV1OrgsOrgIdAttestationsGet } from "@/lib/generated/sdk.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { OrgAttestationItem } from "@/lib/generated/types.gen";
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, tabPanelId, tabId } from "@/components/ui/tabs";
+import { QueueCard } from "./queue-card";
 import { ReassignReviewerDialog } from "./reassign-reviewer-dialog";
 
 // "Active" = the review still needs reviewer/org action. Once the report is
@@ -25,28 +36,16 @@ const ACTIVE_QUEUE_STATUSES = [
 ];
 
 // History tab — reviews the reviewer has submitted plus terminal outcomes.
+// `closed` is the legacy settled status; `released` and `refunded` are what
+// the backend writes now, and `cancelled` is a requestor withdrawal.
 const COMPLETED_QUEUE_STATUSES = [
   "report_submitted",
   "released",
   "resolved",
   "refunded",
   "closed",
+  "cancelled",
 ];
-
-/** Badge variant for an in-flight attestation status. */
-function queueStatusVariant(
-  status: string,
-): "info" | "default" | "warning" | "error" {
-  if (status === "accepted") return "info";
-  if (status === "disputed") return "error";
-  if (status === "in_review") return "default";
-  return "warning";
-}
-
-/** Title-case a raw status/outcome token for display. */
-function humanize(value: string): string {
-  return value.replace(/_/g, " ");
-}
 
 export function AttestationQueueTab() {
   const router = useRouter();
@@ -108,7 +107,7 @@ export function AttestationQueueTab() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold tracking-tight text-foreground">Attestation Queue</h2>
+        <h2 className="text-xl font-semibold tracking-tight text-foreground">Attestation queue</h2>
       </div>
 
       <Tabs
@@ -131,66 +130,24 @@ export function AttestationQueueTab() {
         <div id={tabPanelId("active")} role="tabpanel" aria-labelledby={tabId("active")}>
           {activeAttestations.length === 0 ? (
             <div className="p-8 text-center text-foreground-muted border border-border-default border-dashed rounded-xl bg-surface-2">
-              <h3 className="font-semibold text-foreground mb-1">Queue Empty</h3>
+              <h3 className="font-semibold text-foreground mb-1">Queue empty</h3>
               <p className="text-sm">There are no active attestations in your queue.</p>
             </div>
           ) : (
             <div className="grid gap-4">
               {activeAttestations.map((att) => (
-                <div key={att.id} className="border border-border-default rounded-xl p-5 bg-surface-1 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {att.unread_answer ? (
-                        <span
-                          aria-label="Clarification answer awaiting your review"
-                          role="img"
-                          className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-error"
-                        />
-                      ) : null}
-                      <span className="font-semibold text-foreground">
-                        {att.target_title ?? (
-                          <span className="capitalize">{att.target_type}</span>
-                        )}
-                      </span>
-                      <Badge variant={queueStatusVariant(att.status)}>
-                        {humanize(att.status)}
-                      </Badge>
-                      {att.unread_answer ? (
-                        <Badge variant="error">Answer received</Badge>
-                      ) : null}
-                    </div>
-                    <div className="text-sm text-foreground-muted">
-                      {att.review_type ? `${att.review_type} review` : "Attestation"}
-                      {" · "}
-                      <span className="capitalize">{att.target_type}</span>
-                    </div>
-                    {isAdmin && (
-                      <div className="text-sm text-foreground-muted">
-                        Assigned to: {att.reviewing_member_name ?? "Unassigned"}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Button
-                      variant="secondary"
-                      disabled={!isAdmin}
-                      onClick={() => setReassigningId(att.id)}
-                    >
-                      Reassign
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={() =>
-                        router.push(
-                          `/dashboard/organizations/${orgId}/attestations/${att.id}`,
-                        )
-                      }
-                    >
-                      Workspace
-                    </Button>
-                  </div>
-                </div>
+                <QueueCard
+                  active
+                  attestation={att}
+                  isAdmin={isAdmin}
+                  key={att.id}
+                  onOpen={() =>
+                    router.push(
+                      `/dashboard/organizations/${orgId}/attestations/${att.id}`,
+                    )
+                  }
+                  onReassign={() => setReassigningId(att.id)}
+                />
               ))}
             </div>
           )}
@@ -205,48 +162,18 @@ export function AttestationQueueTab() {
           ) : (
             <div className="grid gap-4">
               {completedAttestations.map((att) => (
-                <div key={att.id} className="border border-border-default rounded-xl p-5 bg-surface-1 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-foreground">
-                        {att.target_title ?? (
-                          <span className="capitalize">{att.target_type}</span>
-                        )}
-                      </span>
-                      {att.outcome ? (
-                        <Badge variant="default" className="capitalize">
-                          {humanize(att.outcome)}
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <div className="text-sm text-foreground-muted">
-                      {att.review_type ? `${att.review_type} review` : "Attestation"}
-                      {" · "}
-                      <span className="capitalize">{humanize(att.status)}</span>
-                      {att.updated_at
-                        ? ` · ${new Date(att.updated_at).toLocaleDateString()}`
-                        : null}
-                    </div>
-                    {isAdmin && (
-                      <div className="text-sm text-foreground-muted">
-                        Reviewed by: {att.reviewing_member_name ?? "—"}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() =>
-                        router.push(
-                          `/dashboard/organizations/${orgId}/attestations/${att.id}`,
-                        )
-                      }
-                    >
-                      View
-                    </Button>
-                  </div>
-                </div>
+                <QueueCard
+                  active={false}
+                  attestation={att}
+                  isAdmin={isAdmin}
+                  key={att.id}
+                  onOpen={() =>
+                    router.push(
+                      `/dashboard/organizations/${orgId}/attestations/${att.id}`,
+                    )
+                  }
+                  onReassign={() => setReassigningId(att.id)}
+                />
               ))}
             </div>
           )}

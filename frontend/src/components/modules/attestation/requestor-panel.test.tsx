@@ -1,11 +1,24 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cancelAttestationRequest,
+  getExploreFrameworkDetail,
   listAttestations,
   requestAttestation,
 } from "@/lib/generated/sdk.gen";
 import { RequestorPanel } from "./requestor-panel";
+
+const { searchParams } = vi.hoisted(() => ({
+  searchParams: { value: null as string | null },
+}));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => ({ get: () => searchParams.value }),
+}));
+
+beforeEach(() => {
+  searchParams.value = null;
+  vi.mocked(getExploreFrameworkDetail).mockClear();
+});
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -56,6 +69,10 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
     ],
   })),
   requestAttestation: vi.fn(async () => ({ response: { ok: true }, data: {} })),
+  getExploreFrameworkDetail: vi.fn(async () => ({
+    response: { ok: true },
+    data: { id: "99999999-9999-9999-9999-999999999999", title: "Supplier Audit Kit" },
+  })),
 }));
 
 /** Fill every required framework-request field with valid values. */
@@ -287,31 +304,74 @@ function attestationInStatus(status: string) {
   };
 }
 
-describe("RequestorPanel withdrawal", () => {
-  it("offers a way out of a request still awaiting owner approval", async () => {
+describe("RequestorPanel request list", () => {
+  it("summarises a request by title, attestor, next step, and fee", async () => {
     vi.mocked(listAttestations).mockResolvedValue({
       response: { ok: true },
-      data: { attestations: [attestationInStatus("pending_owner_consent")] },
-    } as never);
-    vi.mocked(cancelAttestationRequest).mockResolvedValue({
-      response: { ok: true },
-      data: { ...attestationInStatus("cancelled") },
+      data: {
+        attestations: [
+          {
+            ...attestationInStatus("in_review"),
+            target_title: "Governance Playbook",
+            attestor_org_name: "Lagos Assurance",
+            completion_due_at: "2026-09-20T00:00:00Z",
+          },
+        ],
+      },
     } as never);
 
     render(<RequestorPanel />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /Withdraw request/i }));
-
-    await waitFor(() => {
-      expect(cancelAttestationRequest).toHaveBeenCalledWith(
-        expect.objectContaining({ path: { attestation_id: "att-withdraw-1" } }),
-      );
-    });
+    expect(
+      await screen.findByRole("heading", { name: "Governance Playbook" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Reviewed by Lagos Assurance")).toBeInTheDocument();
+    expect(
+      screen.getByText("Lagos Assurance is reviewing. Report due 20 Sep 2026."),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1,200/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /View details/i }),
+    ).toHaveAttribute("href", "/attestations/att-withdraw-1");
   });
 
-  it("offers no withdrawal once the fee is payable", async () => {
-    // Past this point a payment can already be in flight, and the fee webhook
-    // rejects any attestation that has left pending_fee.
+  it("falls back to a generic target label when no title is exposed", async () => {
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: { attestations: [attestationInStatus("matching")] },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Framework" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the decision and withdrawal controls on the detail page", async () => {
+    // The list is a summary: accepting, disputing, and withdrawing all need
+    // the report and the refund copy beside them, which only detail has.
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          attestationInStatus("report_submitted"),
+          { ...attestationInStatus("matching"), id: "att-2" },
+        ],
+      },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    await screen.findByText(/Report ready/i);
+    expect(screen.queryByRole("button", { name: /Accept report/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Raise dispute/i })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /Withdraw request/i }),
+    ).toBeNull();
+  });
+
+  it("keeps a payment route open for an unpaid request", async () => {
     vi.mocked(listAttestations).mockResolvedValue({
       response: { ok: true },
       data: { attestations: [attestationInStatus("pending_fee")] },
@@ -320,6 +380,118 @@ describe("RequestorPanel withdrawal", () => {
     render(<RequestorPanel />);
 
     await screen.findByText(/Awaiting payment/i);
-    expect(screen.queryByRole("button", { name: /Withdraw request/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /Pay fee/i })).toHaveAttribute(
+      "href",
+      "/attestations/att-withdraw-1",
+    );
+  });
+
+  it("flags a request with an unanswered attestor question", async () => {
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestations: [
+          { ...attestationInStatus("in_review"), open_clarification: true },
+        ],
+      },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    expect(
+      await screen.findByText(
+        "The attestor asked a question — open details to answer.",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("RequestorPanel prefilled target", () => {
+  it("pins an external framework and warns that the owner must approve", async () => {
+    searchParams.value = "99999999-9999-9999-9999-999999999999";
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: { attestations: [] },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    expect(
+      await screen.findByText("Request an attestation"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Supplier Audit Kit")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "The framework owner must approve this request before you pay.",
+      ),
+    ).toBeInTheDocument();
+    // The framework is fixed by the link that opened the form.
+    expect(screen.queryByLabelText(/^Framework/i)).toBeNull();
+  });
+
+  it("pins one of the requester's own frameworks without the owner note", async () => {
+    searchParams.value = "11111111-1111-1111-1111-111111111111";
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: { attestations: [] },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    await screen.findByText("Request an attestation");
+    expect(
+      await screen.findByText("Governance Playbook"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Framework/i)).toBeNull();
+    expect(
+      screen.queryByText(
+        "The framework owner must approve this request before you pay.",
+      ),
+    ).toBeNull();
+    expect(getExploreFrameworkDetail).not.toHaveBeenCalled();
+  });
+
+  it("requests the pinned framework when the brief is submitted", async () => {
+    searchParams.value = "99999999-9999-9999-9999-999999999999";
+    vi.mocked(listAttestations).mockResolvedValue({
+      response: { ok: true },
+      data: { attestations: [] },
+    } as never);
+
+    render(<RequestorPanel />);
+
+    await screen.findByText("Supplier Audit Kit");
+    fireEvent.change(screen.getByLabelText(/Review type/i), {
+      target: { value: "quality" },
+    });
+    fireEvent.change(screen.getByLabelText(/What it does/i), {
+      target: { value: "Structures supplier audits." },
+    });
+    fireEvent.change(screen.getByLabelText(/Use case/i), {
+      target: { value: "Procurement." },
+    });
+    fireEvent.change(screen.getByLabelText(/Jurisdiction/i), {
+      target: { value: "global" },
+    });
+    fireEvent.change(screen.getByLabelText(/Focus areas/i), {
+      target: { value: "Controls." },
+    });
+    fireEvent.change(screen.getByLabelText(/Desired outcome/i), {
+      target: { value: "Sign-off." },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Request attestation/i }),
+    );
+
+    await waitFor(() => {
+      expect(requestAttestation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            target_type: "framework",
+            target_id: "99999999-9999-9999-9999-999999999999",
+          }),
+        }),
+      );
+    });
   });
 });

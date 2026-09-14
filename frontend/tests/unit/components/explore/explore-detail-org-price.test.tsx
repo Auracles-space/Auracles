@@ -26,6 +26,10 @@ vi.mock("@/components/modules/explore/framework-license-cta", () => ({
   FrameworkLicenseCta: () => <div>license cta</div>,
 }));
 
+vi.mock("@/components/modules/attestation/request-attestation-link", () => ({
+  RequestAttestationLink: () => null,
+}));
+
 vi.mock("@/components/modules/explore/preview-artifact-block", () => ({
   PreviewArtifactBlock: () => <div>preview</div>,
 }));
