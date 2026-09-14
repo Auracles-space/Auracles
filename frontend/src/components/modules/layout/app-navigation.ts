@@ -15,21 +15,25 @@ export type AppNavigationLink = {
  * Shared authenticated navigation links and their role visibility.
  */
 export const appLinks: AppNavigationLink[] = [
+  // Ordered from most to least used. Links are role-filtered, so each role
+  // sees this order minus what it cannot use: the marketplace entry first,
+  // then each role's daily work, periodic management, occasional tools, and
+  // Admin and Settings last.
   { href: "/explore", label: "Explore", roles: null },
-  { href: "/attestors", label: "Find Attestors", roles: null },
+  { href: "/dashboard/frameworks", label: "Frameworks", roles: ["contributor"] },
+  { href: "/library", label: "Library", roles: ["operator"] },
   { href: "/projects", label: "Projects", roles: ["operator", "contributor"] },
   { href: "/attestations", label: "Attestations", roles: ["contributor", "operator"] },
-  { href: "/dashboard/organizations", label: "Organizations", roles: null },
-  { href: "/dashboard/frameworks", label: "Frameworks", roles: ["contributor"] },
-  { href: "/dashboard/collections", label: "Collections", roles: ["contributor"] },
   { href: "/dashboard/financials", label: "Financials", roles: ["contributor"] },
+  { href: "/dashboard/organizations", label: "Organizations", roles: null },
+  { href: "/dashboard/collections", label: "Collections", roles: ["contributor"] },
+  { href: "/settings/saved-searches", label: "Saved Searches", roles: ["operator"] },
+  { href: "/attestors", label: "Find Attestors", roles: null },
   {
     href: "/dashboard/developer",
     label: "Developer",
     roles: ["contributor", "developer"],
   },
-  { href: "/library", label: "Library", roles: ["operator"] },
-  { href: "/settings/saved-searches", label: "Saved Searches", roles: ["operator"] },
   { href: "/admin/analytics", label: "Admin", roles: ["admin"] },
   { href: "/settings/identity", label: "Settings", roles: null },
 ];

@@ -56,3 +56,40 @@ describe("visibleNavLinks", () => {
     );
   });
 });
+
+describe("visibleNavLinks order", () => {
+  // Most used first: the marketplace entry, then each role's daily work,
+  // then periodic management, then occasional tools; Settings stays last.
+  it("orders a contributor's links from most to least used", () => {
+    expect(visibleNavLinks(appLinks, ["contributor"]).map((link) => link.label)).toEqual([
+      "Explore",
+      "Frameworks",
+      "Projects",
+      "Attestations",
+      "Financials",
+      "Organizations",
+      "Collections",
+      "Find Attestors",
+      "Developer",
+      "Settings",
+    ]);
+  });
+
+  it("orders an operator's links from most to least used", () => {
+    expect(visibleNavLinks(appLinks, ["operator"]).map((link) => link.label)).toEqual([
+      "Explore",
+      "Library",
+      "Projects",
+      "Attestations",
+      "Organizations",
+      "Saved Searches",
+      "Find Attestors",
+      "Settings",
+    ]);
+  });
+
+  it("keeps Admin just above Settings for administrators", () => {
+    const labels = visibleNavLinks(appLinks, ["admin"]).map((link) => link.label);
+    expect(labels.slice(-2)).toEqual(["Admin", "Settings"]);
+  });
+});
