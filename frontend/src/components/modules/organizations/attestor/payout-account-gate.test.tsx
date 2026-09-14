@@ -4,6 +4,7 @@ import {
   onboardOrgPayoutAccount,
   updateOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
+import { configureBrowserClient } from "@/lib/auth/form-client";
 import { PayoutAccountGate } from "./payout-account-gate";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
@@ -16,9 +17,12 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   updateOrgAttestorApplication: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/form-client", () => ({
+// Keep the real describeGeneratedError so surfaced copy is what users read;
+// configureBrowserClient touches the (mocked-away) transport client.
+vi.mock("@/lib/auth/form-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/form-client")>()),
+  configureBrowserClient: vi.fn(),
   getAccessTokenHeaders: () => ({ Authorization: "Bearer test" }),
-  describeGeneratedError: () => "error",
 }));
 
 /** A draft application with no payout account linked yet. */
@@ -166,5 +170,45 @@ describe("PayoutAccountGate", () => {
     // rather than dead-ending on a null onboarding URL.
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     vi.unstubAllEnvs();
+  });
+
+  it("installs the browser client before onboarding and surfaces a 403 message", async () => {
+    // Without configureBrowserClient the step-up and refresh interceptors are
+    // never installed, so a step-up refusal would dead-end here.
+    vi.mocked(onboardOrgPayoutAccount).mockResolvedValue({
+      data: undefined,
+      error: {
+        detail: {
+          error_code: "org_role_required",
+          message: "Only an owner or admin can manage payout accounts.",
+        },
+      },
+      response: { ok: false, status: 403 },
+    } as never);
+
+    render(
+      <PayoutAccountGate orgId="org-1" application={draftApp()} onChange={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /set up payout account/i }));
+
+    expect(
+      await screen.findByText("Only an owner or admin can manage payout accounts."),
+    ).toBeInTheDocument();
+    expect(configureBrowserClient).toHaveBeenCalled();
+    expect(updateOrgAttestorApplication).not.toHaveBeenCalled();
+  });
+
+  it("describes a thrown failure instead of a generic unexpected-error line", async () => {
+    vi.mocked(onboardOrgPayoutAccount).mockRejectedValue({
+      detail: "Payout provider is unavailable.",
+    });
+
+    render(
+      <PayoutAccountGate orgId="org-1" application={draftApp()} onChange={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /set up payout account/i }));
+
+    expect(await screen.findByText("Payout provider is unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText("An unexpected error occurred.")).not.toBeInTheDocument();
   });
 });

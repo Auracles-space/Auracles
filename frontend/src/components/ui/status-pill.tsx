@@ -4,7 +4,7 @@
  *
  * Every operational status the console shows (attestor applications, KYB,
  * capabilities, calibration trials, attestations, disputes, offers,
- * invitations, membership roles, frameworks, licenses) resolves
+ * invitations, membership roles, frameworks, licenses, payouts) resolves
  * through this single map, so "in review" is the same words and the same
  * colour on every screen. Requestor, attestor-org and admin attestation
  * surfaces read through `attestationStatusKey` so viewer-specific wording
@@ -86,6 +86,10 @@ const PRESENTATION: Record<string, StatusPresentation> = {
   pipeline_failed: { label: "Processing failed", tone: "error" },
   published: { label: "Published", tone: "success" },
   unpublished: { label: "Unpublished", tone: "neutral" },
+  // Payouts: `pending`, `processing` and `failed` share the keys above; a
+  // settled payout reads as "Paid" whichever word the provider rail uses.
+  completed: { label: "Paid", tone: "success" },
+  paid: { label: "Paid", tone: "success" },
 };
 
 const TONE_CLASSES: Record<StatusTone, string> = {

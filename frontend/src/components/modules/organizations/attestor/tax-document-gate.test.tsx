@@ -1,15 +1,19 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { uploadOrgAttestorTaxDocument } from "@/lib/generated/sdk.gen";
+import { configureBrowserClient } from "@/lib/auth/form-client";
 import { TaxDocumentGate } from "./tax-document-gate";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   uploadOrgAttestorTaxDocument: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/form-client", () => ({
+// Keep the real describeGeneratedError so surfaced copy is what users read;
+// configureBrowserClient touches the (mocked-away) transport client.
+vi.mock("@/lib/auth/form-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/form-client")>()),
+  configureBrowserClient: vi.fn(),
   getAccessTokenHeaders: () => ({ Authorization: "Bearer test" }),
-  describeGeneratedError: () => "error",
 }));
 
 vi.mock("@/components/modules/organizations/organization-context", () => ({
@@ -110,5 +114,46 @@ describe("TaxDocumentGate", () => {
     );
     expect(onChange).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
+  });
+
+  /** Select a file and submit the form. */
+  function submitFile() {
+    const file = new File(["x"], "w9.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText(/Upload Document/i), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Upload Document/i }));
+  }
+
+  it("installs the browser client before reserving and surfaces a 403 message", async () => {
+    vi.mocked(uploadOrgAttestorTaxDocument).mockResolvedValue({
+      data: undefined,
+      error: { detail: "Tax documents are locked once the application is submitted." },
+      response: { ok: false, status: 403 },
+    } as never);
+    const onChange = vi.fn();
+
+    render(<TaxDocumentGate application={null} onChange={onChange} />);
+    submitFile();
+
+    expect(
+      await screen.findByText(
+        "Tax documents are locked once the application is submitted.",
+      ),
+    ).toBeInTheDocument();
+    expect(configureBrowserClient).toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("describes a thrown failure instead of a generic unexpected-error line", async () => {
+    vi.mocked(uploadOrgAttestorTaxDocument).mockRejectedValue({
+      detail: "Upload service is unavailable.",
+    });
+
+    render(<TaxDocumentGate application={null} onChange={vi.fn()} />);
+    submitFile();
+
+    expect(await screen.findByText("Upload service is unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText("An unexpected error occurred.")).not.toBeInTheDocument();
   });
 });

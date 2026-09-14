@@ -21,7 +21,11 @@ import {
   updateOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
-import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
+import {
+  configureBrowserClient,
+  describeGeneratedError,
+  getAccessTokenHeaders,
+} from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import {
   PaystackBankFields,
@@ -64,6 +68,9 @@ export function PayoutAccountGate({
     setLoading(true);
     setError(null);
     try {
+      // Installs the step-up and refresh interceptors, so a 403 step-up
+      // refusal prompts for 2FA instead of dead-ending on this form.
+      configureBrowserClient();
       const onboard = await onboardOrgPayoutAccount({
         path: { org_id: orgId },
         body: isPaystackRail
@@ -106,8 +113,8 @@ export function PayoutAccountGate({
         return;
       }
       onChange();
-    } catch {
-      setError("An unexpected error occurred.");
+    } catch (caught) {
+      setError(describeGeneratedError(caught));
     } finally {
       setLoading(false);
     }

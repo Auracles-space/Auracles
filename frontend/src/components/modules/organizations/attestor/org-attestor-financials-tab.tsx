@@ -9,6 +9,9 @@
  * payout is a sensitive action: the API requires a step-up 2FA window, which
  * the global step-up prompt handles when the call is refused.
  *
+ * Every amount is formatted in the currency the earnings or invoice response
+ * carries (naira on the NGN rail), never an assumed default.
+ *
  * Maps to: FR-FIN-* (organization payouts).
  */
 import { useEffect, useState } from "react";
@@ -26,7 +29,9 @@ import {
   paystackDetailsComplete,
 } from "@/components/modules/financials/paystack-bank-fields";
 import { payoutProviderForCountry } from "@/lib/marketplace/currency";
+import { formatMoney } from "@/lib/marketplace/format";
 import { Spinner } from "@/components/ui/spinner";
+import { ownerStatusKey, StatusPill } from "@/components/ui/status-pill";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -48,6 +53,7 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
   const [application, setApplication] = useState<OrgAttestorApplicationResponse | null>(null);
   const [invoices, setInvoices] = useState<OrgInvoiceListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [bankCode, setBankCode] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
@@ -66,11 +72,20 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
         getOrgAttestorApplication({ headers, path: { org_id: orgId } }),
         listOrgInvoices({ headers, path: { org_id: orgId } }),
       ]);
+      // The generated client resolves non-2xx responses with `error` rather
+      // than throwing. An org with no attestor application (a contributor-only
+      // org) legitimately 404s there, so only other failures are surfaced.
+      const appMissing = appRes.response?.status === 404;
+      const failure =
+        earningsRes.error ??
+        (appMissing ? undefined : appRes.error) ??
+        invoicesRes.error;
+      setLoadError(failure ? describeGeneratedError(failure) : null);
       setEarnings(earningsRes.data || null);
       setApplication(appRes.data || null);
       setInvoices(invoicesRes.data?.invoices || []);
     } catch (error) {
-      console.error("Failed to fetch financials data:", error);
+      setLoadError(describeGeneratedError(error));
     } finally {
       setIsLoading(false);
     }
@@ -160,26 +175,44 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
     );
   }
 
+  const availableAmount = Number(earnings?.available_balance ?? "0");
+  const minimumAmount = Number(earnings?.minimum_payout ?? "0");
+  const hasNoBalance = !(availableAmount > 0);
+  // Same threshold the API enforces; checked here so the org learns why the
+  // button is off instead of meeting a refusal after a step-up prompt.
+  const belowMinimum = !hasNoBalance && availableAmount < minimumAmount;
+
   return (
     <div className="space-y-8">
+      {loadError && (
+        <p
+          className="rounded-xl border border-error/30 bg-error/10 p-4 text-sm text-error"
+          role="alert"
+        >
+          {loadError}
+        </p>
+      )}
       {earnings && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
             <p className="text-sm text-foreground-subtle mb-1">Available Balance</p>
             <p className="text-2xl font-bold">
-              {earnings.currency} {earnings.available_balance}
+              {formatMoney(earnings.available_balance, earnings.currency)}
+            </p>
+            <p className="mt-1 text-xs text-foreground-subtle">
+              Minimum payout {formatMoney(earnings.minimum_payout, earnings.currency)}
             </p>
           </div>
           <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
             <p className="text-sm text-foreground-subtle mb-1">Pending Clearance</p>
             <p className="text-2xl font-bold">
-              {earnings.currency} {earnings.pending_clearance}
+              {formatMoney(earnings.pending_clearance, earnings.currency)}
             </p>
           </div>
           <div className="p-4 rounded-lg bg-surface-2 border border-border-strong">
             <p className="text-sm text-foreground-subtle mb-1">Gross Revenue</p>
             <p className="text-2xl font-bold">
-              {earnings.currency} {earnings.gross_revenue}
+              {formatMoney(earnings.gross_revenue, earnings.currency)}
             </p>
           </div>
         </div>
@@ -193,8 +226,10 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
           </p>
         )}
         {application?.status !== "approved" ? (
-          <div className="text-sm text-foreground-subtle">
-            <p className="font-medium text-warning">Account Pending</p>
+          <div className="grid justify-items-start gap-2 text-sm text-foreground-subtle">
+            {application ? (
+              <StatusPill status={ownerStatusKey(application.status, "application")} />
+            ) : null}
             <p>Your application must be approved before you can setup payouts.</p>
           </div>
         ) : !application.payout_account_id ? (
@@ -230,10 +265,7 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={handleRequestPayout}
-                disabled={
-                  isActionLoading ||
-                  parseFloat(earnings?.available_balance || "0") <= 0
-                }
+                disabled={isActionLoading || hasNoBalance || belowMinimum}
               >
                 Request Payout
               </Button>
@@ -246,9 +278,15 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
                 Manage payout account
               </Button>
             </div>
-            {parseFloat(earnings?.available_balance || "0") <= 0 && (
+            {hasNoBalance && (
               <p className="text-sm text-foreground-subtle mt-2">
                 No available balance to payout.
+              </p>
+            )}
+            {belowMinimum && earnings && (
+              <p className="text-sm text-foreground-subtle mt-2">
+                Your available balance is below the minimum payout of{" "}
+                {formatMoney(earnings.minimum_payout, earnings.currency)}.
               </p>
             )}
           </div>
@@ -262,16 +300,19 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
         ) : (
           <div className="space-y-4">
             {invoices.map((invoice) => (
-              <div key={invoice.id} className="p-4 rounded-lg bg-surface-2 border border-border-strong flex justify-between items-center">
-                <div>
-                  <p className="font-medium">{invoice.invoice_number}</p>
+              <div
+                key={invoice.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-strong bg-surface-2 p-4"
+              >
+                <div className="min-w-0">
+                  <p className="break-all font-medium">{invoice.invoice_number}</p>
                   <p className="text-sm text-foreground-subtle">
                     {new Date(invoice.issue_date).toLocaleDateString()}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="font-bold">
-                    {invoice.currency} {invoice.total}
+                    {formatMoney(invoice.total, invoice.currency.toUpperCase())}
                   </p>
                   <p className="text-xs text-foreground-subtle uppercase">{invoice.doc_type}</p>
                 </div>

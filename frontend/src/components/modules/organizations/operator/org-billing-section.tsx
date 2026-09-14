@@ -261,16 +261,16 @@ export function OrgBillingSection() {
                 className="grid gap-3 rounded-xl border border-border-default bg-surface-1 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-colors hover:border-border-strong sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                 key={invoice.id}
               >
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
+                <div className="min-w-0">
+                  <p className="break-all text-sm font-semibold text-foreground">
                     {invoice.invoice_number}
                   </p>
                   <p className="text-xs text-foreground-muted">
                     {new Date(invoice.issue_date).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="flex items-center justify-end gap-4">
-                  <div className="text-right">
+                <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end sm:gap-4">
+                  <div className="sm:text-right">
                     <p className="text-sm font-semibold text-foreground">
                       {formatMoney(invoice.total, invoice.currency.toUpperCase())}
                     </p>

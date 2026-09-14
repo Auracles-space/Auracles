@@ -11,6 +11,7 @@ vi.mock("@/components/modules/organizations/organization-context", () => ({
   useOrganization: vi.fn(),
 }));
 vi.mock("@/lib/auth/form-client", () => ({
+  configureBrowserClient: vi.fn(),
   describeGeneratedError: (e: unknown) => (e as Error).message,
   getAccessTokenHeaders: () => ({ Authorization: "Bearer token" }),
 }));

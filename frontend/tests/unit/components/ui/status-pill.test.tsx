@@ -87,6 +87,16 @@ describe("framework and license vocabulary", () => {
   });
 });
 
+describe("payout vocabulary", () => {
+  it("reads payout lifecycle states in plain words with semantic tones", () => {
+    expect(describeStatus("pending")).toEqual({ label: "Pending", tone: "warning" });
+    expect(describeStatus("processing")).toEqual({ label: "Processing", tone: "info" });
+    expect(describeStatus("completed")).toEqual({ label: "Paid", tone: "success" });
+    expect(describeStatus("paid")).toEqual({ label: "Paid", tone: "success" });
+    expect(describeStatus("failed")).toEqual({ label: "Failed", tone: "error" });
+  });
+});
+
 describe("attestation vocabulary per viewer", () => {
   it("hides the admin step from the requestor: needs_admin reads Finding attestor", () => {
     expect(describeStatus(attestationStatusKey("needs_admin", "requestor"))).toEqual({

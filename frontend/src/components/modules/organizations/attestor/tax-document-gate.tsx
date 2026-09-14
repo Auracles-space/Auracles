@@ -1,13 +1,32 @@
 "use client";
 
+/**
+ * Tax-document gate for the org attestor application checklist.
+ *
+ * Reserves an S3 upload session for the org's tax form, pushes the file to
+ * the bucket, and confirms. Editable only while the application is a draft or
+ * needs info; locked read-only afterwards.
+ *
+ * Maps to: FR-ATT / org-attestor design (tax document gate).
+ */
 import { useState } from "react";
 import { uploadOrgAttestorTaxDocument } from "@/lib/generated/sdk.gen";
-import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
+import {
+  configureBrowserClient,
+  describeGeneratedError,
+  getAccessTokenHeaders,
+} from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
 
+/**
+ * Render the tax-document upload control for the checklist.
+ *
+ * @param application - The live application, or null before it exists.
+ * @param onChange - Refetch callback fired after a successful upload.
+ */
 export function TaxDocumentGate({
   application,
   onChange,
@@ -69,6 +88,9 @@ export function TaxDocumentGate({
     setLoading(true);
     setError(null);
     try {
+      // Installs the step-up and refresh interceptors, so a 403 step-up
+      // refusal prompts for 2FA instead of dead-ending on this form.
+      configureBrowserClient();
       const res = await uploadOrgAttestorTaxDocument({
         path: { org_id: orgId },
         body: {
@@ -100,8 +122,8 @@ export function TaxDocumentGate({
 
       setUploaded(true);
       onChange();
-    } catch {
-      setError("An unexpected error occurred.");
+    } catch (caught) {
+      setError(describeGeneratedError(caught));
     } finally {
       setLoading(false);
     }

@@ -19,7 +19,7 @@ import {
 import { listAdminInvoicesV1AdminInvoicesGet } from "@/lib/generated/sdk.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import type { AdminInvoicesResponse } from "@/lib/generated/types.gen";
-import { CURRENCY_DISPLAY } from "@/lib/marketplace/currency";
+import { formatMoney } from "@/lib/marketplace/format";
 
 /**
  * Format an invoice date for compact admin copy.
@@ -32,28 +32,6 @@ function formatDate(value: string): string {
     return value;
   }
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(parsed);
-}
-
-/**
- * Format a decimal string as a currency amount.
- *
- * @param amount - Decimal string from the API.
- * @param currency - ISO 4217 currency code.
- */
-function formatAmount(amount: string, currency: string): string {
-  const value = Number(amount);
-  if (Number.isNaN(value)) {
-    return `${amount} ${currency}`;
-  }
-  try {
-    return new Intl.NumberFormat(undefined, {
-      currency,
-      currencyDisplay: CURRENCY_DISPLAY,
-      style: "currency",
-    }).format(value);
-  } catch {
-    return `${amount} ${currency}`;
-  }
 }
 
 /**
@@ -181,7 +159,7 @@ export function AdminInvoicesPanel() {
                   Total
                 </span>
                 <span className="font-semibold">
-                  {formatAmount(item.total, item.currency)}
+                  {formatMoney(item.total, item.currency.toUpperCase())}
                 </span>
               </div>
 

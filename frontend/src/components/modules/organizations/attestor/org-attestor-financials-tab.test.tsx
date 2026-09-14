@@ -7,6 +7,7 @@ import {
   listOrgInvoices,
   getOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
+import { formatMoney } from "@/lib/marketplace/format";
 import { OrgAttestorFinancialsTab } from "./org-attestor-financials-tab";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
@@ -181,10 +182,96 @@ describe("OrgAttestorFinancialsTab", () => {
     } as never);
 
     render(<OrgAttestorFinancialsTab orgId="org-1" />);
-    await waitFor(() => {
-      expect(screen.getByText("Account Pending")).toBeInTheDocument();
-    });
-
+    // The shared status vocabulary, not a bespoke "Account Pending" label.
+    expect(await screen.findByText("Pending")).toBeInTheDocument();
+    expect(screen.queryByText("Account Pending")).not.toBeInTheDocument();
     expect(screen.queryByText("Request Payout")).not.toBeInTheDocument();
+  });
+
+  it("formats every amount in the response's own currency", async () => {
+    // Naira is the primary rail: amounts must never fall back to a dollar
+    // sign or a bare "NGN 450.00" string concatenation.
+    vi.mocked(getOrgAttestorEarnings).mockResolvedValue({
+      data: {
+        currency: "NGN",
+        gross_revenue: "125000.50",
+        pending_clearance: "2500.00",
+        available_balance: "98000.00",
+        commission_rate: "0.20",
+        minimum_payout: "5000.00",
+      },
+    } as never);
+    vi.mocked(listOrgInvoices).mockResolvedValue({
+      data: {
+        invoices: [
+          {
+            id: "inv-1",
+            invoice_number: "AUR-ERN-2026-000123456789",
+            doc_type: "earnings_statement",
+            issue_date: "2026-08-02T00:00:00Z",
+            currency: "NGN",
+            total: "30000.00",
+            source_ref_type: "attestation",
+            source_ref_id: "att-1",
+            direction: "sales",
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    expect(await screen.findByText(formatMoney("98000.00", "NGN"))).toBeInTheDocument();
+    expect(screen.getByText(formatMoney("2500.00", "NGN"))).toBeInTheDocument();
+    expect(screen.getByText(formatMoney("125000.50", "NGN"))).toBeInTheDocument();
+    expect(screen.getByText(formatMoney("30000.00", "NGN"))).toBeInTheDocument();
+    expect(
+      screen.getByText(`Minimum payout ${formatMoney("5000.00", "NGN")}`),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/NGN 98000/)).not.toBeInTheDocument();
+  });
+
+  it("disables Request Payout with an explanation when below the minimum", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: {
+        id: "app-id",
+        org_id: "org-1",
+        status: "approved",
+        payout_account_id: "payout-acc-id",
+      },
+    } as never);
+    vi.mocked(getOrgAttestorEarnings).mockResolvedValue({
+      data: {
+        currency: "NGN",
+        gross_revenue: "3000.00",
+        pending_clearance: "0.00",
+        available_balance: "3000.00",
+        commission_rate: "0.20",
+        minimum_payout: "5000.00",
+      },
+    } as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    const button = await screen.findByRole("button", { name: "Request Payout" });
+    expect(button).toBeDisabled();
+    expect(
+      screen.getByText(
+        `Your available balance is below the minimum payout of ${formatMoney("5000.00", "NGN")}.`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the described error when earnings fail to load", async () => {
+    vi.mocked(getOrgAttestorEarnings).mockResolvedValue({
+      data: undefined,
+      error: { detail: "Organization earnings are unavailable." },
+      response: { ok: false, status: 403 },
+    } as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Organization earnings are unavailable.");
   });
 });
