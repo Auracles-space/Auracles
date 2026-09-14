@@ -5,6 +5,34 @@ attestation request → report). This document covers everything else an organiz
 owner side and admin side, and is built in the four slices below. Locked decisions are
 recorded in §Decisions once the human has chosen.
 
+## Implementation status (2026-09-14)
+
+All on `rework/step-up-admin-console`, unmerged.
+
+| Area | Commits |
+|---|---|
+| Slice A: broken flows, money safety | 890848a1 |
+| Slice B: owner journey (migration 0105) | 1a7510a0, ef792249 (e2e) |
+| Slice C: org money | 5159cdce, 6ac68ba6, 2355d933 |
+| Slice D: admin directory, detail API and page | 49c1244c, c9c2aa2a, 43c608f6, 0e01a144 |
+| Decision 5: slug change (migration 0106) | 29bdd984, bbada042, 79e1133d |
+| Admin money screens name organizations | bbada042, 79e1133d |
+| Audit log org indexes (migration 0107) | 9c9bb88a |
+| Money fixes: Paystack partner webhooks, payee told of failed bank payouts (migration 0108) | 7c4f3a09 |
+| Fixed on the way: email action links, public profile 404, centering, nav order | 1350c29c, f7c19e7e, 41001c6e, 4bba0027 |
+
+Carry-overs, not built:
+- The owner-facing Members tab shows no team names; `OrgMemberResponse` has no `teams`.
+  The admin detail page does show them.
+- `admin-money-panel.tsx` (about 600 lines) and `org-attestor-financials-tab.tsx` (about 325
+  lines) exceed the component size guideline.
+- The admin payouts panel formats money with its own per-row formatter rather than
+  `formatMoney`.
+- Slug history is enforced in the service, not by a cross-table constraint, so a
+  same-instant organization creation and slug change could both claim one slug.
+- Stripe `payout.failed` deliberately changes no payout status: the money sits in the
+  connected account's Stripe balance, so re-crediting would pay twice.
+
 ## Why (survey, 2026-09-14, five parallel read-only surveys)
 
 **Broken today**
