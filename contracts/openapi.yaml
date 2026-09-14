@@ -1,5 +1,708 @@
 components:
   schemas:
+    AdminOrgAttestationCounts:
+      description: How many of the org's Attestations are in flight versus finished.
+      properties:
+        completed:
+          title: Completed
+          type: integer
+        in_flight:
+          title: In Flight
+          type: integer
+      required:
+      - in_flight
+      - completed
+      title: AdminOrgAttestationCounts
+      type: object
+    AdminOrgAttestationItem:
+      description: An in-flight Attestation the org is performing.
+      properties:
+        completion_due_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completion Due At
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+        reviewing_member_display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reviewing Member Display Name
+        status:
+          title: Status
+          type: string
+        target_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Title
+      required:
+      - id
+      - status
+      - target_title
+      - reviewing_member_display_name
+      - completion_due_at
+      - created_at
+      title: AdminOrgAttestationItem
+      type: object
+    AdminOrgAttestationsResponse:
+      description: In-flight Attestations and in-flight/finished counts.
+      properties:
+        attestations:
+          items:
+            $ref: '#/components/schemas/AdminOrgAttestationItem'
+          title: Attestations
+          type: array
+        counts:
+          $ref: '#/components/schemas/AdminOrgAttestationCounts'
+      required:
+      - attestations
+      - counts
+      title: AdminOrgAttestationsResponse
+      type: object
+    AdminOrgAuditItem:
+      description: One audit event about the org, with the actor resolved.
+      properties:
+        action:
+          title: Action
+          type: string
+        actor:
+          anyOf:
+          - $ref: '#/components/schemas/AdminOrgUserRef'
+          - type: 'null'
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        log_id:
+          format: uuid
+          title: Log Id
+          type: string
+        metadata:
+          additionalProperties: true
+          title: Metadata
+          type: object
+        target_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Target Id
+        target_type:
+          title: Target Type
+          type: string
+      required:
+      - log_id
+      - actor
+      - action
+      - target_type
+      - target_id
+      - metadata
+      - created_at
+      title: AdminOrgAuditItem
+      type: object
+    AdminOrgAuditResponse:
+      description: A page of the org's audit trail, newest first.
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AdminOrgAuditItem'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      title: AdminOrgAuditResponse
+      type: object
+    AdminOrgCapabilityItem:
+      description: One commercial capability row and its admin-set status.
+      properties:
+        capability:
+          title: Capability
+          type: string
+        status:
+          title: Status
+          type: string
+        status_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status Reason
+      required:
+      - capability
+      - status
+      - status_reason
+      title: AdminOrgCapabilityItem
+      type: object
+    AdminOrgDocumentLink:
+      description: 'A short-lived signed download link for one KYB document.
+
+
+        ``download_url`` is null when the reserved upload never completed, so the
+
+        admin sees the gap rather than a link to a missing object.'
+      properties:
+        download_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Download Url
+        file_name:
+          title: File Name
+          type: string
+        kind:
+          title: Kind
+          type: string
+      required:
+      - kind
+      - file_name
+      - download_url
+      title: AdminOrgDocumentLink
+      type: object
+    AdminOrgFinancialsResponse:
+      description: Balances, payout and purchase summaries, and the latest ledger rows.
+      properties:
+        available_balance:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Available Balance
+          type: string
+        currency:
+          title: Currency
+          type: string
+        payouts_summary:
+          $ref: '#/components/schemas/AdminOrgPayoutsSummary'
+        pending_balance:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Pending Balance
+          type: string
+        purchases_summary:
+          $ref: '#/components/schemas/AdminOrgPurchasesSummary'
+        recent_payouts:
+          items:
+            $ref: '#/components/schemas/AdminOrgPayoutItem'
+          title: Recent Payouts
+          type: array
+        recent_transactions:
+          items:
+            $ref: '#/components/schemas/AdminOrgTransactionItem'
+          title: Recent Transactions
+          type: array
+      required:
+      - currency
+      - available_balance
+      - pending_balance
+      - payouts_summary
+      - purchases_summary
+      - recent_payouts
+      - recent_transactions
+      title: AdminOrgFinancialsResponse
+      type: object
+    AdminOrgFrameworkItem:
+      description: A Framework the org sells.
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+        status:
+          title: Status
+          type: string
+        title:
+          title: Title
+          type: string
+      required:
+      - id
+      - title
+      - status
+      - created_at
+      title: AdminOrgFrameworkItem
+      type: object
+    AdminOrgFrameworksResponse:
+      description: Frameworks owned and Licenses held by the org.
+      properties:
+        frameworks:
+          items:
+            $ref: '#/components/schemas/AdminOrgFrameworkItem'
+          title: Frameworks
+          type: array
+        licenses:
+          items:
+            $ref: '#/components/schemas/AdminOrgLicenseItem'
+          title: Licenses
+          type: array
+      required:
+      - frameworks
+      - licenses
+      title: AdminOrgFrameworksResponse
+      type: object
+    AdminOrgLicenseItem:
+      description: A License the org holds, with how many grants allocate it.
+      properties:
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        framework_id:
+          format: uuid
+          title: Framework Id
+          type: string
+        framework_title:
+          title: Framework Title
+          type: string
+        grant_count:
+          title: Grant Count
+          type: integer
+        license_id:
+          format: uuid
+          title: License Id
+          type: string
+        license_type:
+          title: License Type
+          type: string
+        status:
+          title: Status
+          type: string
+      required:
+      - license_id
+      - framework_id
+      - framework_title
+      - status
+      - license_type
+      - created_at
+      - grant_count
+      title: AdminOrgLicenseItem
+      type: object
+    AdminOrgMemberItem:
+      description: One organization member with role and team placements.
+      properties:
+        display_name:
+          title: Display Name
+          type: string
+        email:
+          title: Email
+          type: string
+        joined_at:
+          format: date-time
+          title: Joined At
+          type: string
+        member_id:
+          format: uuid
+          title: Member Id
+          type: string
+        role:
+          title: Role
+          type: string
+        teams:
+          items:
+            $ref: '#/components/schemas/AdminOrgTeamRef'
+          title: Teams
+          type: array
+        user_id:
+          format: uuid
+          title: User Id
+          type: string
+      required:
+      - member_id
+      - user_id
+      - display_name
+      - email
+      - role
+      - joined_at
+      - teams
+      title: AdminOrgMemberItem
+      type: object
+    AdminOrgMembersResponse:
+      description: Every member of the org plus the count of still-pending invitations.
+      properties:
+        members:
+          items:
+            $ref: '#/components/schemas/AdminOrgMemberItem'
+          title: Members
+          type: array
+        pending_invitation_count:
+          title: Pending Invitation Count
+          type: integer
+      required:
+      - members
+      - pending_invitation_count
+      title: AdminOrgMembersResponse
+      type: object
+    AdminOrgOverviewResponse:
+      description: Identity, KYB state, lifecycle state, capabilities, and owners.
+      properties:
+        capabilities:
+          items:
+            $ref: '#/components/schemas/AdminOrgCapabilityItem'
+          title: Capabilities
+          type: array
+        country:
+          title: Country
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        deactivated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Deactivated At
+        deactivated_by:
+          anyOf:
+          - $ref: '#/components/schemas/AdminOrgUserRef'
+          - type: 'null'
+        deactivation_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deactivation Reason
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        id:
+          format: uuid
+          title: Id
+          type: string
+        kyb_status:
+          title: Kyb Status
+          type: string
+        kyb_submitted_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Kyb Submitted At
+        kyb_verified_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Kyb Verified At
+        legal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Name
+        member_count:
+          title: Member Count
+          type: integer
+        name:
+          title: Name
+          type: string
+        owners:
+          items:
+            $ref: '#/components/schemas/AdminOrgOwnerItem'
+          title: Owners
+          type: array
+        registration_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Registration Number
+        slug:
+          title: Slug
+          type: string
+        suspended_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Suspended At
+        suspended_by:
+          anyOf:
+          - $ref: '#/components/schemas/AdminOrgUserRef'
+          - type: 'null'
+        suspension_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Suspension Reason
+        website:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Website
+      required:
+      - id
+      - slug
+      - name
+      - country
+      - website
+      - description
+      - created_at
+      - kyb_status
+      - kyb_submitted_at
+      - kyb_verified_at
+      - legal_name
+      - registration_number
+      - suspended_at
+      - suspension_reason
+      - suspended_by
+      - deactivated_at
+      - deactivation_reason
+      - deactivated_by
+      - capabilities
+      - member_count
+      - owners
+      title: AdminOrgOverviewResponse
+      type: object
+    AdminOrgOwnerItem:
+      description: An owner of the organization, with contact email for admins.
+      properties:
+        display_name:
+          title: Display Name
+          type: string
+        email:
+          title: Email
+          type: string
+        member_id:
+          format: uuid
+          title: Member Id
+          type: string
+        user_id:
+          format: uuid
+          title: User Id
+          type: string
+      required:
+      - member_id
+      - user_id
+      - display_name
+      - email
+      title: AdminOrgOwnerItem
+      type: object
+    AdminOrgPayoutItem:
+      description: One payout, without any payout account details.
+      properties:
+        amount:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Amount
+          type: string
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completed At
+        currency:
+          title: Currency
+          type: string
+        initiated_at:
+          format: date-time
+          title: Initiated At
+          type: string
+        payout_id:
+          format: uuid
+          title: Payout Id
+          type: string
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider
+        status:
+          title: Status
+          type: string
+      required:
+      - payout_id
+      - amount
+      - currency
+      - status
+      - provider
+      - initiated_at
+      - completed_at
+      title: AdminOrgPayoutItem
+      type: object
+    AdminOrgPayoutsSummary:
+      description: Aggregate payout state for the org.
+      properties:
+        completed_total:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Completed Total
+          type: string
+        last_payout_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Payout At
+        pending_count:
+          title: Pending Count
+          type: integer
+      required:
+      - pending_count
+      - completed_total
+      - last_payout_at
+      title: AdminOrgPayoutsSummary
+      type: object
+    AdminOrgPurchasesSummary:
+      description: Aggregate purchase state where the org was the buyer.
+      properties:
+        completed_count:
+          title: Completed Count
+          type: integer
+        failed_count:
+          title: Failed Count
+          type: integer
+        total_spent:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Total Spent
+          type: string
+      required:
+      - completed_count
+      - failed_count
+      - total_spent
+      title: AdminOrgPurchasesSummary
+      type: object
+    AdminOrgTeamRef:
+      description: A team a member sits on.
+      properties:
+        id:
+          format: uuid
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      title: AdminOrgTeamRef
+      type: object
+    AdminOrgTransactionItem:
+      description: One transaction in which the org was payer or payee.
+      properties:
+        amount:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Amount
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        currency:
+          title: Currency
+          type: string
+        status:
+          title: Status
+          type: string
+        transaction_id:
+          format: uuid
+          title: Transaction Id
+          type: string
+        transaction_type:
+          title: Transaction Type
+          type: string
+      required:
+      - transaction_id
+      - transaction_type
+      - status
+      - amount
+      - currency
+      - created_at
+      title: AdminOrgTransactionItem
+      type: object
+    AdminOrgUserRef:
+      description: A user reference resolved to a display name (actor, suspender, closer).
+      properties:
+        display_name:
+          title: Display Name
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+      required:
+      - id
+      - display_name
+      title: AdminOrgUserRef
+      type: object
+    AdminOrgVerificationResponse:
+      description: The org's legal profile, KYB verdict, and signed document links.
+      properties:
+        address:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Address
+        documents:
+          items:
+            $ref: '#/components/schemas/AdminOrgDocumentLink'
+          title: Documents
+          type: array
+        kyb_review_notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Kyb Review Notes
+        kyb_status:
+          title: Kyb Status
+          type: string
+        kyb_submitted_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Kyb Submitted At
+        kyb_verified_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Kyb Verified At
+        legal_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Name
+        registration_number:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Registration Number
+        tax_document_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Tax Document Type
+      required:
+      - legal_name
+      - registration_number
+      - address
+      - kyb_status
+      - kyb_submitted_at
+      - kyb_verified_at
+      - kyb_review_notes
+      - tax_document_type
+      - documents
+      title: AdminOrgVerificationResponse
+      type: object
     AccountDeletionBlockedReason:
       description: One reason why GDPR account deletion is currently blocked.
       properties:
@@ -14913,6 +15616,236 @@ info:
   version: 0.1.0
 openapi: 3.1.0
 paths:
+  /v1/admin/orgs/{org_id}/attestations:
+    get:
+      description: Attestations the org is performing that are not yet finished.
+      operationId: admin_org_attestations_v1_admin_orgs__org_id__attestations_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgAttestationsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization in-flight attestations (platform admin)
+      tags:
+      - Admin Organizations
+  /v1/admin/orgs/{org_id}/audit:
+    get:
+      description: Audit events targeting the org or tagged with its id, newest first, paginated.
+      operationId: admin_org_audit_v1_admin_orgs__org_id__audit_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgAuditResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization audit trail (platform admin)
+      tags:
+      - Admin Organizations
+  /v1/admin/orgs/{org_id}/detail:
+    get:
+      description: Identity, business verification state, suspension and closure records with
+        the acting user, capabilities, member count, and owners.
+      operationId: admin_org_overview_v1_admin_orgs__org_id__detail_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgOverviewResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization overview (platform admin)
+      tags:
+      - Admin Organizations
+  /v1/admin/orgs/{org_id}/financials:
+    get:
+      description: Balances, payout and purchase summaries, and the ten most recent payouts
+        and transactions. No payout account details.
+      operationId: admin_org_financials_v1_admin_orgs__org_id__financials_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgFinancialsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization financial summary (platform admin)
+      tags:
+      - Admin Organizations
+  /v1/admin/orgs/{org_id}/frameworks:
+    get:
+      description: Frameworks the org sells and Licenses it holds with grant counts.
+      operationId: admin_org_frameworks_v1_admin_orgs__org_id__frameworks_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgFrameworksResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization frameworks and licenses (platform admin)
+      tags:
+      - Admin Organizations
+  /v1/admin/orgs/{org_id}/members:
+    get:
+      description: Members with roles and teams, and the pending invitation count.
+      operationId: admin_org_members_v1_admin_orgs__org_id__members_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgMembersResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization members (platform admin)
+      tags:
+      - Admin Organizations
+  /v1/admin/orgs/{org_id}/verification:
+    get:
+      description: Legal profile, KYB verdict, and incorporation/tax documents as 300-second
+        presigned download links. Every call is audited.
+      operationId: admin_org_verification_v1_admin_orgs__org_id__verification_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrgVerificationResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Organization verification record (platform admin)
+      tags:
+      - Admin Organizations
   /v1/admin/analytics/dashboard:
     get:
       description: Return current-state admin analytics aggregates plus frozen daily

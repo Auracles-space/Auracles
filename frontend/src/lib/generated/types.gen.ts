@@ -746,6 +746,213 @@ export type AdminModerationQueueResponse = {
 };
 
 /**
+ * How many of the org's Attestations are in flight versus finished.
+ */
+export type AdminOrgAttestationCounts = {
+    completed: number;
+    in_flight: number;
+};
+
+/**
+ * An in-flight Attestation the org is performing.
+ */
+export type AdminOrgAttestationItem = {
+    completion_due_at: (string | null);
+    created_at: string;
+    id: string;
+    reviewing_member_display_name: (string | null);
+    status: string;
+    target_title: (string | null);
+};
+
+/**
+ * In-flight Attestations and in-flight/finished counts.
+ */
+export type AdminOrgAttestationsResponse = {
+    attestations: Array<AdminOrgAttestationItem>;
+    counts: AdminOrgAttestationCounts;
+};
+
+/**
+ * One audit event about the org, with the actor resolved.
+ */
+export type AdminOrgAuditItem = {
+    action: string;
+    actor: (AdminOrgUserRef | null);
+    created_at: string;
+    log_id: string;
+    metadata: {
+        [key: string]: unknown;
+    };
+    target_id: (string | null);
+    target_type: string;
+};
+
+/**
+ * A page of the org's audit trail, newest first.
+ */
+export type AdminOrgAuditResponse = {
+    items: Array<AdminOrgAuditItem>;
+    page: number;
+    page_size: number;
+    total: number;
+};
+
+/**
+ * One commercial capability row and its admin-set status.
+ */
+export type AdminOrgCapabilityItem = {
+    capability: string;
+    status: string;
+    status_reason: (string | null);
+};
+
+/**
+ * A short-lived signed download link for one KYB document.
+ *
+ * ``download_url`` is null when the reserved upload never completed, so the
+ * admin sees the gap rather than a link to a missing object.
+ */
+export type AdminOrgDocumentLink = {
+    download_url: (string | null);
+    file_name: string;
+    kind: string;
+};
+
+/**
+ * Balances, payout and purchase summaries, and the latest ledger rows.
+ */
+export type AdminOrgFinancialsResponse = {
+    available_balance: string;
+    currency: string;
+    payouts_summary: AdminOrgPayoutsSummary;
+    pending_balance: string;
+    purchases_summary: AdminOrgPurchasesSummary;
+    recent_payouts: Array<AdminOrgPayoutItem>;
+    recent_transactions: Array<AdminOrgTransactionItem>;
+};
+
+/**
+ * A Framework the org sells.
+ */
+export type AdminOrgFrameworkItem = {
+    created_at: string;
+    id: string;
+    status: string;
+    title: string;
+};
+
+/**
+ * Frameworks owned and Licenses held by the org.
+ */
+export type AdminOrgFrameworksResponse = {
+    frameworks: Array<AdminOrgFrameworkItem>;
+    licenses: Array<AdminOrgLicenseItem>;
+};
+
+/**
+ * A License the org holds, with how many grants allocate it.
+ */
+export type AdminOrgLicenseItem = {
+    created_at: string;
+    framework_id: string;
+    framework_title: string;
+    grant_count: number;
+    license_id: string;
+    license_type: string;
+    status: string;
+};
+
+/**
+ * One organization member with role and team placements.
+ */
+export type AdminOrgMemberItem = {
+    display_name: string;
+    email: string;
+    joined_at: string;
+    member_id: string;
+    role: string;
+    teams: Array<AdminOrgTeamRef>;
+    user_id: string;
+};
+
+/**
+ * Every member of the org plus the count of still-pending invitations.
+ */
+export type AdminOrgMembersResponse = {
+    members: Array<AdminOrgMemberItem>;
+    pending_invitation_count: number;
+};
+
+/**
+ * Identity, KYB state, lifecycle state, capabilities, and owners.
+ */
+export type AdminOrgOverviewResponse = {
+    capabilities: Array<AdminOrgCapabilityItem>;
+    country: string;
+    created_at: string;
+    deactivated_at: (string | null);
+    deactivated_by: (AdminOrgUserRef | null);
+    deactivation_reason: (string | null);
+    description: (string | null);
+    id: string;
+    kyb_status: string;
+    kyb_submitted_at: (string | null);
+    kyb_verified_at: (string | null);
+    legal_name: (string | null);
+    member_count: number;
+    name: string;
+    owners: Array<AdminOrgOwnerItem>;
+    registration_number: (string | null);
+    slug: string;
+    suspended_at: (string | null);
+    suspended_by: (AdminOrgUserRef | null);
+    suspension_reason: (string | null);
+    website: (string | null);
+};
+
+/**
+ * An owner of the organization, with contact email for admins.
+ */
+export type AdminOrgOwnerItem = {
+    display_name: string;
+    email: string;
+    member_id: string;
+    user_id: string;
+};
+
+/**
+ * One payout, without any payout account details.
+ */
+export type AdminOrgPayoutItem = {
+    amount: string;
+    completed_at: (string | null);
+    currency: string;
+    initiated_at: string;
+    payout_id: string;
+    provider: (string | null);
+    status: string;
+};
+
+/**
+ * Aggregate payout state for the org.
+ */
+export type AdminOrgPayoutsSummary = {
+    completed_total: string;
+    last_payout_at: (string | null);
+    pending_count: number;
+};
+
+/**
+ * Aggregate purchase state where the org was the buyer.
+ */
+export type AdminOrgPurchasesSummary = {
+    completed_count: number;
+    failed_count: number;
+    total_spent: string;
+};
+
+/**
  * Platform-admin view of an organization.
  */
 export type AdminOrgResponse = {
@@ -796,6 +1003,51 @@ export type AdminOrgsResponse = {
     page: number;
     page_size: number;
     total: number;
+};
+
+/**
+ * A team a member sits on.
+ */
+export type AdminOrgTeamRef = {
+    id: string;
+    name: string;
+};
+
+/**
+ * One transaction in which the org was payer or payee.
+ */
+export type AdminOrgTransactionItem = {
+    amount: string;
+    created_at: string;
+    currency: string;
+    status: string;
+    transaction_id: string;
+    transaction_type: string;
+};
+
+/**
+ * A user reference resolved to a display name (actor, suspender, closer).
+ */
+export type AdminOrgUserRef = {
+    display_name: string;
+    id: string;
+};
+
+/**
+ * The org's legal profile, KYB verdict, and signed document links.
+ */
+export type AdminOrgVerificationResponse = {
+    address: ({
+    [key: string]: unknown;
+} | null);
+    documents: Array<AdminOrgDocumentLink>;
+    kyb_review_notes: (string | null);
+    kyb_status: string;
+    kyb_submitted_at: (string | null);
+    kyb_verified_at: (string | null);
+    legal_name: (string | null);
+    registration_number: (string | null);
+    tax_document_type: (string | null);
 };
 
 /**
@@ -3619,6 +3871,19 @@ export type OrgDeliveryResponse = {
 };
 
 /**
+ * Organization earnings plus the payout eligibility checklist (Slice C).
+ */
+export type OrgEarningsResponse = {
+    available_balance: string;
+    commission_rate: string;
+    currency: string;
+    gross_revenue: string;
+    minimum_payout: string;
+    payout_eligibility: PayoutEligibility;
+    pending_clearance: string;
+};
+
+/**
  * Admin-scoped request to invite one email address or existing user.
  */
 export type OrgInvitationCreateRequest = {
@@ -3928,6 +4193,32 @@ export type OrgPayoutAccountOnboardRequest = {
 };
 
 /**
+ * One organization payout in the owner-facing history.
+ *
+ * ``amount`` is the net amount requested (what reaches the payout account).
+ */
+export type OrgPayoutHistoryItem = {
+    amount: string;
+    completed_at: (string | null);
+    currency: string;
+    failure_reason: (string | null);
+    id: string;
+    provider: string;
+    requested_at: string;
+    status: string;
+};
+
+/**
+ * Paginated organization payout history, newest first.
+ */
+export type OrgPayoutHistoryResponse = {
+    page: number;
+    page_size: number;
+    payouts: Array<OrgPayoutHistoryItem>;
+    total: number;
+};
+
+/**
  * Organization-admin request body for submitting an org Proposal.
  */
 export type OrgProposalCreateRequest = {
@@ -3944,6 +4235,27 @@ export type OrgProposalCreateRequest = {
  */
 export type OrgProposalReassignRequest = {
     delivering_member_id: string;
+};
+
+/**
+ * One Framework purchase the organization attempted, with its outcome.
+ */
+export type OrgPurchaseListItem = {
+    amount: string;
+    created_at: string;
+    currency: string;
+    failure_reason: (string | null);
+    framework_id: (string | null);
+    framework_title: (string | null);
+    status: string;
+    transaction_id: string;
+};
+
+/**
+ * Organization Framework purchases, newest first.
+ */
+export type OrgPurchasesResponse = {
+    purchases: Array<OrgPurchaseListItem>;
 };
 
 /**
@@ -4338,6 +4650,27 @@ export type PayoutBank = {
 export type PayoutBanksResponse = {
     banks: Array<PayoutBank>;
 };
+
+/**
+ * Whether an organization can request a payout right now, and why not.
+ */
+export type PayoutEligibility = {
+    eligible: boolean;
+    reasons: Array<PayoutEligibilityReason>;
+};
+
+/**
+ * One unmet org payout condition and where it can be fixed.
+ *
+ * ``action_path`` is an app path (starting with ``/``) to the surface that clears the condition, or ``None`` when nothing the owner can do resolves it directly (suspension, an in-flight payout, a balance under the minimum).
+ */
+export type PayoutEligibilityReason = {
+    action_path: (string | null);
+    code: 'org_suspended' | 'kyb_not_verified' | 'no_payout_capability' | 'tax_document_missing' | 'payout_in_progress' | 'no_verified_payout_account' | 'below_minimum_payout';
+    message: string;
+};
+
+export type code = 'org_suspended' | 'kyb_not_verified' | 'no_payout_capability' | 'tax_document_missing' | 'payout_in_progress' | 'no_verified_payout_account' | 'below_minimum_payout';
 
 /**
  * Request body for a Contributor payout request.
@@ -5297,6 +5630,80 @@ export type WorkspaceUploadSessionResponse = {
     size_limit: number;
     url: string;
 };
+
+export type AdminOrgAttestationsV1AdminOrgsOrgIdAttestationsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminOrgAttestationsV1AdminOrgsOrgIdAttestationsGetResponse = (AdminOrgAttestationsResponse);
+
+export type AdminOrgAttestationsV1AdminOrgsOrgIdAttestationsGetError = (HTTPValidationError);
+
+export type AdminOrgAuditV1AdminOrgsOrgIdAuditGetData = {
+    path: {
+        org_id: string;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type AdminOrgAuditV1AdminOrgsOrgIdAuditGetResponse = (AdminOrgAuditResponse);
+
+export type AdminOrgAuditV1AdminOrgsOrgIdAuditGetError = (HTTPValidationError);
+
+export type AdminOrgOverviewV1AdminOrgsOrgIdDetailGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminOrgOverviewV1AdminOrgsOrgIdDetailGetResponse = (AdminOrgOverviewResponse);
+
+export type AdminOrgOverviewV1AdminOrgsOrgIdDetailGetError = (HTTPValidationError);
+
+export type AdminOrgFinancialsV1AdminOrgsOrgIdFinancialsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminOrgFinancialsV1AdminOrgsOrgIdFinancialsGetResponse = (AdminOrgFinancialsResponse);
+
+export type AdminOrgFinancialsV1AdminOrgsOrgIdFinancialsGetError = (HTTPValidationError);
+
+export type AdminOrgFrameworksV1AdminOrgsOrgIdFrameworksGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminOrgFrameworksV1AdminOrgsOrgIdFrameworksGetResponse = (AdminOrgFrameworksResponse);
+
+export type AdminOrgFrameworksV1AdminOrgsOrgIdFrameworksGetError = (HTTPValidationError);
+
+export type AdminOrgMembersV1AdminOrgsOrgIdMembersGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminOrgMembersV1AdminOrgsOrgIdMembersGetResponse = (AdminOrgMembersResponse);
+
+export type AdminOrgMembersV1AdminOrgsOrgIdMembersGetError = (HTTPValidationError);
+
+export type AdminOrgVerificationV1AdminOrgsOrgIdVerificationGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type AdminOrgVerificationV1AdminOrgsOrgIdVerificationGetResponse = (AdminOrgVerificationResponse);
+
+export type AdminOrgVerificationV1AdminOrgsOrgIdVerificationGetError = (HTTPValidationError);
 
 export type GetAdminAnalyticsDashboardV1AdminAnalyticsDashboardGetResponse = (AdminAnalyticsDashboardResponse);
 
@@ -7843,7 +8250,7 @@ export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetData = {
     };
 };
 
-export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetResponse = (EarningsResponse);
+export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetResponse = (OrgEarningsResponse);
 
 export type GetOrgEarningsV1OrgsOrgIdFinancialsEarningsGetError = (HTTPValidationError);
 
@@ -7901,6 +8308,20 @@ export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostRespon
 
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostError = (HTTPValidationError);
 
+export type ListOrgPayoutsV1OrgsOrgIdFinancialsPayoutsGetData = {
+    path: {
+        org_id: string;
+    };
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type ListOrgPayoutsV1OrgsOrgIdFinancialsPayoutsGetResponse = (OrgPayoutHistoryResponse);
+
+export type ListOrgPayoutsV1OrgsOrgIdFinancialsPayoutsGetError = (HTTPValidationError);
+
 export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostData = {
     body: PayoutRequest;
     path: {
@@ -7911,6 +8332,20 @@ export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostData = {
 export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostResponse = (PayoutResponse);
 
 export type RequestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPostError = (unknown | HTTPValidationError);
+
+export type ListOrgPurchasesV1OrgsOrgIdFinancialsPurchasesGetData = {
+    path: {
+        org_id: string;
+    };
+    query?: {
+        limit?: number;
+        status?: ('pending' | 'completed' | 'failed' | 'refunded' | null);
+    };
+};
+
+export type ListOrgPurchasesV1OrgsOrgIdFinancialsPurchasesGetResponse = (OrgPurchasesResponse);
+
+export type ListOrgPurchasesV1OrgsOrgIdFinancialsPurchasesGetError = (HTTPValidationError);
 
 export type GetOrgPurchaseInvoiceV1OrgsOrgIdFinancialsPurchasesTransactionIdInvoiceGetData = {
     path: {
@@ -8299,6 +8734,9 @@ export type SetLegalProfileTaxDocumentV1OrgsOrgIdLegalProfileTaxDocumentPostErro
 export type ListOrgLibraryV1OrgsOrgIdLibraryGetData = {
     path: {
         org_id: string;
+    };
+    query?: {
+        include_inactive?: boolean;
     };
 };
 
