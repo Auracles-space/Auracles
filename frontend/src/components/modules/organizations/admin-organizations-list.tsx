@@ -10,28 +10,31 @@
  * window; a failed call shows its error inside the dialog. Reinstate needs
  * no reason. Each row also opens a capabilities dialog where the
  * contributor, operator, and attestor capabilities can be suspended,
- * reinstated, or revoked individually with the same reason rule.
+ * reinstated, or revoked individually with the same reason rule. Closed
+ * (deactivated) organizations can be reopened with Reactivate (Decision 4).
+ *
+ * Below `md` each organization renders as a card; from `md` up as a table.
+ *
+ * Maps to: organizations end-to-end design, Slice D (directory) and Decision 4.
  */
-import { useEffect, useId, useState } from "react";
-import {
-  adminListOrgsV1AdminOrgsGet,
-  adminSuspendOrgV1AdminOrgsOrgIdSuspendPost,
-  adminReinstateOrgV1AdminOrgsOrgIdReinstatePost
-} from "@/lib/generated/sdk.gen";
+import { useEffect, useState } from "react";
+import { adminListOrgsV1AdminOrgsGet } from "@/lib/generated/sdk.gen";
 import type { AdminOrgResponse } from "@/lib/generated/types.gen";
 import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
-import { ReasonField, isReasonValid } from "@/components/modules/admin/reason-field";
 import { OrgCapabilitiesDialog } from "@/components/modules/admin/org-capabilities-dialog";
-import {
-  CAPABILITY_LABELS,
-  type CapabilityStatusAfter,
-  type OrgCapability,
+import type {
+  CapabilityStatusAfter,
+  OrgCapability,
 } from "@/components/modules/admin/org-capability-controls";
-import { StatusPill, describeStatus } from "@/components/ui/status-pill";
+import {
+  AdminOrgCard,
+  AdminOrgTableRow,
+  type OrgDirectoryAction,
+} from "@/components/modules/admin/admin-org-directory-entry";
+import { AdminOrgLifecycleDialog } from "@/components/modules/admin/admin-org-lifecycle-dialog";
 import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
 
 /**
@@ -39,7 +42,6 @@ import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
  * reinstate controls for platform admins.
  */
 export function AdminOrganizationsList() {
-  const reasonFieldId = useId();
   const [orgs, setOrgs] = useState<AdminOrgResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,16 +55,10 @@ export function AdminOrganizationsList() {
   const [committedQuery, setCommittedQuery] = useState("");
   const pageSize = 10;
 
-  // Suspend / Reinstate State. `orgToAct` holds the pending target; `actionKind`
-  // distinguishes the confirm-dialog copy and which endpoint fires.
+  // Lifecycle action target. The confirm dialog owns its own reason, busy,
+  // and error state and is mounted only while a target is set.
   const [orgToAct, setOrgToAct] = useState<AdminOrgResponse | null>(null);
-  const [actionKind, setActionKind] = useState<"suspend" | "reinstate">("suspend");
-  const [actionLoading, setActionLoading] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  // Owner-visible reason; required for suspend only, so the confirm button
-  // stays disabled until it satisfies the backend length rule.
-  const [reason, setReason] = useState("");
-  const reasonMissing = actionKind === "suspend" && !isReasonValid(reason);
+  const [actionKind, setActionKind] = useState<OrgDirectoryAction>("suspend");
   // Organization whose capabilities dialog is open, if any.
   const [capabilitiesOrg, setCapabilitiesOrg] = useState<AdminOrgResponse | null>(null);
 
@@ -110,10 +106,10 @@ export function AdminOrganizationsList() {
         setOrgs(result.data.orgs);
         setTotal(result.data.total);
       } else {
-        setError("Failed to load organizations.");
+        setError(describeGeneratedError(result.error));
       }
-    } catch {
-      setError("An error occurred loading organizations.");
+    } catch (caught) {
+      setError(describeGeneratedError(caught));
     } finally {
       setLoading(false);
     }
@@ -142,56 +138,21 @@ export function AdminOrganizationsList() {
     }
   }
 
-  async function handleConfirmAction() {
-    if (!orgToAct || reasonMissing) return;
-    setActionLoading(true);
-    setActionError(null);
-
-    try {
-      const result =
-        actionKind === "suspend"
-          ? await adminSuspendOrgV1AdminOrgsOrgIdSuspendPost({
-              path: { org_id: orgToAct.id },
-              headers: getAccessTokenHeaders(),
-              body: { reason: reason.trim() },
-            })
-          : await adminReinstateOrgV1AdminOrgsOrgIdReinstatePost({
-              path: { org_id: orgToAct.id },
-              headers: getAccessTokenHeaders(),
-            });
-
-      if (!result.response.ok) {
-        setActionError(describeGeneratedError(result.error));
-        setActionLoading(false);
-      } else {
-        setActionLoading(false);
-        setOrgToAct(null);
-        await loadOrgs(page, committedQuery);
-      }
-    } catch {
-      setActionError("An unexpected error occurred.");
-      setActionLoading(false);
-    }
-  }
-
   /**
-   * Open the confirm dialog for a suspend or reinstate action.
+   * Open the confirm dialog for a lifecycle action.
    *
    * @param org - Target organization row.
-   * @param kind - Whether to suspend an active org or reinstate a suspended one.
+   * @param kind - Suspend an active org, reinstate a suspended one, or reactivate a closed one.
    */
-  function openAction(org: AdminOrgResponse, kind: "suspend" | "reinstate") {
+  function openAction(org: AdminOrgResponse, kind: OrgDirectoryAction) {
     setActionKind(kind);
-    setActionError(null);
-    setReason("");
     setOrgToAct(org);
   }
 
-  /** Dismiss the dialog and drop any half-typed reason so it never leaks to the next target. */
-  function closeAction() {
+  /** Close the dialog and reload the current page so the row shows its new state. */
+  async function handleActionDone() {
     setOrgToAct(null);
-    setActionError(null);
-    setReason("");
+    await loadOrgs(page, committedQuery);
   }
 
   const totalPages = Math.ceil(total / pageSize);
@@ -233,116 +194,65 @@ export function AdminOrganizationsList() {
           </div>
         ) : error ? (
           <div className="p-6 text-center text-error bg-error/5">{error}</div>
+        ) : orgs.length === 0 ? (
+          <p className="px-6 py-8 text-center text-foreground-muted">No organizations found.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border-default bg-surface-2 text-foreground-muted">
-                <tr>
-                  <th className="px-6 py-3 font-semibold">Organization</th>
-                  <th className="px-6 py-3 font-semibold">Country</th>
-                  <th className="px-6 py-3 font-semibold">Members</th>
-                  <th className="px-6 py-3 font-semibold">Capabilities</th>
-                  <th className="px-6 py-3 font-semibold">Status</th>
-                  <th className="px-6 py-3 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-default">
-                {orgs.length === 0 ? (
+          <>
+            <ul aria-label="Organizations" className="grid gap-3 p-4 md:hidden">
+              {orgs.map((org) => (
+                <AdminOrgCard
+                  key={org.id}
+                  onAction={openAction}
+                  onCapabilities={setCapabilitiesOrg}
+                  org={org}
+                />
+              ))}
+            </ul>
+            <div className="hidden md:block">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border-default bg-surface-2 text-foreground-muted">
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-foreground-muted">
-                      No organizations found.
-                    </td>
+                    <th className="px-6 py-3 font-semibold">Organization</th>
+                    <th className="px-6 py-3 font-semibold">Country</th>
+                    <th className="px-6 py-3 font-semibold">Members</th>
+                    <th className="px-6 py-3 font-semibold">Capabilities</th>
+                    <th className="px-6 py-3 font-semibold">Status</th>
+                    <th className="px-6 py-3 font-semibold">KYB</th>
+                    <th className="px-6 py-3 font-semibold text-right">Actions</th>
                   </tr>
-                ) : (
-                  orgs.map((org) => {
-                    const isSuspended = !!org.suspended_at;
-                    const isDeactivated = !!org.deactivated_at;
-                    const statusText = isDeactivated 
-                      ? "Deactivated" 
-                      : isSuspended 
-                        ? "Suspended" 
-                        : "Active";
-                    const statusColor = isDeactivated || isSuspended ? "text-error" : "text-success";
-
-                    return (
-                      <tr key={org.id} className="hover:bg-surface-2/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <p className="font-semibold text-foreground">{org.name}</p>
-                          <p className="text-xs text-foreground-muted">@{org.slug}</p>
-                        </td>
-                        <td className="px-6 py-4">{org.country}</td>
-                        <td className="px-6 py-4">{org.member_count}</td>
-                        <td className="px-6 py-4">
-                          {Object.keys(org.capabilities).length === 0 ? (
-                            <span className="text-xs text-foreground-muted">None</span>
-                          ) : (
-                            <div className="flex flex-wrap gap-1">
-                              {Object.entries(org.capabilities).map(([cap, state]) => (
-                                <StatusPill
-                                  key={cap}
-                                  label={`${CAPABILITY_LABELS[cap as OrgCapability] ?? cap} ${describeStatus(state).label.toLowerCase()}`}
-                                  status={state}
-                                />
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                        <td className={`px-6 py-4 font-medium ${statusColor}`}>
-                          {statusText}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex flex-wrap justify-end gap-2">
-                            <Button
-                              variant="secondary"
-                              disabled={isDeactivated}
-                              onClick={() => setCapabilitiesOrg(org)}
-                            >
-                              Capabilities
-                            </Button>
-                            {isSuspended && !isDeactivated ? (
-                              <Button
-                                variant="secondary"
-                                onClick={() => openAction(org, "reinstate")}
-                              >
-                                Reinstate
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="secondary"
-                                disabled={isSuspended || isDeactivated}
-                                onClick={() => openAction(org, "suspend")}
-                              >
-                                Suspend
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-border-default">
+                  {orgs.map((org) => (
+                    <AdminOrgTableRow
+                      key={org.id}
+                      onAction={openAction}
+                      onCapabilities={setCapabilitiesOrg}
+                      org={org}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
-        
+
         {/* Pagination */}
         {total > 0 && (
-          <div className="flex items-center justify-between border-t border-border-default px-6 py-4 bg-surface-1">
+          <div className="flex flex-col gap-3 border-t border-border-default bg-surface-1 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6">
             <p className="text-sm text-foreground-muted">
               Showing <span className="font-medium text-foreground">{(page - 1) * pageSize + 1}</span> to <span className="font-medium text-foreground">{Math.min(page * pageSize, total)}</span> of <span className="font-medium text-foreground">{total}</span> results
             </p>
             <div className="flex gap-2">
               <Button
                 variant="secondary"
-                                disabled={page <= 1 || loading}
+                disabled={page <= 1 || loading}
                 onClick={() => setPage(page - 1)}
               >
                 Previous
               </Button>
               <Button
                 variant="secondary"
-                                disabled={page >= totalPages || loading}
+                disabled={page >= totalPages || loading}
                 onClick={() => setPage(page + 1)}
               >
                 Next
@@ -362,38 +272,14 @@ export function AdminOrganizationsList() {
         />
       ) : null}
 
-      <ConfirmDialog
-        open={!!orgToAct}
-        title={
-          actionKind === "suspend"
-            ? "Suspend Organization?"
-            : "Reinstate Organization?"
-        }
-        description={
-          actionKind === "suspend" ? (
-            <>
-              <p>
-                Are you sure you want to suspend &quot;{orgToAct?.name}&quot;? Members will lose
-                access to organization resources immediately.
-              </p>
-              <ReasonField
-                disabled={actionLoading}
-                id={reasonFieldId}
-                onChange={setReason}
-                value={reason}
-              />
-            </>
-          ) : (
-            `Reinstate "${orgToAct?.name}"? Members will regain access to organization resources immediately.`
-          )
-        }
-        confirmLabel={actionKind === "suspend" ? "Suspend" : "Reinstate"}
-        tone={actionKind === "suspend" ? "danger" : "default"}
-        busy={actionLoading || reasonMissing}
-        error={actionError}
-        onConfirm={handleConfirmAction}
-        onClose={closeAction}
-      />
+      {orgToAct ? (
+        <AdminOrgLifecycleDialog
+          kind={actionKind}
+          onClose={() => setOrgToAct(null)}
+          onDone={handleActionDone}
+          org={orgToAct}
+        />
+      ) : null}
     </div>
   );
 }

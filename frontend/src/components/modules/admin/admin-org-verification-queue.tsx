@@ -19,6 +19,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { StatusPill, ownerStatusKey } from "@/components/ui/status-pill";
 import { Textarea } from "@/components/ui/textarea";
 import {
   configureBrowserClient,
@@ -142,9 +143,7 @@ export function AdminOrgVerificationQueue() {
                 {org.registration_number || "No registration number"}
               </p>
             </div>
-            <span className="inline-flex rounded-badge border border-warning/30 bg-warning/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
-              Awaiting review
-            </span>
+            <StatusPill status={ownerStatusKey("pending", "kyb")} />
           </div>
 
           <div className="mt-4 grid gap-3 rounded-xl border border-border-default bg-surface-2 p-4">
