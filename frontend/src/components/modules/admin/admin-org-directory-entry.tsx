@@ -7,10 +7,12 @@
  * actions so admins can moderate from a phone without horizontal scrolling;
  * from `md` up the same data renders as a table row. Both variants share the
  * pills, the suspension/closure note, and the action set so the two layouts
- * can never drift apart.
+ * can never drift apart. The organization name links to its admin detail page.
  *
  * Maps to: organizations end-to-end design, Slice D (directory) and Decision 4.
  */
+import Link from "next/link";
+
 import type { AdminOrgResponse } from "@/lib/generated/types.gen";
 import { formatShortDate } from "@/lib/marketplace/format";
 import { Button } from "@/components/ui/button";
@@ -37,6 +39,22 @@ function lifecycleKey(org: AdminOrgResponse): "active" | "suspended" | "deactiva
   if (org.deactivated_at) return "deactivated";
   if (org.suspended_at) return "suspended";
   return "active";
+}
+
+/**
+ * Organization name linking to its admin detail page.
+ *
+ * @param org - Organization to link to.
+ */
+function OrgNameLink({ org }: { org: AdminOrgResponse }) {
+  return (
+    <Link
+      className="break-words font-semibold text-foreground underline-offset-4 hover:text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      href={`/admin/organizations/${org.id}`}
+    >
+      {org.name}
+    </Link>
+  );
 }
 
 /**
@@ -140,7 +158,9 @@ export function AdminOrgCard(props: EntryProps) {
   return (
     <li className="grid gap-3 rounded-xl border border-border-default bg-surface-2 p-4">
       <div className="min-w-0">
-        <p className="break-words font-semibold text-foreground">{org.name}</p>
+        <p className="flex min-h-11 items-center">
+          <OrgNameLink org={org} />
+        </p>
         <p className="break-all text-xs text-foreground-muted">@{org.slug}</p>
         <p className="mt-1 text-xs text-foreground-muted">
           {org.country} · {org.member_count} {org.member_count === 1 ? "member" : "members"}
@@ -167,7 +187,9 @@ export function AdminOrgTableRow(props: EntryProps) {
   return (
     <tr className="align-top transition-colors hover:bg-surface-2/50">
       <td className="px-6 py-4">
-        <p className="font-semibold text-foreground">{org.name}</p>
+        <p>
+          <OrgNameLink org={org} />
+        </p>
         <p className="text-xs text-foreground-muted">@{org.slug}</p>
       </td>
       <td className="px-6 py-4">{org.country}</td>
