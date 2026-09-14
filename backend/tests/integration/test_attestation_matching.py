@@ -1250,10 +1250,10 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
         )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "closed"
+    assert response.json()["status"] == "released"
     assert response.json()["closed_at"] is not None
     assert attestation is not None
-    assert attestation.status == "closed"
+    assert attestation.status == "released"
     assert attestation.closed_at is not None
     assert attestation.report_published_eligible is True
     assert transaction is not None
@@ -1265,10 +1265,21 @@ async def test_requestor_accepts_report_and_releases_attestation_escrow(
     assert escrow.released_by == requestor_id
     assert "escrow_released" in audits
     assert "attestation_released" in audits
-    assert [call["notification_type"] for call in notification_calls] == [
-        "attestation_released",
+    released_calls = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "attestation_released"
     ]
-    assert notification_calls[0]["user_id"] == str(attestor_id)
+    assert {call["user_id"] for call in released_calls} == {
+        str(attestor_id),
+        str(requestor_id),
+    }
+    by_user = {call["user_id"]: call for call in released_calls}
+    assert by_user[str(requestor_id)]["link"] == f"/attestations/{attestation_id}"
+    assert (
+        by_user[str(attestor_id)]["link"]
+        == f"/dashboard/organizations/{org_id}/attestations/{attestation_id}"
+    )
 
 
 async def test_auto_release_attestations_closes_past_dispute_window_reports(
@@ -1335,7 +1346,7 @@ async def test_auto_release_attestations_closes_past_dispute_window_reports(
     assert released_count == 1
     assert second_count == 0
     assert releasable is not None
-    assert releasable.status == "closed"
+    assert releasable.status == "released"
     assert releasable.closed_at is not None
     assert releasable.report_published_eligible is True
     assert releasable_escrow is not None
@@ -1409,10 +1420,28 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     assert dispute.raised_by == requestor_id
     assert dispute.reason == "The public report omits evidence we submitted."
     assert audit is not None
-    assert [call["notification_type"] for call in notification_calls] == [
+    assert {call["notification_type"] for call in notification_calls} == {
         "attestation_disputed",
-    ]
-    assert notification_calls[0]["user_id"] == str(_attestor_id)
+    }
+    assert {call["user_id"] for call in notification_calls} == {
+        str(_attestor_id),
+        str(requestor_id),
+    }
+
+    # The requestor's detail view names the attestor org and carries the
+    # dispute so the page can show its state and, later, the resolution.
+    detail = await client.get(
+        f"/v1/attestations/{attestation_id}",
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["attestor_org_name"]
+    assert body["dispute"]["status"] == "open"
+    assert body["dispute"]["category"] == "scope_error"
+    assert body["dispute"]["reason"] == "The public report omits evidence we submitted."
+    assert body["dispute"]["outcome"] is None
+    assert body["dispute"]["resolution_due_at"] is not None
 
 
 async def test_admin_rejects_attestation_dispute_releases_and_publishes(
@@ -1490,7 +1519,7 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     assert resolved.json()["outcome"] == "rejected"
     assert double_resolve.status_code == 409
     assert attestation is not None
-    assert attestation.status == "closed"
+    assert attestation.status == "released"
     assert attestation.closed_at is not None
     assert attestation.report_published_eligible is True
     assert dispute is not None
@@ -1592,7 +1621,7 @@ async def test_admin_upholds_refund_refunds_and_suppresses_publication(
     assert resolved.json()["outcome"] == "upheld_refund"
     assert warning_count == 1
     assert attestation is not None
-    assert attestation.status == "closed"
+    assert attestation.status == "refunded"
     assert attestation.report_published_eligible is False
     assert dispute is not None
     assert dispute.outcome == "upheld_refund"
@@ -1908,9 +1937,9 @@ async def test_admin_refunds_needs_admin_attestation(
     app.dependency_overrides.pop(get_redis, None)
 
     assert response.status_code == 200
-    assert response.json()["status"] == "closed"
+    assert response.json()["status"] == "refunded"
     assert attestation is not None
-    assert attestation.status == "closed"
+    assert attestation.status == "refunded"
     assert attestation.closed_at is not None
     assert transaction is not None
     assert transaction.status == "refunded"
@@ -2288,3 +2317,234 @@ async def test_dispute_queue_orders_by_resolution_deadline(
     assert response.status_code == 200
     listed = [item["id"] for item in response.json()["disputes"]]
     assert listed == [raised_ids[1], raised_ids[0]]
+
+
+async def test_requestor_withdraws_offered_request_refunds_and_supersedes_offers(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Withdrawing during matching refunds the fee and clears every open offer.
+
+    Slice 3 decision 2: self-service withdraw until an attestor accepts. The
+    org holding the open offer is told, on its offers tab, that the request is
+    gone.
+    """
+    del migrated_database
+    refund_calls: list[dict[str, Any]] = []
+    notification_calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+
+    async def fake_create_refund(**kwargs: Any) -> FakeStripeRefund:
+        refund_calls.append(kwargs)
+        return FakeStripeRefund("re_attestation_withdraw_123")
+
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+    await set_platform_config("attestation_cohort_size", "1")
+    requestor_id = await create_user("withdraw-requestor@auracles.space", ["operator"])
+    first_org, first_owner, _ = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        approved_at=datetime(2026, 1, 1, tzinfo=UTC),
+        slug_prefix="wdfirst",
+    )
+    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
+    matching_context["event"] = payment_intent_event(
+        "evt_attestation_withdraw_success",
+        transaction_id=transaction_id,
+        attestation_id=attestation_id,
+        requestor_id=requestor_id,
+    )
+    webhook_response = await client.post(
+        "/v1/webhooks/stripe",
+        content=b'{"raw":true}',
+        headers={"Stripe-Signature": "valid-signature"},
+    )
+    assert webhook_response.status_code == 200
+    notification_calls.clear()
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+    second = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        transaction = await session.get(Transaction, transaction_id)
+        assert attestation is not None and attestation.escrow_id is not None
+        escrow = await session.get(Escrow, attestation.escrow_id)
+        offers = (
+            (
+                await session.execute(
+                    select(AttestationOffer).where(
+                        AttestationOffer.attestation_id == attestation_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_request_withdrawn",
+                AuditLog.target_id == attestation_id,
+            )
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert second.status_code == 200
+    assert attestation.status == "cancelled"
+    assert attestation.closed_at is not None
+    assert escrow is not None and escrow.status == "refunded"
+    assert transaction is not None and transaction.status == "refunded"
+    assert len(refund_calls) == 1
+    assert [offer.status for offer in offers] == ["superseded"]
+    assert audit is not None
+    assert audit.metadata_["escrow_id"] == str(escrow.id)
+    withdrawn = [
+        call
+        for call in notification_calls
+        if call["notification_type"] == "attestation_withdrawn"
+    ]
+    assert [call["user_id"] for call in withdrawn] == [str(first_owner)]
+    assert withdrawn[0]["link"] == f"/dashboard/organizations/{first_org}/offers"
+
+
+async def test_requestor_withdraws_needs_admin_request_with_refund(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request stuck in needs-admin can be withdrawn by its requestor."""
+    del migrated_database, matching_context
+
+    async def fake_create_refund(**kwargs: Any) -> FakeStripeRefund:
+        return FakeStripeRefund("re_attestation_withdraw_needs_admin")
+
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+    requestor_id = await create_user(
+        "withdraw-needs-admin@auracles.space", ["operator"]
+    )
+    attestation_id, transaction_id, escrow_id = await create_needs_admin_attestation(
+        requestor_id
+    )
+
+    response = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        escrow = await session.get(Escrow, escrow_id)
+        transaction = await session.get(Transaction, transaction_id)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "cancelled"
+    assert escrow is not None and escrow.status == "refunded"
+    assert transaction is not None and transaction.status == "refunded"
+
+
+async def test_requestor_cannot_withdraw_once_an_attestor_accepted(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """After acceptance the request is committed; only accept or dispute remain."""
+    del migrated_database, matching_context
+    requestor_id = await create_user("withdraw-late@auracles.space", ["operator"])
+    stranger_id = await create_user("withdraw-stranger@auracles.space", ["operator"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="wdlate",
+    )
+    attestation_id, _, escrow_id = await create_report_submitted_attestation(
+        requestor_id, org_id, member_id
+    )
+
+    late = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+    stranger = await client.post(
+        f"/v1/attestations/{attestation_id}/cancel",
+        headers=auth_headers(stranger_id, ["operator"]),
+    )
+
+    async with async_session_factory() as session:
+        escrow = await session.get(Escrow, escrow_id)
+
+    assert late.status_code == 409
+    assert "attestor" in late.json()["detail"].lower()
+    assert stranger.status_code == 404
+    assert escrow is not None and escrow.status == "held"
+
+
+async def test_admin_detail_shows_offer_decline_reason(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """An org's optional decline reason is stored and shown to admins only."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    requestor_id = await create_user("decline-reason-req@auracles.space", ["operator"])
+    org_id, owner_id, _ = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="declreason",
+    )
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
+    attestation_id, _txn, _ = await create_needs_admin_attestation(requestor_id)
+    assign = await client.post(
+        f"/v1/admin/attestations/{attestation_id}/assign",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={"attestor_org_id": str(org_id), "reason": "Manual dispatch."},
+    )
+    assert assign.status_code == 200
+    async with async_session_factory() as session:
+        offer_id = await session.scalar(
+            select(AttestationOffer.id).where(
+                AttestationOffer.attestation_id == attestation_id,
+                AttestationOffer.org_id == org_id,
+            )
+        )
+
+    declined = await client.post(
+        f"/v1/orgs/{org_id}/attestation-offers/{offer_id}/decline",
+        headers=auth_headers(owner_id, []),
+        json={"reason": "No reviewer free this month."},
+    )
+    detail = await client.get(
+        f"/v1/admin/attestations/{attestation_id}",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+    requestor_view = await client.get(
+        f"/v1/attestations/{attestation_id}",
+        headers=auth_headers(requestor_id, ["operator"]),
+    )
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert declined.status_code == 200
+    assert detail.status_code == 200
+    offer = detail.json()["offers"][0]
+    assert offer["status"] == "declined"
+    assert offer["decline_reason"] == "No reviewer free this month."
+    assert "decline_reason" not in json.dumps(requestor_view.json())

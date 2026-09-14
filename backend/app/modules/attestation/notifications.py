@@ -7,7 +7,8 @@ notifications. Phase 5 can consume the same event names when scoring exists.
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from uuid import UUID
 
 from loguru import logger
@@ -25,6 +26,35 @@ def _attestation_link(attestation_id: UUID) -> str:
 def _attestor_onboarding_link() -> str:
     """Return the dashboard route for Attestor onboarding prerequisites."""
     return "/attestor/onboarding"
+
+
+def _workspace_link(org_id: UUID, attestation_id: UUID) -> str:
+    """Return the attestor org's review workspace for one attestation."""
+    return f"/dashboard/organizations/{org_id}/attestations/{attestation_id}"
+
+
+def _offers_link(org_id: UUID) -> str:
+    """Return the attestor org's offers tab."""
+    return f"/dashboard/organizations/{org_id}/offers"
+
+
+def _org_side_link(attestation: Attestation) -> str:
+    """Return the page an attestor-side recipient should land on.
+
+    The workspace when the attestation is staffed to an org; the requestor
+    detail page is never the right landing for an attestor, but it is the only
+    page that exists when no org is attached (revoked assignments).
+    """
+    if attestation.attestor_org_id is not None:
+        return _workspace_link(attestation.attestor_org_id, attestation.id)
+    return _attestation_link(attestation.id)
+
+
+def _due_date(value: datetime | None) -> str:
+    """Format a deadline for notification copy, e.g. ``2 Oct 2026``."""
+    if value is None:
+        return "the new deadline"
+    return value.strftime("%-d %b %Y")
 
 
 def _payload(attestation: Attestation, **extra: str | int | None) -> dict[str, str]:
@@ -52,8 +82,13 @@ def _dispatch(
     attestation: Attestation,
     dedupe_suffix: str,
     extra_payload: dict[str, str | int | None] | None = None,
+    link: str | None = None,
 ) -> None:
-    """Queue one durable notification with realtime and email fanout."""
+    """Queue one durable notification with realtime and email fanout.
+
+    ``link`` defaults to the requestor detail page; attestor-side recipients
+    pass their workspace or offers tab instead.
+    """
     payload = _payload(attestation, **(extra_payload or {}))
     try:
         dispatch_project_notification.delay(
@@ -62,7 +97,7 @@ def _dispatch(
             title=title,
             body=body,
             payload=payload,
-            link=_attestation_link(attestation.id),
+            link=link or _attestation_link(attestation.id),
             dedupe_key=f"{notification_type}:{attestation.id}:{dedupe_suffix}",
         )
     except Exception as exc:
@@ -162,6 +197,7 @@ def notify_org_offer_received(
             "offer_id": str(offer.id),
             "cohort_index": offer.cohort_index,
         },
+        link=_offers_link(offer.org_id) if offer.org_id else None,
     )
 
 
@@ -195,11 +231,11 @@ def notify_reviewer_assigned(
         notification_type="attestation_assigned",
         title="Attestation assigned to you",
         body=(
-            "You have been assigned to review an attestation. "
-            "Open your queue to begin."
+            "You have been assigned to review an attestation. Open your queue to begin."
         ),
         attestation=attestation,
         dedupe_suffix=f"reviewer:{reviewer_user_id}",
+        link=_org_side_link(attestation),
     )
 
 
@@ -226,6 +262,7 @@ def notify_reassigned(
         attestation=attestation,
         dedupe_suffix=f"attestor:{old_attestor_id}",
         extra_payload={"old_attestor_id": str(old_attestor_id)},
+        link=_org_side_link(attestation),
     )
 
 
@@ -292,40 +329,77 @@ def notify_clarification_answered(
         body="The requestor answered your clarification question.",
         attestation=attestation,
         dedupe_suffix=f"clarification-answered:{clarification_id}",
+        link=_org_side_link(attestation),
     )
 
 
 def notify_released(
-    attestation: Attestation, *, reason: str, recipient_id: UUID | None
+    attestation: Attestation,
+    *,
+    reason: str,
+    recipient_id: UUID | None,
+    owner_ids: Iterable[UUID] = (),
 ) -> None:
-    """Notify the reviewing member that the org's attestation fee was released.
+    """Notify everyone with a stake in a released attestation.
 
-    ``recipient_id`` is the user id of the reviewing member who performed the
-    review, resolved by the caller while the DB session is live. When no
-    reviewing member is recorded, no notification is dispatched.
+    The requestor learns the attestation is complete (their detail page). The
+    reviewing member (``recipient_id``) and the org owners (``owner_ids``) learn
+    the fee was credited, landing on the workspace. Both id sets are resolved
+    by the caller while the DB session is live; overlaps are sent once.
     """
-    if recipient_id is None:
-        return
     _dispatch(
-        user_id=recipient_id,
+        user_id=attestation.requestor_id,
         notification_type="attestation_released",
-        title="Attestation fee released",
-        body="The Attestation fee has been released to the organization's "
-        "earnings balance.",
+        title="Attestation complete",
+        body=(
+            "Your attestation is complete and the report now stands. "
+            "You can rate the attestor and download your invoice."
+        ),
         attestation=attestation,
-        dedupe_suffix=f"attestor:{reason}",
+        dedupe_suffix=f"requestor:{reason}",
         extra_payload={"reason": reason},
     )
+    org_side: list[UUID] = []
+    for user_id in ([recipient_id] if recipient_id is not None else []) + list(
+        owner_ids
+    ):
+        if user_id != attestation.requestor_id and user_id not in org_side:
+            org_side.append(user_id)
+    for user_id in org_side:
+        _dispatch(
+            user_id=user_id,
+            notification_type="attestation_released",
+            title="Attestation fee released",
+            body="The Attestation fee has been released to the organization's "
+            "earnings balance.",
+            attestation=attestation,
+            dedupe_suffix=f"attestor:{reason}:{user_id}",
+            extra_payload={"reason": reason},
+            link=_org_side_link(attestation),
+        )
 
 
 def notify_dispute_raised(
     attestation: Attestation, *, recipient_id: UUID | None
 ) -> None:
-    """Notify the reviewing member that the requestor raised a dispute.
+    """Notify both parties that the requestor raised a dispute.
 
-    ``recipient_id`` is the reviewing member's user id, resolved by the caller
-    while the DB session is live. None when no reviewing member is staffed.
+    The requestor gets a receipt (the dispute is theirs, but the page state
+    changes under them and the admin timeline matters). ``recipient_id`` is
+    the reviewing member's user id, resolved by the caller while the DB
+    session is live; None when no reviewing member is staffed.
     """
+    _dispatch(
+        user_id=attestation.requestor_id,
+        notification_type="attestation_disputed",
+        title="Dispute received",
+        body=(
+            "Your dispute is with the trust team. Escrow stays held until an "
+            "administrator decides; you will be notified of the outcome."
+        ),
+        attestation=attestation,
+        dedupe_suffix="requestor",
+    )
     if recipient_id is None:
         return
     _dispatch(
@@ -335,6 +409,7 @@ def notify_dispute_raised(
         body="The requestor disputed your submitted Attestation report.",
         attestation=attestation,
         dedupe_suffix="attestor",
+        link=_org_side_link(attestation),
     )
 
 
@@ -350,19 +425,47 @@ def notify_dispute_resolved(
         recipient_id: The reviewing member's user id (attestor side), resolved
             by the caller while the DB session is live; None when unstaffed.
     """
-    recipients = [attestation.requestor_id]
-    if recipient_id is not None:
-        recipients.append(recipient_id)
-    for user_id in recipients:
-        _dispatch(
-            user_id=user_id,
-            notification_type="attestation_dispute_resolved",
-            title="Attestation dispute resolved",
-            body="Admin resolved an Attestation dispute.",
-            attestation=attestation,
-            dedupe_suffix=f"{outcome}:{user_id}",
-            extra_payload={"outcome": outcome},
-        )
+    due = _due_date(attestation.completion_due_at)
+    bodies: dict[str, tuple[str, str]] = {
+        "rejected": (
+            "The dispute was not upheld. The report stands and the fee has "
+            "been released.",
+            "The dispute against your report was not upheld. The report "
+            "stands and the fee has been released.",
+        ),
+        "upheld_refund": (
+            "The dispute was upheld. Your fee has been refunded.",
+            "The dispute against your report was upheld and the fee refunded.",
+        ),
+        "upheld_revise": (
+            f"The dispute was upheld. The attestor must revise the report by {due}.",
+            f"The dispute was upheld. Revise and resubmit the report by {due}.",
+        ),
+    }
+    requestor_body, attestor_body = bodies.get(
+        outcome, ("Admin resolved an Attestation dispute.",) * 2
+    )
+    _dispatch(
+        user_id=attestation.requestor_id,
+        notification_type="attestation_dispute_resolved",
+        title="Attestation dispute resolved",
+        body=requestor_body,
+        attestation=attestation,
+        dedupe_suffix=f"{outcome}:{attestation.requestor_id}",
+        extra_payload={"outcome": outcome},
+    )
+    if recipient_id is None or recipient_id == attestation.requestor_id:
+        return
+    _dispatch(
+        user_id=recipient_id,
+        notification_type="attestation_dispute_resolved",
+        title="Attestation dispute resolved",
+        body=attestor_body,
+        attestation=attestation,
+        dedupe_suffix=f"{outcome}:{recipient_id}",
+        extra_payload={"outcome": outcome},
+        link=_org_side_link(attestation),
+    )
 
 
 def notify_org_attestor_warning(
@@ -415,6 +518,59 @@ def notify_refunded(attestation: Attestation, *, reason: str) -> None:
         attestation=attestation,
         dedupe_suffix=f"requestor:{reason}",
         extra_payload={"reason": reason},
+    )
+
+
+def notify_offer_expired_for_requestor(attestation: Attestation) -> None:
+    """Tell the requestor a cohort lapsed and matching moved on.
+
+    Fired by the offer-expiry beat once per lapsed cohort; the dedupe key
+    carries the current status so a later cohort lapse is a fresh message.
+    """
+    _dispatch(
+        user_id=attestation.requestor_id,
+        notification_type="attestation_offer_expired",
+        title="Still finding an attestor",
+        body=(
+            "The attestors we offered your request to did not respond in time. "
+            "We are offering it to the next eligible organizations."
+        ),
+        attestation=attestation,
+        dedupe_suffix=f"requestor:{datetime.now(UTC).isoformat()}",
+    )
+
+
+def notify_clarification_expired(
+    attestation: Attestation, *, clarification_id: UUID
+) -> None:
+    """Tell the requestor a clarification lapsed unanswered."""
+    _dispatch(
+        user_id=attestation.requestor_id,
+        notification_type="attestation_clarification_expired",
+        title="Clarification lapsed",
+        body=(
+            "A question from your attestor went unanswered and has lapsed. "
+            "The review continues on the information already provided."
+        ),
+        attestation=attestation,
+        dedupe_suffix=f"clarification-expired:{clarification_id}",
+        extra_payload={"clarification_id": str(clarification_id)},
+    )
+
+
+def notify_withdrawn(
+    attestation: Attestation, *, org_id: UUID, recipient_id: UUID
+) -> None:
+    """Tell an org manager that a request they held an open offer on was withdrawn."""
+    _dispatch(
+        user_id=recipient_id,
+        notification_type="attestation_withdrawn",
+        title="Attestation request withdrawn",
+        body="The requestor withdrew a request your organization had been offered.",
+        attestation=attestation,
+        dedupe_suffix=f"withdrawn:{org_id}:{recipient_id}",
+        extra_payload={"org_id": str(org_id)},
+        link=_offers_link(org_id),
     )
 
 

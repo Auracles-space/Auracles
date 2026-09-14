@@ -326,8 +326,11 @@ async def decline_org_offer(
     offer_id: UUID,
     org_id: UUID,
     actor_id: UUID,
+    reason: str | None = None,
 ) -> Attestation:
     """Decline an org cohort offer and advance matching when exhausted.
+
+    ``reason`` is optional free text kept on the offer for admin oversight.
 
     Raises:
         HTTPException(403): Org attestor capability is not active.
@@ -349,13 +352,18 @@ async def decline_org_offer(
             )
         offer.status = "declined"
         offer.responded_at = current_time
+        offer.decline_reason = reason.strip() if reason and reason.strip() else None
         await write_audit(
             db=db,
             actor_id=actor_id,
             action="attestation_declined",
             target_type="attestation",
             target_id=attestation.id,
-            metadata={"offer_id": str(offer.id), "org_id": str(org_id)},
+            metadata={
+                "offer_id": str(offer.id),
+                "org_id": str(org_id),
+                "reason": offer.decline_reason,
+            },
         )
         if await _current_cohort_is_exhausted(db, attestation.id, offer.cohort_index):
             attestation.status = "matching"
@@ -494,6 +502,8 @@ async def expire_stale_offers(
         await notify_new_offers(db, attestation, next_offers)
         if attestation.status == "needs_admin":
             attestation_notifications.notify_needs_admin(attestation)
+        elif expired_ids and attestation.status in ("matching", "offered"):
+            attestation_notifications.notify_offer_expired_for_requestor(attestation)
     return expired_count
 
 

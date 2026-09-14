@@ -16,6 +16,7 @@ from app.core.database import async_session_factory
 from app.integrations import s3
 from app.modules.attestation import rubrics
 from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
     Attestation,
     AttestationAnnotation,
     AttestationRubricDimension,
@@ -201,7 +202,9 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
             .join(requestor, requestor.id == Attestation.requestor_id)
             .where(
                 Attestation.id == parsed_attestation_id,
-                Attestation.status.in_(("report_submitted", "released", "closed")),
+                Attestation.status.in_(
+                    ("report_submitted", *SETTLED_ATTESTATION_STATUSES)
+                ),
             )
         )
         report_row = row.one_or_none()

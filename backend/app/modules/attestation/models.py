@@ -66,6 +66,16 @@ ATTESTATION_STATUS_ENUM = ENUM(
     name="attestation_status_enum",
     create_type=False,
 )
+# Statuses meaning "the fee was released and the report stood". ``closed`` is
+# the legacy value written before 2026-09-14; new releases write ``released``.
+SETTLED_ATTESTATION_STATUSES: tuple[str, ...] = ("released", "closed")
+# Statuses meaning "nothing further will happen on this request".
+FINISHED_ATTESTATION_STATUSES: tuple[str, ...] = (
+    "released",
+    "refunded",
+    "closed",
+    "cancelled",
+)
 ATTESTATION_OUTCOME_ENUM = ENUM(
     "approved",
     "conditional",
@@ -179,6 +189,8 @@ ATTESTOR_CREDENTIAL_BODY_ENUM = ENUM(
     name="attestor_credential_body_enum",
     create_type=False,
 )
+
+
 class Credential(UpdatedAtMixin, Base):
     """User-owned professional credential that can be attested."""
 
@@ -434,6 +446,8 @@ class AttestationOffer(Base):
         JSONB,
         nullable=True,
     )
+    # Optional free text the org gave when declining; admin-visible only.
+    decline_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AttestationArtifactAccess(Base):

@@ -26,7 +26,11 @@ from app.core.config import get_settings
 from app.core.currency import platform_currency
 from app.integrations import s3
 from app.modules.admin.models import AnalyticsDailySnapshot
-from app.modules.attestation.models import Attestation, AttestationDispute
+from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
+    Attestation,
+    AttestationDispute,
+)
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import KycDocument, User, UserRole
 from app.modules.developer.models import ApiKey, DeveloperAccount
@@ -158,7 +162,7 @@ GMV_SOURCE_KEYS = (
     "attestation_fee",
 )
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
-ATTESTATION_ISSUED_STATUSES = ("report_submitted", "closed")
+ATTESTATION_ISSUED_STATUSES = ("report_submitted", *SETTLED_ATTESTATION_STATUSES)
 MODERATION_QUEUE_TYPES = ("rarity_review", "near_duplicate_block", "pii_review")
 MODERATION_QUEUE_SORT_PRIORITY = {
     "pii_review": 0,

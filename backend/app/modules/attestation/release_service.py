@@ -17,6 +17,7 @@ from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Transaction
 from app.modules.organizations.models import OrgMember
+from app.modules.organizations.notifications import org_owner_ids
 
 
 async def _reviewing_member_user_id(
@@ -26,11 +27,18 @@ async def _reviewing_member_user_id(
     if attestation.reviewing_member_id is None:
         return None
     member_user_id: UUID | None = await db.scalar(
-        select(OrgMember.user_id).where(
-            OrgMember.id == attestation.reviewing_member_id
-        )
+        select(OrgMember.user_id).where(OrgMember.id == attestation.reviewing_member_id)
     )
     return member_user_id
+
+
+async def _attestor_org_owner_ids(
+    db: AsyncSession, attestation: Attestation
+) -> list[UUID]:
+    """Resolve the owners of the attestor org, if one is staffed."""
+    if attestation.attestor_org_id is None:
+        return []
+    return await org_owner_ids(db, attestation.attestor_org_id)
 
 
 async def accept_report(
@@ -60,11 +68,13 @@ async def accept_report(
             reason="requestor_accept_report",
         )
         recipient_id = await _reviewing_member_user_id(db, attestation)
+        owner_ids = await _attestor_org_owner_ids(db, attestation)
     await db.refresh(attestation)
     attestation_notifications.notify_released(
         attestation,
         reason="requestor_accept_report",
         recipient_id=recipient_id,
+        owner_ids=owner_ids,
     )
     return attestation
 
@@ -107,11 +117,13 @@ async def auto_release_attestations(
                 reason="auto_release_after_dispute_window",
             )
             recipient_id = await _reviewing_member_user_id(db, attestation)
+            owner_ids = await _attestor_org_owner_ids(db, attestation)
             released_count += 1
         attestation_notifications.notify_released(
             attestation,
             reason="auto_release_after_dispute_window",
             recipient_id=recipient_id,
+            owner_ids=owner_ids,
         )
     return released_count
 
@@ -143,7 +155,7 @@ async def _release_and_close(
         reason=reason,
     )
     await _credit_org_beneficiary(db=db, attestation=attestation)
-    attestation.status = "closed"
+    attestation.status = "released"
     attestation.closed_at = now
     # A released report stood — stamp it publication-eligible for Module 6.
     attestation.report_published_eligible = True

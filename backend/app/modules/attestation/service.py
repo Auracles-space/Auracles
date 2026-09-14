@@ -26,6 +26,7 @@ from app.integrations.stripe import StripeProviderError
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
+    AttestationDispute,
     AttestationOffer,
     AttestationRubricDimension,
     AttestationRubricScore,
@@ -35,13 +36,15 @@ from app.modules.attestation.schemas import (
     AdminAttestationDetailResponse,
     AdminAttestationOfferItem,
     AttestationConsentPendingResponse,
+    AttestationDisputeSummary,
     AttestationFundingResponse,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
     RequestorRubricItem,
 )
 from app.modules.auth.models import User
-from app.modules.financials.models import PlatformConfig, Transaction
+from app.modules.financials import escrow_service
+from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, FrameworkVersion
 from app.modules.organizations.models import Organization, OrgMember
 
@@ -80,9 +83,7 @@ async def list_attestations_for_user(
     elif role == "attestor":
         # A user sees the org attestations they staff as reviewing member plus,
         # as an org owner/admin, all of their org's attestor work.
-        reviewing_member_ids = select(OrgMember.id).where(
-            OrgMember.user_id == user.id
-        )
+        reviewing_member_ids = select(OrgMember.id).where(OrgMember.user_id == user.id)
         managed_org_ids = select(OrgMember.org_id).where(
             OrgMember.user_id == user.id,
             OrgMember.role.in_(("owner", "admin")),
@@ -108,6 +109,12 @@ async def list_attestations_for_user(
 # Statuses in which a report has been submitted and its rubric may be shown to
 # the requestor. Never includes pre-submission states (accepted/in_review), so
 # the requestor cannot see draft scoring before the attestor commits a report.
+# Funded statuses in which no attestor has committed yet, so the requestor may
+# still withdraw and take the fee back (slice 3 decision 2).
+WITHDRAWABLE_FUNDED_STATUSES: frozenset[str] = frozenset(
+    {"matching", "offered", "needs_admin"}
+)
+
 REPORT_RUBRIC_VISIBLE_STATUSES = {
     "report_submitted",
     "disputed",
@@ -241,13 +248,67 @@ async def get_admin_attestation_detail(
             offered_at=offer.offered_at,
             expires_at=offer.expires_at,
             responded_at=offer.responded_at,
+            decline_reason=offer.decline_reason,
         )
         for offer, org_name in rows.all()
     ]
-    return AdminAttestationDetailResponse(
-        attestation=AttestationRequestResponse.model_validate(attestation),
-        offers=offers,
-    )
+    (attestation_item,) = await build_request_responses(db, [attestation])
+    return AdminAttestationDetailResponse(attestation=attestation_item, offers=offers)
+
+
+async def build_request_responses(
+    db: AsyncSession,
+    attestations: list[Attestation],
+    *,
+    include_dispute: bool = False,
+) -> list[AttestationRequestResponse]:
+    """Serialise attestations with the names a reader needs to make sense of them.
+
+    Adds the framework title for framework targets and the attestor org's
+    name when one is staffed, in two batched lookups. ``include_dispute``
+    attaches the latest dispute (detail view only, both parties may read it).
+    """
+    framework_ids = {
+        row.target_id for row in attestations if row.target_type == "framework"
+    }
+    titles: dict[UUID, str] = {}
+    if framework_ids:
+        title_rows = await db.execute(
+            select(Framework.id, Framework.title).where(Framework.id.in_(framework_ids))
+        )
+        titles = dict(title_rows.all())
+    org_ids = {row.attestor_org_id for row in attestations if row.attestor_org_id}
+    org_names: dict[UUID, str] = {}
+    if org_ids:
+        org_rows = await db.execute(
+            select(Organization.id, Organization.name).where(
+                Organization.id.in_(org_ids)
+            )
+        )
+        org_names = dict(org_rows.all())
+    disputes: dict[UUID, AttestationDispute] = {}
+    if include_dispute and attestations:
+        dispute_rows = await db.execute(
+            select(AttestationDispute)
+            .where(
+                AttestationDispute.attestation_id.in_([row.id for row in attestations])
+            )
+            .order_by(AttestationDispute.created_at.desc())
+        )
+        for dispute in dispute_rows.scalars().all():
+            disputes.setdefault(dispute.attestation_id, dispute)
+    items: list[AttestationRequestResponse] = []
+    for row in attestations:
+        item = AttestationRequestResponse.model_validate(row)
+        if row.target_type == "framework":
+            item.target_title = titles.get(row.target_id)
+        if row.attestor_org_id is not None:
+            item.attestor_org_name = org_names.get(row.attestor_org_id)
+        dispute = disputes.get(row.id)
+        if dispute is not None:
+            item.dispute = AttestationDisputeSummary.model_validate(dispute)
+        items.append(item)
+    return items
 
 
 def _normalise_money(amount: Decimal) -> Decimal:
@@ -417,13 +478,21 @@ async def cancel_attestation_request(
     *,
     attestation_id: UUID,
 ) -> Attestation:
-    """Withdraw the caller's own Attestation request before any fee is charged.
+    """Withdraw the caller's own Attestation request while no attestor is committed.
 
-    Deliberately limited to ``pending_owner_consent``, the one requestor-facing
-    state where no Transaction exists. Cancelling a ``pending_fee`` request
-    would race the payment webhook, which rejects any Attestation that has left
-    ``pending_fee`` — a payment landing after the cancel would strand held
-    funds against a dead request.
+    Two withdrawable stages (slice 3 decision 2):
+
+    * ``pending_owner_consent`` — nothing has been paid; the row is cancelled.
+    * ``matching`` / ``offered`` / ``needs_admin`` — the fee is held in escrow
+      but no attestor has accepted. The escrow is refunded on its funding
+      rail, every open offer is superseded, and each org that held one is
+      told on its offers tab.
+
+    ``pending_fee`` still refuses: cancelling there would race the payment
+    webhook, which rejects any Attestation that has left ``pending_fee`` — a
+    payment landing after the cancel would strand held funds. Once an
+    attestor has accepted the request is committed and only accept or dispute
+    remain.
 
     Args:
         db: Async database session.
@@ -436,12 +505,15 @@ async def cancel_attestation_request(
     Raises:
         HTTPException(404): The row does not exist or belongs to another
             requestor — an existence check must not leak either way.
-        HTTPException(409): The request has moved past the pre-payment state.
+        HTTPException(409): The fee is being paid, or an attestor has
+            already accepted.
+        HTTPException(502): The payment provider refused the refund.
     """
     requestor_id = requestor.id
     if db.in_transaction():
         await db.rollback()
 
+    offer_recipients: dict[UUID, list[UUID]] = {}
     async with db.begin():
         attestation = await db.get(Attestation, attestation_id, with_for_update=True)
         if attestation is None or attestation.requestor_id != requestor_id:
@@ -453,14 +525,33 @@ async def cancel_attestation_request(
             # Withdrawing twice is the same outcome the caller asked for, so a
             # double-tap returns the row rather than a confusing conflict.
             return attestation
-        if attestation.status != "pending_owner_consent":
+        previous_status = attestation.status
+        if previous_status == "pending_fee":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    "Only a request still awaiting the framework owner's "
-                    "consent can be withdrawn."
+                    "A payment may be in progress. Wait for it to settle, "
+                    "then withdraw."
                 ),
             )
+        if previous_status not in WITHDRAWABLE_FUNDED_STATUSES and (
+            previous_status != "pending_owner_consent"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "An attestor has already accepted this request, so it "
+                    "can no longer be withdrawn. You can accept or dispute "
+                    "the report once it is submitted."
+                ),
+            )
+        audit_metadata: dict[str, str] = {"previous_status": previous_status}
+        if previous_status in WITHDRAWABLE_FUNDED_STATUSES:
+            escrow_id = await _refund_withdrawn_escrow(
+                db, attestation=attestation, requestor_id=requestor_id
+            )
+            audit_metadata["escrow_id"] = str(escrow_id)
+            offer_recipients = await _supersede_open_offers(db, attestation)
         attestation.status = "cancelled"
         attestation.closed_at = datetime.now(UTC)
         await write_audit(
@@ -469,10 +560,15 @@ async def cancel_attestation_request(
             action="attestation_request_withdrawn",
             target_type="attestation",
             target_id=attestation.id,
-            metadata={"previous_status": "pending_owner_consent"},
+            metadata=audit_metadata,
         )
 
     await db.refresh(attestation)
+    for org_id, recipient_ids in offer_recipients.items():
+        for recipient_id in recipient_ids:
+            attestation_notifications.notify_withdrawn(
+                attestation, org_id=org_id, recipient_id=recipient_id
+            )
     logger.bind(
         module="attestation",
         action="cancel_attestation_request",
@@ -480,6 +576,83 @@ async def cancel_attestation_request(
         attestation_id=str(attestation_id),
     ).info("attestation_request_withdrawn")
     return attestation
+
+
+async def _refund_withdrawn_escrow(
+    db: AsyncSession, *, attestation: Attestation, requestor_id: UUID
+) -> UUID:
+    """Refund a held attestation fee back on its rail for a withdrawal.
+
+    Locks the escrow and its funding transaction, sends the refund through
+    the shared provider leg (idempotent per escrow), then marks the local
+    ledger refunded. Runs inside the caller's transaction so a provider
+    failure rolls the withdrawal back.
+    """
+    if attestation.escrow_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attestation escrow is missing.",
+        )
+    escrow = await db.get(Escrow, attestation.escrow_id, with_for_update=True)
+    if escrow is None or escrow.status != "held":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only a held attestation fee can be refunded.",
+        )
+    transaction = await db.get(Transaction, escrow.transaction_id, with_for_update=True)
+    if transaction is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Escrow funding transaction not found.",
+        )
+    await escrow_service.refund_at_provider(
+        db,
+        escrow=escrow,
+        transaction=transaction,
+        idempotency_prefix="attestation_withdraw_refund",
+        actor_id=requestor_id,
+    )
+    await escrow_service.refund(
+        db,
+        escrow_id=escrow.id,
+        actor_id=requestor_id,
+        reason="requestor_withdrew_request",
+    )
+    return escrow.id
+
+
+async def _supersede_open_offers(
+    db: AsyncSession, attestation: Attestation
+) -> dict[UUID, list[UUID]]:
+    """Close every open offer on a withdrawn request; return org → managers."""
+    current_time = datetime.now(UTC)
+    open_offers = (
+        (
+            await db.execute(
+                select(AttestationOffer)
+                .where(
+                    AttestationOffer.attestation_id == attestation.id,
+                    AttestationOffer.status == "offered",
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    recipients: dict[UUID, list[UUID]] = {}
+    for offer in open_offers:
+        offer.status = "superseded"
+        offer.responded_at = current_time
+        if offer.org_id is not None and offer.org_id not in recipients:
+            rows = await db.execute(
+                select(OrgMember.user_id).where(
+                    OrgMember.org_id == offer.org_id,
+                    OrgMember.role.in_(("owner", "admin")),
+                )
+            )
+            recipients[offer.org_id] = list(rows.scalars().all())
+    return recipients
 
 
 async def fund_attestation(
@@ -611,9 +784,7 @@ async def get_attestation_fee_payment(
         )
 
     try:
-        payment_intent = await stripe.retrieve_payment_intent(
-            transaction.provider_ref
-        )
+        payment_intent = await stripe.retrieve_payment_intent(transaction.provider_ref)
     except StripeProviderError as exc:
         logger.bind(
             module="attestation",

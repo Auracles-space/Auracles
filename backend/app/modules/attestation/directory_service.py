@@ -49,9 +49,7 @@ async def list_directory(
     if sector is not None:
         query = query.where(OrgAttestorProfile.sectors.op("&&")([sector]))
     if function is not None:
-        query = query.where(
-            OrgAttestorProfile.functions.op("&&")([function])
-        )
+        query = query.where(OrgAttestorProfile.functions.op("&&")([function]))
     if jurisdiction is not None:
         query = query.where(OrgAttestorProfile.jurisdictions.op("&&")([jurisdiction]))
     if level is not None:

@@ -290,7 +290,7 @@ async def resolve_dispute(
                 reason=notes,
                 admin_override=True,
             )
-            attestation.status = "closed"
+            attestation.status = "released"
             attestation.closed_at = now
             attestation.report_published_eligible = True
             await badge_service.publish_badge(db=db, attestation=attestation)
@@ -312,7 +312,7 @@ async def resolve_dispute(
                 reason=notes,
                 admin_override=True,
             )
-            attestation.status = "closed"
+            attestation.status = "refunded"
             attestation.closed_at = now
             attestation.report_published_eligible = False
             attestation_audit_action = "attestation_refunded"
@@ -510,7 +510,7 @@ async def refund_needs_admin_attestation(
             reason=reason,
             admin_override=True,
         )
-        attestation.status = "closed"
+        attestation.status = "refunded"
         attestation.closed_at = datetime.now(UTC)
         await write_audit(
             db=db,

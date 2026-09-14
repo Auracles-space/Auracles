@@ -19,7 +19,12 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.core.config import get_settings
 from app.core.profile_images import resolve_profile_image_url
 from app.integrations import s3
-from app.modules.attestation.models import Attestation, AttestationBadge, Credential
+from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
+    Attestation,
+    AttestationBadge,
+    Credential,
+)
 from app.modules.attestation.schemas import PublicCredentialResponse
 from app.modules.auth.models import User, UserRole
 from app.modules.collections.models import CollectionFramework, FrameworkCollection
@@ -56,7 +61,7 @@ PREVIEW_URL_TTL_SECONDS = 900
 PREVIEW_RATE_LIMIT = 60
 PREVIEW_RATE_LIMIT_WINDOW_SECONDS = 60
 PUBLIC_POSITIVE_ATTESTATION_OUTCOMES = ("approved", "conditional")
-PUBLIC_ATTESTATION_REPORT_STATUSES = ("report_submitted", "closed")
+PUBLIC_ATTESTATION_REPORT_STATUSES = ("report_submitted", *SETTLED_ATTESTATION_STATUSES)
 PUBLIC_URL_ALLOWED_SCHEMES = ("http", "https")
 
 
@@ -418,8 +423,13 @@ def _public_attestation_exists(
     *,
     status_: str | None = None,
     outcome: str | None = None,
+    settled: bool = False,
 ) -> ColumnElement[bool]:
-    """Build an EXISTS predicate for public Framework Attestation reports."""
+    """Build an EXISTS predicate for public Framework Attestation reports.
+
+    ``settled`` restricts the match to released reports (any status in
+    ``SETTLED_ATTESTATION_STATUSES``); ``status_`` pins one exact status.
+    """
     predicate = (
         select(Attestation.id)
         .where(
@@ -433,6 +443,10 @@ def _public_attestation_exists(
         )
         .limit(1)
     )
+    if settled:
+        predicate = predicate.where(
+            Attestation.status.in_(SETTLED_ATTESTATION_STATUSES)
+        )
     if status_ is not None:
         predicate = predicate.where(Attestation.status == status_)
     if outcome is not None:
@@ -448,12 +462,10 @@ def _apply_attestation_filter(
     if attestation_status == "pending_acceptance":
         return query.where(_public_attestation_exists(status_="report_submitted"))
     if attestation_status == "attested":
-        return query.where(
-            _public_attestation_exists(status_="closed", outcome="approved")
-        )
+        return query.where(_public_attestation_exists(settled=True, outcome="approved"))
     if attestation_status == "conditionally_attested":
         return query.where(
-            _public_attestation_exists(status_="closed", outcome="conditional")
+            _public_attestation_exists(settled=True, outcome="conditional")
         )
     return query.where(~_public_attestation_exists())
 
@@ -663,14 +675,16 @@ def _public_attestation_status(status_: str, outcome: str | None) -> str | None:
     """Map an internal Attestation report to a positive public badge status.
 
     A submitted-but-unaccepted report produces no public badge: nothing is
-    shown until the requestor accepts (status closed). This keeps an unaccepted
-    outcome fully private until the review is done.
+    shown until the fee is released (status released, or the legacy closed).
+    This keeps an unaccepted outcome fully private until the review is done.
     """
     if outcome not in PUBLIC_POSITIVE_ATTESTATION_OUTCOMES:
         return None
-    if status_ == "closed" and outcome == "approved":
+    if status_ not in SETTLED_ATTESTATION_STATUSES:
+        return None
+    if outcome == "approved":
         return "attested"
-    if status_ == "closed" and outcome == "conditional":
+    if outcome == "conditional":
         return "conditionally_attested"
     return None
 

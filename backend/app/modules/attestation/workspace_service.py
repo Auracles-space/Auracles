@@ -154,9 +154,7 @@ async def start_review(
                 detail="Content acknowledgment is required before review starts.",
             )
 
-        if not await _has_valid_coi(
-            db, attestation=attestation, now=current_time
-        ):
+        if not await _has_valid_coi(db, attestation=attestation, now=current_time):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="A valid current CoI declaration is required.",

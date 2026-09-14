@@ -73,6 +73,8 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "attestation_disputed",
     "attestation_dispute_resolved",
     "attestation_refunded",
+    "attestation_withdrawn",
+    "attestation_clarification_expired",
     "attestation_annual_summary_ready",
     "api_rate_limit_threshold",
     "saved_search_alert",

@@ -463,6 +463,11 @@ components:
         cohort_index:
           title: Cohort Index
           type: integer
+        decline_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Decline Reason
         expires_at:
           format: date-time
           title: Expires At
@@ -3862,6 +3867,61 @@ components:
           title: Country
       title: AttestationFundingRequest
       type: object
+    AttestationDisputeSummary:
+      description: 'The latest dispute on an attestation, as both parties may see it.
+
+
+        Carries the requestor''s stated reason and, once decided, the admin''s
+
+        outcome and notes. Never includes the admin''s identity.'
+      properties:
+        category:
+          title: Category
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+        outcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Outcome
+        reason:
+          title: Reason
+          type: string
+        resolution_due_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Resolution Due At
+        resolution_notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resolution Notes
+        resolved_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Resolved At
+        status:
+          title: Status
+          type: string
+      required:
+      - id
+      - status
+      - category
+      - reason
+      - created_at
+      title: AttestationDisputeSummary
+      type: object
     AttestationFundingResponse:
       description: 'Provider handle needed to complete paying an Attestation fee.
 
@@ -4126,6 +4186,11 @@ components:
             type: string
           - type: 'null'
           title: Attestor Org Id
+        attestor_org_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Attestor Org Name
         brief:
           anyOf:
           - additionalProperties: true
@@ -4151,6 +4216,10 @@ components:
         currency:
           title: Currency
           type: string
+        dispute:
+          anyOf:
+          - $ref: '#/components/schemas/AttestationDisputeSummary'
+          - type: 'null'
         dispute_window_ends_at:
           anyOf:
           - format: date-time
@@ -4233,6 +4302,11 @@ components:
           format: uuid
           title: Target Id
           type: string
+        target_title:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Title
         target_type:
           title: Target Type
           type: string
@@ -10727,6 +10801,17 @@ components:
       required:
       - member_id
       title: OrgNominateTrialMemberRequest
+      type: object
+    OrgOfferDeclineRequest:
+      description: Optional reason an org gives when declining a cohort offer.
+      properties:
+        reason:
+          anyOf:
+          - maxLength: 500
+            type: string
+          - type: 'null'
+          title: Reason
+      title: OrgOfferDeclineRequest
       type: object
     OrgOwnershipTransferRequest:
       description: TOTP-gated request to transfer organization ownership.
@@ -17644,10 +17729,11 @@ paths:
       - Attestation
   /v1/attestations/{attestation_id}/cancel:
     post:
-      description: Withdraw the caller's own Attestation request while it is still
-        awaiting the framework owner's consent, before any fee is charged. A request
-        that has reached fee payment cannot be withdrawn here, because a payment already
-        in flight would strand held funds.
+      description: 'Withdraw the caller''s own Attestation request while no attestor
+        has accepted it: before the fee is charged (awaiting owner consent), or while
+        the funded request is still being matched, in which case the fee is refunded
+        on its payment rail and every open offer is closed. Refuses (409) while a payment
+        is in flight or once an attestor has accepted.'
       operationId: cancel_attestation_request_v1_attestations__attestation_id__cancel_post
       parameters:
       - in: path
@@ -17672,7 +17758,7 @@ paths:
           description: Validation Error
       security:
       - HTTPBearer: []
-      summary: Withdraw an unpaid attestation request
+      summary: Withdraw an attestation request
       tags:
       - Attestation
   /v1/attestations/{attestation_id}/clarifications:
@@ -22762,7 +22848,7 @@ paths:
       - Organizations
   /v1/orgs/{org_id}/attestation-offers/{offer_id}/decline:
     post:
-      description: Decline a cohort offer made to the org. Owner/admin only.
+      description: Decline a cohort offer made to the org, optionally saying why. Owner/admin only.
       operationId: decline_org_attestation_offer_v1_orgs__org_id__attestation_offers__offer_id__decline_post
       parameters:
       - in: path
@@ -22779,6 +22865,14 @@ paths:
           format: uuid
           title: Offer Id
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/OrgOfferDeclineRequest'
+              - type: 'null'
+              title: Payload
       responses:
         '200':
           content:

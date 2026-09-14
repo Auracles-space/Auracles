@@ -481,6 +481,9 @@ async def expire_clarifications(
             expired_count += 1
 
         if attestation is not None:
+            attestation_notifications.notify_clarification_expired(
+                attestation, clarification_id=clarification_id
+            )
             recipient_id = await _attestor_recipient_id(db, attestation)
             if recipient_id is not None:
                 attestation_notifications.notify_clarification_answered(

@@ -286,9 +286,9 @@ async def test_unsettled_attestation_invoice_409(
     clean_state,
     fake_document_storage: FakeDocumentStorage,
 ) -> None:
-    """An attestation that is not closed returns 409."""
+    """An attestation whose fee is not yet released returns 409."""
     del clean_state, fake_document_storage
-    seeded = await _seed_attestation("released")
+    seeded = await _seed_attestation("report_submitted")
 
     response = await client.get(
         f"/v1/attestations/{seeded['attestation_id']}/invoice",

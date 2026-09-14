@@ -948,8 +948,8 @@ export const requestAttestationArtifactAccessV1AttestationsAttestationIdArtifact
 };
 
 /**
- * Withdraw an unpaid attestation request
- * Withdraw the caller's own Attestation request while it is still awaiting the framework owner's consent, before any fee is charged. A request that has reached fee payment cannot be withdrawn here, because a payment already in flight would strand held funds.
+ * Withdraw an attestation request
+ * Withdraw the caller's own Attestation request while no attestor has accepted it: before the fee is charged (awaiting owner consent), or while the funded request is still being matched, in which case the fee is refunded on its payment rail and every open offer is closed. Refuses (409) while a payment is in flight or once an attestor has accepted.
  */
 export const cancelAttestationRequestV1AttestationsAttestationIdCancelPost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<CancelAttestationRequestV1AttestationsAttestationIdCancelPostData, ThrowOnError>) => {
     return (options?.client ?? client).post<CancelAttestationRequestV1AttestationsAttestationIdCancelPostResponse, CancelAttestationRequestV1AttestationsAttestationIdCancelPostError, ThrowOnError>({
@@ -2707,7 +2707,7 @@ export const acceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptP
 
 /**
  * Decline an offer
- * Decline a cohort offer made to the org. Owner/admin only.
+ * Decline a cohort offer made to the org, optionally saying why. Owner/admin only.
  */
 export const declineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePost = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostData, ThrowOnError>) => {
     return (options?.client ?? client).post<DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostResponse, DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostError, ThrowOnError>({

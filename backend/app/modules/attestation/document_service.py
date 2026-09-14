@@ -22,7 +22,10 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.attestation.dependencies import attestor_actor
-from app.modules.attestation.models import Attestation
+from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
+    Attestation,
+)
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.models import PlatformConfig, Transaction
@@ -48,7 +51,7 @@ async def _load_settled_attestation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attestation not found.",
         )
-    if attestation.status != "closed":
+    if attestation.status not in SETTLED_ATTESTATION_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Invoice is only available for settled attestations.",
@@ -305,5 +308,3 @@ async def _attestation_commission_rate(db: AsyncSession) -> Decimal:
     if value is None:
         return Decimal("0.10")
     return Decimal(value)
-
-

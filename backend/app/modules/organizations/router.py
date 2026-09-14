@@ -128,6 +128,7 @@ from app.modules.organizations.schemas import (
     OrgMembersResponse,
     OrgNdaStatusResponse,
     OrgNominateTrialMemberRequest,
+    OrgOfferDeclineRequest,
     OrgOwnershipTransferRequest,
     OrgPaymentMethodDeleteRequest,
     OrgPaymentMethodDeleteResponse,
@@ -1531,13 +1532,15 @@ async def decline_org_attestation_offer(
     offer_id: UUID,
     context: VerifiedOrgAdmin,
     db: DatabaseSession,
+    payload: OrgOfferDeclineRequest | None = None,
 ) -> OrgAttestationItem:
-    """Decline a cohort offer made to the org."""
+    """Decline a cohort offer made to the org, optionally saying why."""
     attestation = await matching_service.decline_org_offer(
         db,
         offer_id=offer_id,
         org_id=org_id,
         actor_id=context.user.id,
+        reason=payload.reason if payload is not None else None,
     )
     return OrgAttestationItem.model_validate(attestation)
 

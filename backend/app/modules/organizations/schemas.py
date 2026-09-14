@@ -1087,6 +1087,12 @@ class OrgAttestationOfferItem(BaseModel):
     expires_at: datetime
 
 
+class OrgOfferDeclineRequest(BaseModel):
+    """Optional reason an org gives when declining a cohort offer."""
+
+    reason: str | None = Field(default=None, max_length=500)
+
+
 class OrgAttestationOffersResponse(BaseModel):
     """Open and accepted cohort offers made to an attestor org."""
 

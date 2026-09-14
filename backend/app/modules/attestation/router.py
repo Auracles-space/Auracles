@@ -162,12 +162,14 @@ async def decide_owner_consent(
 @router.post(
     "/attestations/{attestation_id}/cancel",
     response_model=AttestationRequestResponse,
-    summary="Withdraw an unpaid attestation request",
+    summary="Withdraw an attestation request",
     description=(
-        "Withdraw the caller's own Attestation request while it is still "
-        "awaiting the framework owner's consent, before any fee is charged. "
-        "A request that has reached fee payment cannot be withdrawn here, "
-        "because a payment already in flight would strand held funds."
+        "Withdraw the caller's own Attestation request while no attestor has "
+        "accepted it: before the fee is charged (awaiting owner consent), or "
+        "while the funded request is still being matched, in which case the "
+        "fee is refunded on its payment rail and every open offer is closed. "
+        "Refuses (409) while a payment is in flight or once an attestor has "
+        "accepted."
     ),
 )
 async def cancel_attestation_request(
@@ -175,7 +177,7 @@ async def cancel_attestation_request(
     requestor: RequestorUser,
     db: DatabaseSession,
 ) -> AttestationRequestResponse:
-    """Withdraw the caller's own pre-payment Attestation request."""
+    """Withdraw the caller's own Attestation request, refunding a held fee."""
     attestation = await attestation_service.cancel_attestation_request(
         db=db,
         requestor=requestor,
@@ -251,11 +253,9 @@ async def list_attestations(
             db, [attestation.id for attestation in attestations]
         )
     )
-    items: list[AttestationRequestResponse] = []
-    for attestation in attestations:
-        item = AttestationRequestResponse.model_validate(attestation)
-        item.open_clarification = attestation.id in open_clarification_ids
-        items.append(item)
+    items = await attestation_service.build_request_responses(db, attestations)
+    for item in items:
+        item.open_clarification = item.id in open_clarification_ids
     return AttestationsResponse(attestations=items)
 
 
@@ -331,7 +331,10 @@ async def get_attestation(
         attestation_id=attestation_id,
         user=user,
     )
-    return AttestationRequestResponse.model_validate(attestation)
+    (item,) = await attestation_service.build_request_responses(
+        db, [attestation], include_dispute=True
+    )
+    return item
 
 
 @router.post(

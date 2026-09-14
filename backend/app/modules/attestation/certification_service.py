@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
     Attestation,
     AttestationRating,
 )
@@ -62,7 +63,7 @@ async def evaluate_org_attestor_certification(
         select(Attestation.id)
         .where(
             Attestation.attestor_org_id == org_id,
-            Attestation.status == "closed",
+            Attestation.status.in_(SETTLED_ATTESTATION_STATUSES),
             Attestation.report_published_eligible.is_(True),
         )
         .subquery()

@@ -421,14 +421,40 @@ class AttestationRequestCreateRequest(BaseModel):
         return self
 
 
+class AttestationDisputeSummary(BaseModel):
+    """The latest dispute on an attestation, as both parties may see it.
+
+    Carries the requestor's stated reason and, once decided, the admin's
+    outcome and notes. Never includes the admin's identity.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    status: str
+    category: str
+    reason: str
+    outcome: str | None = None
+    resolution_notes: str | None = None
+    resolution_due_at: datetime | None = None
+    resolved_at: datetime | None = None
+    created_at: datetime
+
+
 class AttestationRequestResponse(BaseModel):
     """Attestation request details visible to requestor and assigned Attestor."""
 
     id: UUID
     target_type: str
     target_id: UUID
+    # Framework title when the target is a framework; lets cards and headers
+    # name the thing under review instead of an id.
+    target_title: str | None = None
     requestor_id: UUID
     attestor_org_id: UUID | None
+    # Public directory name of the staffed attestor org, so the requestor
+    # knows who is reviewing them.
+    attestor_org_name: str | None = None
     status: str
     outcome: str | None
     review_type: str | None = None
@@ -452,6 +478,8 @@ class AttestationRequestResponse(BaseModel):
     # True when a clarification is awaiting the requestor's answer. Drives the
     # requestor list card's attention indicator; not an ORM column.
     open_clarification: bool = False
+    # Latest dispute, populated on the detail view only.
+    dispute: AttestationDisputeSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -478,6 +506,7 @@ class AdminAttestationOfferItem(BaseModel):
     offered_at: datetime
     expires_at: datetime
     responded_at: datetime | None
+    decline_reason: str | None = None
 
 
 class AdminAttestationDetailResponse(BaseModel):

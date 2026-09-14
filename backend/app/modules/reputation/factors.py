@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
     Attestation,
     AttestationRating,
     AttestorWarning,
@@ -71,7 +72,9 @@ async def framework_factors(
                 Attestation.target_type == "framework",
                 Attestation.target_id == framework_id,
                 Attestation.outcome.in_(("approved", "conditional")),
-                Attestation.status.in_(("report_submitted", "closed")),
+                Attestation.status.in_(
+                    ("report_submitted", *SETTLED_ATTESTATION_STATUSES)
+                ),
             )
         )
         or 0
@@ -188,7 +191,9 @@ async def contributor_factors(
                 Attestation.target_type == "contributor",
                 Attestation.target_id == user_id,
                 Attestation.outcome.in_(("approved", "conditional")),
-                Attestation.status.in_(("report_submitted", "closed")),
+                Attestation.status.in_(
+                    ("report_submitted", *SETTLED_ATTESTATION_STATUSES)
+                ),
             )
         )
         or 0
@@ -256,12 +261,9 @@ async def org_contributor_reputation_score(
         _ORG_CONTRIBUTOR_PROJECT_TARGET,
     )
     score = (
-        (
-            review_component * _ORG_CONTRIBUTOR_REVIEW_WEIGHT
-            + project_component * _ORG_CONTRIBUTOR_PROJECT_WEIGHT
-        )
-        * Decimal("100")
-    )
+        review_component * _ORG_CONTRIBUTOR_REVIEW_WEIGHT
+        + project_component * _ORG_CONTRIBUTOR_PROJECT_WEIGHT
+    ) * Decimal("100")
     return score.quantize(_SCORE_QUANT, rounding=ROUND_HALF_UP)
 
 
@@ -373,7 +375,7 @@ async def org_attestor_factors(
         select(Attestation.id)
         .where(
             Attestation.attestor_org_id == org_id,
-            Attestation.status == "closed",
+            Attestation.status.in_(SETTLED_ATTESTATION_STATUSES),
             Attestation.report_published_eligible.is_(True),
         )
         .scalar_subquery()
@@ -398,7 +400,7 @@ async def org_attestor_factors(
                 select(Attestation.id)
                 .where(
                     Attestation.attestor_org_id == org_id,
-                    Attestation.status == "closed",
+                    Attestation.status.in_(SETTLED_ATTESTATION_STATUSES),
                     Attestation.report_published_eligible.is_(True),
                 )
                 .subquery()

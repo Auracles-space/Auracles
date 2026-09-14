@@ -77,9 +77,5 @@ def grade(
         Decimal("0.01"),
         rounding=ROUND_HALF_UP,
     )
-    auto_result = (
-        "pass"
-        if score_pct >= Decimal(str(PASS_THRESHOLD_PCT))
-        else "fail"
-    )
+    auto_result = "pass" if score_pct >= Decimal(str(PASS_THRESHOLD_PCT)) else "fail"
     return score_pct, auto_result

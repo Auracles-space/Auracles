@@ -20,7 +20,10 @@ from sqlalchemy import Row, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import async_session_factory
-from app.modules.attestation.models import Attestation
+from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
+    Attestation,
+)
 from app.modules.financials import invoices as financials_invoices
 from app.modules.financials.models import PlatformConfig, Transaction
 from app.modules.organizations.models import (
@@ -169,7 +172,7 @@ async def annual_org_earner_ids(db: AsyncSession, year: int) -> list[UUID]:
         )
         .where(
             Attestation.attestor_org_id.is_not(None),
-            Attestation.status == "closed",
+            Attestation.status.in_(SETTLED_ATTESTATION_STATUSES),
             Attestation.closed_at.is_not(None),
             Attestation.closed_at >= year_start,
             Attestation.closed_at < year_end,
@@ -206,7 +209,7 @@ async def annual_org_line_items(
             )
             .where(
                 Attestation.attestor_org_id == org_id,
-                Attestation.status == "closed",
+                Attestation.status.in_(SETTLED_ATTESTATION_STATUSES),
                 Attestation.closed_at.is_not(None),
                 Attestation.closed_at >= year_start,
                 Attestation.closed_at < year_end,

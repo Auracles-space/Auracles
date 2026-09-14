@@ -189,6 +189,7 @@ export type AdminAttestationDisputesResponse = {
  */
 export type AdminAttestationOfferItem = {
     cohort_index: number;
+    decline_reason?: (string | null);
     expires_at: string;
     offered_at: string;
     org_id: (string | null);
@@ -1357,6 +1358,24 @@ export type AttestationDisputeResponse = {
 };
 
 /**
+ * The latest dispute on an attestation, as both parties may see it.
+ *
+ * Carries the requestor's stated reason and, once decided, the admin's
+ * outcome and notes. Never includes the admin's identity.
+ */
+export type AttestationDisputeSummary = {
+    category: string;
+    created_at: string;
+    id: string;
+    outcome?: (string | null);
+    reason: string;
+    resolution_due_at?: (string | null);
+    resolution_notes?: (string | null);
+    resolved_at?: (string | null);
+    status: string;
+};
+
+/**
  * Request body for creating an Attestation report evidence upload session.
  */
 export type AttestationEvidenceUploadCreateRequest = {
@@ -1486,6 +1505,7 @@ export type target_type = 'framework' | 'contributor' | 'operator' | 'credential
 export type AttestationRequestResponse = {
     accepted_at?: (string | null);
     attestor_org_id: (string | null);
+    attestor_org_name?: (string | null);
     brief?: ({
     [key: string]: unknown;
 } | null);
@@ -1493,6 +1513,7 @@ export type AttestationRequestResponse = {
     completion_due_at?: (string | null);
     created_at: string;
     currency: string;
+    dispute?: (AttestationDisputeSummary | null);
     dispute_window_ends_at?: (string | null);
     escrow_id: (string | null);
     evidence_references?: ({
@@ -1512,6 +1533,7 @@ export type AttestationRequestResponse = {
     status: string;
     summary?: (string | null);
     target_id: string;
+    target_title?: (string | null);
     target_type: string;
     updated_at: string;
 };
@@ -3768,6 +3790,13 @@ export type OrgNdaStatusResponse = {
  */
 export type OrgNominateTrialMemberRequest = {
     member_id: string;
+};
+
+/**
+ * Optional reason an org gives when declining a cohort offer.
+ */
+export type OrgOfferDeclineRequest = {
+    reason?: (string | null);
 };
 
 /**
@@ -7577,6 +7606,7 @@ export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPo
 export type AcceptOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdAcceptPostError = (HTTPValidationError);
 
 export type DeclineOrgAttestationOfferV1OrgsOrgIdAttestationOffersOfferIdDeclinePostData = {
+    body?: (OrgOfferDeclineRequest | null);
     path: {
         offer_id: string;
         org_id: string;
