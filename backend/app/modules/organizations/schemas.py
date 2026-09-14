@@ -1228,3 +1228,19 @@ class OrgAttestationsResponse(BaseModel):
     """An attestor org's attestation queue."""
 
     attestations: list[OrgAttestationItem]
+
+
+class OrgSlugChangeRequest(BaseModel):
+    """Request body to change an organization's slug (Decision 5).
+
+    Applies exactly the slug rules ``OrganizationCreateRequest`` does, so a
+    slug that could not be chosen at creation cannot be chosen later either.
+    """
+
+    slug: str = Field(min_length=3, max_length=80, pattern=r"^[a-zA-Z0-9-]+$")
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_slug(cls, value: str) -> str:
+        """Normalize slugs to lowercase and trim surrounding whitespace."""
+        return value.strip().lower()

@@ -624,3 +624,37 @@ class OrgLegalProfile(UpdatedAtMixin, Base):
         nullable=True,
     )
     kyb_review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class OrgSlugHistory(Base):
+    """A slug an organization used before, reserved to it permanently.
+
+    Decision 5 of the organizations end-to-end design: owners may change the
+    slug, but every previous slug stays bound to the organization so
+    ``/orgs/{old}`` redirects to the current profile and no other
+    organization can claim it to impersonate this one. ``slug`` is unique
+    platform-wide; an owner reclaiming their own old slug deletes the row.
+    """
+
+    __tablename__ = "org_slug_history"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_org_slug_history_slug"),
+        Index("idx_org_slug_history_org", "org_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    org_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    slug: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
