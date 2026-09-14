@@ -16,11 +16,12 @@ All on `rework/step-up-admin-console`, unmerged.
 | Slice C: org money | 5159cdce, 6ac68ba6, 2355d933 |
 | Slice D: admin directory, detail API and page | 49c1244c, c9c2aa2a, 43c608f6, 0e01a144 |
 | Decision 5: slug change (migration 0106) | 29bdd984, bbada042, 79e1133d |
-| Slug race closed: creation and slug change both take a transaction advisory lock on `org_slug:{slug}` before their check (no migration; unique-violation 409 stays the backstop) | uncommitted |
-| Owner Members tab names each member's teams (`OrgMemberResponse.teams`) | uncommitted |
+| Slug race closed: creation and slug change both take a transaction advisory lock on `org_slug:{slug}` before their check (no migration; unique-violation 409 stays the backstop) | f81f925b |
+| Owner Members tab names each member's teams (`OrgMemberResponse.teams`) | f81f925b |
 | Admin money screens name organizations | bbada042, 79e1133d |
 | Audit log org indexes (migration 0107) | 9c9bb88a |
 | Money fixes: Paystack partner webhooks, payee told of failed bank payouts (migration 0108) | 7c4f3a09 |
+| Split oversized money components; payouts panel on formatMoney | d02b4d88 |
 | Fixed on the way: email action links, public profile 404, centering, nav order | 1350c29c, f7c19e7e, 41001c6e, 4bba0027 |
 
 Carry-overs, not built:
