@@ -25,6 +25,10 @@ class AuditLog(CreatedAtMixin, Base):
     __table_args__ = (
         Index("ix_audit_logs_actor_id_created_at", "actor_id", "created_at"),
         Index("ix_audit_logs_action_created_at", "action", "created_at"),
+        # The admin org audit view filters by target and by the org id in
+        # metadata (migration 2026_09_14_0107).
+        Index("ix_audit_logs_target_id_created_at", "target_id", "created_at"),
+        Index("ix_audit_logs_metadata_org_id", text("(metadata->>'org_id')")),
     )
 
     id: Mapped[UUID] = mapped_column(
