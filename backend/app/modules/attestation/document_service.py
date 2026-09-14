@@ -13,7 +13,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, Response
 from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +35,7 @@ from app.modules.organizations.models import (
     Organization,
     OrgMember,
 )
+from app.shared.schemas.download import DownloadUrlResponse
 from app.workers.tasks.invoicing import generate_invoice_document
 
 
@@ -94,7 +95,13 @@ async def _attestation_fee_transaction(
 
 
 async def _deliver_invoice(invoice_id: UUID, key: str) -> Response:
-    """Return a presigned redirect or queue document generation."""
+    """Return a presigned download URL as data, or queue document generation.
+
+    Handed back as JSON rather than a redirect, matching the purchase invoice
+    endpoint: the browser client authenticates with a bearer header and
+    navigates to S3 itself, so a followed redirect never has to clear the
+    bucket's CORS policy and no credential rides in a URL.
+    """
     settings = get_settings()
     if s3.storage.object_exists(settings.s3_reports_bucket, key):
         document_url = s3.storage.presigned_get(
@@ -102,7 +109,17 @@ async def _deliver_invoice(invoice_id: UUID, key: str) -> Response:
             key,
             INVOICE_URL_TTL_SECONDS,
         )
-        return RedirectResponse(url=document_url, status_code=status.HTTP_302_FOUND)
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+            content=DownloadUrlResponse(download_url=document_url).model_dump(
+                mode="json"
+            ),
+        )
 
     generate_invoice_document.delay(str(invoice_id))
     return JSONResponse(

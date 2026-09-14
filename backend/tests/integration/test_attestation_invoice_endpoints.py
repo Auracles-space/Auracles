@@ -236,7 +236,7 @@ async def test_requestor_gets_tax_invoice(
     clean_state,
     fake_document_storage: FakeDocumentStorage,
 ) -> None:
-    """Requestor GET on a settled attestation returns 202 then 302."""
+    """Requestor GET on a settled attestation returns 202 then a download URL."""
     del clean_state
     seeded = await _seed_attestation("closed")
     requestor_headers = _auth_headers(seeded["requestor_id"], ["operator"])
@@ -272,8 +272,8 @@ async def test_requestor_gets_tax_invoice(
         headers=requestor_headers,
     )
 
-    assert second.status_code == 302
-    assert second.headers["location"] == (
+    assert second.status_code == 200
+    assert second.json()["download_url"] == (
         f"https://s3.test/auracles-reports-dev/{invoice.s3_key}?expires=900"
     )
     assert fake_document_storage.presigned_get_requests == [
@@ -348,7 +348,7 @@ async def test_attestor_gets_earnings_statement(
     clean_state,
     fake_document_storage: FakeDocumentStorage,
 ) -> None:
-    """Attestor GET returns 202 then 302 with a netted earnings statement."""
+    """Attestor GET returns 202 then a download URL for the netted statement."""
     del clean_state
     seeded = await _seed_attestation("closed")
     attestor_headers = _auth_headers(seeded["attestor_id"], ["attestor"])
@@ -388,8 +388,8 @@ async def test_attestor_gets_earnings_statement(
         headers=attestor_headers,
     )
 
-    assert second.status_code == 302
-    assert second.headers["location"] == (
+    assert second.status_code == 200
+    assert second.json()["download_url"] == (
         f"https://s3.test/auracles-reports-dev/{invoice.s3_key}?expires=900"
     )
 

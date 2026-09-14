@@ -1083,8 +1083,9 @@ async def rate_attestation(
     "/attestations/{attestation_id}/invoice",
     summary="Fetch the requestor tax invoice for a settled attestation",
     description=(
-        "Return the requestor-facing tax invoice PDF for a settled attestation. "
-        "If the PDF has not been rendered yet, queue generation and return 202."
+        "Return a short-lived download URL for the requestor-facing tax invoice "
+        "PDF of a settled attestation. If the PDF has not been rendered yet, "
+        "queue generation and return 202."
     ),
 )
 async def get_attestation_invoice(

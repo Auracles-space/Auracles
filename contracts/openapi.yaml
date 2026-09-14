@@ -18039,8 +18039,16 @@ paths:
         '200':
           content:
             application/json:
-              schema: {}
-          description: Successful Response
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+          description: Short-lived download URL for the rendered PDF
+        '202':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+          description: The PDF is being generated; retry shortly
         '422':
           content:
             application/json:
@@ -18095,8 +18103,9 @@ paths:
       - Attestation
   /v1/attestations/{attestation_id}/invoice:
     get:
-      description: Return the requestor-facing tax invoice PDF for a settled attestation.
-        If the PDF has not been rendered yet, queue generation and return 202.
+      description: Return a short-lived download URL for the requestor-facing tax
+        invoice PDF of a settled attestation. If the PDF has not been rendered yet,
+        queue generation and return 202.
       operationId: get_attestation_invoice_v1_attestations__attestation_id__invoice_get
       parameters:
       - in: path
@@ -18110,8 +18119,16 @@ paths:
         '200':
           content:
             application/json:
-              schema: {}
-          description: Successful Response
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+          description: Short-lived download URL for the rendered PDF
+        '202':
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+          description: The PDF is being generated; retry shortly
         '422':
           content:
             application/json:

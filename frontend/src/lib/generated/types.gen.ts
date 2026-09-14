@@ -6232,7 +6232,9 @@ export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsSt
     };
 };
 
-export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetResponse = (unknown);
+export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetResponse = (DownloadUrlResponse | {
+    [key: string]: unknown;
+});
 
 export type GetAttestationEarningsStatementV1AttestationsAttestationIdEarningsStatementGetError = (HTTPValidationError);
 
@@ -6253,7 +6255,9 @@ export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetData = {
     };
 };
 
-export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse = (unknown);
+export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse = (DownloadUrlResponse | {
+    [key: string]: unknown;
+});
 
 export type GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetError = (HTTPValidationError);
 

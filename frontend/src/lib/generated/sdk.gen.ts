@@ -1059,7 +1059,7 @@ export const fundAttestationV1AttestationsAttestationIdFundPost = <ThrowOnError 
 
 /**
  * Fetch the requestor tax invoice for a settled attestation
- * Return the requestor-facing tax invoice PDF for a settled attestation. If the PDF has not been rendered yet, queue generation and return 202.
+ * Return a short-lived download URL for the requestor-facing tax invoice PDF of a settled attestation. If the PDF has not been rendered yet, queue generation and return 202.
  */
 export const getAttestationInvoiceV1AttestationsAttestationIdInvoiceGet = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetResponse, GetAttestationInvoiceV1AttestationsAttestationIdInvoiceGetError, ThrowOnError>({
