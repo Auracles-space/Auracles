@@ -8,6 +8,7 @@ Spec: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -17,13 +18,19 @@ from alembic.config import Config
 from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import create_engine, inspect, select, text, update
+from sqlalchemy.exc import DBAPIError
 
 from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.core.security import create_access_token
+from app.modules.auth.models import User
+from app.modules.organizations import service as org_service
 from app.modules.organizations import slug_service
 from app.modules.organizations.models import Organization, OrgSlugHistory
-from app.modules.organizations.schemas import OrgSlugChangeRequest
+from app.modules.organizations.schemas import (
+    OrganizationCreateRequest,
+    OrgSlugChangeRequest,
+)
 from app.shared.models.audit_log import AuditLog
 from tests.integration.test_org_admin_endpoints import record_owner_notifications
 from tests.integration.test_organizations_endpoints import (
@@ -317,3 +324,107 @@ async def test_migration_downgrade_purges_label_and_upgrade_restores(
         assert "org_slug_changed" in labels
     finally:
         engine.dispose()
+
+
+async def _hold_slug_lock_then_reserve(
+    slug: str, holder_org_id: UUID, release: asyncio.Event
+) -> None:
+    """Take the slug lock, reserve ``slug`` in history, commit on ``release``.
+
+    Stands in for a concurrent slug change that has passed its check but not
+    yet committed: its history row is invisible to other transactions.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            await slug_service.lock_slug(session, slug)
+            session.add(OrgSlugHistory(org_id=holder_org_id, slug=slug))
+            await session.flush()
+            await release.wait()
+
+
+async def _assert_waits_then_conflicts(
+    slug: str, holder_org_id: UUID, contender: object
+) -> None:
+    """Run ``contender`` while the lock is held; it must wait, then 409."""
+    release = asyncio.Event()
+    holder = asyncio.create_task(
+        _hold_slug_lock_then_reserve(slug, holder_org_id, release)
+    )
+    await asyncio.sleep(0.2)
+    contender_task = asyncio.ensure_future(contender)  # type: ignore[arg-type]
+    await asyncio.sleep(0.3)
+    assert not contender_task.done(), "contender did not wait for the slug lock"
+
+    release.set()
+    await holder
+    with pytest.raises(HTTPException) as caught:
+        await contender_task
+    assert caught.value.status_code == 409
+
+
+async def test_lock_slug_blocks_a_second_transaction_on_the_same_slug(
+    clean_orgs: None, migrated_database: None
+) -> None:
+    """A held slug lock blocks another transaction on the same normalized slug.
+
+    ``lock_timeout`` turns the wait into an observable error; a different slug
+    is not blocked, and case/whitespace variants share one key.
+    """
+    slug = _fresh_slug("locked")
+    async with async_session_factory() as holder:
+        async with holder.begin():
+            await slug_service.lock_slug(holder, slug)
+
+            async with async_session_factory() as contender:
+                async with contender.begin():
+                    await contender.execute(text("SET LOCAL lock_timeout = '200ms'"))
+                    await slug_service.lock_slug(contender, _fresh_slug("other"))
+                    with pytest.raises(DBAPIError):
+                        await slug_service.lock_slug(contender, f"  {slug.upper()} ")
+
+
+async def test_create_org_waits_for_a_concurrent_slug_claim(
+    client: AsyncClient, clean_orgs: None, migrated_database: None
+) -> None:
+    """Organization creation serializes on the slug lock (Decision 5 race).
+
+    Without the lock, creation would read history before the concurrent
+    change commits and claim the same slug. With it, creation waits for the
+    holder to commit, then sees the reserved slug and returns 409.
+    """
+    _owner, holder_org_id, _ = await _owned_org(client, "holderorg")
+    creator_id = await create_user("racecreator")
+    async with async_session_factory() as session:
+        creator = await session.get(User, creator_id)
+    assert creator is not None
+    slug = _fresh_slug("contested")
+
+    async def create() -> None:
+        async with async_session_factory() as session:
+            await org_service.create_organization(
+                db=session,
+                user=creator,
+                payload=OrganizationCreateRequest(
+                    slug=slug, name="Race Creator", country="NG"
+                ),
+            )
+
+    await _assert_waits_then_conflicts(slug, holder_org_id, create())
+
+
+async def test_change_org_slug_waits_for_a_concurrent_slug_claim(
+    client: AsyncClient, clean_orgs: None, migrated_database: None
+) -> None:
+    """Slug changes serialize on the lock for the NEW slug (Decision 5 race).
+
+    Without the lock, the change would read history before the concurrent
+    claim commits and take the same slug. With it, the change waits, then
+    sees the reserved slug and returns 409.
+    """
+    _holder_owner, holder_org_id, _ = await _owned_org(client, "holdertwo")
+    owner_id, org_id, _ = await _owned_org(client, "changer")
+    slug = _fresh_slug("contested")
+
+    await _assert_waits_then_conflicts(
+        slug, holder_org_id, _change(org_id, owner_id, slug)
+    )

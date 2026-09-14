@@ -1,10 +1,10 @@
 /**
  * Organization members tab.
  *
- * Covers the role vocabulary, the confirm-gated removal, the invite CTA, and
+ * Covers the role vocabulary, team name chips, the confirm-gated removal, the invite CTA, and
  * how a server refusal is surfaced.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OrganizationMembers } from "@/components/modules/organizations/organization-members";
@@ -63,6 +63,10 @@ const members = [
     email: "grace@meridian.example",
     role: "member",
     joined_at: "2026-08-01T00:00:00Z",
+    teams: [
+      { id: "t-1", name: "Alpha Research" },
+      { id: "t-2", name: "Zeta Delivery" },
+    ],
   },
 ];
 
@@ -106,6 +110,17 @@ describe("OrganizationMembers", () => {
       "href",
       "/dashboard/organizations/org-1/invitations",
     );
+  });
+
+  it("shows each member's team names as chips, and none for a member on no team", async () => {
+    renderMembers("owner");
+
+    await screen.findByText("Grace Bello");
+    const graceTeams = screen.getByRole("list", { name: "Teams for Grace Bello" });
+    const chips = within(graceTeams).getAllByRole("listitem");
+    expect(chips.map((chip) => chip.textContent)).toEqual(["Alpha Research", "Zeta Delivery"]);
+    expect(chips[0].className).toContain("rounded-badge");
+    expect(screen.queryByRole("list", { name: "Teams for Ada Okafor" })).not.toBeInTheDocument();
   });
 
   it("removes a member only after confirmation", async () => {

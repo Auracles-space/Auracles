@@ -576,6 +576,45 @@ async def test_member_list_reports_nda_signed_flag(
     assert by_role["member"]["nda_signed"] is False
 
 
+async def test_member_list_names_each_members_teams_sorted(
+    client: AsyncClient, migrated_database: None, clean_orgs: None
+) -> None:
+    """GET members lists each member's teams by name, sorted; none gives [].
+
+    Teams are internal org structure, so whoever can list members sees them.
+    """
+    del migrated_database, clean_orgs
+    owner_id = await create_user("teams-owner")
+    member_id = await create_user("teams-plain")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "teamnames")
+    member_row = await add_member(str(org["id"]), member_id, "member")
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            zeta = OrgTeam(org_id=UUID(str(org["id"])), name="Zeta Delivery")
+            alpha = OrgTeam(org_id=UUID(str(org["id"])), name="Alpha Research")
+            session.add_all([zeta, alpha])
+            await session.flush()
+            session.add_all(
+                [
+                    OrgTeamMember(team_id=zeta.id, member_id=member_row),
+                    OrgTeamMember(team_id=alpha.id, member_id=member_row),
+                ]
+            )
+            alpha_id, zeta_id = str(alpha.id), str(zeta.id)
+
+    for token in (owner_token, create_access_token(member_id, [])):
+        resp = await client.get(f"/v1/orgs/{org['id']}/members", headers=auth(token))
+        assert resp.status_code == 200
+        by_role = {m["role"]: m for m in resp.json()["members"]}
+        assert by_role["member"]["teams"] == [
+            {"id": alpha_id, "name": "Alpha Research"},
+            {"id": zeta_id, "name": "Zeta Delivery"},
+        ]
+        assert by_role["owner"]["teams"] == []
+
+
 async def test_owner_cannot_be_removed(
     client: AsyncClient, migrated_database: None, clean_orgs: None
 ) -> None:

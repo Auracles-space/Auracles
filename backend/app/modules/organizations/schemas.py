@@ -411,6 +411,13 @@ class OrgPaymentMethodDeleteResponse(BaseModel):
     removed: bool
 
 
+class OrgMemberTeamRef(BaseModel):
+    """A team one organization member sits on, named for the Members tab."""
+
+    id: UUID
+    name: str
+
+
 class OrgMemberResponse(BaseModel):
     """One organization member, with email hidden from plain members."""
 
@@ -426,6 +433,9 @@ class OrgMemberResponse(BaseModel):
     # The trial-nomination picker filters on this. Defaults False so other
     # constructors of this schema stay valid.
     nda_signed: bool = False
+    # Teams the member sits on, sorted by name. Teams are internal org
+    # structure, not PII, so whoever can list members sees them.
+    teams: list[OrgMemberTeamRef] = Field(default_factory=list)
 
 
 class OrgMembersResponse(BaseModel):

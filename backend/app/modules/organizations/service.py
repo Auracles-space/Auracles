@@ -68,6 +68,7 @@ from app.modules.organizations.schemas import (
     OrgInvitationStatusFilter,
     OrgMemberResponse,
     OrgMembersResponse,
+    OrgMemberTeamRef,
     OrgTeamCreateRequest,
     OrgTeamMembersResponse,
     OrgTeamRenameRequest,
@@ -125,20 +126,6 @@ async def create_organization(
     if db.in_transaction():
         await db.rollback()
 
-    # A past slug stays reserved to its organization (Decision 5), so a new
-    # org cannot claim it and impersonate the old public profile address.
-    # Same message as a live collision: which kind of holder is not disclosed.
-    reserved = await db.scalar(
-        select(OrgSlugHistory.org_id).where(OrgSlugHistory.slug == payload.slug)
-    )
-    if db.in_transaction():
-        await db.rollback()
-    if reserved is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Organization slug already exists.",
-        )
-
     organization = Organization(
         slug=payload.slug,
         name=payload.name,
@@ -150,6 +137,21 @@ async def create_organization(
 
     try:
         async with db.begin():
+            # Serialize with a concurrent slug change claiming the same slug,
+            # so its history row is committed and visible before we check.
+            await slug_service.lock_slug(db, payload.slug)
+            # A past slug stays reserved to its organization (Decision 5), so
+            # a new org cannot claim it and impersonate the old public profile
+            # address. Same message as a live collision: which kind of holder
+            # is not disclosed.
+            reserved = await db.scalar(
+                select(OrgSlugHistory.org_id).where(OrgSlugHistory.slug == payload.slug)
+            )
+            if reserved is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Organization slug already exists.",
+                )
             db.add(organization)
             await db.flush()
             db.add(
@@ -802,7 +804,8 @@ async def list_members(
         context: Resolved organization/member/user context from RBAC dependency.
 
     Returns:
-        The organization's members ordered by join time.
+        The organization's members ordered by join time, each with the teams
+        they sit on sorted by name.
     """
     include_email = context.member.role in {"owner", "admin"}
     rows = (
@@ -828,6 +831,18 @@ async def list_members(
             )
         ).all()
     )
+    # One batched query for every member's teams, rather than one per member.
+    teams_by_member: defaultdict[UUID, list[OrgMemberTeamRef]] = defaultdict(list)
+    team_rows = (
+        await db.execute(
+            select(OrgTeamMember.member_id, OrgTeam.id, OrgTeam.name)
+            .join(OrgTeam, OrgTeam.id == OrgTeamMember.team_id)
+            .where(OrgTeam.org_id == context.org.id)
+            .order_by(OrgTeam.name.asc(), OrgTeam.id.asc())
+        )
+    ).all()
+    for member_id, team_id, team_name in team_rows:
+        teams_by_member[member_id].append(OrgMemberTeamRef(id=team_id, name=team_name))
     return OrgMembersResponse(
         members=[
             OrgMemberResponse(
@@ -838,6 +853,7 @@ async def list_members(
                 role=member.role,
                 joined_at=member.joined_at,
                 nda_signed=member.id in signed_member_ids,
+                teams=teams_by_member.get(member.id, []),
             )
             for member, display_name, email in rows
         ]

@@ -3,9 +3,9 @@
 /**
  * Organization members tab.
  *
- * Lists everyone with access to the organization with their role. Owners can
- * switch members between admin and member; owners and admins can remove
- * anyone but the owner. The invite call-to-action sends admins to the
+ * Lists everyone with access to the organization with their role and the
+ * teams they sit on. Owners can switch members between admin and member;
+ * owners and admins can remove anyone but the owner. The invite call-to-action sends admins to the
  * invitations tab rather than duplicating the form here.
  *
  * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md §Slice B.
@@ -177,6 +177,21 @@ export function OrganizationMembers() {
                 <p className="mt-1 text-xs text-foreground-muted">
                   Joined {formatShortDate(member.joined_at)}
                 </p>
+                {member.teams && member.teams.length > 0 ? (
+                  <ul
+                    aria-label={`Teams for ${member.display_name}`}
+                    className="mt-2 flex flex-wrap gap-1.5"
+                  >
+                    {member.teams.map((team) => (
+                      <li
+                        key={team.id}
+                        className="max-w-full truncate rounded-badge border border-border-default bg-surface-2 px-2 py-0.5 text-xs text-foreground-muted"
+                      >
+                        {team.name}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
 
               {member.role !== "owner" && (isOwner || isAdmin) ? (

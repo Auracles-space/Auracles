@@ -16,20 +16,18 @@ All on `rework/step-up-admin-console`, unmerged.
 | Slice C: org money | 5159cdce, 6ac68ba6, 2355d933 |
 | Slice D: admin directory, detail API and page | 49c1244c, c9c2aa2a, 43c608f6, 0e01a144 |
 | Decision 5: slug change (migration 0106) | 29bdd984, bbada042, 79e1133d |
+| Slug race closed: creation and slug change both take a transaction advisory lock on `org_slug:{slug}` before their check (no migration; unique-violation 409 stays the backstop) | uncommitted |
+| Owner Members tab names each member's teams (`OrgMemberResponse.teams`) | uncommitted |
 | Admin money screens name organizations | bbada042, 79e1133d |
 | Audit log org indexes (migration 0107) | 9c9bb88a |
 | Money fixes: Paystack partner webhooks, payee told of failed bank payouts (migration 0108) | 7c4f3a09 |
 | Fixed on the way: email action links, public profile 404, centering, nav order | 1350c29c, f7c19e7e, 41001c6e, 4bba0027 |
 
 Carry-overs, not built:
-- The owner-facing Members tab shows no team names; `OrgMemberResponse` has no `teams`.
-  The admin detail page does show them.
 - `admin-money-panel.tsx` (about 600 lines) and `org-attestor-financials-tab.tsx` (about 325
   lines) exceed the component size guideline.
 - The admin payouts panel formats money with its own per-row formatter rather than
   `formatMoney`.
-- Slug history is enforced in the service, not by a cross-table constraint, so a
-  same-instant organization creation and slug change could both claim one slug.
 - Stripe `payout.failed` deliberately changes no payout status: the money sits in the
   connected account's Stripe balance, so re-crediting would pay twice.
 

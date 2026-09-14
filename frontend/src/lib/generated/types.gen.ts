@@ -4075,6 +4075,7 @@ export type OrgMemberResponse = {
     joined_at: string;
     nda_signed?: boolean;
     role: string;
+    teams?: Array<OrgMemberTeamRef>;
     user_id: string;
 };
 
@@ -4090,6 +4091,14 @@ export type OrgMemberRoleUpdateRequest = {
  */
 export type OrgMembersResponse = {
     members: Array<OrgMemberResponse>;
+};
+
+/**
+ * A team one organization member sits on, named for the Members tab.
+ */
+export type OrgMemberTeamRef = {
+    id: string;
+    name: string;
 };
 
 /**

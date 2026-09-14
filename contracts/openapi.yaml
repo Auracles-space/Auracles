@@ -11796,6 +11796,11 @@ components:
         role:
           title: Role
           type: string
+        teams:
+          items:
+            $ref: '#/components/schemas/OrgMemberTeamRef'
+          title: Teams
+          type: array
         user_id:
           format: uuid
           title: User Id
@@ -11821,6 +11826,22 @@ components:
       required:
       - role
       title: OrgMemberRoleUpdateRequest
+      type: object
+    OrgMemberTeamRef:
+      description: A team one organization member sits on, named for the Members
+        tab.
+      properties:
+        id:
+          format: uuid
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      title: OrgMemberTeamRef
       type: object
     OrgMembersResponse:
       description: List wrapper for organization members.

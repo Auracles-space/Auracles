@@ -17,7 +17,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,30 @@ from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.models import Organization, OrgMember, OrgSlugHistory
 
 SLUG_TAKEN_DETAIL = "That slug is taken."
+
+# Namespace for slug advisory locks so they cannot share a key with the other
+# advisory lock families in the codebase (e.g. ``payout:{contributor_id}``).
+SLUG_LOCK_NAMESPACE = "org_slug:"
+
+
+async def lock_slug(db: AsyncSession, slug: str) -> None:
+    """Serialize every claim on one slug for the rest of the transaction.
+
+    A slug can be claimed two ways: as a new organization's slug or as an
+    existing organization's new slug. Both check ``organizations`` and
+    ``org_slug_history`` before writing, and no cross-table constraint links
+    the two tables, so without this lock a same-instant creation and change
+    could each pass their check and claim one slug (Decision 5). The lock is
+    transaction-scoped and released on commit or rollback.
+
+    Args:
+        db: Async session with an open transaction.
+        slug: Slug being claimed; normalized here so variants share one key.
+    """
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+        {"lock_key": f"{SLUG_LOCK_NAMESPACE}{slug.strip().lower()}"},
+    )
 
 
 def notify_org_slug_changed(
@@ -131,6 +155,9 @@ async def change_org_slug(
                     detail="That is already this organization's slug.",
                 )
 
+            # Taken after the org row lock and before the check, so a
+            # concurrent claim on the same slug commits before we read.
+            await lock_slug(db, new_slug)
             current_holder = await db.scalar(
                 select(Organization.id).where(Organization.slug == new_slug)
             )
