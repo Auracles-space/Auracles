@@ -10,6 +10,7 @@ from app.core.logging import RequestLoggingMiddleware, configure_logging
 from app.core.observability import configure_error_tracking
 from app.core.redis import close_redis
 from app.integrations.s3 import verify_object_storage
+from app.modules.admin.org_detail_router import router as admin_org_detail_router
 from app.modules.admin.router import router as admin_router
 from app.modules.attestation.router import router as attestation_router
 from app.modules.auth.router import router as auth_router
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     application.include_router(contributor_orgs_router, prefix="/v1")
     application.include_router(org_invitation_router, prefix="/v1")
     application.include_router(admin_orgs_router, prefix="/v1")
+    application.include_router(admin_org_detail_router, prefix="/v1")
     application.include_router(admin_org_attestor_router, prefix="/v1")
     application.include_router(profiles_router, prefix="/v1")
     application.include_router(projects_router, prefix="/v1")
