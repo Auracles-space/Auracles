@@ -12,19 +12,51 @@ vi.mock("@/lib/auth/form-client", () => ({
   getAccessTokenHeaders: () => ({ Authorization: "Bearer member" }),
 }));
 
-vi.mock("./rubrics", () => ({
-  RUBRICS: {
-    quality: [{ key: "completeness", label: "Completeness", weight: 0.5 }],
-  },
-}));
+/** The rubric the API serves for the workspace's review type. */
+const DIMENSIONS = [
+  { key: "completeness", label: "Completeness", weight: 0.5, display_order: 0 },
+];
 
-/** Resolve the saved-score fetch with the given score rows. */
-function mockSavedScores(scores: Array<Record<string, unknown>>) {
+/** Resolve the rubric fetch with the served dimensions and saved score rows. */
+function mockSavedScores(
+  scores: Array<Record<string, unknown>>,
+  dimensions: Array<Record<string, unknown>> = DIMENSIONS,
+) {
   vi.mocked(listRubricScores).mockResolvedValue({
     response: { ok: true },
-    data: { scores },
+    data: { dimensions, scores },
   } as never);
 }
+
+describe("RubricPanel rubric source", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders the dimensions the API serves, in order", async () => {
+    mockSavedScores([], [
+      { key: "b", label: "Second", weight: 0.5, display_order: 1 },
+      { key: "a", label: "First", weight: 0.5, display_order: 0 },
+    ]);
+
+    render(<RubricPanel attestationId="att-1" reviewType="quality" canWrite />);
+
+    const headings = await screen.findAllByRole("heading", { level: 3 });
+    expect(headings).toHaveLength(2);
+    expect(headings[0]).toHaveTextContent("First");
+    expect(headings[1]).toHaveTextContent("Second");
+  });
+
+  it("explains an empty rubric instead of rendering nothing", async () => {
+    mockSavedScores([], []);
+
+    render(<RubricPanel attestationId="att-1" reviewType="quality" canWrite />);
+
+    expect(
+      await screen.findByText(/No rubric dimensions configured/i),
+    ).toBeInTheDocument();
+  });
+});
 
 describe("RubricPanel autosave", () => {
   beforeEach(() => {

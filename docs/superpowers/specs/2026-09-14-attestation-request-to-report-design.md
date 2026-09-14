@@ -126,8 +126,18 @@ Report panel copy corrected for those states; the report column renders first on
 
 ### 3. Out of scope
 
-Rubric definitions served by the API; step-up on attestor routes; a notifications page;
-non-framework targets in the form; admin SLA extension.
+Step-up on attestor routes; a notifications page; non-framework targets in the form; admin
+SLA extension.
+
+### 4. Follow-up (2026-09-14, same day)
+
+- `GET /attestations/{id}/rubric` now returns `dimensions` (key, label, weight,
+  display_order) from the seeded `attestation_rubric_dimensions` table for the attestation's
+  review type and rubric version; the client copy `workspace/rubrics.ts` is deleted and the
+  rubric panel renders from the response.
+- `AttestationRequestResponse.dispute_evidence_min_length` (detail only) carries the
+  platform-configured evidence floor; the decision form validates and explains against it
+  and defers to the server when it is absent, instead of a hardcoded 40.
 
 ## Security
 

@@ -1,13 +1,16 @@
 "use client";
 
 /**
- * Admin organization directory with platform-wide suspend / reinstate.
+ * Admin organization directory with platform-wide suspend / reinstate and
+ * per-capability controls.
  *
  * Suspending removes every member's derived marketplace roles at once, so
  * the action confirms through the shared dialog, collects a required reason
  * that the organization's owner will see, and requires an open step-up
  * window; a failed call shows its error inside the dialog. Reinstate needs
- * no reason.
+ * no reason. Each row also opens a capabilities dialog where the
+ * contributor, operator, and attestor capabilities can be suspended,
+ * reinstated, or revoked individually with the same reason rule.
  */
 import { useEffect, useId, useState } from "react";
 import {
@@ -22,6 +25,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
 import { ReasonField, isReasonValid } from "@/components/modules/admin/reason-field";
+import { OrgCapabilitiesDialog } from "@/components/modules/admin/org-capabilities-dialog";
+import {
+  CAPABILITY_LABELS,
+  type CapabilityStatusAfter,
+  type OrgCapability,
+} from "@/components/modules/admin/org-capability-controls";
+import { StatusPill, describeStatus } from "@/components/ui/status-pill";
 import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
 
 /**
@@ -53,6 +63,36 @@ export function AdminOrganizationsList() {
   // stays disabled until it satisfies the backend length rule.
   const [reason, setReason] = useState("");
   const reasonMissing = actionKind === "suspend" && !isReasonValid(reason);
+  // Organization whose capabilities dialog is open, if any.
+  const [capabilitiesOrg, setCapabilitiesOrg] = useState<AdminOrgResponse | null>(null);
+
+  /**
+   * Reflect a capability transition on the row without a refetch, so the
+   * pill and the stored reason update the moment the API confirms.
+   */
+  function applyCapabilityChange(
+    orgId: string,
+    capability: OrgCapability,
+    status: CapabilityStatusAfter,
+    changeReason: string | null,
+  ) {
+    function patch(org: AdminOrgResponse): AdminOrgResponse {
+      if (org.id !== orgId) return org;
+      const reasons = { ...(org.capability_reasons ?? {}) };
+      if (changeReason) {
+        reasons[capability] = changeReason;
+      } else {
+        delete reasons[capability];
+      }
+      return {
+        ...org,
+        capabilities: { ...org.capabilities, [capability]: status },
+        capability_reasons: reasons,
+      };
+    }
+    setOrgs((rows) => rows.map(patch));
+    setCapabilitiesOrg((current) => (current ? patch(current) : current));
+  }
 
   async function loadOrgs(currentPage: number, query: string) {
     setLoading(true);
@@ -238,13 +278,11 @@ export function AdminOrganizationsList() {
                           ) : (
                             <div className="flex flex-wrap gap-1">
                               {Object.entries(org.capabilities).map(([cap, state]) => (
-                                <span
+                                <StatusPill
                                   key={cap}
-                                  className="inline-block rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-foreground uppercase tracking-wider"
-                                  title={`${cap}: ${state}`}
-                                >
-                                  {cap.charAt(0)}
-                                </span>
+                                  label={`${CAPABILITY_LABELS[cap as OrgCapability] ?? cap} ${describeStatus(state).label.toLowerCase()}`}
+                                  status={state}
+                                />
                               ))}
                             </div>
                           )}
@@ -252,23 +290,32 @@ export function AdminOrganizationsList() {
                         <td className={`px-6 py-4 font-medium ${statusColor}`}>
                           {statusText}
                         </td>
-                        <td className="px-6 py-4 text-right">
-                          {isSuspended && !isDeactivated ? (
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap justify-end gap-2">
                             <Button
                               variant="secondary"
-                              onClick={() => openAction(org, "reinstate")}
+                              disabled={isDeactivated}
+                              onClick={() => setCapabilitiesOrg(org)}
                             >
-                              Reinstate
+                              Capabilities
                             </Button>
-                          ) : (
-                            <Button
-                              variant="secondary"
-                              disabled={isSuspended || isDeactivated}
-                              onClick={() => openAction(org, "suspend")}
-                            >
-                              Suspend
-                            </Button>
-                          )}
+                            {isSuspended && !isDeactivated ? (
+                              <Button
+                                variant="secondary"
+                                onClick={() => openAction(org, "reinstate")}
+                              >
+                                Reinstate
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="secondary"
+                                disabled={isSuspended || isDeactivated}
+                                onClick={() => openAction(org, "suspend")}
+                              >
+                                Suspend
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -304,6 +351,16 @@ export function AdminOrganizationsList() {
           </div>
         )}
       </div>
+
+      {capabilitiesOrg ? (
+        <OrgCapabilitiesDialog
+          onChanged={(capability, status, changeReason) =>
+            applyCapabilityChange(capabilitiesOrg.id, capability, status, changeReason)
+          }
+          onClose={() => setCapabilitiesOrg(null)}
+          org={capabilitiesOrg}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={!!orgToAct}

@@ -319,6 +319,29 @@ async def test_list_rubric_scores_returns_saved_by_key(db_session) -> None:
     assert by_key["completeness"].comment == "Thorough."
 
 
+async def test_list_rubric_dimensions_follows_review_type(db_session) -> None:
+    """The workspace serves its own rubric so the client never carries a copy.
+
+    Dimensions come back in display order with the label and weight the
+    report will later reproduce, scoped to the attestation's review type.
+    """
+    attestor, attestation = await _in_review_attestation(db_session)
+
+    dimensions = await workspace_service.list_rubric_dimensions(
+        db_session,
+        attestor=attestor,
+        attestation_id=attestation.id,
+    )
+
+    assert [d.key for d in dimensions] == [
+        d.key for d in rubrics.RUBRICS[attestation.review_type]
+    ]
+    first = dimensions[0]
+    assert first.label == rubrics.RUBRICS[attestation.review_type][0].label
+    assert first.weight == float(rubrics.RUBRICS[attestation.review_type][0].weight)
+    assert first.display_order == 0
+
+
 async def test_upsert_rubric_score_rejects_foreign_dimension(db_session) -> None:
     """A dimension key outside the attestation review type is rejected."""
     attestor, attestation = await _in_review_attestation(db_session)
@@ -425,6 +448,33 @@ async def test_upsert_rubric_score_endpoint_returns_score(
     assert response.status_code == 200
     assert response.json()["score"] == 4
     assert response.json()["comment"] == "Complete enough."
+
+
+async def test_list_rubric_endpoint_returns_dimensions_and_scores(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """GET rubric carries the rubric definition beside the saved scores."""
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+    start = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+    assert start.status_code == 200
+
+    response = await client.get(
+        f"/v1/attestations/{attestation.id}/rubric",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scores"] == []
+    keys = [d["key"] for d in body["dimensions"]]
+    assert keys == [d.key for d in rubrics.RUBRICS[attestation.review_type]]
+    assert body["dimensions"][0]["label"]
+    assert body["dimensions"][0]["weight"] > 0
 
 
 async def test_workspace_endpoints_hide_non_assigned_attestations(

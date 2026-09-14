@@ -94,7 +94,7 @@ async def create_dispute(
             )
         await _reject_duplicate_active_dispute(db, attestation.id)
         evidence = payload.reason.strip()
-        min_length = await _evidence_min_length(db)
+        min_length = await evidence_min_length(db)
         if len(evidence) < min_length:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -676,8 +676,12 @@ async def _next_cohort_index(db: AsyncSession, attestation_id: UUID) -> int:
     return int(current_max) + 1
 
 
-async def _evidence_min_length(db: AsyncSession) -> int:
-    """Return the configured minimum dispute-evidence character length."""
+async def evidence_min_length(db: AsyncSession) -> int:
+    """Return the configured minimum dispute-evidence character length.
+
+    Public so the attestation detail response can tell the requestor the
+    floor before they write, instead of a client-side constant.
+    """
     return await _platform_int_config(
         db,
         key="attestation_dispute_evidence_min_length",

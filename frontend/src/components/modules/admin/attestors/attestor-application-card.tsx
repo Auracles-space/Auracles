@@ -30,8 +30,9 @@ import type {
   OrgAttestorAdminListItem,
 } from "@/lib/generated/types.gen";
 
+import { OrgCapabilityControls } from "@/components/modules/admin/org-capability-controls";
+
 import { AttestorApplicationActions } from "./attestor-application-actions";
-import { AttestorCapabilityControls } from "./attestor-capability-controls";
 import { AttestorDocuments } from "./attestor-documents";
 import { computeGates } from "./attestor-gates";
 import { AttestorTrialGrader } from "./attestor-trial-grader";
@@ -196,16 +197,24 @@ export function AttestorApplicationCard({
           />
 
           {app.status === "approved" ? (
-            <AttestorCapabilityControls
-              onChanged={(status) => {
-                onUpdate(app.id, { capability_status: status });
-                onNotice(`Attestor capability is now ${status}.`);
-              }}
-              onError={onError}
-              orgId={app.org_id}
-              orgName={orgName}
-              transitions={gates.capability}
-            />
+            <div className="rounded-xl border border-border-default bg-surface-2 p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+                Capability controls
+              </p>
+              <div className="mt-3">
+                <OrgCapabilityControls
+                  capability="attestor"
+                  onChanged={(status) => {
+                    onUpdate(app.id, { capability_status: status });
+                    onNotice(`Attestor capability is now ${status}.`);
+                  }}
+                  onError={onError}
+                  orgId={app.org_id}
+                  orgName={orgName}
+                  status={app.capability_status ?? ""}
+                />
+              </div>
+            </div>
           ) : null}
         </div>
       ) : null}

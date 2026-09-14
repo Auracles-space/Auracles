@@ -173,8 +173,9 @@ describe("AttestationDetail", () => {
     });
   });
 
-  it("blocks a dispute until the evidence is substantive", async () => {
-    mockDetail();
+  it("blocks a dispute until the evidence meets the platform's floor", async () => {
+    // The floor is platform config served on the detail, not a client constant.
+    mockDetail({ dispute_evidence_min_length: 25 });
 
     render(<AttestationDetail attestationId="att-1" />);
     await screen.findByText("Dispute by 25 Sep 2026");
@@ -188,8 +189,33 @@ describe("AttestationDetail", () => {
     ).toBeDisabled();
     expect(
       screen.getByText(
-        "Describe what is wrong and point to the evidence (at least 40 characters).",
+        "Describe what is wrong and point to the evidence (at least 25 characters).",
       ),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/What went wrong/i), {
+      target: { value: "Long enough to substantiate it." },
+    });
+    expect(
+      screen.getByRole("button", { name: /Raise dispute/i }),
+    ).toBeEnabled();
+  });
+
+  it("leaves evidence length to the server when no floor is served", async () => {
+    mockDetail({ dispute_evidence_min_length: null });
+
+    render(<AttestationDetail attestationId="att-1" />);
+    await screen.findByText("Dispute by 25 Sep 2026");
+
+    fireEvent.change(screen.getByLabelText(/What went wrong/i), {
+      target: { value: "Short." },
+    });
+
+    expect(
+      screen.getByRole("button", { name: /Raise dispute/i }),
+    ).toBeEnabled();
+    expect(
+      screen.getByText("Describe what is wrong and point to the evidence."),
     ).toBeInTheDocument();
   });
 

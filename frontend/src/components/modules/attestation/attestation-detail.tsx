@@ -187,6 +187,7 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
         <AttestationDecisionPanel
           attestationId={attestationId}
           disputeWindowEndsAt={attestation.dispute_window_ends_at}
+          minEvidenceLength={attestation.dispute_evidence_min_length}
           onAccepted={setAttestation}
           onDisputed={() => void load()}
         />

@@ -30,17 +30,17 @@ import {
 import { formatAttestationDate } from "@/components/modules/attestation/requestor-next-step";
 import type { AttestationRequestResponse } from "@/lib/generated/types.gen";
 
-/**
- * Minimum evidence length. Mirrors the backend's configured minimum so the
- * requestor is told before the request is rejected, not after.
- */
-const MIN_REASON_LENGTH = 40;
-
 type AttestationDecisionPanelProps = {
   /** Attestation under decision. */
   attestationId: string;
   /** When the dispute window closes, if the backend has set one. */
   disputeWindowEndsAt?: string | null;
+  /**
+   * Platform-configured minimum evidence length, served on the attestation
+   * detail. When absent the form defers to the server's 422 instead of
+   * guessing a number.
+   */
+  minEvidenceLength?: number | null;
   /** Called with the updated attestation after an accept. */
   onAccepted: (attestation: AttestationRequestResponse) => void;
   /** Called after a dispute is raised, to reload the request. */
@@ -55,6 +55,7 @@ type AttestationDecisionPanelProps = {
 export function AttestationDecisionPanel({
   attestationId,
   disputeWindowEndsAt,
+  minEvidenceLength,
   onAccepted,
   onDisputed,
 }: AttestationDecisionPanelProps) {
@@ -65,6 +66,9 @@ export function AttestationDecisionPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const deadline = formatAttestationDate(disputeWindowEndsAt);
+  const evidenceFloor = minEvidenceLength ?? null;
+  const evidenceTooShort =
+    evidenceFloor !== null && reason.trim().length < evidenceFloor;
 
   /** Accept the report and release escrow to the attestor. */
   async function handleAccept() {
@@ -159,12 +163,13 @@ export function AttestationDecisionPanel({
           />
         </label>
         <p className="text-xs leading-5 text-foreground-muted">
-          Describe what is wrong and point to the evidence (at least{" "}
-          {MIN_REASON_LENGTH} characters).
+          {evidenceFloor !== null
+            ? `Describe what is wrong and point to the evidence (at least ${evidenceFloor} characters).`
+            : "Describe what is wrong and point to the evidence."}
         </p>
         <button
           className="min-h-12 rounded-xl border border-error/50 px-6 text-sm font-semibold text-error outline-none transition hover:bg-error/10 focus-visible:ring-2 focus-visible:ring-error disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={busy || reason.trim().length < MIN_REASON_LENGTH}
+          disabled={busy || reason.trim().length === 0 || evidenceTooShort}
           onClick={handleDispute}
           type="button"
         >

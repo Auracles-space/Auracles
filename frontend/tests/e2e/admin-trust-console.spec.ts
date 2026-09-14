@@ -78,6 +78,18 @@ async function fulfillJson(
   });
 }
 
+/**
+ * Save a full-page screenshot when E2E_SHOTS names a directory.
+ *
+ * Off by default; used for visual review at desktop and phone widths
+ * (E2E_VIEWPORT=375 shrinks the viewport first).
+ */
+async function shot(page: Page, name: string): Promise<void> {
+  const dir = process.env.E2E_SHOTS;
+  if (!dir) return;
+  await page.screenshot({ fullPage: true, path: `${dir}/${name}.png` });
+}
+
 type TrustState = {
   /** Whether the mocked backend currently holds a step-up window. */
   stepUpActive: boolean;
@@ -89,6 +101,10 @@ type TrustState = {
   acceptedCode: string;
   /** Count of sensitive calls that were refused for lack of a window. */
   refusals: number;
+  /** Capability status per organization, as the directory lists it. */
+  capabilities: Record<string, Record<string, string>>;
+  /** Stored admin reasons per organization and capability. */
+  capabilityReasons: Record<string, Record<string, string>>;
 };
 
 /**
@@ -99,7 +115,8 @@ type TrustState = {
  */
 async function mockTrustApi(page: Page, state: TrustState): Promise<void> {
   const org = (id: string, name: string, legalName: string) => ({
-    capabilities: {},
+    capabilities: state.capabilities[id] ?? {},
+    capability_reasons: state.capabilityReasons[id] ?? {},
     country: "NG",
     created_at: "2026-09-01T09:00:00Z",
     deactivated_at: null,
@@ -148,9 +165,13 @@ async function mockTrustApi(page: Page, state: TrustState): Promise<void> {
     }
 
     // Every sensitive write below refuses until the window is open.
+    const capabilityMatch = path.match(
+      /^\/v1\/admin\/orgs\/([^/]+)\/(contributor|operator|attestor)-capability\/(suspend|reinstate|revoke)$/,
+    );
     const sensitive =
       (method === "POST" && /\/v1\/admin\/orgs\/[^/]+\/kyb\/review$/.test(path)) ||
-      (method === "POST" && /\/v1\/admin\/org-attestor-applications\/[^/]+\/approve$/.test(path));
+      (method === "POST" && /\/v1\/admin\/org-attestor-applications\/[^/]+\/approve$/.test(path)) ||
+      (method === "POST" && capabilityMatch !== null);
     if (sensitive && !state.stepUpActive) {
       state.refusals += 1;
       await fulfillJson(route, { detail: { error_code: "step_up_required" } }, 403);
@@ -163,6 +184,25 @@ async function mockTrustApi(page: Page, state: TrustState): Promise<void> {
         ? state.pendingOrgs.map((item) => org(item.id, item.name, item.legal_name))
         : state.pendingOrgs.map((item) => org(item.id, item.name, item.legal_name));
       await fulfillJson(route, { orgs, page: 1, page_size: 50, total: orgs.length });
+      return;
+    }
+    if (capabilityMatch && method === "POST") {
+      const [, orgId, capability, action] = capabilityMatch;
+      const body = (request.postDataJSON() ?? {}) as { reason?: string };
+      if (action !== "reinstate" && !body.reason) {
+        await fulfillJson(route, { detail: "reason required" }, 422);
+        return;
+      }
+      const next = action === "suspend" ? "suspended" : action === "revoke" ? "revoked" : "active";
+      state.capabilities[orgId] = { ...(state.capabilities[orgId] ?? {}), [capability]: next };
+      const reasons = { ...(state.capabilityReasons[orgId] ?? {}) };
+      if (body.reason) {
+        reasons[capability] = body.reason;
+      } else {
+        delete reasons[capability];
+      }
+      state.capabilityReasons[orgId] = reasons;
+      await fulfillJson(route, {}, 204);
       return;
     }
     const kybMatch = path.match(/^\/v1\/admin\/orgs\/([^/]+)\/kyb\/review$/);
@@ -250,6 +290,10 @@ async function signInAsAdmin(
   context: BrowserContext,
   state: TrustState,
 ): Promise<void> {
+  const width = Number(process.env.E2E_VIEWPORT ?? 0);
+  if (width > 0) {
+    await page.setViewportSize({ height: 900, width });
+  }
   await context.addCookies([
     { domain: "127.0.0.1", name: "session_hint", path: "/", value: sessionHintValue() },
   ]);
@@ -284,6 +328,8 @@ function freshState(): TrustState {
     ],
     refusals: 0,
     stepUpActive: false,
+    capabilities: { "org-1": { contributor: "active", operator: "active" } },
+    capabilityReasons: {},
   };
 }
 
@@ -310,6 +356,44 @@ test("the first KYB verdict prompts for a code; the second inside the window doe
   await page.getByRole("button", { name: "Verify organization" }).first().click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /Abuja Compliance Ltd/ })).toHaveCount(0);
+  expect(state.refusals).toBe(1);
+});
+
+test("an admin suspends one capability from the directory with an owner-visible reason", async ({
+  context,
+  page,
+}) => {
+  const state = freshState();
+  await signInAsAdmin(page, context, state);
+
+  await page.goto("/admin/organizations");
+  const row = page.getByRole("row", { name: /Kano Audit/ });
+  await expect(row.getByText("Contributor active")).toBeVisible();
+  await row.getByRole("button", { name: "Capabilities" }).click();
+
+  const capabilities = page.getByRole("dialog", { name: "Kano Audit" });
+  await expect(capabilities.getByRole("heading", { name: "Contributor" })).toBeVisible();
+  await expect(capabilities.getByText("Not active")).toBeVisible();
+  await shot(page, "admin-org-capabilities");
+
+  // The contributor section is first; its Suspend opens the confirm step.
+  await capabilities.getByRole("button", { name: "Suspend" }).first().click();
+  const confirm = page.getByRole("dialog").filter({ hasText: "Suspend contributor capability?" });
+  await confirm.getByLabel(/Reason/).fill("Framework artifacts failed the malware scan twice.");
+  await shot(page, "admin-org-capability-confirm");
+  await confirm.getByRole("button", { name: "Suspend" }).click();
+
+  // No step-up window yet: the global prompt takes over, then the write retries.
+  const stepUp = page.getByRole("dialog").filter({ hasText: "Confirm it's you" });
+  await stepUp.getByLabel("Authenticator code").fill("123456");
+  await stepUp.getByRole("button", { name: "Verify" }).click();
+
+  await expect(capabilities.getByText("Framework artifacts failed the malware scan twice.")).toBeVisible();
+  await expect(capabilities.getByRole("button", { name: "Reinstate" }).first()).toBeEnabled();
+  await shot(page, "admin-org-capability-suspended");
+  await capabilities.getByRole("button", { name: "Close" }).click();
+  await expect(row.getByText("Contributor suspended")).toBeVisible();
+  await shot(page, "admin-org-directory");
   expect(state.refusals).toBe(1);
 });
 

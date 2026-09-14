@@ -748,6 +748,12 @@ export type AdminOrgResponse = {
     capabilities: {
         [key: string]: (string);
     };
+    /**
+     * Admin-entered reasons for suspended or revoked capabilities, keyed like capabilities; present only where a reason is stored.
+     */
+    capability_reasons?: {
+        [key: string]: (string);
+    };
     country: string;
     created_at: string;
     deactivated_at?: (string | null);
@@ -1514,6 +1520,10 @@ export type AttestationRequestResponse = {
     created_at: string;
     currency: string;
     dispute?: (AttestationDisputeSummary | null);
+    /**
+     * Platform-configured minimum evidence length for raising a dispute; populated on the detail view only.
+     */
+    dispute_evidence_min_length?: (number | null);
     dispute_window_ends_at?: (string | null);
     escrow_id: (string | null);
     evidence_references?: ({
@@ -4839,6 +4849,16 @@ export type RoleAssignmentResponse = {
 };
 
 /**
+ * One rubric dimension the workspace scores, served with the scores so the panel renders from the seeded definition rather than a client-side copy.
+ */
+export type RubricDimensionItem = {
+    display_order: number;
+    key: string;
+    label: string;
+    weight: number;
+};
+
+/**
  * One saved rubric score keyed by its stable dimension key.
  *
  * Used to rehydrate the workspace rubric panel on reload, matching the
@@ -4860,9 +4880,10 @@ export type RubricScoreResponse = {
 };
 
 /**
- * All saved rubric scores for one attestation workspace.
+ * The workspace rubric definition and all saved scores for it.
  */
 export type RubricScoresResponse = {
+    dimensions?: Array<RubricDimensionItem>;
     scores: Array<RubricScoreItem>;
 };
 

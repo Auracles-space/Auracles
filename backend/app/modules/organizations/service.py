@@ -2391,6 +2391,9 @@ async def admin_list_orgs(
     for org in orgs:
         caps = capabilities_by_org.get(org.id, [])
         cap_dict = {cap.capability: cap.status for cap in caps}
+        reasons = {
+            cap.capability: cap.status_reason for cap in caps if cap.status_reason
+        }
         results.append(
             AdminOrgResponse(
                 id=org.id,
@@ -2399,6 +2402,7 @@ async def admin_list_orgs(
                 country=org.country,
                 member_count=member_counts.get(org.id, 0),
                 capabilities=cap_dict,
+                capability_reasons=reasons,
                 kyb_status=(
                     profiles[org.id].kyb_status if org.id in profiles else "unverified"
                 ),

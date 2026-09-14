@@ -1125,7 +1125,7 @@ export const getReportRubricV1AttestationsAttestationIdReportRubricGet = <ThrowO
 
 /**
  * List saved rubric scores
- * Return the assigned Attestor's saved rubric scores for the workspace, keyed by dimension, so the rubric panel can rehydrate on reload.
+ * Return the workspace rubric definition for the attestation's review type together with the assigned Attestor's saved scores, keyed by dimension, so the rubric panel renders and rehydrates from one source.
  */
 export const listAttestationRubricScoresV1AttestationsAttestationIdRubricGet = <ThrowOnError extends boolean = false>(options: OptionsLegacyParser<ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetData, ThrowOnError>) => {
     return (options?.client ?? client).get<ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetResponse, ListAttestationRubricScoresV1AttestationsAttestationIdRubricGetError, ThrowOnError>({
@@ -4709,6 +4709,12 @@ export const rejectOrgAttestor = adminRejectV1AdminOrgAttestorApplicationsApplic
 export const suspendOrgAttestorCapability = adminSuspendAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilitySuspendPost;
 export const reinstateOrgAttestorCapability = adminReinstateAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityReinstatePost;
 export const revokeOrgAttestorCapability = adminRevokeAttestorCapabilityV1AdminOrgsOrgIdAttestorCapabilityRevokePost;
+export const suspendOrgContributorCapability = adminSuspendContributorCapabilityV1AdminOrgsOrgIdContributorCapabilitySuspendPost;
+export const reinstateOrgContributorCapability = adminReinstateContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityReinstatePost;
+export const revokeOrgContributorCapability = adminRevokeContributorCapabilityV1AdminOrgsOrgIdContributorCapabilityRevokePost;
+export const suspendOrgOperatorCapability = adminSuspendOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilitySuspendPost;
+export const reinstateOrgOperatorCapability = adminReinstateOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityReinstatePost;
+export const revokeOrgOperatorCapability = adminRevokeOperatorCapabilityV1AdminOrgsOrgIdOperatorCapabilityRevokePost;
 export const listAttestorOrgs = listPublicAttestorDirectoryV1AttestorOrgsGet;
 export const getAttestorOrg = getPublicAttestorDirectoryProfileV1AttestorOrgsOrgIdGet;
 export const listAttestorOrgCompleted = listAttestorCompletedAttestationsV1AttestorOrgsOrgIdCompletedGet;

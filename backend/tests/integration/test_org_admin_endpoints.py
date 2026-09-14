@@ -445,6 +445,12 @@ async def test_admin_capability_suspend_requires_reason_and_notifies_owner(
     assert entry["capabilities"]["contributor"] == "suspended"
     assert entry["capability_reasons"]["contributor"] == reason
 
+    # The admin directory shows the same reason so the next admin knows why.
+    listed = await client.get("/v1/admin/orgs", headers=admin_headers)
+    row = next(o for o in listed.json()["orgs"] if o["id"] == org_id)
+    assert row["capabilities"]["contributor"] == "suspended"
+    assert row["capability_reasons"]["contributor"] == reason
+
     sent = next(
         c for c in recorder.sent if c["notification_type"] == "org_capability_suspended"
     )

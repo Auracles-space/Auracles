@@ -23,6 +23,7 @@ from app.integrations import paystack, stripe
 from app.integrations.payment_router import select_provider
 from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
+from app.modules.attestation import dispute_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
@@ -287,7 +288,9 @@ async def build_request_responses(
         )
         org_names = dict(org_rows.all())
     disputes: dict[UUID, AttestationDispute] = {}
+    evidence_floor: int | None = None
     if include_dispute and attestations:
+        evidence_floor = await dispute_service.evidence_min_length(db)
         dispute_rows = await db.execute(
             select(AttestationDispute)
             .where(
@@ -307,6 +310,7 @@ async def build_request_responses(
         dispute = disputes.get(row.id)
         if dispute is not None:
             item.dispute = AttestationDisputeSummary.model_validate(dispute)
+        item.dispute_evidence_min_length = evidence_floor
         items.append(item)
     return items
 

@@ -217,9 +217,25 @@ class RubricScoreItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RubricScoresResponse(BaseModel):
-    """All saved rubric scores for one attestation workspace."""
+class RubricDimensionItem(BaseModel):
+    """One rubric dimension the workspace scores, served with the scores.
 
+    Lets the rubric panel render from the seeded definition instead of a
+    client-side copy that can drift from the quality gate and the report.
+    """
+
+    key: str
+    label: str
+    weight: float
+    display_order: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RubricScoresResponse(BaseModel):
+    """The workspace rubric definition and all saved scores for it."""
+
+    dimensions: list[RubricDimensionItem] = Field(default_factory=list)
     scores: list[RubricScoreItem]
 
 
@@ -480,6 +496,9 @@ class AttestationRequestResponse(BaseModel):
     open_clarification: bool = False
     # Latest dispute, populated on the detail view only.
     dispute: AttestationDisputeSummary | None = None
+    # Platform-configured evidence floor for raising a dispute, populated on
+    # the detail view so the decision form validates against the live value.
+    dispute_evidence_min_length: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

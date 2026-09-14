@@ -567,6 +567,9 @@ class AdminOrgResponse(BaseModel):
     country: str
     member_count: int
     capabilities: dict[str, str]
+    # Admin-entered reasons for suspended or revoked capabilities, keyed like
+    # ``capabilities``; present only where a reason is stored.
+    capability_reasons: dict[str, str] = Field(default_factory=dict)
     # Business verification gates every capability, so the admin directory
     # reports it alongside them and the queue filters on it.
     kyb_status: str = "unverified"

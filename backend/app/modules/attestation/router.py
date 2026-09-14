@@ -70,6 +70,7 @@ from app.modules.attestation.schemas import (
     CredentialsResponse,
     CredentialUpdateRequest,
     RequestorReportRubricResponse,
+    RubricDimensionItem,
     RubricScoreItem,
     RubricScoreResponse,
     RubricScoresResponse,
@@ -390,10 +391,11 @@ async def acknowledge_attestation_content(
 @router.get(
     "/attestations/{attestation_id}/rubric",
     response_model=RubricScoresResponse,
-    summary="List saved rubric scores",
+    summary="List rubric dimensions and saved scores",
     description=(
-        "Return the assigned Attestor's saved rubric scores for the workspace, "
-        "keyed by dimension, so the rubric panel can rehydrate on reload."
+        "Return the workspace rubric definition for the attestation's review "
+        "type together with the assigned Attestor's saved scores, keyed by "
+        "dimension, so the rubric panel renders and rehydrates from one source."
     ),
 )
 async def list_attestation_rubric_scores(
@@ -401,14 +403,20 @@ async def list_attestation_rubric_scores(
     attestor: CurrentUser,
     db: DatabaseSession,
 ) -> RubricScoresResponse:
-    """List the workspace's saved rubric scores keyed by dimension."""
+    """List the workspace's rubric definition and saved scores."""
+    dimensions = await workspace_service.list_rubric_dimensions(
+        db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+    )
     views = await workspace_service.list_rubric_scores(
         db,
         attestor=attestor,
         attestation_id=attestation_id,
     )
     return RubricScoresResponse(
-        scores=[RubricScoreItem.model_validate(view) for view in views]
+        dimensions=[RubricDimensionItem.model_validate(d) for d in dimensions],
+        scores=[RubricScoreItem.model_validate(view) for view in views],
     )
 
 

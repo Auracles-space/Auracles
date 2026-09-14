@@ -1,9 +1,16 @@
 "use client";
 
+/**
+ * Rubric scoring panel for the attestation review workspace.
+ *
+ * The rubric definition and any saved scores come from one API call, so the
+ * panel renders exactly the dimensions the quality gate and the published
+ * report will use; nothing about the rubric is defined client-side.
+ */
 import React, { useEffect, useState } from "react";
 import { upsertRubricScore, listRubricScores } from "@/lib/generated/sdk.gen";
+import type { RubricDimensionItem } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
-import { RUBRICS, RubricDimension } from "./rubrics";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -21,7 +28,7 @@ export function RubricPanel({
   reviewType,
   canWrite,
 }: RubricPanelProps) {
-  const dimensions = RUBRICS[reviewType] || [];
+  const [dimensions, setDimensions] = useState<RubricDimensionItem[]>([]);
   const [saved, setSaved] = useState<Record<string, SavedScore>>({});
   const [loading, setLoading] = useState(true);
 
@@ -34,6 +41,11 @@ export function RubricPanel({
       });
       if (!mounted) return;
       if (!res.error && res.data) {
+        setDimensions(
+          [...(res.data.dimensions ?? [])].sort(
+            (a, b) => a.display_order - b.display_order,
+          ),
+        );
         const map: Record<string, SavedScore> = {};
         for (const item of res.data.scores) {
           map[item.dimension_key] = {
@@ -49,18 +61,18 @@ export function RubricPanel({
     return () => { mounted = false; };
   }, [attestationId]);
 
-  if (!dimensions.length) {
-    return (
-      <div className="text-sm text-foreground-muted">
-        No rubric dimensions configured for review type: {reviewType}
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div className="flex items-center gap-2 p-4 text-sm text-foreground-muted">
         <Spinner className="h-4 w-4" /> Loading rubric...
+      </div>
+    );
+  }
+
+  if (!dimensions.length) {
+    return (
+      <div className="text-sm text-foreground-muted">
+        No rubric dimensions configured for review type: {reviewType}
       </div>
     );
   }
@@ -101,7 +113,7 @@ function RubricDimensionCard({
   initialComment,
 }: {
   attestationId: string;
-  dimension: RubricDimension;
+  dimension: RubricDimensionItem;
   canWrite: boolean;
   initialScore: number | null;
   initialComment: string;

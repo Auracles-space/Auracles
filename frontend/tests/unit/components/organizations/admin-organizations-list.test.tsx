@@ -2,7 +2,9 @@
  * Unit coverage for the admin organization directory.
  *
  * Verifies the suspend confirm dialog collects a required, owner-visible
- * reason before the request fires, and that reinstate stays body-less.
+ * reason before the request fires, that reinstate stays body-less, and that
+ * each row names its capabilities and opens a per-capability dialog whose
+ * changes update the row without a refetch.
  */
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,9 +14,11 @@ import {
   adminListOrgsV1AdminOrgsGet,
   adminReinstateOrgV1AdminOrgsOrgIdReinstatePost,
   adminSuspendOrgV1AdminOrgsOrgIdSuspendPost,
+  suspendOrgContributorCapability,
 } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
+  configureBrowserClient: vi.fn(),
   describeGeneratedError: vi.fn(() => "The request could not be completed."),
   getAccessTokenHeaders: vi.fn(() => ({ Authorization: "Bearer admin-token" })),
 }));
@@ -23,6 +27,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   adminListOrgsV1AdminOrgsGet: vi.fn(),
   adminReinstateOrgV1AdminOrgsOrgIdReinstatePost: vi.fn(),
   adminSuspendOrgV1AdminOrgsOrgIdSuspendPost: vi.fn(),
+  suspendOrgContributorCapability: vi.fn(),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -53,7 +58,8 @@ describe("AdminOrganizationsList", () => {
             slug: "active-ltd",
             country: "NG",
             member_count: 3,
-            capabilities: { contributor: "active" },
+            capabilities: { contributor: "active", operator: "suspended" },
+            capability_reasons: { operator: "Two chargebacks this month." },
             created_at: "2026-09-01T00:00:00Z",
             suspended_at: null,
             deactivated_at: null,
@@ -138,5 +144,48 @@ describe("AdminOrganizationsList", () => {
     fireEvent.click(within(row).getByRole("button", { name: "Suspend" }));
     expect(await screen.findByLabelText(/reason/i)).toHaveValue("");
     expect(dialogConfirm("Suspend")).toBeDisabled();
+  });
+
+  it("names each capability and its status on the row", async () => {
+    render(<AdminOrganizationsList />);
+
+    expect(await screen.findByText("Contributor active")).toBeInTheDocument();
+    expect(screen.getByText("Operator suspended")).toBeInTheDocument();
+  });
+
+  it("opens the capabilities dialog for a row and updates the row after a change", async () => {
+    vi.mocked(suspendOrgContributorCapability).mockResolvedValue(ok(undefined));
+
+    render(<AdminOrganizationsList />);
+    const row = (await screen.findByText("Active Ltd")).closest("tr") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "Capabilities" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Active Ltd" });
+    expect(within(dialog).getByText("Two chargebacks this month.")).toBeInTheDocument();
+
+    // Contributor is active, so its Suspend is the only enabled one.
+    const suspend = within(dialog)
+      .getAllByRole("button", { name: "Suspend" })
+      .find((button) => !(button as HTMLButtonElement).disabled)!;
+    fireEvent.click(suspend);
+    fireEvent.change(screen.getByLabelText(/reason/i), {
+      target: { value: "Framework artifacts failed the malware scan twice." },
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Suspend" }).at(-1)!);
+
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText("Framework artifacts failed the malware scan twice."),
+      ).toBeInTheDocument(),
+    );
+    expect(suspendOrgContributorCapability).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: { reason: "Framework artifacts failed the malware scan twice." },
+        path: { org_id: "org-active" },
+      }),
+    );
+    // The directory row reflects the change without a refetch.
+    expect(adminListOrgsV1AdminOrgsGet).toHaveBeenCalledTimes(1);
+    expect(within(row).getByText("Contributor suspended")).toBeInTheDocument();
   });
 });

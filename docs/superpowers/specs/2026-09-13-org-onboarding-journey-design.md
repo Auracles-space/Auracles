@@ -107,9 +107,13 @@ first" and a link to verification rather than being dropped.
 **Team capability toggles.** Hint distinguishes never activated / suspended / revoked.
 
 **Admin console.** Suspend and revoke confirm dialogs gain a required reason field through one
-shared `ReasonField` (`admin-organizations-list.tsx`, `attestor-capability-controls.tsx`; there
-is no admin UI yet for contributor/operator capability status, the API alone carries it).
+shared `ReasonField` (`admin-organizations-list.tsx`, `org-capability-controls.tsx`).
 Reinstate unchanged. `ConfirmDialog` focuses its first field when confirm opens disabled.
+Added 2026-09-14: every organization row in the admin directory shows a pill per capability
+and opens a **Capabilities** dialog (`org-capabilities-dialog.tsx`) listing contributor,
+operator, and attestor with status, the stored reason, and suspend / reinstate / revoke
+through the same generic controls the attestor console uses. `AdminOrgResponse` carries
+`capability_reasons` so the directory shows why.
 
 ### 3. Out of scope
 

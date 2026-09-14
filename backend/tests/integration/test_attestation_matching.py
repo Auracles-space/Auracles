@@ -1440,6 +1440,9 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     assert body["dispute"]["status"] == "open"
     assert body["dispute"]["category"] == "scope_error"
     assert body["dispute"]["reason"] == "The public report omits evidence we submitted."
+    # The decision form reads the evidence floor from here instead of a
+    # client-side constant that can drift from platform config.
+    assert body["dispute_evidence_min_length"] == 40
     assert body["dispute"]["outcome"] is None
     assert body["dispute"]["resolution_due_at"] is not None
 

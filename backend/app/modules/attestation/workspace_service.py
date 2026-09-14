@@ -255,6 +255,75 @@ class RubricScoreView:
     comment: str | None
 
 
+@dataclass(frozen=True)
+class RubricDimensionView:
+    """One rubric dimension the workspace must score, in display order.
+
+    Attributes:
+        key: Stable dimension key used by the score upsert route.
+        label: Human label rendered beside the score control.
+        weight: Dimension weight within the review type's rubric.
+        display_order: Zero-based position within the rubric.
+    """
+
+    key: str
+    label: str
+    weight: float
+    display_order: int
+
+
+async def list_rubric_dimensions(
+    db: AsyncSession,
+    *,
+    attestor: User,
+    attestation_id: UUID,
+) -> list[RubricDimensionView]:
+    """List the rubric the workspace scores against, from the seeded table.
+
+    The client used to carry its own copy of every rubric; serving the seeded
+    rows keeps the panel, the quality gate, and the published report on one
+    definition. The version is pinned to the attestation once a report has
+    been submitted and otherwise follows the current rubric version.
+
+    Args:
+        db: Async database session.
+        attestor: Authenticated caller, the reviewing member or an org manager.
+        attestation_id: Attestation whose rubric is requested.
+
+    Returns:
+        Dimensions ordered by ``display_order``.
+
+    Raises:
+        HTTPException: 404 on assignee mismatch or 409 outside readable states.
+    """
+    attestation = await load_workspace_attestation(
+        db,
+        attestation_id=attestation_id,
+        user_id=attestor.id,
+        allowed_statuses={"in_review", "revision_requested", "report_submitted"},
+        lock=False,
+        allow_managers=True,
+    )
+    version = attestation.rubric_version or rubrics.RUBRIC_VERSION
+    rows = await db.execute(
+        select(AttestationRubricDimension)
+        .where(
+            AttestationRubricDimension.review_type == attestation.review_type,
+            AttestationRubricDimension.version == version,
+        )
+        .order_by(AttestationRubricDimension.display_order)
+    )
+    return [
+        RubricDimensionView(
+            key=row.key,
+            label=row.label,
+            weight=float(row.weight),
+            display_order=row.display_order,
+        )
+        for row in rows.scalars().all()
+    ]
+
+
 async def list_rubric_scores(
     db: AsyncSession,
     *,

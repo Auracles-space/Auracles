@@ -2073,6 +2073,13 @@ components:
             type: string
           title: Capabilities
           type: object
+        capability_reasons:
+          additionalProperties:
+            type: string
+          description: Admin-entered reasons for suspended or revoked capabilities,
+            keyed like capabilities; present only where a reason is stored.
+          title: Capability Reasons
+          type: object
         country:
           title: Country
           type: string
@@ -4220,6 +4227,13 @@ components:
           anyOf:
           - $ref: '#/components/schemas/AttestationDisputeSummary'
           - type: 'null'
+        dispute_evidence_min_length:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Platform-configured minimum evidence length for raising a
+            dispute; populated on the detail view only.
+          title: Dispute Evidence Min Length
         dispute_window_ends_at:
           anyOf:
           - format: date-time
@@ -13713,9 +13727,38 @@ components:
           title: Score
       title: RubricScoreUpsertRequest
       type: object
-    RubricScoresResponse:
-      description: All saved rubric scores for one attestation workspace.
+    RubricDimensionItem:
+      description: One rubric dimension the workspace scores, served with the scores
+        so the panel renders from the seeded definition rather than a client-side
+        copy.
       properties:
+        display_order:
+          title: Display Order
+          type: integer
+        key:
+          title: Key
+          type: string
+        label:
+          title: Label
+          type: string
+        weight:
+          title: Weight
+          type: number
+      required:
+      - key
+      - label
+      - weight
+      - display_order
+      title: RubricDimensionItem
+      type: object
+    RubricScoresResponse:
+      description: The workspace rubric definition and all saved scores for it.
+      properties:
+        dimensions:
+          items:
+            $ref: '#/components/schemas/RubricDimensionItem'
+          title: Dimensions
+          type: array
         scores:
           items:
             $ref: '#/components/schemas/RubricScoreItem'
@@ -18309,8 +18352,9 @@ paths:
       - Attestation
   /v1/attestations/{attestation_id}/rubric:
     get:
-      description: Return the assigned Attestor's saved rubric scores for the workspace,
-        keyed by dimension, so the rubric panel can rehydrate on reload.
+      description: Return the workspace rubric definition for the attestation's review
+        type together with the assigned Attestor's saved scores, keyed by dimension,
+        so the rubric panel renders and rehydrates from one source.
       operationId: list_attestation_rubric_scores_v1_attestations__attestation_id__rubric_get
       parameters:
       - in: path
