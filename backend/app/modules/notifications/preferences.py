@@ -134,6 +134,7 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "org_payout_requested": "financial",
     "org_payout_completed": "financial",
     "org_payout_failed": "financial",
+    "payout_failed": "financial",
     "org_invoice_ready": "financial",
     "org_slug_changed": "account",
 }

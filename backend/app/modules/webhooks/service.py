@@ -47,6 +47,7 @@ from app.modules.developer.models import (
 )
 from app.modules.financials import commission, escrow_service
 from app.modules.financials import invoices as financials_invoices
+from app.modules.financials import notifications as financial_notifications
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.financials.refunds import reverse_refund, settle_refund
@@ -1402,7 +1403,7 @@ async def _handle_connected_payout_failed(
     )
 
     payout_account_id = payout_account.id
-    return [
+    work: list[Callable[[], None]] = [
         lambda: notify_admins_review_pending(
             domain="payout",
             target_id=payout_account_id,
@@ -1413,6 +1414,34 @@ async def _handle_connected_payout_failed(
             link="/admin/payouts",
         )
     ]
+    # The payee is told too, or they see nothing arrive and cannot fix their
+    # bank details. No payout row changes: the money sits in the connected
+    # account's Stripe balance, not ours, so re-crediting would pay twice.
+    provider_ref = _event_object_id(event)
+    if payout_account.org_id is not None:
+        org_id = payout_account.org_id
+        owner_ids = await org_notifications.org_owner_ids(db, org_id)
+        org_name = await org_notifications.org_name(db, org_id)
+        work.append(
+            lambda: org_notifications.notify_org_bank_payout_failed(
+                owner_ids,
+                org_id=org_id,
+                org_name=org_name,
+                provider_ref=provider_ref,
+                failure_message=failure.message,
+            )
+        )
+    elif payout_account.user_id is not None:
+        payee_id = payout_account.user_id
+        work.append(
+            lambda: financial_notifications.notify_bank_payout_failed(
+                payee_id,
+                payout_account_id=payout_account_id,
+                provider_ref=provider_ref,
+                failure_message=failure.message,
+            )
+        )
+    return work
 
 
 async def _handle_account_updated(db: AsyncSession, event: dict[str, Any]) -> None:
@@ -1959,13 +1988,16 @@ async def _dispatch_paystack_event(
     metadata = _event_metadata(envelope)
     if event_type == "charge.success" and metadata.get("kind") == "purchase":
         purchase_notices: list[Callable[[], None]] = []
-        invoice_transaction_id, _ = await _handle_purchase_succeeded(
+        # The partner work queues partner webhook deliveries after commit; the
+        # Paystack branch used to discard it, so partners never heard about
+        # Paystack sales (Stripe always dispatched them).
+        invoice_transaction_id, partner_work = await _handle_purchase_succeeded(
             db, envelope, provider="paystack", notifications=purchase_notices
         )
         await _mark_event_status(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
-        return "processed", invoice_transaction_id, purchase_notices
+        return "processed", invoice_transaction_id, partner_work + purchase_notices
     if event_type == "charge.success" and metadata.get("kind") == "escrow":
         after_commit_notifications = await _handle_escrow_succeeded(
             db, envelope, provider="paystack"

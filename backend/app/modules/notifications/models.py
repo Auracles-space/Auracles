@@ -118,6 +118,7 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "org_payout_requested",
     "org_payout_completed",
     "org_payout_failed",
+    "payout_failed",
     "org_invoice_ready",
     "org_slug_changed",
     name="notification_type_enum",

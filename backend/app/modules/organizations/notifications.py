@@ -525,6 +525,36 @@ def notify_org_payout_completed(
     )
 
 
+def notify_org_bank_payout_failed(
+    owner_ids: list[UUID],
+    *,
+    org_id: UUID,
+    org_name: str,
+    provider_ref: str | None,
+    failure_message: str | None,
+) -> None:
+    """Tell owners the org's Stripe bank payout failed, why, and that funds are safe.
+
+    Stripe reports this against the connected account, not one of our payout
+    rows, so there is no amount or payout id to name; the money stays in the
+    organization's Stripe balance until its bank details are fixed.
+    """
+    reason = f" Reason: {failure_message}" if failure_message else ""
+    notify_users(
+        owner_ids,
+        org_id=org_id,
+        notification_type="org_payout_failed",
+        title=f"{org_name}: bank payout failed",
+        body=(
+            f"Stripe could not pay out to {org_name}'s bank account.{reason} "
+            "The money is safe in the organization's Stripe balance and will be "
+            "included in the next payout once the bank details are updated."
+        ),
+        link=_financials_link(org_id),
+        dedupe_token=provider_ref,
+    )
+
+
 def notify_org_payout_failed(
     owner_ids: list[UUID],
     *,
