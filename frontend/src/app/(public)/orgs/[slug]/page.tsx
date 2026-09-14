@@ -11,6 +11,7 @@
 import { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicOrgV1OrgsSlugGet } from "@/lib/generated/sdk.gen";
+import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
 import { StatusPill } from "@/components/ui/status-pill";
 import { capabilityLabel } from "@/components/modules/organizations/capability-labels";
 
@@ -30,6 +31,9 @@ interface Props {
 /** Build the page title and description from the public org record. */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
+  // Server renders have no browser origin; without the API base URL the
+  // generated client throws and every slug reads as not found.
+  configureServerMarketplaceClient();
   try {
     const res = await getPublicOrgV1OrgsSlugGet({ path: { slug } });
     if (!res.response.ok || !res.data) {
@@ -51,6 +55,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export default async function PublicOrganizationPage({ params }: Props) {
   const { slug } = await params;
+  configureServerMarketplaceClient();
 
   let org;
   try {

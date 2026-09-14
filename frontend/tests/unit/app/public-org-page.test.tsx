@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import PublicOrganizationPage from "@/app/(public)/orgs/[slug]/page";
 import { getPublicOrgV1OrgsSlugGet } from "@/lib/generated/sdk.gen";
+import { configureServerMarketplaceClient } from "@/lib/marketplace/api";
 
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
@@ -17,6 +18,7 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 vi.mock("@/lib/generated/sdk.gen", () => ({ getPublicOrgV1OrgsSlugGet: vi.fn() }));
+vi.mock("@/lib/marketplace/api", () => ({ configureServerMarketplaceClient: vi.fn() }));
 
 function org(overrides: Record<string, unknown> = {}) {
   return {
@@ -77,5 +79,24 @@ describe("PublicOrganizationPage", () => {
 
     expect(screen.queryByRole("link", { name: /website/i })).toBeNull();
     expect(screen.getByText("Meridian Audit")).toBeInTheDocument();
+  });
+
+  it("configures the server API client before fetching the organization", async () => {
+    // Without a server base URL the generated client throws on the server
+    // and the page falls into notFound(): every /orgs/{slug} returned 404
+    // locally while the API answered 200 (2026-09-14).
+    const order: string[] = [];
+    vi.mocked(configureServerMarketplaceClient).mockImplementation(() => {
+      order.push("configure");
+    });
+    vi.mocked(getPublicOrgV1OrgsSlugGet).mockImplementation((async () => {
+      order.push("fetch");
+      return ok(org());
+    }) as never);
+
+    render(await PublicOrganizationPage({ params: Promise.resolve({ slug: "meridian" }) }));
+
+    expect(order[0]).toBe("configure");
+    expect(order).toContain("fetch");
   });
 });
