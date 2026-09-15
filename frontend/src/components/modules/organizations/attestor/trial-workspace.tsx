@@ -76,7 +76,13 @@ export function TrialWorkspace({ orgId }: TrialWorkspaceProps) {
         }
         if (!result.response.ok || !result.data) {
           if (result.response.status === 404) {
-            setError("No active trial assigned.");
+            const code = (result.error as { detail?: { error_code?: string } } | undefined)
+              ?.detail?.error_code;
+            setError(
+              code === "trial_not_started"
+                ? "You're nominated for your organization's calibration trial. It opens here once the attestor application is submitted and an administrator starts the trial. You'll be notified when it's ready."
+                : "No calibration trial is assigned to you. If your organization nominates you, the trial appears here once an administrator starts it.",
+            );
           } else if (result.response.status === 403) {
             setError("This trial is assigned to another member.");
           } else {

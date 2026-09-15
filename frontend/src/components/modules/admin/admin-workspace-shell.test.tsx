@@ -133,3 +133,36 @@ describe("AdminWorkspaceShell organization verification badge", () => {
     await waitFor(() => expect(screen.queryByLabelText(/needing attention/)).toBeNull());
   });
 });
+
+describe("AdminWorkspaceShell badge freshness", () => {
+  it("refetches the counts when the admin returns to the tab", async () => {
+    // Badges loaded once on mount, so an application submitted while the admin
+    // page was open never showed a count.
+    vi.mocked(listAdminAttestations).mockReset();
+    vi.mocked(adminListOrgsV1AdminOrgsGet).mockReset();
+    vi.mocked(listAdminAttestations)
+      .mockResolvedValueOnce({ response: { ok: true }, data: { attestations: [] } } as never)
+      .mockResolvedValue({
+        response: { ok: true },
+        data: { attestations: [{ id: "att-1" }] },
+      } as never);
+    vi.mocked(adminListOrgsV1AdminOrgsGet).mockResolvedValue({
+      response: { ok: true },
+      data: { orgs: [], page: 1, page_size: 1, total: 0 },
+    } as never);
+
+    render(
+      <AdminWorkspaceShell>
+        <div>content</div>
+      </AdminWorkspaceShell>,
+    );
+    await waitFor(() => expect(listAdminAttestations).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText(/needing attention/)).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    expect(await screen.findByLabelText("1 needing attention")).toBeInTheDocument();
+  });
+});

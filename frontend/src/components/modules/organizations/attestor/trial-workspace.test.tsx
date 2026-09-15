@@ -145,10 +145,26 @@ describe("TrialWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Submit Trial/i })).not.toBeInTheDocument();
   });
 
-  it("shows a no-trial message on 404", async () => {
+  it("explains how a trial reaches a member who has none on 404", async () => {
     vi.mocked(getAttestorTrial).mockResolvedValue(err(404) as never);
     render(<TrialWorkspace orgId="org-1" />);
-    expect(await screen.findByText(/No active trial assigned/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/No calibration trial is assigned to you/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No active trial assigned/i)).toBeNull();
+  });
+
+  it("tells a nominee their trial opens once an administrator starts it", async () => {
+    vi.mocked(getAttestorTrial).mockResolvedValue({
+      data: undefined,
+      error: { detail: { error_code: "trial_not_started", message: "Nominated." } },
+      response: { ok: false, status: 404 },
+    } as never);
+    render(<TrialWorkspace orgId="org-1" />);
+    expect(
+      await screen.findByText(/nominated for your organization's calibration trial/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/administrator starts/i)).toBeInTheDocument();
   });
 
   it("explains a trial assigned to another member on 403", async () => {

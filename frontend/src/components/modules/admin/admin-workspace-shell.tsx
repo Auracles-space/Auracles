@@ -8,7 +8,7 @@
  */
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import {
   configureBrowserClient,
@@ -26,6 +26,7 @@ import {
   ORG_VERIFICATION_CHANGED_EVENT,
 } from "@/components/modules/admin/admin-events";
 import { StepUpPill } from "@/components/modules/auth/step-up-pill";
+import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 
 type AdminWorkspaceShellProps = {
   children: ReactNode;
@@ -161,7 +162,7 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
   const [disputeCount, setDisputeCount] = useState(0);
   const [pendingOrgCount, setPendingOrgCount] = useState(0);
 
-  useEffect(() => {
+  const refreshCounts = useCallback(() => {
     async function loadNeedsAdminCount() {
       configureBrowserClient();
       // The count is a badge, not the page. A failed request leaves it at zero
@@ -224,17 +225,25 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
     void loadNeedsAdminCount();
     void loadTrustCounts();
     void loadPendingOrgCount();
-    // Refresh the badge when an admin assigns or refunds a needs-admin request
-    // elsewhere in the workspace, so the count never goes stale.
-    const onChanged = () => void loadNeedsAdminCount();
-    const onOrgVerificationChanged = () => void loadPendingOrgCount();
+  }, []);
+
+  useEffect(() => {
+    refreshCounts();
+  }, [refreshCounts]);
+  // Badges otherwise load once, so work submitted while an admin page is open
+  // (an attestor application, a dispute) showed no count until a reload.
+  useRefetchOnFocus(refreshCounts);
+
+  useEffect(() => {
+    const onChanged = () => refreshCounts();
+    const onOrgVerificationChanged = () => refreshCounts();
     window.addEventListener(NEEDS_ADMIN_CHANGED_EVENT, onChanged);
     window.addEventListener(ORG_VERIFICATION_CHANGED_EVENT, onOrgVerificationChanged);
     return () => {
       window.removeEventListener(NEEDS_ADMIN_CHANGED_EVENT, onChanged);
       window.removeEventListener(ORG_VERIFICATION_CHANGED_EVENT, onOrgVerificationChanged);
     };
-  }, []);
+  }, [refreshCounts]);
 
   const badgeCounts: Record<string, number> = {
     "/admin/attestations": needsAdminCount,
