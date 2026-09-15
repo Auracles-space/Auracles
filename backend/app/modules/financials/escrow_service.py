@@ -583,6 +583,10 @@ async def split(
             detail="Unsupported escrow payment provider.",
         )
 
+    # Resolve the beneficiary exactly as a full release does before the release
+    # row copies it: a milestone funded by an individual operator records only
+    # the proposal's individual contributor, which is null when an org won.
+    await _credit_project_milestone_beneficiary(db, escrow=escrow)
     escrow.status = "released"
     escrow.released_at = datetime.now(UTC)
     escrow.released_by = actor_id

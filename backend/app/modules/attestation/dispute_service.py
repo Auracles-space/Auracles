@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.modules.attestation import badge_service, matching_service
+from app.modules.attestation import badge_service, matching_service, release_service
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     Attestation,
@@ -355,6 +355,8 @@ async def resolve_dispute(
                 reason=notes,
                 admin_override=True,
             )
+            # The report stands, so the fee is the attestor org's earning.
+            await release_service.credit_org_beneficiary(db=db, attestation=attestation)
             attestation.status = "released"
             attestation.closed_at = now
             attestation.report_published_eligible = True

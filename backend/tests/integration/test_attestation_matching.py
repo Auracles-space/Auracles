@@ -1625,6 +1625,13 @@ async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     assert escrow is not None
     assert escrow.status == "released"
     assert escrow.released_by == admin_id
+    # Rejecting the dispute releases the fee to the attestor org, so it must
+    # be credited as the org's earning (the accept path stamps payee_org_id);
+    # otherwise the org's balance never shows the released fee.
+    async with async_session_factory() as session:
+        fee_transaction = await session.get(Transaction, escrow.transaction_id)
+    assert fee_transaction is not None
+    assert fee_transaction.payee_org_id == org_id
 
 
 async def test_admin_upholds_refund_refunds_and_suppresses_publication(

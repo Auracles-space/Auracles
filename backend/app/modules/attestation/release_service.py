@@ -154,7 +154,7 @@ async def _release_and_close(
         actor_id=actor_id,
         reason=reason,
     )
-    await _credit_org_beneficiary(db=db, attestation=attestation)
+    await credit_org_beneficiary(db=db, attestation=attestation)
     attestation.status = "released"
     attestation.closed_at = now
     # A released report stood — stamp it publication-eligible for Module 6.
@@ -170,12 +170,16 @@ async def _release_and_close(
     await badge_service.publish_badge(db=db, attestation=attestation)
 
 
-async def _credit_org_beneficiary(
+async def credit_org_beneficiary(
     *,
     db: AsyncSession,
     attestation: Attestation,
 ) -> None:
     """Credit the fee transaction to the attestor org at settlement.
+
+    Every path that releases an attestation escrow must call this: the
+    requestor's acceptance, the auto-release window, and an admin rejecting a
+    dispute. A release without it leaves the fee off the org's balance.
 
     For org-staffed attestations the accept step never sets a transaction
     payee (individual attestations set ``payee_id`` at accept). Settlement is

@@ -783,6 +783,80 @@ async def test_admin_dispute_queue_surfaces_org_operated_and_org_contributor_dis
     assert listed.raised_by_name == "adminq-op-admin"
 
 
+async def test_escrow_split_credits_the_org_that_won_the_project(
+    migrated_database: None,
+    money_path_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A split's release share is credited to the winning org, like a release.
+
+    A milestone funded by an individual operator records only
+    ``payee_id=proposal.contributor_id``, which is null for an org proposal;
+    ``release`` resolves the org beneficiary at settlement, but ``split``
+    copied the funding row's (empty) payee, so the org's share was credited
+    to nobody and never reached its balance.
+    """
+    del migrated_database, money_path_state
+    org = await _seed_org(prefix="splitpayer")
+    contributor_org = await _seed_org(prefix="splitwinner")
+    seed = await _seed_org_project(
+        org_id=org["org_id"],
+        contributor_id=None,
+        contributor_org_id=contributor_org["org_id"],
+        milestone_status="funded",
+        project_status="in_progress",
+        with_escrow=True,
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            funding = await session.scalar(
+                select(Transaction).where(
+                    Transaction.ref_id == seed["milestone_id"],
+                    Transaction.transaction_type == "milestone",
+                )
+            )
+            assert funding is not None
+            # What the individual-operator funding path writes for an org win.
+            funding.payee_id = None
+            funding.payee_org_id = None
+
+    async def fake_create_refund(
+        *,
+        payment_intent_id: str,
+        amount: Decimal,
+        currency: str,
+        idempotency_key: str,
+    ) -> FakeStripeRefund:
+        """Stub the Stripe refund portion of a split resolution."""
+        return FakeStripeRefund("re_org_split_credit")
+
+    monkeypatch.setattr(escrow_service.stripe, "create_refund", fake_create_refund)
+
+    async with async_session_factory() as db:
+        async with db.begin():
+            await escrow_service.split(
+                db,
+                escrow_id=seed["escrow_id"],
+                actor_id=org["admin_id"],
+                release_amount=Decimal("900.00"),
+                refund_amount=Decimal("600.00"),
+                reason="dispute_split",
+                admin_override=True,
+            )
+
+    async with async_session_factory() as session:
+        release_row = await session.scalar(
+            select(Transaction).where(
+                Transaction.ref_id == seed["milestone_id"],
+                Transaction.transaction_type == "milestone",
+                Transaction.status == "completed",
+            )
+        )
+    assert release_row is not None
+    assert release_row.payee_id is None
+    assert release_row.payee_org_id == contributor_org["org_id"]
+
+
 async def test_escrow_split_preserves_org_payer_and_payee_attribution(
     migrated_database: None,
     money_path_state: None,
