@@ -611,16 +611,44 @@ describe("FrameworkEditor", () => {
     api.update.mockResolvedValue(framework);
 
     renderPersonalEditor();
-    fireEvent.click(
-      await screen.findByRole("button", { name: /save changes/i }),
-    );
+    fireEvent.change(await screen.findByLabelText(/framework title/i), {
+      target: { value: "Renamed Framework" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
     await waitFor(() => {
       expect(api.update).toHaveBeenCalledWith(
         "fw_1",
-        expect.objectContaining({ title: "Test Framework" }),
+        expect.objectContaining({ title: "Renamed Framework" }),
       );
     });
+  });
+
+  it("enables Save changes only while the details differ from what is saved", async () => {
+    // A live framework showed an always-active Save changes button, inviting a
+    // save that changed nothing.
+    const framework = makeFramework({ status: "published" });
+    mockLoad(framework);
+    api.update.mockResolvedValue(framework);
+
+    renderPersonalEditor();
+    const save = await screen.findByRole("button", { name: /save changes/i });
+    expect(save).toBeDisabled();
+
+    const title = screen.getByLabelText(/framework title/i);
+    fireEvent.change(title, { target: { value: "Renamed Framework" } });
+    expect(save).toBeEnabled();
+
+    // Typing the saved value back is not a change.
+    fireEvent.change(title, { target: { value: "Test Framework" } });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(title, { target: { value: "Renamed Framework" } });
+    fireEvent.click(save);
+    await waitFor(() => expect(api.update).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /save changes/i })).toBeDisabled(),
+    );
   });
 
   it("shows the artifact remove control on a pipeline_failed framework", async () => {

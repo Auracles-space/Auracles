@@ -181,7 +181,7 @@ export function FrameworkForm({
 }: FrameworkFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<FrameworkFormState>({
+  const initialForm = (): FrameworkFormState => ({
     category: coerceTaxonomyValue(framework?.category, FRAMEWORK_CATEGORY_OPTIONS),
     complexity:
       framework?.complexity != null ? String(framework.complexity) : "",
@@ -204,6 +204,12 @@ export function FrameworkForm({
     tags: (framework?.tags ?? prefill?.tags ?? []).slice(0, MAX_TAGS),
     title: framework?.title ?? prefill?.title ?? "",
   });
+  const [form, setForm] = useState<FrameworkFormState>(initialForm);
+  // The last values the server accepted. Editing an existing framework only
+  // enables Save when something differs; a new framework has nothing saved.
+  const [savedForm, setSavedForm] = useState<FrameworkFormState>(initialForm);
+  const isDirty =
+    !framework || JSON.stringify(form) !== JSON.stringify(savedForm);
 
   const canSubmit = allValid(
     isNonEmpty(form.title),
@@ -240,6 +246,7 @@ export function FrameworkForm({
     setError(null);
     setSaving(true);
 
+    const submitted = form;
     const pricing: PricingConfig = {
       currency: framework?.pricing.currency ?? PLATFORM_CURRENCY,
       license_types: form.licenseTypes,
@@ -268,6 +275,7 @@ export function FrameworkForm({
           : {}),
         ...(form.jurisdiction ? { jurisdiction: form.jurisdiction } : {}),
       });
+      setSavedForm(submitted);
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -531,7 +539,7 @@ export function FrameworkForm({
         <div className="flex flex-wrap items-center gap-3">
           {readOnly ? null : (
             <Button
-              disabled={saving || !canSubmit}
+              disabled={saving || !canSubmit || !isDirty}
               loading={saving}
               type="submit"
               variant={
