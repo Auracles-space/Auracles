@@ -65,6 +65,25 @@ describe("OrgVerificationPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("enables Save legal identity only when the details differ from what is saved", async () => {
+    // Re-saving identical details is a no-op that still costs a step-up prompt.
+    render(<OrgVerificationPanel />);
+
+    const save = await screen.findByRole("button", { name: /Save legal identity/i });
+    expect(save).toBeDisabled();
+
+    const name = screen.getByDisplayValue("Acme Attestations Ltd");
+    fireEvent.change(name, { target: { value: "Acme Attestations Limited" } });
+    expect(save).toBeEnabled();
+
+    // Whitespace-only differences are not a change: the save trims.
+    fireEvent.change(name, { target: { value: "  Acme Attestations Ltd " } });
+    expect(save).toBeDisabled();
+
+    fireEvent.change(screen.getByDisplayValue("RC123456"), { target: { value: "RC654321" } });
+    expect(save).toBeEnabled();
+  });
+
   it("submits for review once identity and a document are present", async () => {
     vi.mocked(submitOrgKyb).mockResolvedValue({
       response: { ok: true },

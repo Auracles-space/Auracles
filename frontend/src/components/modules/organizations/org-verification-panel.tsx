@@ -203,6 +203,11 @@ export function OrgVerificationPanel() {
   const labels = REGISTRATION_LABELS[kyb?.country ?? ""] ?? GENERIC_LABELS;
   const documents = kyb?.incorporation_doc_keys ?? [];
   const locked = status === "verified" || status === "pending";
+  // Saving identical details would still cost a step-up prompt and an audit
+  // row, so the save only enables once the trimmed fields differ.
+  const identityChanged =
+    legalName.trim() !== (kyb?.legal_name ?? "") ||
+    registrationNumber.trim() !== (kyb?.registration_number ?? "");
   const canSubmit =
     isAdmin &&
     !busy &&
@@ -286,7 +291,7 @@ export function OrgVerificationPanel() {
               if you have not already.
             </span>
             <Button
-              disabled={busy || legalName.trim().length < 2}
+              disabled={busy || !identityChanged || legalName.trim().length < 2}
               loading={busy}
               onClick={handleSaveIdentity}
             >
