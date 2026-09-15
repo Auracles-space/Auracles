@@ -8,6 +8,7 @@
  * reject with a reason. The API calls live in the parent hook so this stays a
  * form; approve and reject require an open step-up window server-side.
  */
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -100,12 +101,12 @@ export function AttestorApplicationActions({
         <p className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-foreground">
           No calibration fixtures yet. A trial needs a fixture with a scanned artifact and a
           complete answer key.{" "}
-          <a
+          <Link
             className="font-semibold text-accent underline-offset-4 hover:underline"
             href="/admin/attestors?tab=fixtures"
           >
             Create one on the Fixtures tab
-          </a>
+          </Link>
           .
         </p>
       ) : null}
@@ -130,12 +131,12 @@ export function AttestorApplicationActions({
 
       <div className="flex flex-wrap gap-2">
         {!gates.kybDone ? (
-          <a
+          <Link
             className="inline-flex min-h-12 items-center rounded-xl border border-border-default bg-surface-1 px-6 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
             href="/admin/organizations"
           >
             Verify in Organizations
-          </a>
+          </Link>
         ) : null}
         <Button
           disabled={busy || !gates.canStartTrial || !fixtureId}
