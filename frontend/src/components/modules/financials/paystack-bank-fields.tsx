@@ -96,7 +96,9 @@ export function PaystackBankFields({
         >
           <option value="">Select a bank</option>
           {banks.map((bank) => (
-            <option key={bank.code} value={bank.code}>
+            // Paystack can list two institutions under one code, so the code
+            // alone is not a unique key; the pair is.
+            <option key={`${bank.code}:${bank.name}`} value={bank.code}>
               {bank.name}
             </option>
           ))}
