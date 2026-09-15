@@ -24,6 +24,25 @@ type CollectionCardProps = {
   collection: ExploreCollectionCard;
 };
 
+/** Public wording for each attestation badge status. */
+const ATTESTATION_BADGE_LABELS: Record<string, string> = {
+  attested: "Attested",
+  conditionally_attested: "Conditionally attested",
+};
+
+/**
+ * Public wording for an attestation badge status, e.g. "Conditionally attested".
+ *
+ * The status already carries the outcome, so callers show this alone rather
+ * than pairing it with the outcome ("Conditional: Conditional").
+ *
+ * @param status - The badge status from the Explore API.
+ * @returns The display label.
+ */
+export function attestationBadgeLabel(status: string): string {
+  return ATTESTATION_BADGE_LABELS[status] ?? formatLabel(status);
+}
+
 /**
  * Render a compact public Attestation trust badge.
  *
@@ -40,12 +59,12 @@ export function AttestationBadge({
     attested: {
       className: "border-success/30 bg-success/10 text-success",
       icon: CheckCircledIcon,
-      label: "Attested",
+      label: attestationBadgeLabel("attested"),
     },
     conditionally_attested: {
       className: "border-info/30 bg-info/10 text-info",
       icon: InfoCircledIcon,
-      label: "Conditional",
+      label: attestationBadgeLabel("conditionally_attested"),
     },
   }[badge.status];
   const Icon = statusConfig.icon;
@@ -79,7 +98,9 @@ export function AttestationBadge({
       ].join(" ")}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-      {statusConfig.label}: {formatLabel(badge.outcome)}
+      {/* The status already names the outcome; repeating it read as
+          "Conditional: Conditional". */}
+      {statusConfig.label}
       {reportLabel}
     </span>
   );

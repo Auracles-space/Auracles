@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AttestationBadge,
+  attestationBadgeLabel,
   CollectionCard,
   FrameworkCard,
 } from "@/components/modules/explore/framework-card";
@@ -113,7 +114,17 @@ describe("AttestationBadge", () => {
   it("renders conditional attestations distinctly with report count", () => {
     render(<AttestationBadge badge={framework.attestation_badge!} />);
 
-    expect(screen.getByText(/Conditional: Conditional/)).toBeInTheDocument();
+    // The heading already says conditional; repeating the outcome read as
+    // "Conditional: Conditional" on the card.
+    expect(screen.getByText(/Conditionally attested/)).toBeInTheDocument();
+    expect(screen.queryByText(/Conditional: Conditional/)).toBeNull();
     expect(screen.getByText(/2 reports/)).toBeInTheDocument();
+  });
+});
+
+describe("attestationBadgeLabel", () => {
+  it("names each public badge status once", () => {
+    expect(attestationBadgeLabel("attested")).toBe("Attested");
+    expect(attestationBadgeLabel("conditionally_attested")).toBe("Conditionally attested");
   });
 });
