@@ -123,6 +123,39 @@ describe("AttestationWorkspace", () => {
     expect(screen.queryByRole("button", { name: /start review/i })).toBeNull();
   });
 
+  it("orders the review as it is done: files, scoring, annotations, then questions and the report", async () => {
+    // On a phone the columns stack in document order. The report used to lead,
+    // above the scoring it depends on, so reviewers scrolled past an unfinished
+    // report to reach the rubric.
+    vi.mocked(getAttestation).mockResolvedValue(
+      ok({
+        id: "att-1",
+        status: "in_review",
+        target_type: "framework",
+        review_type: "quality",
+        completion_due_at: null,
+      }) as never,
+    );
+    vi.mocked(listOrgAttestations).mockResolvedValue(queue());
+
+    render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
+
+    const report = await screen.findByText("Report");
+    const sequence = [
+      screen.getByText("Framework files"),
+      screen.getByText("Rubric"),
+      screen.getByText("Annotations"),
+      screen.getByText("Clarifications"),
+      report,
+    ];
+    for (let index = 1; index < sequence.length; index += 1) {
+      expect(
+        sequence[index - 1].compareDocumentPosition(sequence[index]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
   it("names the status in the attestor's vocabulary and shows the deadline", async () => {
     vi.mocked(getAttestation).mockResolvedValue(
       ok({

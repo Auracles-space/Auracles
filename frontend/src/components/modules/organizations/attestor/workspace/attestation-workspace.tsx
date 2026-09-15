@@ -167,18 +167,10 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
 
       {isStarted && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* The report and the requestor's questions are what the reviewer
-              came for, so on a phone they lead; on desktop they sit in the
-              right-hand column beside the evidence. */}
-          <div className="order-first space-y-6 lg:order-none lg:col-start-3">
-            <ClarificationsPanel attestationId={attestationId} canWrite={canWrite} />
-            <ReportPanel
-              attestationId={attestationId}
-              canWrite={canWrite}
-              orgId={orgId}
-              status={attestation.status}
-            />
-          </div>
+          {/* Document order follows the work, so a phone reads files ->
+              scoring -> annotations -> questions -> report; the report is
+              written last because it draws on the scores. On desktop the
+              questions and report sit in the right-hand column. */}
           <div className="space-y-6 lg:col-span-2 lg:col-start-1 lg:row-start-1">
             <FrameworkFilesPanel attestationId={attestationId} />
             <RubricPanel
@@ -187,6 +179,15 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
               canWrite={canWrite}
             />
             <AnnotationsPanel attestationId={attestationId} canWrite={canWrite} />
+          </div>
+          <div className="space-y-6 lg:col-start-3 lg:row-start-1">
+            <ClarificationsPanel attestationId={attestationId} canWrite={canWrite} />
+            <ReportPanel
+              attestationId={attestationId}
+              canWrite={canWrite}
+              orgId={orgId}
+              status={attestation.status}
+            />
           </div>
         </div>
       )}
