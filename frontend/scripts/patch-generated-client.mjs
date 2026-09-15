@@ -78,6 +78,7 @@ const compatibilityAliases = {
   getProject: "getProjectV1ProjectsProjectIdGet",
   getOrgProject: "getOrgProjectV1OrgsOrgIdProjectsProjectIdGet",
   getRelatedExploreFrameworks: "getRelatedFrameworksV1ExploreFrameworksFrameworkIdRelatedGet",
+  listAttestationReviewTypes: "listReviewTypesV1AttestationsReviewTypesGet",
   listAttestations: "listAttestationsV1AttestationsGet",
   listContributorFrameworks: "listFrameworksV1FrameworksGet",
   listExploreCollections: "listCollectionsV1ExploreCollectionsGet",

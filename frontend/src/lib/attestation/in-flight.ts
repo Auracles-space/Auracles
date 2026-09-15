@@ -55,3 +55,37 @@ export function inFlightAttestationsFor<T extends InFlightCandidate>(
       IN_FLIGHT_ATTESTATION_STATUSES.has(attestation.status),
   );
 }
+
+/** Public wording for a published attestation outcome. */
+export const ATTESTED_OUTCOME_LABELS: Record<string, string> = {
+  approved: "Attested",
+  conditional: "Conditionally attested",
+};
+
+/** The fields of a public attestation badge this module reads. */
+export type BadgeCandidate = {
+  review_type: string;
+  outcome: string;
+  newer_version_exists: boolean;
+};
+
+/**
+ * The review types attested for the framework's current version.
+ *
+ * The server refuses a review type already settled for the current version
+ * (`review_type_already_attested`); a newer version reopens it. Badges arrive
+ * newest first, so the first badge per review type wins.
+ *
+ * @param badges - Public badges from the framework detail endpoint.
+ * @returns Outcome keyed by review type, current-version badges only.
+ */
+export function attestedOnCurrentVersion(
+  badges: readonly BadgeCandidate[],
+): Record<string, string> {
+  const attested: Record<string, string> = {};
+  for (const badge of badges) {
+    if (badge.newer_version_exists || badge.review_type in attested) continue;
+    attested[badge.review_type] = badge.outcome;
+  }
+  return attested;
+}

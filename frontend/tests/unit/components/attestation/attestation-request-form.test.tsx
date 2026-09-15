@@ -6,6 +6,26 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { AttestationRequestForm } from "@/components/modules/attestation/attestation-request-form";
+import {
+  getExploreFrameworkDetail,
+  listAttestationReviewTypes,
+} from "@/lib/generated/sdk.gen";
+
+vi.mock("@/lib/generated/sdk.gen", () => ({
+  listAttestationReviewTypes: vi.fn(() =>
+    Promise.resolve({ data: { review_types: [] }, error: undefined, response: { ok: true } }),
+  ),
+  getExploreFrameworkDetail: vi.fn(() =>
+    Promise.resolve({ data: { attestation_badges: [] }, error: undefined, response: { ok: true } }),
+  ),
+}));
+
+const REVIEW_TYPES = [
+  { key: "quality", label: "Quality", description: "Is it complete and accurate?", fee_amount: "150000.00", currency: "NGN" },
+  { key: "compliance", label: "Compliance", description: "Does it meet the law?", fee_amount: "350000.00", currency: "NGN" },
+  { key: "expert", label: "Expert", description: "Is it technically sound?", fee_amount: "750000.00", currency: "NGN" },
+  { key: "provenance", label: "Provenance", description: "Is it original?", fee_amount: "150000.00", currency: "NGN" },
+];
 
 function renderForm() {
   render(
@@ -54,5 +74,49 @@ describe("AttestationRequestForm review types already in progress", () => {
     expect(
       (screen.getByRole("option", { name: "Compliance" }) as HTMLOptionElement).disabled,
     ).toBe(false);
+  });
+});
+
+describe("AttestationRequestForm review type details", () => {
+  it("shows each review type's fee and describes the chosen one", async () => {
+    vi.mocked(listAttestationReviewTypes).mockResolvedValue({
+      data: { review_types: REVIEW_TYPES },
+      error: undefined,
+      response: { ok: true },
+    } as never);
+    renderForm();
+
+    const compliance = await screen.findByRole("option", { name: /Compliance · ₦350,000/ });
+    expect(compliance).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Review type/i), { target: { value: "compliance" } });
+
+    expect(screen.getByText("Does it meet the law?")).toBeInTheDocument();
+  });
+
+  it("disables a review type already attested for the framework's current version", async () => {
+    vi.mocked(listAttestationReviewTypes).mockResolvedValue({
+      data: { review_types: REVIEW_TYPES },
+      error: undefined,
+      response: { ok: true },
+    } as never);
+    vi.mocked(getExploreFrameworkDetail).mockResolvedValue({
+      data: {
+        attestation_badges: [
+          { review_type: "quality", outcome: "conditional", newer_version_exists: false },
+        ],
+      },
+      error: undefined,
+      response: { ok: true },
+    } as never);
+    renderForm();
+
+    const quality = (await screen.findByRole("option", {
+      name: /Quality.*already attested/i,
+    })) as HTMLOptionElement;
+    expect(quality.disabled).toBe(true);
+    expect(getExploreFrameworkDetail).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { framework_id: "fw-1" } }),
+    );
   });
 });

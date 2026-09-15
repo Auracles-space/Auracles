@@ -82,6 +82,32 @@ RUBRICS: dict[str, list[RubricDimension]] = {
     ),
 }
 
+# Display name and one-line summary per review type, in the order the request
+# form offers them. Summaries tell a requestor what each review judges before
+# they pay for it.
+REVIEW_TYPE_OPTIONS: tuple[tuple[str, str, str], ...] = (
+    (
+        "quality",
+        "Quality",
+        "Is it complete, accurate, clear, current and ready to use?",
+    ),
+    (
+        "compliance",
+        "Compliance",
+        "Does it meet the laws and regulations of the jurisdictions it covers?",
+    ),
+    (
+        "expert",
+        "Expert",
+        "Is it technically and methodologically sound for its domain?",
+    ),
+    (
+        "provenance",
+        "Provenance",
+        "Is it original, properly sourced and genuinely the author's own work?",
+    ),
+)
+
 METHODOLOGY: dict[str, str] = {
     "quality": (
         "This review assessed completeness, implementability, accuracy, clarity, "

@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Names the attestations already in progress for a framework, beside the
- * "Request attestation" link in the framework workspace.
+ * Names the attestations in progress, and the review types already attested
+ * for the current version, beside the "Request attestation" link in the
+ * framework workspace.
  *
  * A framework may hold one in-flight request per review type. Without this
  * note the link looked the same with a review running, so a requestor picked
@@ -18,7 +19,12 @@ import { useEffect, useState } from "react";
 import { configureBrowserClient, getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { listAttestations } from "@/lib/generated/sdk.gen";
 import type { AttestationRequestResponse } from "@/lib/generated/types.gen";
-import { REVIEW_TYPE_LABELS, inFlightAttestationsFor } from "@/lib/attestation/in-flight";
+import {
+  ATTESTED_OUTCOME_LABELS,
+  REVIEW_TYPE_LABELS,
+  inFlightAttestationsFor,
+} from "@/lib/attestation/in-flight";
+import { useAttestedReviewTypes } from "@/lib/attestation/use-review-options";
 
 /**
  * Render one link per in-progress attestation of the framework.
@@ -27,6 +33,7 @@ import { REVIEW_TYPE_LABELS, inFlightAttestationsFor } from "@/lib/attestation/i
  */
 export function InFlightAttestationNotes({ frameworkId }: { frameworkId: string }) {
   const [running, setRunning] = useState<AttestationRequestResponse[]>([]);
+  const attested = useAttestedReviewTypes(frameworkId);
 
   useEffect(() => {
     let active = true;
@@ -45,12 +52,23 @@ export function InFlightAttestationNotes({ frameworkId }: { frameworkId: string 
     };
   }, [frameworkId]);
 
-  if (running.length === 0) {
+  const attestedEntries = Object.entries(attested);
+  if (running.length === 0 && attestedEntries.length === 0) {
     return null;
   }
 
   return (
     <>
+      {attestedEntries.map(([reviewType, outcome]) => (
+        <span
+          className="inline-flex min-h-12 items-center px-2 text-sm font-semibold text-foreground-muted"
+          key={`attested-${reviewType}`}
+        >
+          {`${REVIEW_TYPE_LABELS[reviewType] ?? reviewType} · ${
+            ATTESTED_OUTCOME_LABELS[outcome] ?? outcome
+          }`}
+        </span>
+      ))}
       {running.map((attestation) => (
         <Link
           className="inline-flex min-h-12 items-center rounded-xl px-2 text-sm font-semibold text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"

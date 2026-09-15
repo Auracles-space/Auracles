@@ -30,7 +30,7 @@ from app.modules.attestation.models import (
 )
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import Framework, FrameworkVersion
 from app.modules.webhooks.models import WebhookEvent
 from app.shared.models.audit_log import AuditLog
 
@@ -162,6 +162,7 @@ async def reset_attestation_state() -> None:
             await session.execute(delete(Escrow))
             await session.execute(delete(Transaction))
             await session.execute(delete(Credential))
+            await session.execute(delete(FrameworkVersion))
             await session.execute(delete(Framework))
             await session.execute(delete(AuditLog))
             await session.execute(delete(UserRole))
@@ -298,9 +299,7 @@ async def _stub_stripe(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(stripe, "create_customer", fake_create_customer)
     monkeypatch.setattr(stripe, "create_payment_intent", fake_create_payment_intent)
-    monkeypatch.setattr(
-        stripe, "retrieve_payment_intent", fake_retrieve_payment_intent
-    )
+    monkeypatch.setattr(stripe, "retrieve_payment_intent", fake_retrieve_payment_intent)
 
 
 async def _create_framework(owner_id: UUID, status_value: str = "published") -> UUID:
@@ -992,6 +991,141 @@ async def test_operator_cannot_request_on_unpublished_framework(
     )
 
     assert response.status_code == 404
+
+
+async def test_review_types_list_labels_descriptions_and_fees(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+) -> None:
+    """The request form reads each review type's description and live fee.
+
+    Public: the fee is shown before a requestor commits, and the values come
+    from platform config so an admin repricing shows up immediately.
+    """
+    del migrated_database, attestation_context
+
+    response = await client.get("/v1/attestations/review-types")
+
+    assert response.status_code == 200
+    items = {item["key"]: item for item in response.json()["review_types"]}
+    assert list(items) == ["quality", "compliance", "expert", "provenance"]
+    assert items["quality"]["label"] == "Quality"
+    assert items["quality"]["fee_amount"] == "500.00"
+    assert items["compliance"]["fee_amount"] == "1200.00"
+    assert items["quality"]["currency"]
+    for item in items.values():
+        assert item["description"].strip()
+
+
+async def _settle_review_on_current_version(
+    framework_id: UUID, requestor_id: UUID, review_type: str
+) -> None:
+    """Record a released attestation of ``review_type`` on the current version."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await session.get(Framework, framework_id)
+            assert framework is not None
+            version = FrameworkVersion(
+                framework_id=framework_id,
+                version=framework.version,
+                change_type="major",
+                change_log="Initial release.",
+                published_at=datetime.now(UTC),
+            )
+            session.add(version)
+            await session.flush()
+            session.add(
+                Attestation(
+                    target_type="framework",
+                    target_id=framework_id,
+                    requestor_id=requestor_id,
+                    status="released",
+                    outcome="conditional",
+                    review_type=review_type,
+                    brief=_FRAMEWORK_BRIEF,
+                    requested_specializations=["compliance"],
+                    requested_jurisdictions=["US"],
+                    fee_amount=Decimal("500.00"),
+                    currency="USD",
+                    framework_version_id=version.id,
+                )
+            )
+
+
+async def test_review_type_already_attested_on_this_version_is_refused(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A settled review type cannot be bought again for the same version.
+
+    Human decision 2026-09-15: re-attesting a review type makes sense only for a
+    newer version; other review types stay open.
+    """
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("fw-attested@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    await _settle_review_on_current_version(framework_id, contributor_id, "quality")
+    headers = auth_headers(contributor_id, ["contributor"])
+    base_payload = {
+        "target_type": "framework",
+        "target_id": str(framework_id),
+        "brief": _FRAMEWORK_BRIEF,
+        "requested_specializations": ["compliance"],
+        "requested_jurisdictions": ["US"],
+    }
+
+    again = await client.post(
+        "/v1/attestations",
+        headers=headers,
+        json={**base_payload, "review_type": "quality"},
+    )
+    other = await client.post(
+        "/v1/attestations",
+        headers=headers,
+        json={**base_payload, "review_type": "compliance"},
+    )
+
+    assert again.status_code == 409
+    assert again.json()["detail"]["error_code"] == "review_type_already_attested"
+    assert other.status_code == 201
+
+
+async def test_review_type_can_be_attested_again_on_a_newer_version(
+    client: AsyncClient,
+    migrated_database: None,
+    attestation_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once the framework moves to a new version, the review type reopens."""
+    del migrated_database, attestation_context
+    await _stub_stripe(monkeypatch)
+    contributor_id = await create_user("fw-reattest@auracles.space", ["contributor"])
+    framework_id = await _create_framework(contributor_id)
+    await _settle_review_on_current_version(framework_id, contributor_id, "quality")
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await session.get(Framework, framework_id)
+            assert framework is not None
+            framework.version = "2.0.0"
+
+    response = await client.post(
+        "/v1/attestations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={
+            "target_type": "framework",
+            "target_id": str(framework_id),
+            "review_type": "quality",
+            "brief": _FRAMEWORK_BRIEF,
+            "requested_specializations": ["compliance"],
+            "requested_jurisdictions": ["US"],
+        },
+    )
+
+    assert response.status_code == 201
 
 
 async def test_same_target_different_review_type_allowed(

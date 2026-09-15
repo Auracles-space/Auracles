@@ -70,6 +70,7 @@ from app.modules.attestation.schemas import (
     CredentialsResponse,
     CredentialUpdateRequest,
     RequestorReportRubricResponse,
+    ReviewTypesResponse,
     RubricDimensionItem,
     RubricScoreItem,
     RubricScoreResponse,
@@ -120,6 +121,21 @@ def _credential_response(credential: _CredentialModel) -> CredentialResponse:
 
 
 RequestorUser = Annotated[User, Depends(require_role("contributor", "operator"))]
+
+
+@router.get(
+    "/attestations/review-types",
+    response_model=ReviewTypesResponse,
+    summary="List framework review types with fees",
+    description=(
+        "Return each framework review type with a one-line summary of what it "
+        "judges and its current fee. Public so the fee is visible before a "
+        "request is made."
+    ),
+)
+async def list_review_types(db: DatabaseSession) -> ReviewTypesResponse:
+    """Return framework review types, their summaries, and live fees."""
+    return await attestation_service.list_review_types(db)
 
 
 @router.post(

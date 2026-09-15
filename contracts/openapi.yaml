@@ -14765,6 +14765,45 @@ components:
       - new_password
       title: ResetPasswordRequest
       type: object
+    ReviewTypeOption:
+      properties:
+        key:
+          type: string
+          title: Key
+        label:
+          type: string
+          title: Label
+        description:
+          type: string
+          title: Description
+        fee_amount:
+          type: string
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Fee Amount
+        currency:
+          type: string
+          title: Currency
+      type: object
+      required:
+      - key
+      - label
+      - description
+      - fee_amount
+      - currency
+      title: ReviewTypeOption
+      description: One framework review type with what it judges and its current fee.
+    ReviewTypesResponse:
+      properties:
+        review_types:
+          items:
+            $ref: '#/components/schemas/ReviewTypeOption'
+          type: array
+          title: Review Types
+      type: object
+      required:
+      - review_types
+      title: ReviewTypesResponse
+      description: Framework review types in the order the request form offers them.
     RoleAssignmentResponse:
       description: Response body for role assignment endpoints.
       properties:
@@ -18884,6 +18923,22 @@ paths:
       summary: Read the provider webhook delivery log
       tags:
       - Admin
+  /v1/attestations/review-types:
+    get:
+      tags:
+      - Attestation
+      summary: List framework review types with fees
+      description: Return each framework review type with a one-line summary of what
+        it judges and its current fee. Public so the fee is visible before a request
+        is made.
+      operationId: list_review_types_v1_attestations_review_types_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewTypesResponse'
   /v1/attestations:
     get:
       description: List Attestations visible to the authenticated user by workflow

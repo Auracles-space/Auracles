@@ -26,6 +26,11 @@ import {
   inFlightAttestationsFor,
   type InFlightCandidate,
 } from "@/lib/attestation/in-flight";
+import {
+  useAttestedReviewTypes,
+  useReviewTypes,
+} from "@/lib/attestation/use-review-options";
+import { formatMoney } from "@/lib/marketplace/format";
 
 /** Server cap on each free-text brief field (`AttestationBrief` in the API). */
 export const BRIEF_FIELD_MAX_LENGTH = 2000;
@@ -93,6 +98,20 @@ export function AttestationRequestForm({
   const [country, setCountry] = useState(defaultBillingCountry);
 
   const effectiveTarget = pinned?.id ?? targetId;
+  const reviewTypes = useReviewTypes();
+  const attestedReviewTypes = useAttestedReviewTypes(effectiveTarget);
+  // Fall back to bare names until the fee list loads (or if it fails).
+  const reviewOptions =
+    reviewTypes.length > 0
+      ? reviewTypes
+      : Object.entries(REVIEW_TYPE_LABELS).map(([key, label]) => ({
+          key,
+          label,
+          description: "",
+          fee_amount: "",
+          currency: "",
+        }));
+  const chosenReviewType = reviewOptions.find((option) => option.key === reviewType);
   const busyReviewTypes = new Set(
     inFlightAttestationsFor(inFlight, effectiveTarget).map(
       (attestation) => attestation.review_type,
@@ -194,12 +213,33 @@ export function AttestationRequestForm({
             value={reviewType}
           >
             <option value="">Select a review type</option>
-            {Object.entries(REVIEW_TYPE_LABELS).map(([value, label]) => (
-              <option disabled={busyReviewTypes.has(value)} key={value} value={value}>
-                {busyReviewTypes.has(value) ? `${label} (review in progress)` : label}
-              </option>
-            ))}
+            {reviewOptions.map((option) => {
+              const inProgress = busyReviewTypes.has(option.key);
+              const attested = option.key in attestedReviewTypes;
+              const fee = option.fee_amount
+                ? ` · ${formatMoney(String(option.fee_amount), option.currency)}`
+                : "";
+              const note = inProgress
+                ? " (review in progress)"
+                : attested
+                  ? " (already attested for this version)"
+                  : "";
+              return (
+                <option
+                  disabled={inProgress || attested}
+                  key={option.key}
+                  value={option.key}
+                >
+                  {`${option.label}${fee}${note}`}
+                </option>
+              );
+            })}
           </Select>
+          {chosenReviewType?.description ? (
+            <span className="text-sm font-normal text-foreground-muted">
+              {chosenReviewType.description}
+            </span>
+          ) : null}
         </label>
       </div>
 

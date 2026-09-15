@@ -5253,6 +5253,24 @@ export type ResetPasswordRequest = {
 };
 
 /**
+ * One framework review type with what it judges and its current fee.
+ */
+export type ReviewTypeOption = {
+    key: string;
+    label: string;
+    description: string;
+    fee_amount: string;
+    currency: string;
+};
+
+/**
+ * Framework review types in the order the request form offers them.
+ */
+export type ReviewTypesResponse = {
+    review_types: Array<ReviewTypeOption>;
+};
+
+/**
  * Response body for role assignment endpoints.
  */
 export type RoleAssignmentResponse = {
@@ -6574,6 +6592,10 @@ export type ListAdminWebhookEventsV1AdminWebhookEventsGetData = {
 export type ListAdminWebhookEventsV1AdminWebhookEventsGetResponse = (AdminWebhookEventsResponse);
 
 export type ListAdminWebhookEventsV1AdminWebhookEventsGetError = (HTTPValidationError);
+
+export type ListReviewTypesV1AttestationsReviewTypesGetResponse = (ReviewTypesResponse);
+
+export type ListReviewTypesV1AttestationsReviewTypesGetError = unknown;
 
 export type ListAttestationsV1AttestationsGetData = {
     query?: {

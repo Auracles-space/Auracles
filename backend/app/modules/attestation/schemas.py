@@ -457,6 +457,22 @@ class AttestationDisputeSummary(BaseModel):
     created_at: datetime
 
 
+class ReviewTypeOption(BaseModel):
+    """One framework review type with what it judges and its current fee."""
+
+    key: str
+    label: str
+    description: str
+    fee_amount: Decimal
+    currency: str
+
+
+class ReviewTypesResponse(BaseModel):
+    """Framework review types in the order the request form offers them."""
+
+    review_types: list[ReviewTypeOption]
+
+
 class AttestationRequestResponse(BaseModel):
     """Attestation request details visible to requestor and assigned Attestor."""
 

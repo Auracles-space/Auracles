@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { inFlightAttestationsFor } from "./in-flight";
+import { attestedOnCurrentVersion, inFlightAttestationsFor } from "./in-flight";
 
 const base = { target_type: "framework", target_id: "fw-1" };
 
@@ -18,5 +18,17 @@ describe("inFlightAttestationsFor", () => {
     );
 
     expect(result.map((item) => item.id)).toEqual(["a1", "a4"]);
+  });
+});
+
+describe("attestedOnCurrentVersion", () => {
+  it("keeps the newest current-version badge per review type", () => {
+    const result = attestedOnCurrentVersion([
+      { review_type: "quality", outcome: "conditional", newer_version_exists: false },
+      { review_type: "quality", outcome: "approved", newer_version_exists: false },
+      { review_type: "expert", outcome: "approved", newer_version_exists: true },
+    ]);
+
+    expect(result).toEqual({ quality: "conditional" });
   });
 });

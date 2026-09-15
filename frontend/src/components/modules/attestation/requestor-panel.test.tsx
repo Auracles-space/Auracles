@@ -69,6 +69,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
     ],
   })),
   requestAttestation: vi.fn(async () => ({ response: { ok: true }, data: {} })),
+  // The request form reads review types (fees, summaries) on mount.
+  listAttestationReviewTypes: vi.fn(async () => ({
+    response: { ok: true },
+    data: { review_types: [] },
+  })),
   getExploreFrameworkDetail: vi.fn(async () => ({
     response: { ok: true },
     data: { id: "99999999-9999-9999-9999-999999999999", title: "Supplier Audit Kit" },
@@ -448,7 +453,9 @@ describe("RequestorPanel prefilled target", () => {
         "The framework owner must approve this request before you pay.",
       ),
     ).toBeNull();
-    expect(getExploreFrameworkDetail).not.toHaveBeenCalled();
+    // The title comes from the requester's own list, not the public page. The
+    // form does read the public page, but only for attested review types.
+    expect(screen.queryByText("Supplier Audit Kit")).toBeNull();
   });
 
   it("requests the pinned framework when the brief is submitted", async () => {

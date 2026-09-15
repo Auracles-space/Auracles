@@ -23,9 +23,10 @@ from app.integrations import paystack, stripe
 from app.integrations.payment_router import select_provider
 from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
-from app.modules.attestation import dispute_service
+from app.modules.attestation import dispute_service, rubrics
 from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
+    SETTLED_ATTESTATION_STATUSES,
     Attestation,
     AttestationDispute,
     AttestationOffer,
@@ -42,12 +43,15 @@ from app.modules.attestation.schemas import (
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
     RequestorRubricItem,
+    ReviewTypeOption,
+    ReviewTypesResponse,
 )
 from app.modules.auth.models import User
 from app.modules.financials import escrow_service
 from app.modules.financials.models import Escrow, PlatformConfig, Transaction
 from app.modules.frameworks.models import Framework, FrameworkVersion
 from app.modules.organizations.models import Organization, OrgMember
+from app.shared.errors import error_detail
 
 IN_FLIGHT_ATTESTATION_STATUSES = {
     "pending_fee",
@@ -352,6 +356,12 @@ async def request_attestation(
         target_id=payload.target_id,
         review_type=payload.review_type,
     )
+    if payload.target_type == "framework" and payload.review_type is not None:
+        await _reject_review_type_attested_on_current_version(
+            db=db,
+            framework_id=payload.target_id,
+            review_type=payload.review_type,
+        )
     amount = await _attestation_fee(db, payload.target_type, payload.review_type)
 
     if not initiator_is_owner:
@@ -976,6 +986,46 @@ async def _validate_attestation_target(
     )
 
 
+async def _reject_review_type_attested_on_current_version(
+    db: AsyncSession,
+    *,
+    framework_id: UUID,
+    review_type: str,
+) -> None:
+    """Refuse a review type already settled for the framework's current version.
+
+    Human decision 2026-09-15: a review type is attested once per framework
+    version, whoever asked and whatever the outcome, so a requestor cannot shop
+    for a different attestor on unchanged content. A newer version reopens it.
+
+    Raises:
+        HTTPException(409): ``review_type_already_attested``.
+    """
+    version_id = await _current_framework_version_id(db, framework_id=framework_id)
+    if version_id is None:
+        return
+    settled_id = await db.scalar(
+        select(Attestation.id)
+        .where(
+            Attestation.target_type == "framework",
+            Attestation.target_id == framework_id,
+            Attestation.review_type == review_type,
+            Attestation.framework_version_id == version_id,
+            Attestation.status.in_(SETTLED_ATTESTATION_STATUSES),
+        )
+        .limit(1)
+    )
+    if settled_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=error_detail(
+                "review_type_already_attested",
+                "This review type is already attested for the current version. "
+                "Publish a new version to request it again.",
+            ),
+        )
+
+
 async def _reject_duplicate_in_flight_request(
     db: AsyncSession,
     *,
@@ -1006,6 +1056,33 @@ async def _reject_duplicate_in_flight_request(
             status_code=status.HTTP_409_CONFLICT,
             detail="An Attestation request for this target is already in flight.",
         )
+
+
+async def list_review_types(db: AsyncSession) -> ReviewTypesResponse:
+    """Return every framework review type with its summary and live fee.
+
+    Fees are read from platform config on each call, so an admin repricing a
+    review type is what the next requestor sees.
+
+    Args:
+        db: Async database session.
+
+    Returns:
+        The review types in request-form order.
+    """
+    currency = platform_currency()
+    return ReviewTypesResponse(
+        review_types=[
+            ReviewTypeOption(
+                key=key,
+                label=label,
+                description=description,
+                fee_amount=await _attestation_fee(db, "framework", key),
+                currency=currency,
+            )
+            for key, label, description in rubrics.REVIEW_TYPE_OPTIONS
+        ]
+    )
 
 
 async def _attestation_fee(

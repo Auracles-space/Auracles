@@ -8,7 +8,7 @@ import {
 import { type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { listAttestations } from "@/lib/generated/sdk.gen";
+import { getExploreFrameworkDetail, listAttestations } from "@/lib/generated/sdk.gen";
 import { FrameworkEditor } from "@/components/modules/frameworks/framework-editor";
 import { ToastProvider } from "@/components/ui/toast";
 import type {
@@ -74,6 +74,9 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   unpublishFramework: vi.fn(),
   relistFramework: vi.fn(),
   // The in-progress attestation note reads the requestor's own requests.
+  getExploreFrameworkDetail: vi.fn(() =>
+    Promise.resolve({ data: { attestation_badges: [] }, error: undefined, response: { ok: true } }),
+  ),
   listAttestations: vi.fn(() =>
     Promise.resolve({ data: { attestations: [] }, error: undefined, response: { ok: true } }),
   ),
@@ -275,6 +278,25 @@ describe("FrameworkEditor", () => {
     expect(view).toHaveAttribute("href", "/attestations/att-1");
     expect(screen.queryByText(/Compliance review in progress/i)).toBeNull();
     expect(screen.getByRole("link", { name: "Request attestation" })).toBeInTheDocument();
+  });
+
+  it("names review types already attested for the current version", async () => {
+    mockLoad(makeFramework({ status: "published" }));
+    vi.mocked(getExploreFrameworkDetail).mockResolvedValue({
+      data: {
+        attestation_badges: [
+          { review_type: "quality", outcome: "conditional", newer_version_exists: false },
+          { review_type: "expert", outcome: "approved", newer_version_exists: true },
+        ],
+      },
+      error: undefined,
+      response: { ok: true },
+    } as never);
+
+    renderPersonalEditor();
+
+    expect(await screen.findByText("Quality · Conditionally attested")).toBeInTheDocument();
+    expect(screen.queryByText(/Expert ·/)).toBeNull();
   });
 
   it("offers no attestation request while the framework is a draft", async () => {
