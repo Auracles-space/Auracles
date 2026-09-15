@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { upsertRubricScore, listRubricScores } from "@/lib/generated/sdk.gen";
+import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import { RubricPanel } from "./rubric-panel";
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
@@ -81,6 +82,41 @@ describe("RubricPanel autosave", () => {
         }),
       ),
     );
+  });
+
+  it("announces a saved rubric row so the report recounts its words", async () => {
+    const listener = vi.fn();
+    window.addEventListener(RUBRIC_SAVED_EVENT, listener);
+    try {
+      render(<RubricPanel attestationId="att-1" reviewType="quality" canWrite />);
+
+      const comment = await screen.findByPlaceholderText(/Provide justification/i);
+      fireEvent.change(comment, { target: { value: "Solid coverage overall." } });
+      fireEvent.blur(comment);
+
+      await waitFor(() => expect(listener).toHaveBeenCalledTimes(1));
+    } finally {
+      window.removeEventListener(RUBRIC_SAVED_EVENT, listener);
+    }
+  });
+
+  it("does not announce a rubric row that failed to save", async () => {
+    vi.mocked(upsertRubricScore).mockResolvedValue({
+      response: { ok: false },
+      error: { detail: "nope" },
+    } as never);
+    const listener = vi.fn();
+    window.addEventListener(RUBRIC_SAVED_EVENT, listener);
+    try {
+      render(<RubricPanel attestationId="att-1" reviewType="quality" canWrite />);
+
+      fireEvent.click(await screen.findByRole("button", { name: "3" }));
+
+      expect(await screen.findByText("Error saving")).toBeInTheDocument();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(RUBRIC_SAVED_EVENT, listener);
+    }
   });
 
   it("persists a comment even before a score is chosen", async () => {

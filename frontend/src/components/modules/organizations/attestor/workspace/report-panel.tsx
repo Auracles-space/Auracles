@@ -11,6 +11,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import {
   createAttestationEvidenceUpload,
   listRubricScores,
@@ -90,7 +91,8 @@ export function ReportPanel({
 
   useEffect(() => {
     let active = true;
-    (async () => {
+    /** Re-read rubric comment words; called on mount and after every rubric save. */
+    async function loadRubricWords() {
       try {
         const res = await listRubricScores({
           path: { attestation_id: attestationId },
@@ -110,9 +112,15 @@ export function ReportPanel({
         // Non-fatal: the counter falls back to summary/conditions words and the
         // backend 422 still guards submission.
       }
-    })();
+    }
+    void loadRubricWords();
+    // Comments are written in the rubric panel after this panel mounts, so a
+    // one-off read left the counter stuck at the mount-time total.
+    const onRubricSaved = () => void loadRubricWords();
+    window.addEventListener(RUBRIC_SAVED_EVENT, onRubricSaved);
     return () => {
       active = false;
+      window.removeEventListener(RUBRIC_SAVED_EVENT, onRubricSaved);
     };
   }, [attestationId]);
 

@@ -5,13 +5,14 @@
  * `evidence_references.file_keys` shape.
  */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAttestationEvidenceUpload,
   listRubricScores,
   submitAttestationReport,
 } from "@/lib/generated/sdk.gen";
+import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import { ReportPanel } from "./report-panel";
 
 vi.mock("next/navigation", () => ({
@@ -116,6 +117,25 @@ describe("ReportPanel", () => {
     const longSummary = Array.from({ length: 160 }, () => "finding").join(" ");
     fireEvent.change(summaryInput(), { target: { value: longSummary } });
     await waitFor(() => expect(submit).toBeEnabled());
+  });
+
+  it("recounts rubric comment words when a rubric score is saved", async () => {
+    // The count was read once on mount, so comments saved afterwards never
+    // reached it and the report stayed "too short" until a reload.
+    vi.mocked(listRubricScores)
+      .mockResolvedValueOnce(rubricWithWords(0) as never)
+      .mockResolvedValue(rubricWithWords(160) as never);
+
+    render(
+      <ReportPanel attestationId="att-1" canWrite orgId="org-1" status="in_review" />,
+    );
+    expect(await screen.findByText(/Rubric comments 0 \+/)).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new Event(RUBRIC_SAVED_EVENT));
+    });
+
+    expect(await screen.findByText(/Rubric comments 160 \+/)).toBeInTheDocument();
   });
 
   it("requires conditions when the outcome is conditional", async () => {

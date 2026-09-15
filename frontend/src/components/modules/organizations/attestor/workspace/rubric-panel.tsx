@@ -13,6 +13,7 @@ import type { RubricDimensionItem } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
+import { emitRubricSaved } from "@/lib/attestation/workspace-events";
 
 export interface RubricPanelProps {
   attestationId: string;
@@ -143,6 +144,8 @@ function RubricDimensionCard({
       });
       if (res.error) throw new Error("Failed to save score");
       setSaveStatus("saved");
+      // The report panel's word counter includes rubric comments.
+      emitRubricSaved();
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch {
       setSaveStatus("error");
