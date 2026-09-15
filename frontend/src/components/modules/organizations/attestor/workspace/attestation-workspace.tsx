@@ -115,6 +115,10 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
   const canWrite = Boolean(queueItem?.assigned_to_me);
   // The review is "started" once it moves past the freshly-accepted state.
   const isStarted = attestation.status !== "accepted";
+  // Scores, annotations and questions are accepted by the server only while
+  // the review is in progress; afterwards the workspace is a read-only record.
+  const reviewInProgress = attestation.status === "in_review";
+  const canEditReview = canWrite && reviewInProgress;
   const frameworkLabel =
     queueItem?.target_title ??
     attestation.target_title ??
@@ -176,12 +180,20 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
             <RubricPanel
               attestationId={attestationId}
               reviewType={attestation.review_type || ""}
-              canWrite={canWrite}
+              canWrite={canEditReview}
             />
-            <AnnotationsPanel attestationId={attestationId} canWrite={canWrite} />
+            <AnnotationsPanel attestationId={attestationId} canWrite={canEditReview} />
           </div>
           <div className="space-y-6 lg:col-start-3 lg:row-start-1">
-            <ClarificationsPanel attestationId={attestationId} canWrite={canWrite} />
+            <ClarificationsPanel
+              attestationId={attestationId}
+              canWrite={canEditReview}
+              lockedReason={
+                canWrite && !reviewInProgress
+                  ? "Questions can only be sent while the review is in progress."
+                  : undefined
+              }
+            />
             <ReportPanel
               attestationId={attestationId}
               canWrite={canWrite}

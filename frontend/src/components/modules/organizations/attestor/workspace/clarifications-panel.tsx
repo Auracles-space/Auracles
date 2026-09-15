@@ -16,9 +16,15 @@ import { Badge } from "@/components/ui/badge";
 export interface ClarificationsPanelProps {
   attestationId: string;
   canWrite: boolean;
+  /** Why the reviewer can no longer ask, shown in place of the Ask button. */
+  lockedReason?: string;
 }
 
-export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsPanelProps) {
+export function ClarificationsPanel({
+  attestationId,
+  canWrite,
+  lockedReason,
+}: ClarificationsPanelProps) {
   const [clarifications, setClarifications] = useState<ClarificationResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -90,7 +96,7 @@ export function ClarificationsPanel({ attestationId, canWrite }: ClarificationsP
             Clarifications
           </h2>
           <p className="mt-1 text-sm text-foreground-muted">
-            Ask the requestor for additional details or clarification.
+            {lockedReason ?? "Ask the requestor for additional details or clarification."}
           </p>
         </div>
         {canWrite && !isAsking && (

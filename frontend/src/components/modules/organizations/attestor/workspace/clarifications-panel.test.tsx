@@ -50,3 +50,28 @@ describe("ClarificationsPanel error handling", () => {
     expect(alertSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("ClarificationsPanel after the review", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(listAttestationClarifications).mockResolvedValue({
+      response: { ok: true },
+      data: [],
+    } as never);
+  });
+
+  it("explains that questions close once the review is no longer in progress", async () => {
+    render(
+      <ClarificationsPanel
+        attestationId="att-1"
+        canWrite={false}
+        lockedReason="Questions can only be sent while the review is in progress."
+      />,
+    );
+
+    expect(
+      await screen.findByText("Questions can only be sent while the review is in progress."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ask Question/i })).toBeNull();
+  });
+});

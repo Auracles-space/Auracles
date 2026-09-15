@@ -19,13 +19,19 @@ vi.mock("@/components/modules/organizations/attestor/workspace/framework-files-p
   FrameworkFilesPanel: () => <div>Framework files</div>,
 }));
 vi.mock("@/components/modules/organizations/attestor/workspace/rubric-panel", () => ({
-  RubricPanel: () => <div>Rubric</div>,
+  RubricPanel: ({ canWrite }: { canWrite: boolean }) => (
+    <div data-can-write={String(canWrite)}>Rubric</div>
+  ),
 }));
 vi.mock("@/components/modules/organizations/attestor/workspace/annotations-panel", () => ({
-  AnnotationsPanel: () => <div>Annotations</div>,
+  AnnotationsPanel: ({ canWrite }: { canWrite: boolean }) => (
+    <div data-can-write={String(canWrite)}>Annotations</div>
+  ),
 }));
 vi.mock("@/components/modules/organizations/attestor/workspace/clarifications-panel", () => ({
-  ClarificationsPanel: () => <div>Clarifications</div>,
+  ClarificationsPanel: ({ canWrite }: { canWrite: boolean }) => (
+    <div data-can-write={String(canWrite)}>Clarifications</div>
+  ),
 }));
 vi.mock("@/components/modules/organizations/attestor/workspace/report-panel", () => ({
   ReportPanel: () => <div>Report</div>,
@@ -154,6 +160,35 @@ describe("AttestationWorkspace", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     }
+  });
+
+  it.each(["report_submitted", "disputed", "released"])(
+    "locks scoring, annotations and questions once the review is %s",
+    async (status) => {
+      // The server only accepts these edits while the review is in progress;
+      // offering them afterwards ended in "not in a workspace-editable state".
+      vi.mocked(getAttestation).mockResolvedValue(
+        ok({ id: "att-1", status, target_type: "framework", review_type: "quality" }) as never,
+      );
+      vi.mocked(listOrgAttestations).mockResolvedValue(queue({ status }));
+
+      render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
+
+      expect(await screen.findByText("Clarifications")).toHaveAttribute("data-can-write", "false");
+      expect(screen.getByText("Rubric")).toHaveAttribute("data-can-write", "false");
+      expect(screen.getByText("Annotations")).toHaveAttribute("data-can-write", "false");
+    },
+  );
+
+  it("lets the assigned reviewer edit while the review is in progress", async () => {
+    vi.mocked(getAttestation).mockResolvedValue(
+      ok({ id: "att-1", status: "in_review", target_type: "framework", review_type: "quality" }) as never,
+    );
+    vi.mocked(listOrgAttestations).mockResolvedValue(queue());
+
+    render(<AttestationWorkspace orgId="org-1" attestationId="att-1" />);
+
+    expect(await screen.findByText("Clarifications")).toHaveAttribute("data-can-write", "true");
   });
 
   it("names the status in the attestor's vocabulary and shows the deadline", async () => {
