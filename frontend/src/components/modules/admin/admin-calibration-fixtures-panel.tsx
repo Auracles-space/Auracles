@@ -136,13 +136,18 @@ function FixtureDetail({ frameworkId }: { frameworkId: string }) {
     }
   }
 
+  /**
+   * Save one answer-key row and update it in place. Each row tracks its own
+   * saving state, so one save never disables the other rows or the Upload
+   * button (which keeps `busy` to itself).
+   *
+   * @returns An error message for the row, or null when saved.
+   */
   async function handleKeySave(
     dimensionId: string,
     expected: number,
     tolerance: number,
-  ) {
-    setBusy(true);
-    setError(null);
+  ): Promise<string | null> {
     try {
       const res = await upsertAnswerKey({
         path: { framework_id: frameworkId },
@@ -154,13 +159,21 @@ function FixtureDetail({ frameworkId }: { frameworkId: string }) {
         headers: getAccessTokenHeaders(),
       });
       if (res.error) {
-        setError(describeGeneratedError(res.error));
-        return;
+        return describeGeneratedError(res.error);
       }
-      await reload();
-    } finally {
-      setBusy(false);
+    } catch (caught) {
+      return describeGeneratedError(caught);
     }
+    // The endpoint answers 204, so reflect the stored values locally; the
+    // readiness line reads these rows.
+    setKeys((current) =>
+      current.map((key) =>
+        key.dimension_id === dimensionId
+          ? { ...key, expected_score: expected, tolerance }
+          : key,
+      ),
+    );
+    return null;
   }
 
   const hasClean = artifacts.some((a) => a.scan_status === "clean");
@@ -225,7 +238,7 @@ function FixtureDetail({ frameworkId }: { frameworkId: string }) {
         <h4 className="text-sm font-bold text-foreground">Answer key</h4>
         <ul className="mt-2 space-y-2">
           {keys.map((k) => (
-            <AnswerKeyRow key={k.dimension_id} row={k} disabled={busy} onSave={handleKeySave} />
+            <AnswerKeyRow key={k.dimension_id} row={k} onSave={handleKeySave} />
           ))}
         </ul>
       </div>
@@ -236,24 +249,36 @@ function FixtureDetail({ frameworkId }: { frameworkId: string }) {
 /** One editable answer-key row for a rubric dimension. */
 function AnswerKeyRow({
   row,
-  disabled,
   onSave,
 }: {
   row: TrialAnswerKeyItem;
-  disabled: boolean;
-  onSave: (dimensionId: string, expected: number, tolerance: number) => void;
+  onSave: (dimensionId: string, expected: number, tolerance: number) => Promise<string | null>;
 }) {
   const [expected, setExpected] = useState(row.expected_score ?? 3);
   const [tolerance, setTolerance] = useState(row.tolerance ?? 0);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  /** Save this row and show the outcome beside its button. */
+  async function save() {
+    setSaving(true);
+    setResult(null);
+    const failure = await onSave(row.dimension_id, expected, tolerance);
+    setSaving(false);
+    setResult(failure ? { ok: false, message: `Not saved: ${failure}` } : { ok: true, message: "Saved" });
+  }
   return (
-    <li className="grid gap-2 rounded-xl border border-border-default bg-surface-1 p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+    <li className="grid gap-2 rounded-xl border border-border-default bg-surface-1 p-3 sm:grid-cols-[1fr_auto_auto_minmax(9rem,auto)] sm:items-center">
       <span className="text-sm text-foreground">{row.label}</span>
       <label className="text-xs text-foreground-muted">
         Score
         <select
           aria-label={`${row.label} expected score`}
           value={expected}
-          onChange={(e) => setExpected(Number(e.target.value))}
+          onChange={(e) => {
+            setExpected(Number(e.target.value));
+            setResult(null);
+          }}
           className="ml-2 min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground"
         >
           {[1, 2, 3, 4, 5].map((n) => (
@@ -268,7 +293,10 @@ function AnswerKeyRow({
         <select
           aria-label={`${row.label} tolerance`}
           value={tolerance}
-          onChange={(e) => setTolerance(Number(e.target.value))}
+          onChange={(e) => {
+            setTolerance(Number(e.target.value));
+            setResult(null);
+          }}
           className="ml-2 min-h-11 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground"
         >
           {[0, 1, 2, 3, 4].map((n) => (
@@ -278,14 +306,23 @@ function AnswerKeyRow({
           ))}
         </select>
       </label>
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={disabled}
-        onClick={() => onSave(row.dimension_id, expected, tolerance)}
-      >
-        Save
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={saving}
+          loading={saving}
+          onClick={() => void save()}
+        >
+          Save
+        </Button>
+        <span
+          aria-live="polite"
+          className={`text-xs font-semibold ${result?.ok ? "text-success" : "text-error"}`}
+        >
+          {result?.message ?? ""}
+        </span>
+      </div>
     </li>
   );
 }

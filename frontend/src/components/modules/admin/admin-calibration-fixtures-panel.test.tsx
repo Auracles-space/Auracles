@@ -110,4 +110,63 @@ describe("AdminCalibrationFixturesPanel", () => {
       ),
     );
   });
+
+  describe("answer-key rows", () => {
+    const twoRows = () =>
+      vi.mocked(listAnswerKeys).mockResolvedValue(
+        ok({
+          review_type: "quality",
+          rows: [
+            { dimension_id: "dim-1", label: "Governance", expected_score: null, tolerance: null },
+            { dimension_id: "dim-2", label: "Clarity", expected_score: null, tolerance: null },
+          ],
+        }) as never,
+      );
+
+    async function openFixture() {
+      render(<AdminCalibrationFixturesPanel />);
+      await waitFor(() => expect(screen.getByText(/Quality Sample/)).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: /Quality Sample/i }));
+      await screen.findByText("Clarity");
+      return screen.getAllByRole("button", { name: /^Save$/i });
+    }
+
+    it("confirms the saved row and leaves Upload and the other rows alone", async () => {
+      // A shared busy flag disabled every Save and spun the Upload button, and
+      // nothing on the row said the save happened.
+      twoRows();
+      const [first, second] = await openFixture();
+
+      fireEvent.click(first);
+
+      expect(await screen.findByText("Saved")).toBeInTheDocument();
+      expect(second).toBeEnabled();
+      expect(screen.getByRole("button", { name: /^Upload$/i })).not.toHaveAttribute("aria-busy", "true");
+      // The row is updated in place rather than by reloading the whole fixture.
+      expect(vi.mocked(listAnswerKeys)).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps other rows saveable while one save is still in flight", async () => {
+      twoRows();
+      vi.mocked(upsertAnswerKey).mockReturnValue(new Promise(() => {}) as never);
+      const [first, second] = await openFixture();
+
+      fireEvent.click(first);
+
+      await waitFor(() => expect(first).toBeDisabled());
+      expect(second).toBeEnabled();
+    });
+
+    it("shows a failed save on its own row", async () => {
+      twoRows();
+      vi.mocked(upsertAnswerKey).mockRejectedValue(new Error("network down"));
+      const [first, second] = await openFixture();
+
+      fireEvent.click(first);
+
+      expect(await screen.findByText(/Not saved/)).toBeInTheDocument();
+      expect(first).toBeEnabled();
+      expect(second).toBeEnabled();
+    });
+  });
 });
