@@ -385,12 +385,13 @@ def notify_dispute_raised(
     recipient_id: UUID | None,
     dispute_id: UUID | None = None,
 ) -> None:
-    """Notify both parties that the requestor raised a dispute.
+    """Notify both parties and the admins that the requestor raised a dispute.
 
     The requestor gets a receipt (the dispute is theirs, but the page state
     changes under them and the admin timeline matters). ``recipient_id`` is
     the reviewing member's user id, resolved by the caller while the DB
-    session is live; None when no reviewing member is staffed.
+    session is live; None when no reviewing member is staffed. Admins, who
+    resolve the dispute, get one review notice per ``dispute_id``.
     """
     _dispatch(
         user_id=attestation.requestor_id,
