@@ -80,6 +80,10 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "attestation_fee_contributor",
     "attestation_fee_operator",
     "attestation_fee_credential",
+    "attestation_fee_review_quality",
+    "attestation_fee_review_compliance",
+    "attestation_fee_review_expert",
+    "attestation_fee_review_provenance",
     "attestation_cohort_size",
     "attestation_completion_sla_days_framework",
     "attestation_completion_sla_days_contributor",
@@ -147,6 +151,17 @@ ATTESTATION_FEE_RANGES = {
     "attestation_fee_contributor": (Decimal("25.00"), Decimal("100000.00")),
     "attestation_fee_operator": (Decimal("25.00"), Decimal("100000.00")),
     "attestation_fee_credential": (Decimal("10.00"), Decimal("100000.00")),
+    # Framework requests are billed per review type, in naira.
+    "attestation_fee_review_quality": (Decimal("1000.00"), Decimal("10000000.00")),
+    "attestation_fee_review_compliance": (
+        Decimal("1000.00"),
+        Decimal("10000000.00"),
+    ),
+    "attestation_fee_review_expert": (Decimal("1000.00"), Decimal("10000000.00")),
+    "attestation_fee_review_provenance": (
+        Decimal("1000.00"),
+        Decimal("10000000.00"),
+    ),
 }
 ATTESTATION_INTEGER_RANGES = {
     "attestation_cohort_size": (1, 10),

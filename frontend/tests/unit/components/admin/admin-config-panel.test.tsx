@@ -68,6 +68,30 @@ describe("AdminConfigPanel", () => {
     expect((await screen.findAllByText("Financial"))[0]).toBeInTheDocument();
   });
 
+  it("groups the framework review fees under Attestation fees", async () => {
+    // Framework requests are billed per review type; those fees must sit with
+    // the other attestation fees, not fall through to "Other".
+    vi.mocked(readPlatformConfig).mockResolvedValue(
+      ok({
+        items: [
+          ...configItems,
+          {
+            key: "attestation_fee_review_quality",
+            value: "150000.00",
+            editable: true,
+            updated_at: "2026-09-15T10:00:00Z",
+            updated_by: null,
+          },
+        ],
+      }),
+    );
+
+    render(<AdminConfigPanel />);
+
+    expect((await screen.findAllByText("Attestation fees"))[0]).toBeInTheDocument();
+    expect(screen.queryByText("Other")).not.toBeInTheDocument();
+  });
+
   it("filters settings through the search box", async () => {
     render(<AdminConfigPanel />);
     await screen.findAllByText("Financial");

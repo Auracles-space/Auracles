@@ -32,6 +32,10 @@ DEFAULT_PLATFORM_CONFIG = {
     "attestation_fee_contributor": "300.00",
     "attestation_fee_operator": "300.00",
     "attestation_fee_credential": "100.00",
+    "attestation_fee_review_quality": "150000.00",
+    "attestation_fee_review_compliance": "350000.00",
+    "attestation_fee_review_expert": "750000.00",
+    "attestation_fee_review_provenance": "150000.00",
     "attestation_cohort_size": "3",
     "attestation_completion_sla_days_framework": "7",
     "attestation_completion_sla_days_contributor": "7",
@@ -514,6 +518,61 @@ async def test_admin_updates_attestation_config_with_range_validation(
     assert config_rows["attestation_cohort_size"] == "5"
     assert invalid_fee.status_code == 422
     assert invalid_integer.status_code == 422
+
+
+async def test_admin_edits_framework_review_fees_within_naira_range(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """Framework attestation fees are priced per review type and admin-editable.
+
+    Framework requests are billed by review type, so the four review fees are
+    the ones that matter; they were missing from the editable list, leaving
+    pricing changes to a migration.
+    """
+    del migrated_database
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
+
+    listed = await client.get("/v1/admin/config", headers=auth_headers(admin_id))
+    config = {item["key"]: item for item in listed.json()["items"]}
+    for review_type in ("quality", "compliance", "expert", "provenance"):
+        assert config[f"attestation_fee_review_{review_type}"]["editable"] is True
+
+    valid = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Reprice the expert review for the pilot.",
+            "updates": [{"key": "attestation_fee_review_expert", "value": "800000"}],
+        },
+    )
+    too_low = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "updates": [{"key": "attestation_fee_review_quality", "value": "500"}],
+        },
+    )
+    too_high = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "updates": [{"key": "attestation_fee_review_quality", "value": "10000001"}],
+        },
+    )
+
+    assert valid.status_code == 200
+    async with async_session_factory() as session:
+        expert = await session.get(PlatformConfig, "attestation_fee_review_expert")
+    assert expert is not None
+    assert expert.value == "800000"
+    assert too_low.status_code == 422
+    assert too_high.status_code == 422
 
 
 async def test_admin_updates_saved_search_alert_cadence_with_range_validation(

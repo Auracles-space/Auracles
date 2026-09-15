@@ -75,10 +75,10 @@ def test_review_type_columns_enum_and_config(migrated_engine: Engine) -> None:
 
     assert {"review_type", "brief"}.issubset(columns)
     assert "attestation_review_type_enum" in enums
-    assert config["attestation_fee_review_quality"] == "500.00"
-    assert config["attestation_fee_review_compliance"] == "1200.00"
-    assert config["attestation_fee_review_expert"] == "2500.00"
-    assert config["attestation_fee_review_provenance"] == "500.00"
+    assert config["attestation_fee_review_quality"] == "150000.00"
+    assert config["attestation_fee_review_compliance"] == "350000.00"
+    assert config["attestation_fee_review_expert"] == "750000.00"
+    assert config["attestation_fee_review_provenance"] == "150000.00"
     assert config["attestation_completion_sla_days_framework"] == "10"
     assert config["attestation_completion_sla_days_credential"] == "10"
 

@@ -65,10 +65,11 @@ ATTESTATION_FEE_DEFAULTS = {
     "contributor": Decimal("300.00"),
     "operator": Decimal("300.00"),
     "credential": Decimal("100.00"),
-    "review_quality": Decimal("500.00"),
-    "review_compliance": Decimal("1200.00"),
-    "review_expert": Decimal("2500.00"),
-    "review_provenance": Decimal("500.00"),
+    # Naira: framework requests are billed per review type.
+    "review_quality": Decimal("150000.00"),
+    "review_compliance": Decimal("350000.00"),
+    "review_expert": Decimal("750000.00"),
+    "review_provenance": Decimal("150000.00"),
 }
 
 

@@ -59,6 +59,10 @@ const CONFIG_GROUPS: { title: string; keys: ConfigKey[] }[] = [
       "attestation_fee_contributor",
       "attestation_fee_operator",
       "attestation_fee_credential",
+      "attestation_fee_review_quality",
+      "attestation_fee_review_compliance",
+      "attestation_fee_review_expert",
+      "attestation_fee_review_provenance",
     ],
   },
   {
