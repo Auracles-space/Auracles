@@ -21,15 +21,18 @@ vi.mock("@/lib/auth/form-client", () => ({
   describeGeneratedError: vi.fn(() => "error"),
   getAccessTokenHeaders: vi.fn(() => ({})),
 }));
-vi.mock("@/lib/generated/sdk.gen", () => ({ changeOrgSlugV1OrgsOrgIdSlugPatch: vi.fn() }));
+vi.mock("@/lib/generated/sdk.gen", () => ({
+  changeOrgCountryV1OrgsOrgIdCountryPatch: vi.fn(),
+  changeOrgSlugV1OrgsOrgIdSlugPatch: vi.fn(),
+}));
 
 /** Context for a verified org with the given caller role. */
-function context(role: string) {
+function context(role: string, kybStatus = "verified") {
   return {
     orgId: "org-1",
     role,
-    org: { id: "org-1", name: "Meridian Audit", slug: "meridian", created_at: "2026-03-02T09:00:00Z" },
-    kybStatus: "verified",
+    org: { id: "org-1", name: "Meridian Audit", slug: "meridian", country: "NG", created_at: "2026-03-02T09:00:00Z" },
+    kybStatus,
     kybVerifiedAt: null,
     memberCount: 3,
     refreshOrganization: vi.fn().mockResolvedValue(undefined),
@@ -54,5 +57,47 @@ describe("OrganizationProfileSummary slug change", () => {
     render(<OrganizationProfileSummary />);
 
     expect(screen.queryByRole("button", { name: "Change address" })).toBeNull();
+  });
+});
+
+describe("OrganizationProfileSummary country", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("shows the country by name", () => {
+    vi.mocked(useOrganization).mockReturnValue(context("member") as never);
+    render(<OrganizationProfileSummary />);
+
+    expect(screen.getByText("Nigeria")).toBeInTheDocument();
+  });
+
+  it.each(["unverified", "rejected"])(
+    "lets an owner open the country dialog while verification is %s",
+    (kybStatus) => {
+      vi.mocked(useOrganization).mockReturnValue(context("owner", kybStatus) as never);
+      render(<OrganizationProfileSummary />);
+
+      const button = screen.getByRole("button", { name: "Change country" });
+      expect(button.className).toMatch(/min-h-11/);
+      fireEvent.click(button);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    },
+  );
+
+  it.each(["pending", "verified"])(
+    "locks the country once verification is %s",
+    (kybStatus) => {
+      vi.mocked(useOrganization).mockReturnValue(context("owner", kybStatus) as never);
+      render(<OrganizationProfileSummary />);
+
+      expect(screen.queryByRole("button", { name: "Change country" })).toBeNull();
+      expect(screen.getByText(/Locked after verification/)).toBeInTheDocument();
+    },
+  );
+
+  it("hides the country control from admins", () => {
+    vi.mocked(useOrganization).mockReturnValue(context("admin", "unverified") as never);
+    render(<OrganizationProfileSummary />);
+
+    expect(screen.queryByRole("button", { name: "Change country" })).toBeNull();
   });
 });

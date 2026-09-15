@@ -7318,6 +7318,22 @@ components:
       - purchases
       title: OrgPurchasesResponse
       type: object
+    OrgCountryChangeRequest:
+      description: 'Request body to change an organization''s country.
+
+
+        The code is normalized to uppercase ISO 3166-1 alpha-2, as at creation.'
+      properties:
+        country:
+          maxLength: 2
+          minLength: 2
+          pattern: ^[A-Za-z]{2}$
+          title: Country
+          type: string
+      required:
+      - country
+      title: OrgCountryChangeRequest
+      type: object
     OrgSlugChangeRequest:
       description: 'Request body to change an organization''s slug (Decision 5).
 
@@ -27676,6 +27692,44 @@ paths:
       summary: Reassign organization delivery member
       tags:
       - Projects
+  /v1/orgs/{org_id}/country:
+    patch:
+      description: Change the organization's country, which picks its payout rail and gives
+        its registration number meaning. 409 once business verification is pending or verified,
+        or a payout account exists. Requires an open step-up 2FA window. Org owner only.
+      operationId: change_org_country_v1_orgs__org_id__country_patch
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgCountryChangeRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Change organization country
+      tags:
+      - Organizations
   /v1/orgs/{org_id}/slug:
     patch:
       description: Change the organization's public slug. The old slug stays reserved

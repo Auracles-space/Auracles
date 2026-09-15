@@ -1243,6 +1243,21 @@ class OrgAttestationsResponse(BaseModel):
     attestations: list[OrgAttestationItem]
 
 
+class OrgCountryChangeRequest(BaseModel):
+    """Request body to change an organization's country.
+
+    The code is normalized to uppercase ISO 3166-1 alpha-2, as at creation.
+    """
+
+    country: str = Field(min_length=2, max_length=2, pattern=r"^[A-Za-z]{2}$")
+
+    @field_validator("country")
+    @classmethod
+    def normalize_country(cls, value: str) -> str:
+        """Normalize country codes to uppercase ISO-3166-1 alpha-2 form."""
+        return value.strip().upper()
+
+
 class OrgSlugChangeRequest(BaseModel):
     """Request body to change an organization's slug (Decision 5).
 

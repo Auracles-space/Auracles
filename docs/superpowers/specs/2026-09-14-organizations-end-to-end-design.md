@@ -22,6 +22,7 @@ All on `rework/step-up-admin-console`, unmerged.
 | Audit log org indexes (migration 0107) | 9c9bb88a |
 | Money fixes: Paystack partner webhooks, payee told of failed bank payouts (migration 0108) | 7c4f3a09 |
 | Split oversized money components; payouts panel on formatMoney | d02b4d88 |
+| Decision 6: owner country change until verification or payout account; create dialog defaults to Nigeria (no migration) | see git log `feat(orgs): owners correct the country` |
 | Fixed on the way: email action links, public profile 404, centering, nav order | 1350c29c, f7c19e7e, 41001c6e, 4bba0027 |
 
 No carry-overs remain.
@@ -118,6 +119,13 @@ Deliberate choices:
    slugs are refused with 409; the change is audited and other owners are notified. Admins do
    not get a slug editor.
 
+6. **Owners can correct the country until something depends on it** (human, 2026-09-15,
+   during local testing: there was no way to edit it). Owner only, behind step-up. Refused
+   with 409 `org_country_locked` once business verification is pending or verified, or a
+   payout account exists, because the country picks the payout rail and gives the
+   registration number meaning. A rejected verification unlocks it. Audited; other owners
+   notified. The create dialog defaults to Nigeria, the pilot market.
+
 Also fixed on the way (1350c29c): every "Open in Auracles" email button rendered a
 path-only href; the renderer now pins action links to the frontend origin.
 
@@ -179,6 +187,17 @@ notified. `GET /v1/orgs/{slug}` resolves a historical slug and returns the org w
 `canonical_slug`. Frontend: the profile summary gains "Change slug" for owners (dialog with
 the new public URL preview and a warning that the old link will redirect); `/orgs/[slug]`
 redirects permanently when `canonical_slug` differs.
+
+### Country change (Decision 6)
+
+Backend: `PATCH /v1/orgs/{org_id}/country {country}` owner-only with step-up; alpha-2,
+uppercased. `country_service.change_org_country` locks the org row, refuses 422 for the
+current country, 409 when suspended, and 409 `org_country_locked` when the legal profile's
+`kyb_status` is `pending`/`verified` or any `payout_accounts.org_id` row exists. Audit
+`org_country_changed` {from, to}; other owners get `org_profile_updated` naming `country`.
+No migration. Frontend: the profile summary shows the country by name; owners see
+"Change country" (dialog explaining the rail) unless verification is pending or verified,
+which shows "Locked after verification". A payout-account lock surfaces as the 409 message.
 
 ### Slice C — org money
 

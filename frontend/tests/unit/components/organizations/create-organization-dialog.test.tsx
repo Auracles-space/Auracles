@@ -119,12 +119,19 @@ describe("CreateOrganizationDialog slug preview and server errors", () => {
     expect(preview).toHaveTextContent(`${window.location.origin}/orgs/meridian-audit`);
   });
 
-  it("says the slug and country cannot be changed after creation", () => {
+  it("explains that the country picks the payout rail and locks at verification", () => {
     render(<CreateOrganizationDialog open onClose={() => {}} />);
 
     expect(
-      screen.getByText(/slug and country cannot be changed after/i),
+      screen.getByText(/country picks the payout rail and locks once business verification/i),
     ).toBeInTheDocument();
+  });
+
+  it("defaults the country to Nigeria, the pilot market", async () => {
+    render(<CreateOrganizationDialog open onClose={() => {}} />);
+
+    const country = (await screen.findByLabelText(/Country/i)) as HTMLSelectElement;
+    expect(country.value).toBe("NG");
   });
 
   it("shows the server message on a slug conflict instead of a raw code", async () => {

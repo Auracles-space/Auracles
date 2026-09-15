@@ -3848,6 +3848,15 @@ export type OrgCapabilityResponse = {
 };
 
 /**
+ * Request body to change an organization's country.
+ *
+ * The code is normalized to uppercase ISO 3166-1 alpha-2, as at creation.
+ */
+export type OrgCountryChangeRequest = {
+    country: string;
+};
+
+/**
  * Optional owner note on why the organization is being closed. Stored on the row for the admin console and repeated in the members' closure notification, so it should be written for them.
  */
 export type OrgDeactivateRequest = {
@@ -9102,6 +9111,17 @@ export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostData = 
 export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostResponse = (ProposalResponse);
 
 export type ReassignOrgProposalV1OrgsOrgIdProposalsProposalIdReassignPostError = (HTTPValidationError);
+
+export type ChangeOrgCountryV1OrgsOrgIdCountryPatchData = {
+    body: OrgCountryChangeRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type ChangeOrgCountryV1OrgsOrgIdCountryPatchResponse = (OrganizationResponse);
+
+export type ChangeOrgCountryV1OrgsOrgIdCountryPatchError = (HTTPValidationError);
 
 export type ChangeOrgSlugV1OrgsOrgIdSlugPatchData = {
     body: OrgSlugChangeRequest;

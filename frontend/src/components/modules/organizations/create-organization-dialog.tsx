@@ -3,7 +3,7 @@
 /**
  * Create-organization dialog.
  *
- * Collects the immutable identity (slug, country) plus editable profile
+ * Collects the identity (slug, country) plus editable profile
  * fields, previews the public URL the slug will resolve to, and surfaces
  * server errors as people-readable messages. On success it routes into the
  * new organization (or its attestor onboarding when so intended).
@@ -49,7 +49,9 @@ export function CreateOrganizationDialog({
   const [formData, setFormData] = useState<OrganizationCreateRequest>({
     slug: "",
     name: "",
-    country: "US",
+    // Nigeria is the pilot market; a default of US silently routed Nigerian
+    // orgs that skipped the field onto Stripe.
+    country: "NG",
     website: "",
     description: "",
   });
@@ -223,8 +225,7 @@ export function CreateOrganizationDialog({
           </div>
 
           <p className="rounded-xl bg-surface-2 px-3 py-2 text-xs leading-5 text-foreground-muted">
-            The slug and country cannot be changed after the organization is
-            created. Name, website, and description can be edited later.
+            Owners can change the public address later. The country picks the payout rail and locks once business verification is submitted.
           </p>
 
           <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

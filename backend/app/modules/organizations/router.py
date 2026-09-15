@@ -52,6 +52,7 @@ from app.modules.organizations import (
     billing_service,
     contributor_directory_service,
     contributor_service,
+    country_service,
     kyb_service,
     legal_profile_service,
     library_service,
@@ -115,6 +116,7 @@ from app.modules.organizations.schemas import (
     OrgAttestorTaxDocumentRequest,
     OrgCapabilityName,
     OrgCapabilityResponse,
+    OrgCountryChangeRequest,
     OrgDeactivateRequest,
     OrgInvitationCreateRequest,
     OrgInvitationPreviewResponse,
@@ -842,6 +844,39 @@ async def change_org_slug(
         org_id=org_id,
         actor_user_id=context.user.id,
         new_slug=payload.slug,
+    )
+    return OrganizationResponse.model_validate(organization)
+
+
+@router.patch(
+    "/{org_id}/country",
+    response_model=OrganizationResponse,
+    summary="Change organization country",
+    description=(
+        "Change the organization's country, which picks its payout rail and "
+        "gives its registration number meaning. 409 once business "
+        "verification is pending or verified, or a payout account exists. "
+        "Requires an open step-up 2FA window. Org owner only."
+    ),
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
+)
+async def change_org_country(
+    org_id: UUID,
+    payload: OrgCountryChangeRequest,
+    context: OrgOwner,
+    db: DatabaseSession,
+) -> OrganizationResponse:
+    """Change an organization's country while nothing depends on it yet.
+
+    The country service notifies the other owners after commit, so nothing
+    is dispatched here.
+    """
+    organization = await country_service.change_org_country(
+        db,
+        org_id=org_id,
+        actor_user_id=context.user.id,
+        actor_name=context.user.display_name,
+        new_country=payload.country,
     )
     return OrganizationResponse.model_validate(organization)
 
