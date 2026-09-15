@@ -12,7 +12,7 @@
  * Maps to: docs/superpowers/specs/2026-09-14-attestation-request-to-report-design.md §2.
  */
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   configureBrowserClient,
@@ -41,7 +41,14 @@ import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 type AttestationDetailProps = {
   /** Attestation id from the route. */
   attestationId: string;
+  /** True when the payer just came back from hosted checkout (`?funded=1`). */
+  returningFromPayment?: boolean;
 };
+
+/** How often to re-check a just-paid request while its webhook is in flight. */
+const PAYMENT_CONFIRMATION_POLL_MS = 3000;
+/** Stop re-checking after this long and offer payment again with a warning. */
+const PAYMENT_CONFIRMATION_TIMEOUT_MS = 60_000;
 
 /** The five known brief fields, in display order, with human labels. */
 const BRIEF_FIELDS: ReadonlyArray<[key: string, label: string]> = [
@@ -78,11 +85,24 @@ function briefValue(
  *
  * @param props - The attestation id to load.
  */
-export function AttestationDetail({ attestationId }: AttestationDetailProps) {
+export function AttestationDetail({
+  attestationId,
+  returningFromPayment = false,
+}: AttestationDetailProps) {
   const [attestation, setAttestation] =
     useState<AttestationRequestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Back from hosted checkout, the provider webhook usually lands a few seconds
+  // after the payer. Until it does the request still reads pending_fee, so we
+  // confirm (re-checking) rather than offer "Pay fee" and invite a double charge.
+  const [confirmingPayment, setConfirmingPayment] =
+    useState(returningFromPayment);
+  const [confirmationTimedOut, setConfirmationTimedOut] = useState(false);
+  const confirmDeadline = useRef(Date.now() + PAYMENT_CONFIRMATION_TIMEOUT_MS);
+  // Bumped after every re-check so the next one is scheduled even when the
+  // response is unchanged (an identical payload would not re-render).
+  const [confirmationChecks, setConfirmationChecks] = useState(0);
 
   useEffect(() => {
     void load();
@@ -104,6 +124,25 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
     setAttestation(result.data);
     setLoading(false);
   }
+
+  const awaitingFee = attestation?.status === "pending_fee";
+  useEffect(() => {
+    if (!confirmingPayment || !attestation) return;
+    if (!awaitingFee) {
+      setConfirmingPayment(false);
+      return;
+    }
+    if (Date.now() >= confirmDeadline.current) {
+      setConfirmingPayment(false);
+      setConfirmationTimedOut(true);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void load().then(() => setConfirmationChecks((checks) => checks + 1));
+    }, PAYMENT_CONFIRMATION_POLL_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attestation, awaitingFee, confirmingPayment, confirmationChecks]);
 
   if (loading) {
     return <TableSkeleton />;
@@ -176,11 +215,33 @@ export function AttestationDetail({ attestationId }: AttestationDetailProps) {
         />
       </div>
 
-      {attestation.status === "pending_fee" ? (
-        <AttestationFeePanel
-          attestationId={attestationId}
-          onPaid={() => void load()}
-        />
+      {attestation.status === "pending_fee" && confirmingPayment ? (
+        <div
+          aria-live="polite"
+          className="rounded-2xl border border-info/30 bg-info/10 p-5 shadow-sm"
+          role="status"
+        >
+          <p className="text-sm font-semibold text-info">Confirming your payment…</p>
+          <p className="mt-1 text-sm text-foreground-muted">
+            We&apos;re waiting for the payment provider to confirm your fee. This
+            usually takes a few seconds; there&apos;s no need to pay again.
+          </p>
+        </div>
+      ) : null}
+
+      {attestation.status === "pending_fee" && !confirmingPayment ? (
+        <>
+          {confirmationTimedOut ? (
+            <p className="rounded-2xl border border-warning/30 bg-warning/10 p-4 text-sm text-foreground">
+              We haven&apos;t received confirmation of your payment yet. If you
+              were charged, it will show here shortly; refresh before paying again.
+            </p>
+          ) : null}
+          <AttestationFeePanel
+            attestationId={attestationId}
+            onPaid={() => void load()}
+          />
+        </>
       ) : null}
 
       {attestation.status === "report_submitted" ? (

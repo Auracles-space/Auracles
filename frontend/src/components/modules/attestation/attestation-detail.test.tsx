@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acceptAttestationReport,
   cancelAttestationRequest,
@@ -281,6 +281,58 @@ describe("AttestationDetail", () => {
         value: originalLocation,
       });
     }
+  });
+});
+
+describe("AttestationDetail returning from hosted checkout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("confirms the payment instead of asking to pay again, then shows the funded request", async () => {
+    // Paystack sends the payer back before its webhook lands, so the first load
+    // still reads pending_fee. Offering "Pay fee" there invites a second charge.
+    vi.mocked(getAttestation)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: { ...reportedAttestation(), status: "pending_fee", summary: null, scope: null },
+      } as never)
+      .mockResolvedValue({
+        response: { ok: true },
+        data: { ...reportedAttestation(), status: "offered", summary: null, scope: null },
+      } as never);
+
+    render(<AttestationDetail attestationId="att-1" returningFromPayment />);
+
+    expect(await screen.findByText(/Confirming your payment/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Pay fee/i })).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(3000);
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Confirming your payment/i)).toBeNull(),
+    );
+    expect(getAttestation).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: /Pay fee/i })).toBeNull();
+  });
+
+  it("offers payment again with an explanation when confirmation never arrives", async () => {
+    mockDetail({ status: "pending_fee", summary: null, scope: null });
+
+    render(<AttestationDetail attestationId="att-1" returningFromPayment />);
+    await screen.findByText(/Confirming your payment/i);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(
+      await screen.findByText(/haven't received confirmation of your payment yet/i),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Pay fee/i })).toBeInTheDocument();
   });
 });
 
