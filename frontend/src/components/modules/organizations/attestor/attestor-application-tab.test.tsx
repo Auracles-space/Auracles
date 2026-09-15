@@ -4,6 +4,7 @@ import {
   createOrgAttestorApplication,
   getOrgAttestorApplication,
   listMyOrganizationsV1OrgsMineGet as listMyOrganizations,
+  submitOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
 import { AttestorApplicationTab } from "./attestor-application-tab";
 
@@ -205,7 +206,7 @@ describe("AttestorApplicationTab", () => {
   describe("trial gate", () => {
     it("shows Pending while the nominee still holds the trial", async () => {
       vi.mocked(getOrgAttestorApplication).mockResolvedValue({
-        data: application({ trial_member_id: "member-1" }),
+        data: application({ trial_member_id: "member-1", trial_status: "assigned" }),
       } as never);
       render(<AttestorApplicationTab />);
 
@@ -260,7 +261,7 @@ describe("AttestorApplicationTab", () => {
   });
 });
 
-describe("AttestorApplicationTab application review gate", () => {
+describe("AttestorApplicationTab stepper", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     context.capabilities = {};
@@ -269,27 +270,85 @@ describe("AttestorApplicationTab application review gate", () => {
     } as never);
   });
 
-  it("places the admin review after the owner's own steps, apart from business verification", async () => {
-    // Listed second as "Org credentials", the card read like the business
-    // verification the org had already passed.
+  /** Every owner step done, still a draft. */
+  const readyDraft = () =>
+    application({
+      status: "draft",
+      coi_signed_at: "2026-09-15T00:00:00Z",
+      confidentiality_signed_at: "2026-09-15T00:00:00Z",
+      tax_document_key: "tax/doc.pdf",
+      trial_member_id: "member-1",
+    });
+
+  it("lists the owner's steps in order and opens on the first incomplete one", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: application({ status: "draft" }),
     } as never);
     render(<AttestorApplicationTab />);
 
-    await screen.findByText("Application review");
-    const titles = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(titles).toEqual([
-      "Apply",
-      "Sign Undertakings",
-      "Tax Documents",
-      "Payout Account",
-      "Application review",
-      "Trial Attestation",
-      "Activation",
+    expect(await screen.findByRole("heading", { level: 3, name: "Sign undertakings" })).toBeInTheDocument();
+    const steps = screen.getAllByRole("button", { name: /^Step \d/ });
+    expect(steps.map((step) => step.getAttribute("aria-label"))).toEqual([
+      "Step 1: Details, complete",
+      "Step 2: Undertakings",
+      "Step 3: Tax document",
+      "Step 4: Payout account, complete",
+      "Step 5: Trial member",
+      "Step 6: Submit",
     ]);
-    expect(screen.queryByText("Org credentials")).not.toBeInTheDocument();
-    expect(screen.getByText(/separate from business verification/i)).toBeInTheDocument();
-    expect(screen.getByText("Awaiting submission")).toBeInTheDocument();
+    expect(steps[1]).toHaveAttribute("aria-current", "step");
+  });
+
+  it("moves forward, back, and straight to any step", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: application({ status: "draft" }),
+    } as never);
+    render(<AttestorApplicationTab />);
+    await screen.findByRole("heading", { level: 3, name: "Sign undertakings" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("heading", { level: 3, name: "Upload the tax document" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { level: 3, name: "Sign undertakings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Step 1: Details/ }));
+    expect(screen.getByRole("heading", { level: 3, name: "Application details" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+  });
+
+  it("keeps Submit for review disabled until every owner step is done, naming what is missing", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: application({ status: "draft" }),
+    } as never);
+    render(<AttestorApplicationTab />);
+    await screen.findByRole("heading", { level: 3, name: "Sign undertakings" });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Step 6: Submit/ }));
+
+    expect(screen.getByRole("button", { name: "Submit for review" })).toBeDisabled();
+    expect(screen.getByText(/Undertakings, Tax document, Trial member/)).toBeInTheDocument();
+  });
+
+  it("submits a draft once every owner step is done", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({ data: readyDraft() } as never);
+    vi.mocked(submitOrgAttestorApplication).mockResolvedValue({ data: {} } as never);
+    render(<AttestorApplicationTab />);
+
+    const submit = await screen.findByRole("button", { name: "Submit for review" });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(submitOrgAttestorApplication).toHaveBeenCalled());
+  });
+
+  it("pins the review stage above the steps once submitted", async () => {
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: { ...readyDraft(), status: "submitted" },
+    } as never);
+    render(<AttestorApplicationTab />);
+
+    expect(await screen.findByRole("heading", { level: 3, name: "Application in review" })).toBeInTheDocument();
+    expect(screen.getByText(/will start the calibration trial/i)).toBeInTheDocument();
+    expect(screen.getByText("Review and trial").closest("li")).toHaveAttribute("aria-current", "step");
+    expect(screen.queryByRole("button", { name: "Submit for review" })).toBeNull();
   });
 });
