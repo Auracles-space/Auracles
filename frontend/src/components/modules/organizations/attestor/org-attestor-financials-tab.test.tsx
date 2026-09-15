@@ -127,6 +127,33 @@ describe("OrgAttestorFinancialsTab", () => {
     });
   });
 
+  it("confirms a requested payout instead of only listing why another cannot be made", async () => {
+    // After a successful request the refreshed checklist said "Before you can
+    // request a payout ... a payout is already in progress", which read as a
+    // refusal of the payout that had just gone through.
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: {
+        id: "app-id",
+        org_id: "org-1",
+        status: "approved",
+        payout_account_id: "payout-acc-id",
+      },
+    } as never);
+    vi.mocked(requestOrgPayout).mockResolvedValue({
+      data: { id: "payout-1", status: "processing", net_amount: "450.00", currency: "USD" },
+      response: { ok: true, status: 201 },
+    } as never);
+
+    render(<OrgAttestorFinancialsTab orgId="org-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Request Payout" }));
+
+    const confirmation = await screen.findByRole("status");
+    expect(confirmation).toHaveTextContent(
+      `Payout of ${formatMoney("450.00", "USD")} requested`,
+    );
+    expect(confirmation).toHaveTextContent(/on its way to your payout account/i);
+  });
+
   it("lets an approved org re-open Stripe to manage an existing payout account", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: {

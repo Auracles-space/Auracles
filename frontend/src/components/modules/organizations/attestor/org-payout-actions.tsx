@@ -25,6 +25,7 @@ import {
   paystackDetailsComplete,
 } from "@/components/modules/financials/paystack-bank-fields";
 import { payoutProviderForCountry } from "@/lib/marketplace/currency";
+import { formatMoney } from "@/lib/marketplace/format";
 import { ownerStatusKey, StatusPill } from "@/components/ui/status-pill";
 import {
   configureBrowserClient,
@@ -67,6 +68,10 @@ export function OrgPayoutActions({
   // out at all, so bank details are collected here instead of redirecting.
   const isPaystackRail = payoutProviderForCountry("") === "paystack";
   const [payoutError, setPayoutError] = useState<string | null>(null);
+  // Confirms a payout that just went through. Without it the refreshed
+  // eligibility checklist ("a payout is already in progress") was the only
+  // feedback and read as a refusal.
+  const [payoutNotice, setPayoutNotice] = useState<string | null>(null);
 
   const handleSetupPayoutAccount = async () => {
     setIsActionLoading(true);
@@ -113,6 +118,8 @@ export function OrgPayoutActions({
     if (!earnings || !application?.payout_account_id) return;
     setIsActionLoading(true);
     setPayoutError(null);
+    setPayoutNotice(null);
+    const requestedAmount = formatMoney(earnings.available_balance, earnings.currency);
     try {
       configureBrowserClient();
       const res = await requestOrgPayout({
@@ -130,6 +137,9 @@ export function OrgPayoutActions({
         setPayoutError(describeGeneratedError(res.error));
         return;
       }
+      setPayoutNotice(
+        `Payout of ${requestedAmount} requested. It is on its way to your payout account; the history below shows when it is paid.`,
+      );
       await onRefresh(); // Refresh data
     } catch (error) {
       console.error("Failed to request payout:", error);
@@ -145,6 +155,14 @@ export function OrgPayoutActions({
       {payoutError && (
         <p className="text-sm text-error mb-4" role="alert">
           {payoutError}
+        </p>
+      )}
+      {payoutNotice && (
+        <p
+          className="mb-4 rounded-xl border border-success/30 bg-success/10 p-3 text-sm text-foreground"
+          role="status"
+        >
+          {payoutNotice}
         </p>
       )}
       {application?.status !== "approved" ? (
