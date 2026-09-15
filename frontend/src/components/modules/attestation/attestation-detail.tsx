@@ -14,6 +14,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { ExpandableText } from "@/components/ui/expandable-text";
+
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -272,8 +274,11 @@ export function AttestationDetail({
           {BRIEF_FIELDS.map(([key, label]) => (
             <div key={key}>
               <dt className="text-sm font-semibold text-foreground">{label}</dt>
-              <dd className="mt-1 text-sm text-foreground-muted">
-                {briefValue(attestation.brief, key) || "—"}
+              <dd className="mt-1">
+                <ExpandableText
+                  className="text-sm text-foreground-muted"
+                  text={briefValue(attestation.brief, key) || "—"}
+                />
               </dd>
             </div>
           ))}

@@ -9,6 +9,7 @@
  * Maps to: docs/superpowers/specs/2026-09-14-attestation-request-to-report-design.md §2
  * (Attestor org).
  */
+import { ExpandableText } from "@/components/ui/expandable-text";
 
 /** Brief fields worth showing, in the order the reviewer needs them. */
 const BRIEF_FIELDS: { key: string; label: string }[] = [
@@ -61,12 +62,15 @@ export function ReviewBriefCard({ brief }: ReviewBriefCardProps) {
       </h3>
       <dl className="mt-4 grid gap-3 sm:grid-cols-3">
         {entries.map((entry) => (
-          <div className="rounded-xl bg-surface-2 p-4" key={entry.label}>
+          <div className="min-w-0 rounded-xl bg-surface-2 p-4" key={entry.label}>
             <dt className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
               {entry.label}
             </dt>
-            <dd className="mt-1 text-sm leading-6 text-foreground">
-              {entry.value}
+            <dd className="mt-1">
+              <ExpandableText
+                className="text-sm leading-6 text-foreground"
+                text={entry.value ?? ""}
+              />
             </dd>
           </div>
         ))}

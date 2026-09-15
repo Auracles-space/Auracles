@@ -10,7 +10,7 @@
  *
  * Maps to: docs/superpowers/specs/2026-09-14-attestation-request-to-report-design.md §2.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +21,9 @@ import {
 import { JURISDICTION_OPTIONS } from "@/lib/marketplace/taxonomy";
 import type { FrameworkListItem } from "@/lib/generated/types.gen";
 import { isNonEmpty } from "@/lib/forms/validators";
+
+/** Server cap on each free-text brief field (`AttestationBrief` in the API). */
+export const BRIEF_FIELD_MAX_LENGTH = 2000;
 
 export type ReviewType = "" | "quality" | "compliance" | "expert" | "provenance";
 
@@ -189,26 +192,18 @@ export function AttestationRequestForm({
         review.
       </p>
       <div className="mt-3 grid gap-4">
-        <label className="grid gap-2 text-sm font-semibold text-foreground">
-          <span>
-            What it does <span className="text-error">*</span>
-          </span>
-          <Textarea
-            onChange={(event) => setWhatItDoes(event.target.value)}
-            placeholder="What the framework does and the problem it solves."
-            value={whatItDoes}
-          />
-        </label>
-        <label className="grid gap-2 text-sm font-semibold text-foreground">
-          <span>
-            Use case <span className="text-error">*</span>
-          </span>
-          <Textarea
-            onChange={(event) => setUseCase(event.target.value)}
-            placeholder="Who uses it and in what situation."
-            value={useCase}
-          />
-        </label>
+        <BriefTextField
+          label="What it does"
+          onChange={setWhatItDoes}
+          placeholder="What the framework does and the problem it solves."
+          value={whatItDoes}
+        />
+        <BriefTextField
+          label="Use case"
+          onChange={setUseCase}
+          placeholder="Who uses it and in what situation."
+          value={useCase}
+        />
         <label className="grid gap-2 text-sm font-semibold text-foreground">
           <span>
             Jurisdiction <span className="text-error">*</span>
@@ -225,26 +220,18 @@ export function AttestationRequestForm({
             ))}
           </Select>
         </label>
-        <label className="grid gap-2 text-sm font-semibold text-foreground">
-          <span>
-            Focus areas <span className="text-error">*</span>
-          </span>
-          <Textarea
-            onChange={(event) => setFocusAreas(event.target.value)}
-            placeholder="What the review should scrutinise most."
-            value={focusAreas}
-          />
-        </label>
-        <label className="grid gap-2 text-sm font-semibold text-foreground">
-          <span>
-            Desired outcome <span className="text-error">*</span>
-          </span>
-          <Textarea
-            onChange={(event) => setDesiredOutcome(event.target.value)}
-            placeholder="What a successful attestation looks like for you."
-            value={desiredOutcome}
-          />
-        </label>
+        <BriefTextField
+          label="Focus areas"
+          onChange={setFocusAreas}
+          placeholder="What the review should scrutinise most."
+          value={focusAreas}
+        />
+        <BriefTextField
+          label="Desired outcome"
+          onChange={setDesiredOutcome}
+          placeholder="What a successful attestation looks like for you."
+          value={desiredOutcome}
+        />
         <label className="grid gap-2 text-sm font-semibold text-foreground">
           <span>Billing country</span>
           <Select
@@ -282,5 +269,45 @@ export function AttestationRequestForm({
         </button>
       </div>
     </details>
+  );
+}
+
+type BriefTextFieldProps = {
+  /** Visible, required field label. */
+  label: string;
+  /** Current value. */
+  value: string;
+  /** Receive the new value. */
+  onChange: (value: string) => void;
+  /** Hint shown while empty. */
+  placeholder: string;
+};
+
+/**
+ * A required brief textarea capped at the server limit, with a live counter
+ * so the requestor sees the cap before a submit is refused.
+ *
+ * @param props - Label, value, change handler, and placeholder.
+ */
+function BriefTextField({ label, value, onChange, placeholder }: BriefTextFieldProps) {
+  const counterId = useId();
+  return (
+    <div className="grid gap-2">
+      <label className="grid gap-2 text-sm font-semibold text-foreground">
+        <span>
+          {label} <span className="text-error">*</span>
+        </span>
+        <Textarea
+          aria-describedby={counterId}
+          maxLength={BRIEF_FIELD_MAX_LENGTH}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          value={value}
+        />
+      </label>
+      <p className="text-right text-xs text-foreground-muted" id={counterId}>
+        {value.length} / {BRIEF_FIELD_MAX_LENGTH}
+      </p>
+    </div>
   );
 }
