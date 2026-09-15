@@ -67,10 +67,29 @@ describe("TaxDocumentGate", () => {
       />,
     );
 
-    expect(screen.getByText(/already on file/i)).toBeInTheDocument();
+    expect(screen.getByText("Tax document on file")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Replace document" }));
+    expect(screen.getByText(/Uploading a new one replaces it/i)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Upload Document/i }),
     ).toBeInTheDocument();
+  });
+
+  it("shows the saved document, not an empty form, when the owner returns to the step", () => {
+    // The stepper remounts the gate on every visit, so the confirmation must
+    // come from the application, not from state set during the upload.
+    render(
+      <TaxDocumentGate
+        application={
+          { status: "draft", tax_document_key: "org-tax/w9.pdf", tax_document_type: "other" } as never
+        }
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Tax document on file")).toBeInTheDocument();
+    expect(screen.getByText(/Other \/ Exemption/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Upload Document/i })).toBeNull();
   });
 
   it("locks the tax document once the application is submitted", () => {

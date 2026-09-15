@@ -4,8 +4,10 @@
  * Tax-document gate for the org attestor application checklist.
  *
  * Reserves an S3 upload session for the org's tax form, pushes the file to
- * the bucket, and confirms. Editable only while the application is a draft or
- * needs info; locked read-only afterwards.
+ * the bucket, and confirms. A stored document is shown as on file (read from the
+ * application, since the stepper remounts this gate on every visit) with a
+ * replace action while the application is a draft or needs info; locked
+ * read-only afterwards.
  *
  * Maps to: FR-ATT / org-attestor design (tax document gate).
  */
@@ -20,6 +22,13 @@ import { Button } from "@/components/ui/button";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
+
+/** Display names for the tax document types the API accepts. */
+const TAX_DOCUMENT_LABELS: Record<string, string> = {
+  w9: "W-9 (US Persons)",
+  w8ben: "W-8BEN (Non-US Persons)",
+  other: "Other / Exemption",
+};
 
 /**
  * Render the tax-document upload control for the checklist.
@@ -38,6 +47,7 @@ export function TaxDocumentGate({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [docType, setDocType] = useState<"w9" | "w8ben" | "other">("w9");
 
@@ -58,16 +68,19 @@ export function TaxDocumentGate({
     );
   }
 
-  // Just uploaded in an editable state: confirm success and offer a replace,
-  // since the surrounding checklist gives no other visible confirmation.
-  if (uploaded) {
+  // On file in an editable state (stored, or uploaded moments ago before the
+  // refetch lands): confirm it and offer a replace instead of an empty form.
+  if ((isUploaded || uploaded) && !replacing) {
+    const typeLabel = TAX_DOCUMENT_LABELS[application?.tax_document_type ?? ""];
     return (
       <div className="rounded-xl border border-success/40 bg-success/10 p-5 text-sm text-foreground">
-        <p className="font-semibold text-success">Tax document uploaded.</p>
+        <p className="font-semibold text-success">Tax document on file</p>
+        {typeLabel ? <p className="mt-1 text-foreground-muted">{typeLabel}</p> : null}
         <button
           type="button"
           className="mt-3 min-h-11 text-sm font-semibold text-accent underline-offset-4 hover:underline"
           onClick={() => {
+            setReplacing(true);
             setUploaded(false);
             setFile(null);
           }}
@@ -121,6 +134,7 @@ export function TaxDocumentGate({
       }
 
       setUploaded(true);
+      setReplacing(false);
       onChange();
     } catch (caught) {
       setError(describeGeneratedError(caught));
@@ -153,9 +167,11 @@ export function TaxDocumentGate({
             onChange={(e) => setDocType(e.target.value as "w9" | "w8ben" | "other")}
             className="w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
           >
-            <option value="w9">W-9 (US Persons)</option>
-            <option value="w8ben">W-8BEN (Non-US Persons)</option>
-            <option value="other">Other / Exemption</option>
+            {Object.entries(TAX_DOCUMENT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </div>
 
