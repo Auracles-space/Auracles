@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   createOrgAttestorApplication,
   updateOrgAttestorApplication,
@@ -30,10 +30,13 @@ export function ApplyGate({
   orgId,
   application,
   onChange,
+  onDirtyChange,
 }: {
   orgId: string;
   application: OrgAttestorApplicationResponse | null;
   onChange: () => void;
+  /** Told whether the form holds changes that are not saved yet. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const isDraft = !application || application.status === "draft";
   const isNeedsInfo = application?.status === "needs_info";
@@ -64,7 +67,22 @@ export function ApplyGate({
     formData.functions.length > 0 &&
     formData.jurisdictions.length > 0;
 
-  const saveDraftDisabled = loading || (isNew && !canCreate);
+  // Saved means stored and complete: a new application has nothing stored, and
+  // an existing one is dirty when any field differs from what the server holds.
+  const dirty =
+    isNew ||
+    formData.credentials_summary !== (application?.credentials_summary || "") ||
+    formData.professional_references !== (application?.professional_references || "") ||
+    formData.sample_work_url !== ((application?.sample_work as { url: string })?.url || "") ||
+    formData.sectors.join("|") !== (application?.sectors || []).join("|") ||
+    formData.functions.join("|") !== (application?.functions || []).join("|") ||
+    formData.jurisdictions.join("|") !== (application?.jurisdictions || []).join("|");
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  const saveDisabled = loading || !canCreate || !dirty;
 
   type ListField = "sectors" | "functions" | "jurisdictions";
 
@@ -221,15 +239,19 @@ export function ApplyGate({
 
         {canEdit && (
           <div className="pt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleSaveDraft}
-              disabled={saveDraftDisabled}
-              loading={loading}
-            >
-              Save Draft
-            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={saveDisabled}
+                loading={loading}
+              >
+                Save
+              </Button>
+              {!dirty ? (
+                <p className="text-sm text-foreground-muted">All changes saved.</p>
+              ) : null}
+            </div>
           </div>
         )}
       </form>

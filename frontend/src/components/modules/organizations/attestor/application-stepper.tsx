@@ -3,8 +3,8 @@
 /**
  * Horizontal step navigation for the attestor application.
  *
- * Every step stays reachable so the owner can move forward and back freely;
- * each shows whether it is complete. Phones get a compact "Step n of 6"
+ * Earlier steps and the first unfinished one stay reachable; later steps open
+ * as each step is saved. Each step shows whether it is complete. Phones get a compact "Step n of 6"
  * summary with a progress bar and rely on Back/Next; the full step row
  * appears from `sm:`.
  */
@@ -19,6 +19,8 @@ type ApplicationStepperProps = {
   activeId: StepId;
   /** Whether a step is complete. */
   isComplete: (id: StepId) => boolean;
+  /** Whether a step can be opened yet. */
+  isEnabled: (id: StepId) => boolean;
   /** Open a step. */
   onSelect: (id: StepId) => void;
 };
@@ -28,7 +30,13 @@ type ApplicationStepperProps = {
  *
  * @param props - Steps, active step, completion check, and selection callback.
  */
-export function ApplicationStepper({ steps, activeId, isComplete, onSelect }: ApplicationStepperProps) {
+export function ApplicationStepper({
+  steps,
+  activeId,
+  isComplete,
+  isEnabled,
+  onSelect,
+}: ApplicationStepperProps) {
   const activeIndex = steps.findIndex((step) => step.id === activeId);
 
   return (
@@ -57,16 +65,18 @@ export function ApplicationStepper({ steps, activeId, isComplete, onSelect }: Ap
         {steps.map((step, index) => {
           const active = step.id === activeId;
           const complete = isComplete(step.id);
+          const enabled = isEnabled(step.id);
           return (
             <li key={step.id}>
               <button
                 aria-current={active ? "step" : undefined}
                 aria-label={`Step ${index + 1}: ${step.label}${complete ? ", complete" : ""}`}
-                className={`flex min-h-11 w-full flex-col items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                className={`flex min-h-11 w-full flex-col items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
                   active
                     ? "border-accent/50 bg-surface-2"
-                    : "border-border-default bg-surface-1 hover:bg-surface-2"
+                    : "border-border-default bg-surface-1 enabled:hover:bg-surface-2"
                 }`}
+                disabled={!enabled}
                 onClick={() => onSelect(step.id)}
                 type="button"
               >

@@ -34,7 +34,13 @@ vi.mock("@/components/modules/organizations/organization-context", () => ({
 }));
 
 // Child gates own their own tests; stub them so this file exercises tab logic only.
-vi.mock("./apply-gate", () => ({ ApplyGate: () => <div>apply-gate</div> }));
+vi.mock("./apply-gate", () => ({
+  ApplyGate: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => (
+    <button onClick={() => onDirtyChange?.(true)} type="button">
+      edit-details
+    </button>
+  ),
+}));
 vi.mock("./undertakings-gate", () => ({ UndertakingsGate: () => null }));
 vi.mock("./payout-account-gate", () => ({ PayoutAccountGate: () => null }));
 vi.mock("./tax-document-gate", () => ({ TaxDocumentGate: () => null }));
@@ -299,33 +305,40 @@ describe("AttestorApplicationTab stepper", () => {
     expect(steps[1]).toHaveAttribute("aria-current", "step");
   });
 
-  it("moves forward, back, and straight to any step", async () => {
+  it("keeps Next disabled until the open step is complete, and blocks skipping ahead", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: application({ status: "draft" }),
     } as never);
     render(<AttestorApplicationTab />);
     await screen.findByRole("heading", { level: 3, name: "Sign undertakings" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("heading", { level: 3, name: "Upload the tax document" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByText("Complete this step to continue.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Step 3: Tax document/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Step 6: Submit/ })).toBeDisabled();
+
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByRole("heading", { level: 3, name: "Sign undertakings" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^Step 1: Details/ }));
     expect(screen.getByRole("heading", { level: 3, name: "Application details" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("heading", { level: 3, name: "Sign undertakings" })).toBeInTheDocument();
   });
 
-  it("keeps Submit for review disabled until every owner step is done, naming what is missing", async () => {
+  it("blocks Next while the details have unsaved changes", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue({
       data: application({ status: "draft" }),
     } as never);
     render(<AttestorApplicationTab />);
     await screen.findByRole("heading", { level: 3, name: "Sign undertakings" });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Step 6: Submit/ }));
+    fireEvent.click(screen.getByRole("button", { name: "edit-details" }));
 
-    expect(screen.getByRole("button", { name: "Submit for review" })).toBeDisabled();
-    expect(screen.getByText(/Undertakings, Tax document, Trial member/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getByText("Save this step to continue.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Step 2: Undertakings/ })).toBeDisabled();
   });
 
   it("submits a draft once every owner step is done", async () => {

@@ -3,7 +3,8 @@
  *
  * A review-stage banner pinned on top says where the application stands and
  * what happens next; below it, a horizontal stepper walks the owner through
- * their five steps and the submission, with free Back/Next navigation. Stages
+ * their five steps and the submission. Back is always open; Next and later
+ * steps open only once the current step is saved. Stages
  * after submission (review, calibration trial, approval, activation) are
  * admin-driven and live only in the banner.
  *
@@ -38,6 +39,7 @@ import { ApplicationStepper } from "./application-stepper";
 import {
   APPLICATION_STEPS,
   initialStep,
+  isEditable,
   reviewStage,
   stageIndex,
   stepComplete,
@@ -59,6 +61,7 @@ export function AttestorApplicationTab() {
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeStep, setActiveStep] = useState<StepId | null>(null);
+  const [detailsDirty, setDetailsDirty] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [capabilityReason, setCapabilityReason] = useState<string | null>(null);
@@ -163,9 +166,25 @@ export function AttestorApplicationTab() {
   const stepId = activeStep ?? initialStep(app);
   const stepIndex = APPLICATION_STEPS.findIndex((step) => step.id === stepId);
   const step = APPLICATION_STEPS[stepIndex];
+  const editable = isEditable(app);
+  // While the owner holds the application, nothing past the first unfinished
+  // step (or past unsaved details) can be opened; once submitted, every step
+  // is open for reading.
+  const firstOpenIndex = APPLICATION_STEPS.findIndex((s) => s.id === initialStep(app));
+  const furthestIndex = !editable ? APPLICATION_STEPS.length - 1 : detailsDirty ? 0 : firstOpenIndex;
+  const currentSaved =
+    stepId === "submit" || (stepComplete(app, stepId) && !(stepId === "details" && detailsDirty));
+  const canAdvance = !editable || currentSaved;
 
   const panels: Record<StepId, ReactNode> = {
-    details: <ApplyGate application={app} onChange={reload} orgId={orgId} />,
+    details: (
+      <ApplyGate
+        application={app}
+        onChange={reload}
+        onDirtyChange={setDetailsDirty}
+        orgId={orgId}
+      />
+    ),
     undertakings: <UndertakingsGate application={app} onChange={reload} />,
     tax: <TaxDocumentGate application={app} onChange={reload} />,
     payout: <PayoutAccountGate application={app} onChange={reload} orgId={orgId} />,
@@ -208,6 +227,7 @@ export function AttestorApplicationTab() {
           <ApplicationStepper
             activeId={stepId}
             isComplete={(id) => stepComplete(app, id)}
+            isEnabled={(id) => APPLICATION_STEPS.findIndex((s) => s.id === id) <= furthestIndex}
             onSelect={setActiveStep}
             steps={APPLICATION_STEPS}
           />
@@ -227,9 +247,19 @@ export function AttestorApplicationTab() {
               Back
             </Button>
             {stepIndex < APPLICATION_STEPS.length - 1 ? (
-              <Button onClick={() => setActiveStep(APPLICATION_STEPS[stepIndex + 1].id)} variant="secondary">
-                Next
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                {!canAdvance ? (
+                  <p className="text-sm text-foreground-muted">
+                    {stepId === "details" ? "Save this step to continue." : "Complete this step to continue."}
+                  </p>
+                ) : null}
+                <Button
+                  disabled={!canAdvance}
+                  onClick={() => setActiveStep(APPLICATION_STEPS[stepIndex + 1].id)}
+                >
+                  Next
+                </Button>
+              </div>
             ) : null}
           </div>
         </section>

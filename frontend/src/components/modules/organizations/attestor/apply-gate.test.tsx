@@ -46,9 +46,8 @@ describe("ApplyGate specialisation controls", () => {
       target: { value: "united_states" },
     });
 
-    // A brand-new application must be saved as a draft before documents can be
-    // attached, so the create call rides Save Draft, not Submit.
-    fireEvent.click(screen.getByRole("button", { name: /Save Draft/i }));
+    // Saving the first step creates the application.
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
 
     await waitFor(() => expect(createOrgAttestorApplication).toHaveBeenCalled());
 
@@ -58,13 +57,12 @@ describe("ApplyGate specialisation controls", () => {
     expect(body.jurisdictions).toEqual(["united_states"]);
   });
 
-  it("enables Save Draft once the create-required fields are filled", () => {
-    // Submit itself lives in the application tab's sticky bar now; the gate
-    // only owns Save Draft, which unlocks once the create endpoint's required
-    // fields are satisfied.
+  it("enables Save once the required fields are filled", () => {
+    // Submit lives on the application tab's final step; the gate only owns
+    // Save, which unlocks once the required fields are satisfied.
     render(<ApplyGate orgId="org-1" application={null} onChange={vi.fn()} />);
 
-    const saveDraft = screen.getByRole("button", { name: /Save Draft/i });
+    const saveDraft = screen.getByRole("button", { name: /^Save$/ });
     expect(saveDraft).toHaveProperty("disabled", true);
     expect(
       screen.queryByRole("button", { name: /Submit/i }),
@@ -87,6 +85,42 @@ describe("ApplyGate specialisation controls", () => {
     });
 
     expect(saveDraft).toHaveProperty("disabled", false);
+  });
+
+  it("keeps Save disabled for saved details until a field changes, and reports unsaved changes", () => {
+    // The tab blocks Next while this step has unsaved changes.
+    const onDirtyChange = vi.fn();
+    render(
+      <ApplyGate
+        orgId="org-1"
+        onChange={vi.fn()}
+        onDirtyChange={onDirtyChange}
+        application={
+          {
+            status: "draft",
+            credentials_summary: "Ten years of audit experience across sectors.",
+            professional_references: "Jane Doe, jane@example.com",
+            sample_work: { url: "" },
+            sectors: ["private_equity"],
+            functions: ["compliance"],
+            jurisdictions: ["united_states"],
+          } as never
+        }
+      />,
+    );
+
+    const save = screen.getByRole("button", { name: /^Save$/ });
+    expect(save).toBeDisabled();
+    expect(screen.getByText("All changes saved.")).toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+
+    fireEvent.change(screen.getByLabelText(/Credentials Summary/i), {
+      target: { value: "Twelve years of audit experience across sectors." },
+    });
+
+    expect(save).toBeEnabled();
+    expect(screen.queryByText("All changes saved.")).toBeNull();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
   });
 
   it("submits the backend value while showing the friendly label as a chip", async () => {
