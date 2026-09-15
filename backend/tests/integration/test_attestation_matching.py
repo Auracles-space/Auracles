@@ -1374,6 +1374,11 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
         "dispatch_project_notification",
         FakeNotificationTask(notification_calls),
     )
+    admin_notices: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "app.modules.attestation.notifications.notify_admins_review_pending",
+        lambda **kwargs: admin_notices.append(kwargs),
+    )
     requestor_id = await create_user("dispute-requestor@auracles.space", ["operator"])
     org_id, _attestor_id, member_id = await create_org_attestor(
         specializations=["healthcare"],
@@ -1429,6 +1434,12 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
         str(_attestor_id),
         str(requestor_id),
     }
+    # Admins resolve disputes, so they must hear about one being raised; the
+    # notice deep-links to the attestation tab of the disputes console.
+    assert len(admin_notices) == 1
+    assert admin_notices[0]["domain"] == "attestation_dispute"
+    assert admin_notices[0]["target_id"] == dispute.id
+    assert admin_notices[0]["link"] == "/admin/disputes?tab=attestation"
 
     # The requestor's detail view names the attestor org and carries the
     # dispute so the page can show its state and, later, the resolution.

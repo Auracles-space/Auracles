@@ -21,6 +21,7 @@ _TITLE = "Item awaiting admin review"
 _DOMAIN_TITLES = {
     "account_deletion": "Account deletion needs review",
     "attestation": "Attestation needs manual assignment",
+    "attestation_dispute": "Attestation dispute raised",
     "credential": "Credential awaiting verification",
     "developer_application": "Developer application submitted",
     "org_attestor_application": "Attestor application submitted",

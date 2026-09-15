@@ -123,7 +123,7 @@ async def create_dispute(
         recipient_id = await _reviewing_member_user_id(db, attestation)
         await db.refresh(dispute)
     attestation_notifications.notify_dispute_raised(
-        attestation, recipient_id=recipient_id
+        attestation, recipient_id=recipient_id, dispute_id=dispute.id
     )
     return dispute
 

@@ -380,7 +380,10 @@ def notify_released(
 
 
 def notify_dispute_raised(
-    attestation: Attestation, *, recipient_id: UUID | None
+    attestation: Attestation,
+    *,
+    recipient_id: UUID | None,
+    dispute_id: UUID | None = None,
 ) -> None:
     """Notify both parties that the requestor raised a dispute.
 
@@ -410,6 +413,14 @@ def notify_dispute_raised(
         attestation=attestation,
         dedupe_suffix="attestor",
         link=_org_side_link(attestation),
+    )
+    # Admins resolve attestation disputes; without this only the requestor and
+    # the attestor org heard about one, and the admin queue filled silently.
+    notify_admins_review_pending(
+        domain="attestation_dispute",
+        target_id=dispute_id or attestation.id,
+        body="A requestor disputed an attestation report and it needs resolution.",
+        link="/admin/disputes?tab=attestation",
     )
 
 
