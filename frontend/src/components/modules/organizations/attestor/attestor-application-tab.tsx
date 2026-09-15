@@ -429,11 +429,6 @@ export function AttestorApplicationTab() {
           )}
         </GateCard>
         <GateCard
-          title="Org credentials"
-          description="Admin review of your submitted credentials, licenses, and references."
-          status={credentialsStatus}
-        />
-        <GateCard
           title="Sign Undertakings"
           description="Agree to the Attestor terms of service and confidentiality obligations."
           status={app?.confidentiality_signed_at ? "approved" : NOT_STARTED}
@@ -457,6 +452,12 @@ export function AttestorApplicationTab() {
         >
           <PayoutAccountGate application={app} orgId={orgId} onChange={reload} />
         </GateCard>
+        <GateCard
+          title="Application review"
+          description="After you submit, an administrator reviews your credentials summary and references. This is separate from business verification."
+          status={credentialsStatus}
+          label={credentialsStatus === NOT_STARTED ? "Awaiting submission" : undefined}
+        />
         <GateCard
           title="Trial Attestation"
           description="Complete a trial attestation to demonstrate your organization's capability."

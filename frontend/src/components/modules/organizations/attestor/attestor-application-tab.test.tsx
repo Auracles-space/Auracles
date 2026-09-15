@@ -259,3 +259,37 @@ describe("AttestorApplicationTab", () => {
     });
   });
 });
+
+describe("AttestorApplicationTab application review gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    context.capabilities = {};
+    vi.mocked(listMyOrganizations).mockResolvedValue({
+      data: { organizations: [] },
+    } as never);
+  });
+
+  it("places the admin review after the owner's own steps, apart from business verification", async () => {
+    // Listed second as "Org credentials", the card read like the business
+    // verification the org had already passed.
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: application({ status: "draft" }),
+    } as never);
+    render(<AttestorApplicationTab />);
+
+    await screen.findByText("Application review");
+    const titles = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    expect(titles).toEqual([
+      "Apply",
+      "Sign Undertakings",
+      "Tax Documents",
+      "Payout Account",
+      "Application review",
+      "Trial Attestation",
+      "Activation",
+    ]);
+    expect(screen.queryByText("Org credentials")).not.toBeInTheDocument();
+    expect(screen.getByText(/separate from business verification/i)).toBeInTheDocument();
+    expect(screen.getByText("Awaiting submission")).toBeInTheDocument();
+  });
+});
