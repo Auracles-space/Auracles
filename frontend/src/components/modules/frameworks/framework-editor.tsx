@@ -269,36 +269,146 @@ export function FrameworkEditor({
     framework.status === "draft" || isLive || isDelisted;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1fr_380px] min-w-0">
-      <section className="min-w-0 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
-        <Link
-          className="mb-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground"
-          href={basePath}
+    <div className="grid min-w-0 gap-4">
+      {/* The title leads above both columns, on a phone as well. */}
+      <header className="min-w-0">
+      <Link
+        className="mb-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-foreground-muted transition-colors hover:text-foreground"
+        href={basePath}
+      >
+        <svg
+          aria-hidden="true"
+          className="h-4 w-4"
+          fill="none"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
         >
-          <svg
-            aria-hidden="true"
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            viewBox="0 0 24 24"
-          >
-            <line x1="19" x2="5" y1="12" y2="12" />
-            <polyline points="12 19 5 12 12 5" />
-          </svg>
-          Back to frameworks
-        </Link>
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <StatusPill className="mb-2" status={framework.status} />
-            <h1 className="font-heading text-2xl font-bold text-foreground">
-              {framework.title}
-            </h1>
-          </div>
-          <p className="text-sm text-foreground-muted">Version {framework.version}</p>
+          <line x1="19" x2="5" y1="12" y2="12" />
+          <polyline points="12 19 5 12 12 5" />
+        </svg>
+        Back to frameworks
+      </Link>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <StatusPill className="mb-2" status={framework.status} />
+          <h1 className="font-heading text-2xl font-bold text-foreground">
+            {framework.title}
+          </h1>
         </div>
+        <p className="text-sm text-foreground-muted">Version {framework.version}</p>
+      </div>
+      </header>
+    <div className="grid gap-6 xl:grid-cols-[1fr_380px] min-w-0">
+      {/* Files come first in document order so a phone reads upload -> details
+          -> Save -> Run checks top to bottom; on xl the grid pins them right. */}
+      <aside className="grid min-w-0 content-start gap-4 xl:col-start-2 xl:row-start-1">
+        {seller.kind === "org" && canManageLiveState && isMetadataEditable ? (
+          // Pricing is metadata; the backend locks it outside draft/published/
+          // delisted. Hide the editor while locked so a save cannot 422 — the
+          // metadata-lock banner above already explains the state.
+          <FrameworkPricingForm
+            api={api}
+            framework={framework}
+            onUpdated={setFramework}
+          />
+        ) : null}
+        <ArtifactUploader
+          api={api}
+          allowConnectorImport={seller.kind === "user"}
+          artifactCount={artifacts.length}
+          existingBytes={artifacts.reduce(
+            (total, artifact) => total + artifact.file_size,
+            0,
+          )}
+          frameworkId={framework.id}
+          onUploaded={(artifact) =>
+            // A background pipeline poll can replace the list with the server
+            // copy that already includes this artifact before onUploaded fires;
+            // dedupe by id so the manifest never renders duplicate React keys.
+            setArtifacts((current) =>
+              current.some((existing) => existing.id === artifact.id)
+                ? current
+                : [artifact, ...current],
+            )
+          }
+        />
+        <ArtifactManifest
+          artifacts={artifacts}
+          canRemove={
+            framework.status === "draft" ||
+            framework.status === "pipeline_failed" ||
+            framework.status === "pipeline_passed"
+          }
+          frameworkId={framework.id}
+          frameworkStatus={framework.status}
+          onPreviewSet={setFramework}
+          onRemove={handleRemoveArtifact}
+          onResynced={() => void loadWorkspace(true)}
+          previewArtifactId={framework.preview_artifact_id}
+          resyncArtifact={
+            api.resyncArtifact
+              ? (artifactId) => api.resyncArtifact!(framework.id, artifactId)
+              : undefined
+          }
+          setPreviewArtifact={(artifactId) =>
+            api.setPreviewArtifact(framework.id, artifactId)
+          }
+        />
+        <PipelineStatusPanel
+          api={api}
+          artifacts={artifacts}
+          frameworkId={framework.id}
+          frameworkStatus={framework.status}
+          onResolved={() => void loadWorkspace(true)}
+        />
+        {hasRaritySoftFail ? (
+          <SoftFailAcknowledgement
+            api={api}
+            frameworkId={framework.id}
+            onAcknowledged={() => void loadWorkspace(true)}
+          />
+        ) : null}
+        {/* Versioning applies once a Framework has been published at least once
+            (live or delisted); a never-published draft is edited in place, so
+            the new-version action stays hidden. */}
+        {canManageLiveState && (isLive || isDelisted) ? (
+          <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
+            <h2 className="font-heading text-lg font-bold text-foreground">
+              New version
+            </h2>
+            <p className="mt-1 text-sm text-foreground-muted">
+              {isLive
+                ? "Start a draft revision. The current version stays published until the new one passes the pipeline."
+                : "Start a draft revision to edit this delisted framework. It re-runs the pipeline before it can be published again."}
+            </p>
+            <div className="mt-4">
+              <VersionRadios onChange={setChangeType} value={changeType} />
+            </div>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-sm font-semibold text-foreground">
+                Change log
+              </span>
+              <textarea
+                className="min-h-20 w-full rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                onChange={(event) => setChangeLog(event.target.value)}
+                placeholder="Summarize what changed in this version."
+                value={changeLog}
+              />
+            </label>
+            <button
+              className="mt-4 min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
+              onClick={handleCreateVersion}
+              type="button"
+            >
+              Start draft version
+            </button>
+          </section>
+        ) : null}
+      </aside>
+      <section className="min-w-0 rounded-2xl xl:col-start-1 xl:row-start-1 border border-border-default bg-surface-1 p-5 shadow-sm">
         {isLive || isDelisted ? (
           <p className="mb-4 rounded-xl border border-border-default bg-surface-2 px-4 py-3 text-sm text-foreground-muted">
             {isLive
@@ -428,110 +538,7 @@ export function FrameworkEditor({
           )}
         </FrameworkForm>
       </section>
-      <aside className="grid gap-4 min-w-0">
-        {seller.kind === "org" && canManageLiveState && isMetadataEditable ? (
-          // Pricing is metadata; the backend locks it outside draft/published/
-          // delisted. Hide the editor while locked so a save cannot 422 — the
-          // metadata-lock banner above already explains the state.
-          <FrameworkPricingForm
-            api={api}
-            framework={framework}
-            onUpdated={setFramework}
-          />
-        ) : null}
-        <ArtifactUploader
-          api={api}
-          allowConnectorImport={seller.kind === "user"}
-          artifactCount={artifacts.length}
-          existingBytes={artifacts.reduce(
-            (total, artifact) => total + artifact.file_size,
-            0,
-          )}
-          frameworkId={framework.id}
-          onUploaded={(artifact) =>
-            // A background pipeline poll can replace the list with the server
-            // copy that already includes this artifact before onUploaded fires;
-            // dedupe by id so the manifest never renders duplicate React keys.
-            setArtifacts((current) =>
-              current.some((existing) => existing.id === artifact.id)
-                ? current
-                : [artifact, ...current],
-            )
-          }
-        />
-        <ArtifactManifest
-          artifacts={artifacts}
-          canRemove={
-            framework.status === "draft" ||
-            framework.status === "pipeline_failed" ||
-            framework.status === "pipeline_passed"
-          }
-          frameworkId={framework.id}
-          frameworkStatus={framework.status}
-          onPreviewSet={setFramework}
-          onRemove={handleRemoveArtifact}
-          onResynced={() => void loadWorkspace(true)}
-          previewArtifactId={framework.preview_artifact_id}
-          resyncArtifact={
-            api.resyncArtifact
-              ? (artifactId) => api.resyncArtifact!(framework.id, artifactId)
-              : undefined
-          }
-          setPreviewArtifact={(artifactId) =>
-            api.setPreviewArtifact(framework.id, artifactId)
-          }
-        />
-        <PipelineStatusPanel
-          api={api}
-          artifacts={artifacts}
-          frameworkId={framework.id}
-          frameworkStatus={framework.status}
-          onResolved={() => void loadWorkspace(true)}
-        />
-        {hasRaritySoftFail ? (
-          <SoftFailAcknowledgement
-            api={api}
-            frameworkId={framework.id}
-            onAcknowledged={() => void loadWorkspace(true)}
-          />
-        ) : null}
-        {/* Versioning applies once a Framework has been published at least once
-            (live or delisted); a never-published draft is edited in place, so
-            the new-version action stays hidden. */}
-        {canManageLiveState && (isLive || isDelisted) ? (
-          <section className="min-w-0 rounded-2xl border border-border-default bg-surface-2 p-5 shadow-sm">
-            <h2 className="font-heading text-lg font-bold text-foreground">
-              New version
-            </h2>
-            <p className="mt-1 text-sm text-foreground-muted">
-              {isLive
-                ? "Start a draft revision. The current version stays published until the new one passes the pipeline."
-                : "Start a draft revision to edit this delisted framework. It re-runs the pipeline before it can be published again."}
-            </p>
-            <div className="mt-4">
-              <VersionRadios onChange={setChangeType} value={changeType} />
-            </div>
-            <label className="mt-4 block">
-              <span className="mb-1.5 block text-sm font-semibold text-foreground">
-                Change log
-              </span>
-              <textarea
-                className="min-h-20 w-full rounded-xl border border-border-default bg-background px-3 py-2 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
-                onChange={(event) => setChangeLog(event.target.value)}
-                placeholder="Summarize what changed in this version."
-                value={changeLog}
-              />
-            </label>
-            <button
-              className="mt-4 min-h-12 rounded-xl border border-border-default px-4 py-2 text-sm font-semibold text-foreground hover:bg-surface-3"
-              onClick={handleCreateVersion}
-              type="button"
-            >
-              Start draft version
-            </button>
-          </section>
-        ) : null}
-      </aside>
+    </div>
     </div>
   );
 }

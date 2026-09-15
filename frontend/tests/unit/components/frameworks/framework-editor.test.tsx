@@ -526,6 +526,24 @@ describe("FrameworkEditor", () => {
     expect(button).toBeEnabled();
   });
 
+  it("puts the file upload before Save changes and Run publishing checks", async () => {
+    // On a phone the columns stack in document order. The upload used to come
+    // after the form's actions, so authors scrolled down to upload and back up
+    // to run checks; files now come first and the actions follow in order.
+    mockLoad(makeFramework({ status: "draft" }), []);
+
+    renderPersonalEditor();
+
+    const runChecks = await screen.findByRole("button", {
+      name: /run publishing checks/i,
+    });
+    const upload = screen.getByRole("button", { name: /stub-upload/i });
+    const save = screen.getByRole("button", { name: /save changes/i });
+    const follows = Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(upload.compareDocumentPosition(save) & follows).toBeTruthy();
+    expect(upload.compareDocumentPosition(runChecks) & follows).toBeTruthy();
+  });
+
   it("submits publishing checks through the selected seller adapter", async () => {
     const framework = makeFramework({ status: "draft" });
     mockLoad(framework, [
