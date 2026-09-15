@@ -239,6 +239,7 @@ export function RequestorPanel() {
 
       <AttestationRequestForm
         defaultOpen={Boolean(target) || attestations.length === 0}
+        inFlight={attestations}
         myFrameworks={myFrameworks}
         onSubmit={handleRequestAttestation}
         pinned={pinned}

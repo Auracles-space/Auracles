@@ -34,3 +34,25 @@ describe("AttestationRequestForm brief limits", () => {
     },
   );
 });
+
+describe("AttestationRequestForm review types already in progress", () => {
+  it("disables a review type that is already in progress for the framework", () => {
+    render(
+      <AttestationRequestForm
+        defaultOpen
+        inFlight={[{ id: "att-1", target_id: "fw-1", review_type: "quality", status: "offered" }]}
+        myFrameworks={[]}
+        onSubmit={vi.fn(async () => false)}
+        pinned={{ id: "fw-1", title: "Seed-Stage Playbook", external: false }}
+        submitting={false}
+      />,
+    );
+
+    const quality = screen.getByRole("option", { name: /Quality/ }) as HTMLOptionElement;
+    expect(quality.disabled).toBe(true);
+    expect(quality.textContent).toMatch(/in progress/i);
+    expect(
+      (screen.getByRole("option", { name: "Compliance" }) as HTMLOptionElement).disabled,
+    ).toBe(false);
+  });
+});

@@ -21,6 +21,11 @@ import {
 import { JURISDICTION_OPTIONS } from "@/lib/marketplace/taxonomy";
 import type { FrameworkListItem } from "@/lib/generated/types.gen";
 import { isNonEmpty } from "@/lib/forms/validators";
+import {
+  REVIEW_TYPE_LABELS,
+  inFlightAttestationsFor,
+  type InFlightCandidate,
+} from "@/lib/attestation/in-flight";
 
 /** Server cap on each free-text brief field (`AttestationBrief` in the API). */
 export const BRIEF_FIELD_MAX_LENGTH = 2000;
@@ -45,6 +50,11 @@ type AttestationRequestFormProps = {
   pinned: { id: string; title: string; external: boolean } | null;
   /** The requestor's own frameworks, offered when nothing is pinned. */
   myFrameworks: FrameworkListItem[];
+  /**
+   * The requestor's existing requests; a review type already in progress for
+   * the chosen framework is disabled, because the server refuses a duplicate.
+   */
+  inFlight?: InFlightCandidate[];
   /** Whether the collapsible block starts open. */
   defaultOpen: boolean;
   /** Whether a request is in flight. */
@@ -66,6 +76,7 @@ type AttestationRequestFormProps = {
 export function AttestationRequestForm({
   pinned,
   myFrameworks,
+  inFlight = [],
   defaultOpen,
   submitting,
   onSubmit,
@@ -82,6 +93,11 @@ export function AttestationRequestForm({
   const [country, setCountry] = useState(defaultBillingCountry);
 
   const effectiveTarget = pinned?.id ?? targetId;
+  const busyReviewTypes = new Set(
+    inFlightAttestationsFor(inFlight, effectiveTarget).map(
+      (attestation) => attestation.review_type,
+    ),
+  );
   // Attestation is framework-only today; the request always targets a Framework
   // and the backend requires a review type plus a fully-populated brief.
   const canRequest =
@@ -178,10 +194,11 @@ export function AttestationRequestForm({
             value={reviewType}
           >
             <option value="">Select a review type</option>
-            <option value="quality">Quality</option>
-            <option value="compliance">Compliance</option>
-            <option value="expert">Expert</option>
-            <option value="provenance">Provenance</option>
+            {Object.entries(REVIEW_TYPE_LABELS).map(([value, label]) => (
+              <option disabled={busyReviewTypes.has(value)} key={value} value={value}>
+                {busyReviewTypes.has(value) ? `${label} (review in progress)` : label}
+              </option>
+            ))}
           </Select>
         </label>
       </div>

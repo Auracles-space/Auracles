@@ -20,6 +20,7 @@ import { PipelineStatusPanel } from "@/components/modules/frameworks/pipeline-st
 import { PublishButton } from "@/components/modules/frameworks/publish-button";
 import { SoftFailAcknowledgement } from "@/components/modules/frameworks/soft-fail-acknowledgement";
 import { VersionRadios } from "@/components/modules/frameworks/version-radios";
+import { InFlightAttestationNotes } from "@/components/modules/attestation/in-flight-attestation-notes";
 import type {
   ArtifactResponse,
   FrameworkCreate,
@@ -444,6 +445,7 @@ export function FrameworkEditor({
                 >
                   Request attestation
                 </Link>
+                <InFlightAttestationNotes frameworkId={framework.id} />
               </>
             ) : canManageLiveState && isDelisted ? (
               <RelistButton

@@ -8,6 +8,7 @@ import {
 import { type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { listAttestations } from "@/lib/generated/sdk.gen";
 import { FrameworkEditor } from "@/components/modules/frameworks/framework-editor";
 import { ToastProvider } from "@/components/ui/toast";
 import type {
@@ -72,6 +73,10 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   publishFramework: vi.fn(),
   unpublishFramework: vi.fn(),
   relistFramework: vi.fn(),
+  // The in-progress attestation note reads the requestor's own requests.
+  listAttestations: vi.fn(() =>
+    Promise.resolve({ data: { attestations: [] }, error: undefined, response: { ok: true } }),
+  ),
 }));
 
 // Stub the uploader so a test can fire onUploaded deterministically without
@@ -247,6 +252,29 @@ describe("FrameworkEditor", () => {
     await screen.findByText("Test Framework");
     const link = screen.getByRole("link", { name: "Request attestation" });
     expect(link).toHaveAttribute("href", "/attestations?target=fw_1");
+  });
+
+  it("names an attestation already in progress beside the request link", async () => {
+    // Without this, a requestor picked the same review type again and only
+    // learned on submit that one was already running.
+    mockLoad(makeFramework({ status: "published" }));
+    vi.mocked(listAttestations).mockResolvedValue({
+      data: {
+        attestations: [
+          { id: "att-1", target_type: "framework", target_id: "fw_1", review_type: "quality", status: "offered" },
+          { id: "att-2", target_type: "framework", target_id: "fw_1", review_type: "compliance", status: "released" },
+        ],
+      },
+      error: undefined,
+      response: { ok: true },
+    } as never);
+
+    renderPersonalEditor();
+
+    const view = await screen.findByRole("link", { name: /Quality review in progress/i });
+    expect(view).toHaveAttribute("href", "/attestations/att-1");
+    expect(screen.queryByText(/Compliance review in progress/i)).toBeNull();
+    expect(screen.getByRole("link", { name: "Request attestation" })).toBeInTheDocument();
   });
 
   it("offers no attestation request while the framework is a draft", async () => {
