@@ -3630,6 +3630,7 @@ export type OrgAttestationItem = {
  */
 export type OrgAttestationOfferItem = {
     attestation_id: string;
+    attestation_status: string;
     cohort_index: number;
     expires_at: string;
     match_score: (number | null);

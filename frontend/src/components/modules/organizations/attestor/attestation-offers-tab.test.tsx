@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   listOrgAttestationOffersV1OrgsOrgIdAttestationOffersGet as listOffers,
@@ -120,6 +120,38 @@ describe("AttestationOffersTab", () => {
     render(<AttestationOffersTab />);
 
     expect(await screen.findByText("Awaiting your response")).toBeInTheDocument();
+  });
+
+  it("separates open offers, reviews in progress, and attested work", async () => {
+    // Accepted offers stayed in one list forever, so finished attestations
+    // sat among the offers still waiting for an answer.
+    mockOffers(
+      offer({ offer_id: "o-open", target_title: "Open Playbook", status: "offered" }),
+      offer({
+        offer_id: "o-review",
+        attestation_id: "att-review",
+        target_title: "Review Playbook",
+        status: "accepted",
+        attestation_status: "in_review",
+      }),
+      offer({
+        offer_id: "o-done",
+        attestation_id: "att-done",
+        target_title: "Attested Playbook",
+        status: "accepted",
+        attestation_status: "released",
+      }),
+    );
+
+    render(<AttestationOffersTab />);
+
+    const open = await screen.findByRole("region", { name: "Open offers" });
+    const inReview = screen.getByRole("region", { name: "In review" });
+    const attested = screen.getByRole("region", { name: "Attested" });
+    expect(within(open).getByText("Open Playbook")).toBeInTheDocument();
+    expect(within(inReview).getByText("Review Playbook")).toBeInTheDocument();
+    expect(within(attested).getByText("Attested Playbook")).toBeInTheDocument();
+    expect(within(attested).queryByText("Review Playbook")).toBeNull();
   });
 
   it("links to the workspace once the offer is accepted", async () => {

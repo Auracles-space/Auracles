@@ -10600,6 +10600,9 @@ components:
           format: uuid
           title: Attestation Id
           type: string
+        attestation_status:
+          title: Attestation Status
+          type: string
         cohort_index:
           title: Cohort Index
           type: integer
@@ -10641,6 +10644,7 @@ components:
       - target_type
       - target_id
       - status
+      - attestation_status
       - cohort_index
       - match_score
       - offered_at

@@ -1177,6 +1177,10 @@ class OrgAttestationOfferItem(BaseModel):
     # target has no resolvable title (e.g. a contributor target).
     target_title: str | None = None
     status: str
+    # Where the attestation itself has got to (e.g. ``in_review``, ``released``),
+    # so the Offers tab can separate open offers, reviews in progress, and
+    # attested work.
+    attestation_status: str
     cohort_index: int
     match_score: float | None
     offered_at: datetime

@@ -657,6 +657,8 @@ async def test_attestation_matching_offers_and_first_accept_wins(
 
     assert webhook_response.status_code == 200
     assert offers_list_response.status_code == 200
+    # The Offers tab groups offers by where the attestation has got to.
+    assert offers_list_response.json()["offers"][0]["attestation_status"] == "offered"
     assert offers_list_response.json()["offers"][0]["attestation_id"] == str(
         attestation_id
     )

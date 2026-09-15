@@ -1,7 +1,9 @@
 "use client";
 
 /**
- * Open attestation offers for one attestor organization.
+ * Attestation offers for one attestor organization, grouped by where the
+ * work has got to: open offers awaiting an answer, reviews in progress,
+ * attested work, and requests that closed without attesting.
  *
  * One card per offer, carrying what the org is being asked to review, how well
  * the matcher scored it, and how long is left to answer — the clock is the
@@ -43,6 +45,34 @@ function describeMatchScore(score: number | null): string {
     return "No score";
   }
   return `${Math.round(score * 100)}% match`;
+}
+
+/** Attestation statuses where the fee was released and the report stood. */
+const ATTESTED_STATUSES = new Set(["released", "closed"]);
+/** Attestation statuses where the request ended without an attestation. */
+const ENDED_STATUSES = new Set(["refunded", "cancelled"]);
+
+/** The Offers tab's sections, in display order. */
+const OFFER_SECTIONS = [
+  { key: "open", title: "Open offers" },
+  { key: "in_review", title: "In review" },
+  { key: "attested", title: "Attested" },
+  { key: "closed", title: "Closed" },
+] as const;
+
+type OfferSectionKey = (typeof OFFER_SECTIONS)[number]["key"];
+
+/**
+ * Place an offer in its Offers tab section.
+ *
+ * @param offer - One offer with its attestation's status.
+ * @returns The section key.
+ */
+function sectionFor(offer: OrgAttestationOfferItem): OfferSectionKey {
+  if (offer.status !== "accepted") return "open";
+  if (ATTESTED_STATUSES.has(offer.attestation_status)) return "attested";
+  if (ENDED_STATUSES.has(offer.attestation_status)) return "closed";
+  return "in_review";
 }
 
 /**
@@ -126,8 +156,23 @@ export function AttestationOffersTab() {
         Attestation offers
       </h2>
 
+      {OFFER_SECTIONS.map((section) => {
+        const sectionOffers = offers.filter((offer) => sectionFor(offer) === section.key);
+        if (sectionOffers.length === 0) return null;
+        const headingId = `offers-${section.key}`;
+        return (
+          <section aria-labelledby={headingId} className="space-y-3" key={section.key}>
+            <div className="flex items-baseline gap-2">
+              <h3
+                className="text-sm font-semibold uppercase tracking-[0.05em] text-foreground-muted"
+                id={headingId}
+              >
+                {section.title}
+              </h3>
+              <span className="text-sm text-foreground-muted">{sectionOffers.length}</span>
+            </div>
       <div className="grid gap-4">
-        {offers.map((offer) => {
+        {sectionOffers.map((offer) => {
           const expiry = describeOfferExpiry(offer.expires_at);
           // Accept/decline only make sense on a live, un-actioned offer. Once
           // accepted (member staffed) or expired, show status only.
@@ -194,6 +239,9 @@ export function AttestationOffersTab() {
           );
         })}
       </div>
+          </section>
+        );
+      })}
 
       {acceptingOfferId && orgId && (
         <AcceptAndStaffDialog

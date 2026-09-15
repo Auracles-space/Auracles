@@ -1613,6 +1613,7 @@ def _offer_item(
         target_id=attestation.target_id,
         target_title=target_title,
         status=offer.status,
+        attestation_status=attestation.status,
         cohort_index=offer.cohort_index,
         match_score=float(offer.match_score) if offer.match_score is not None else None,
         offered_at=offer.offered_at,
