@@ -14,7 +14,7 @@
  *
  * Maps to: admin financial oversight (payout directory).
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   configureBrowserClient,
@@ -24,6 +24,7 @@ import {
 import { listAdminPayoutsV1AdminPayoutsGet } from "@/lib/generated/sdk.gen";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 import { formatMoney } from "@/lib/marketplace/format";
+import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 import type {
   AdminPayoutDirectoryResponse,
   AdminPayoutItem,
@@ -72,41 +73,52 @@ export function AdminPayoutsPanel() {
   const [orgFilter, setOrgFilter] = useState("");
   const orgId = isUuid(orgFilter) ? orgFilter : "";
 
-  useEffect(() => {
-    let mounted = true;
+  // Guards against a slow earlier response overwriting a newer one after a
+  // filter change or a focus refetch.
+  const latestRequest = useRef(0);
 
-    async function loadPayouts(): Promise<void> {
-      configureBrowserClient();
-      const result = await listAdminPayoutsV1AdminPayoutsGet({
-        headers: getAccessTokenHeaders(),
-        query: {
-          page: 1,
-          page_size: 20,
-          status: statusFilter,
-          provider: providerFilter,
-          ...(orgId ? { org_id: orgId } : {}),
-        },
-      });
+  const loadPayouts = useCallback(async (): Promise<void> => {
+    const requestId = ++latestRequest.current;
+    configureBrowserClient();
+    const result = await listAdminPayoutsV1AdminPayoutsGet({
+      headers: getAccessTokenHeaders(),
+      query: {
+        page: 1,
+        page_size: 20,
+        status: statusFilter,
+        provider: providerFilter,
+        ...(orgId ? { org_id: orgId } : {}),
+      },
+    });
 
-      if (!mounted) {
-        return;
-      }
-
-      setLoading(false);
-      if (!result.response.ok || !result.data) {
-        setError(describeGeneratedError(result.error));
-        return;
-      }
-
-      setError(null);
-      setDirectory(result.data);
+    if (requestId !== latestRequest.current) {
+      return;
     }
 
+    setLoading(false);
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+
+    setError(null);
+    setDirectory(result.data);
+  }, [statusFilter, providerFilter, orgId]);
+
+  useEffect(() => {
     void loadPayouts();
     return () => {
-      mounted = false;
+      // Drop any in-flight response once the panel unmounts or filters change.
+      latestRequest.current += 1;
     };
-  }, [statusFilter, providerFilter, orgId]);
+  }, [loadPayouts]);
+
+  // A payout settled by a provider webhook while the admin was away should not
+  // keep showing Processing; refetch silently when the tab regains focus.
+  const refreshOnFocus = useCallback(() => {
+    void loadPayouts();
+  }, [loadPayouts]);
+  useRefetchOnFocus(refreshOnFocus);
 
   if (loading) {
     return <TableSkeleton />;

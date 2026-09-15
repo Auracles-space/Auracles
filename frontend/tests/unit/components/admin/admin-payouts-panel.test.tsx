@@ -45,6 +45,20 @@ function respond(items: unknown[]) {
 describe("AdminPayoutsPanel", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("refetches when the admin returns to the tab so a settled payout is not stale", async () => {
+    // A payout completed by a provider webhook kept showing Processing until a
+    // manual reload, because the list only loaded on mount and filter changes.
+    respond([payout({ status: "processing", beneficiary_type: "org", beneficiary_id: ORG_ID, beneficiary_name: "Ikeji Advisory" })]);
+    render(<AdminPayoutsPanel />);
+    await screen.findByText("Ikeji Advisory");
+    expect(listAdminPayoutsV1AdminPayoutsGet).toHaveBeenCalledTimes(1);
+
+    respond([payout({ status: "completed", beneficiary_type: "org", beneficiary_id: ORG_ID, beneficiary_name: "Ikeji Advisory" })]);
+    fireEvent(window, new Event("focus"));
+
+    await waitFor(() => expect(listAdminPayoutsV1AdminPayoutsGet).toHaveBeenCalledTimes(2));
+  });
+
   it("names an organization beneficiary and links it to the org detail page", async () => {
     respond([
       payout({ beneficiary_type: "org", beneficiary_id: ORG_ID, beneficiary_name: "Meridian Audit" }),
