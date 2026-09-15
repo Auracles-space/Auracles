@@ -199,7 +199,11 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
       tabs.push({ id: "financials", label: "Financials" });
     }
 
-    tabs.push({ id: "offers", label: "Offers", count: counts?.offers });
+    // Offers are attestation requests routed to attestor organizations, so the
+    // tab waits for the capability; the application lives on the Attestor tab.
+    if (attestorActive) {
+      tabs.push({ id: "offers", label: "Offers", count: counts?.offers });
+    }
   }
   // The Queue is where a staffed reviewing member reaches their assigned work,
   // so it must be visible to plain members too — not just admins. The backend

@@ -622,3 +622,38 @@ describe("OrganizationShell header", () => {
     expect(screen.getByRole("tab", { name: /^Members$/ })).toHaveAttribute("aria-selected", "true");
   });
 });
+
+describe("OrganizationShell Offers tab", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: { required: false, current_version: "1.0", signed_version: null, signed_at: null },
+    } as never);
+  });
+
+  it("hides Offers from an owner until the attestor capability is active", async () => {
+    // Offers are attestation requests sent to attestor organizations; before
+    // approval the tab could only ever be empty. The Attestor tab, where the
+    // application lives, stays visible.
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "owner",
+            kyb_status: "verified",
+            capabilities: { contributor: "active", operator: "active" },
+            counts: { offers: 0, queue: 0, invitations: 0 },
+          },
+        ],
+      },
+    } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+
+    expect(await screen.findByRole("tab", { name: /^Attestor$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Offers/i })).toBeNull();
+  });
+});
