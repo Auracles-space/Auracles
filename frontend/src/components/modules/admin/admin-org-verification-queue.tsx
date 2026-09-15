@@ -27,6 +27,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { adminListOrgsV1AdminOrgsGet, adminReviewOrgKyb } from "@/lib/generated/sdk.gen";
+import { AdminOrgKybDocuments } from "@/components/modules/admin/admin-org-kyb-documents";
 import { emitOrgVerificationChanged } from "@/components/modules/admin/admin-events";
 import type { AdminOrgResponse } from "@/lib/generated/types.gen";
 
@@ -150,6 +151,7 @@ export function AdminOrgVerificationQueue() {
           </div>
 
           <div className="mt-4 grid gap-3 rounded-xl border border-border-default bg-surface-2 p-4">
+            <AdminOrgKybDocuments orgId={org.id} />
             <label className="grid gap-2 text-sm font-semibold text-foreground">
               Notes to the organization
               <Textarea

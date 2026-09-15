@@ -9,7 +9,11 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminOrgVerificationQueue } from "@/components/modules/admin/admin-org-verification-queue";
-import { adminListOrgsV1AdminOrgsGet, adminReviewOrgKyb } from "@/lib/generated/sdk.gen";
+import {
+  adminListOrgsV1AdminOrgsGet,
+  adminOrgVerificationV1AdminOrgsOrgIdVerificationGet,
+  adminReviewOrgKyb,
+} from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -22,6 +26,7 @@ vi.mock("@/lib/auth/form-client", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   adminListOrgsV1AdminOrgsGet: vi.fn(),
+  adminOrgVerificationV1AdminOrgsOrgIdVerificationGet: vi.fn(),
   adminReviewOrgKyb: vi.fn(),
 }));
 
@@ -58,6 +63,37 @@ describe("AdminOrgVerificationQueue", () => {
     vi.mocked(adminReviewOrgKyb).mockReset();
     vi.mocked(adminListOrgsV1AdminOrgsGet).mockResolvedValue(
       ok({ orgs: [pendingOrg], page: 1, page_size: 50, total: 1 }) as never,
+    );
+  });
+
+  it("loads an organization's documents on request and links each one", async () => {
+    // Minting the links is audited and they expire in 5 minutes, so the queue
+    // fetches them only when the admin asks, not on page load.
+    vi.mocked(adminOrgVerificationV1AdminOrgsOrgIdVerificationGet).mockResolvedValue(
+      ok({
+        documents: [
+          {
+            download_url: "https://s3.test/cert.pdf?sig=1",
+            file_name: "cac-certificate.pdf",
+            kind: "incorporation_document",
+          },
+        ],
+      }) as never,
+    );
+    render(<AdminOrgVerificationQueue />);
+
+    const article = (await screen.findByText("Lagos Advisory Limited")).closest(
+      "article",
+    ) as HTMLElement;
+    expect(adminOrgVerificationV1AdminOrgsOrgIdVerificationGet).not.toHaveBeenCalled();
+
+    fireEvent.click(within(article).getByRole("button", { name: "Show documents" }));
+
+    const link = await within(article).findByRole("link", { name: "Open cac-certificate.pdf" });
+    expect(link).toHaveAttribute("href", "https://s3.test/cert.pdf?sig=1");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(adminOrgVerificationV1AdminOrgsOrgIdVerificationGet).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { org_id: "org-pending" } }),
     );
   });
 
