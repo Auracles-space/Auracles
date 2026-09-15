@@ -57,6 +57,28 @@ describe("ApplyGate specialisation controls", () => {
     expect(body.jurisdictions).toEqual(["united_states"]);
   });
 
+  it("tells the org shell the application changed after a save", async () => {
+    // The NDA becomes required once an application exists; the shell listens
+    // so its NDA tab appears without a reload.
+    const heard = vi.fn();
+    window.addEventListener("auracles:attestor-application-changed", heard);
+    render(<ApplyGate orgId="org-1" application={null} onChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Credentials Summary/i), {
+      target: { value: "Ten years of audit experience across sectors." },
+    });
+    fireEvent.change(screen.getByLabelText(/Professional References/i), {
+      target: { value: "Jane Doe, jane@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Sectors/i), { target: { value: "private_equity" } });
+    fireEvent.change(screen.getByLabelText(/Functions/i), { target: { value: "compliance" } });
+    fireEvent.change(screen.getByLabelText(/Jurisdictions/i), { target: { value: "united_states" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+
+    await waitFor(() => expect(heard).toHaveBeenCalled());
+    window.removeEventListener("auracles:attestor-application-changed", heard);
+  });
+
   it("enables Save once the required fields are filled", () => {
     // Submit lives on the application tab's final step; the gate only owns
     // Save, which unlocks once the required fields are satisfied.

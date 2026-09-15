@@ -15,3 +15,16 @@ export function emitNdaSigned(): void {
     window.dispatchEvent(new Event(NDA_SIGNED_EVENT));
   }
 }
+
+/** Fired after the org's attestor application is created or changed. */
+export const ATTESTOR_APPLICATION_CHANGED_EVENT = "auracles:attestor-application-changed";
+
+/**
+ * Emit the attestor-application-changed event so the shell re-reads NDA
+ * status: a live application makes the NDA required.
+ */
+export function emitAttestorApplicationChanged(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ATTESTOR_APPLICATION_CHANGED_EVENT));
+  }
+}

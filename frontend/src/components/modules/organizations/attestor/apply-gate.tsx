@@ -16,6 +16,7 @@ import {
   JURISDICTION_OPTIONS,
   SECTOR_OPTIONS,
 } from "@/lib/marketplace/taxonomy";
+import { emitAttestorApplicationChanged } from "@/lib/organizations/org-events";
 
 /** Red asterisk marking a field the backend requires (NOT NULL). */
 function RequiredMark() {
@@ -134,6 +135,9 @@ export function ApplyGate({
         setError(describeGeneratedError(res.error));
       } else {
         onChange();
+        // The first save creates the application, which makes the org NDA
+        // required; the shell listens so its NDA tab appears straight away.
+        emitAttestorApplicationChanged();
       }
     } catch {
       setError("An unexpected error occurred.");

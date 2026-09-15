@@ -14,7 +14,10 @@
 import { useCallback, useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
-import { NDA_SIGNED_EVENT } from "@/lib/organizations/org-events";
+import {
+  ATTESTOR_APPLICATION_CHANGED_EVENT,
+  NDA_SIGNED_EVENT,
+} from "@/lib/organizations/org-events";
 import { listMyOrganizationsV1OrgsMineGet, getOrgNda } from "@/lib/generated/sdk.gen";
 import type { MyOrganizationResponse } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders } from "@/lib/auth/form-client";
@@ -108,6 +111,13 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     window.addEventListener(NDA_SIGNED_EVENT, onSigned);
     return () => window.removeEventListener(NDA_SIGNED_EVENT, onSigned);
   }, [loadNda]);
+
+  // Saving the attestor application can make the NDA required, so show the
+  // NDA tab the moment it changes rather than on the next reload or focus.
+  useEffect(() => {
+    window.addEventListener(ATTESTOR_APPLICATION_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(ATTESTOR_APPLICATION_CHANGED_EVENT, refresh);
+  }, [refresh]);
 
   if (loading) {
     return (

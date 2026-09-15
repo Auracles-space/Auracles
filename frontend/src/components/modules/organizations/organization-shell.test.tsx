@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   listMyOrganizationsV1OrgsMineGet as listMyOrgs,
@@ -6,6 +6,7 @@ import {
   activateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePost as activateOperator,
 } from "@/lib/generated/sdk.gen";
 import { OrganizationShell } from "./organization-shell";
+import { ATTESTOR_APPLICATION_CHANGED_EVENT } from "@/lib/organizations/org-events";
 import { OrganizationCapabilities } from "./organization-capabilities";
 
 let mockPathname = "/dashboard/organizations/org-1";
@@ -655,5 +656,48 @@ describe("OrganizationShell Offers tab", () => {
 
     expect(await screen.findByRole("tab", { name: /^Attestor$/i })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Offers/i })).toBeNull();
+  });
+});
+
+describe("OrganizationShell NDA tab after an attestor application is saved", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1/attestor";
+  });
+
+  it("shows the NDA tab as soon as the application changes, without a reload", async () => {
+    // Saving the first draft makes the NDA required; the shell only re-read
+    // NDA status on mount, focus, or signing, so the tab stayed hidden.
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role: "owner",
+            kyb_status: "verified",
+            capabilities: {},
+            counts: { offers: 0, queue: 0, invitations: 0 },
+          },
+        ],
+      },
+    } as never);
+    vi.mocked(getOrgNda)
+      .mockResolvedValueOnce({
+        data: { required: false, current_version: "1.0", signed_version: null, signed_at: null },
+      } as never)
+      .mockResolvedValue({
+        data: { required: true, current_version: "1.0", signed_version: null, signed_at: null },
+      } as never);
+
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+    await screen.findByRole("tab", { name: /^Attestor$/i });
+    expect(screen.queryByRole("tab", { name: /NDA/i })).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new Event(ATTESTOR_APPLICATION_CHANGED_EVENT));
+    });
+
+    expect(await screen.findByRole("tab", { name: /NDA/i })).toBeInTheDocument();
   });
 });
