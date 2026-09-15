@@ -253,6 +253,37 @@ async def test_paystack_list_banks_skips_malformed_entries() -> None:
     assert [bank.code for bank in banks] == ["044"]
 
 
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_list_banks_drops_exact_duplicates() -> None:
+    """Paystack repeats some banks verbatim; each name and code pair appears once.
+
+    Two different institutions sharing a code both stay listed.
+    """
+    respx.get("https://api.paystack.co/bank").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": [
+                    {"name": "Zenith Bank", "code": "057"},
+                    {"name": "Zenith Bank", "code": "057"},
+                    {"name": "Alpha Microfinance Bank", "code": "50572"},
+                    {"name": "Beta Microfinance Bank", "code": "50572"},
+                ],
+            },
+        )
+    )
+
+    banks = await list_banks(country="nigeria", settings=PAYSTACK_SETTINGS)
+
+    assert [(bank.name, bank.code) for bank in banks] == [
+        ("Zenith Bank", "057"),
+        ("Alpha Microfinance Bank", "50572"),
+        ("Beta Microfinance Bank", "50572"),
+    ]
+
+
 def test_paystack_webhook_signature_matrix_accepts_only_valid_raw_payload() -> None:
     """Paystack webhook verification uses HMAC-SHA512 over the raw body."""
     payload = json.dumps(

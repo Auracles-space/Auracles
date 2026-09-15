@@ -72,7 +72,17 @@ export function PaystackBankFields({
         setError(describeGeneratedError(result.error));
         return;
       }
-      setBanks(result.data.banks);
+      // The API drops Paystack's verbatim repeats; deduping here as well keeps
+      // option keys unique even against an older API build.
+      const seen = new Set<string>();
+      setBanks(
+        result.data.banks.filter((bank: PayoutBank) => {
+          const key = `${bank.code}:${bank.name}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }),
+      );
     }
 
     void loadBanks();

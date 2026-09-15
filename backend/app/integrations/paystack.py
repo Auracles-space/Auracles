@@ -462,12 +462,19 @@ async def list_banks(
     if not isinstance(data, list):
         raise PaystackProviderError("Paystack bank list response is not a list.")
     banks: list[PaystackBank] = []
+    # Paystack repeats some entries verbatim; a repeated pair is noise, while
+    # two institutions sharing one code are both real and both kept.
+    seen: set[tuple[str, str]] = set()
     for entry in data:
         if not isinstance(entry, dict):
             continue
         name = entry.get("name")
         code = entry.get("code")
         if isinstance(name, str) and isinstance(code, str | int):
+            pair = (name, str(code))
+            if pair in seen:
+                continue
+            seen.add(pair)
             banks.append(PaystackBank(name=name, code=str(code)))
     return banks
 
