@@ -63,6 +63,7 @@ from app.modules.organizations.schemas import (
     OrgAttestorTaxDocumentRequest,
     OrgUndertakingsSignRequest,
 )
+from app.modules.organizations.tax_documents import ensure_tax_document_type_allowed
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
 # Org tax-document uploads reuse the shared credential-evidence upload limits.
@@ -540,6 +541,7 @@ async def set_tax_document(
         HTTPException(404): If no live application exists.
         HTTPException(409): If the application is not gate-eligible.
         HTTPException(413): If the upload exceeds the size limit.
+        HTTPException(422): If the type does not belong to the org's country.
     """
     if payload.size_bytes > TAX_DOCUMENT_MAX_BYTES:
         raise HTTPException(
@@ -555,6 +557,10 @@ async def set_tax_document(
         application = await _load_live_locked(
             db, org_id, allowed_statuses=_GATEABLE_STATUSES
         )
+        country = await db.scalar(
+            select(Organization.country).where(Organization.id == org_id)
+        )
+        ensure_tax_document_type_allowed(country or "", payload.tax_document_type)
         key = (
             f"org-attestor-tax-documents/{org_id}/{application.id}/"
             f"{uuid4()}-{_safe_file_name(payload.file_name)}"

@@ -21,14 +21,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { useOrganization } from "@/components/modules/organizations/organization-context";
 
-import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
+import {
+  TAX_DOCUMENT_LABELS,
+  taxDocumentLabel,
+  taxDocumentTypesFor,
+  type TaxDocumentType,
+} from "@/lib/organizations/tax-documents";
 
-/** Display names for the tax document types the API accepts. */
-const TAX_DOCUMENT_LABELS: Record<string, string> = {
-  w9: "W-9 (US Persons)",
-  w8ben: "W-8BEN (Non-US Persons)",
-  other: "Other / Exemption",
-};
+import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
 
 /**
  * Render the tax-document upload control for the checklist.
@@ -43,13 +43,14 @@ export function TaxDocumentGate({
   application: OrgAttestorApplicationResponse | null;
   onChange: () => void;
 }) {
-  const { orgId } = useOrganization();
+  const { orgId, org } = useOrganization();
+  const documentTypes = taxDocumentTypesFor(org?.country);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploaded, setUploaded] = useState(false);
   const [replacing, setReplacing] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [docType, setDocType] = useState<"w9" | "w8ben" | "other">("w9");
+  const [docType, setDocType] = useState<TaxDocumentType>(documentTypes[0]);
 
   const isUploaded = !!application?.tax_document_key;
   // Only draft and needs-info applications may change their documents; once the
@@ -71,7 +72,7 @@ export function TaxDocumentGate({
   // On file in an editable state (stored, or uploaded moments ago before the
   // refetch lands): confirm it and offer a replace instead of an empty form.
   if ((isUploaded || uploaded) && !replacing) {
-    const typeLabel = TAX_DOCUMENT_LABELS[application?.tax_document_type ?? ""];
+    const typeLabel = taxDocumentLabel(application?.tax_document_type);
     return (
       <div className="rounded-xl border border-success/40 bg-success/10 p-5 text-sm text-foreground">
         <p className="font-semibold text-success">Tax document on file</p>
@@ -159,17 +160,18 @@ export function TaxDocumentGate({
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="mb-1 block text-sm font-semibold text-foreground">
-            Document Type
+          <label htmlFor="tax_document_type" className="mb-1 block text-sm font-semibold text-foreground">
+            Document type
           </label>
           <select
+            id="tax_document_type"
             value={docType}
-            onChange={(e) => setDocType(e.target.value as "w9" | "w8ben" | "other")}
+            onChange={(e) => setDocType(e.target.value as TaxDocumentType)}
             className="w-full rounded-md border border-border-default bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
           >
-            {Object.entries(TAX_DOCUMENT_LABELS).map(([value, label]) => (
+            {documentTypes.map((value) => (
               <option key={value} value={value}>
-                {label}
+                {TAX_DOCUMENT_LABELS[value]}
               </option>
             ))}
           </select>

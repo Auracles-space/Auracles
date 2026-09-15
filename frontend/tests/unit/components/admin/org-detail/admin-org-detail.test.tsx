@@ -212,6 +212,7 @@ describe("AdminOrganizationDetailPage", () => {
     expect(panel).toHaveTextContent("RC-778812");
     expect(panel).toHaveTextContent("12 Bompai Road");
     expect(panel).toHaveTextContent("Tax document was blurry on first submission.");
+    expect(panel).toHaveTextContent("Tax Clearance Certificate (TCC)");
     expect(getVerification).toHaveBeenCalledTimes(1);
   });
 

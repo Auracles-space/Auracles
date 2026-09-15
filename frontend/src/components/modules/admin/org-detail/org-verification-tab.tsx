@@ -16,6 +16,7 @@ import { StatusPill, ownerStatusKey } from "@/components/ui/status-pill";
 import { adminOrgVerificationV1AdminOrgsOrgIdVerificationGet } from "@/lib/generated/sdk.gen";
 import type { AdminOrgVerificationResponse } from "@/lib/generated/types.gen";
 import { formatLabel, formatShortDate } from "@/lib/marketplace/format";
+import { taxDocumentLabel } from "@/lib/organizations/tax-documents";
 
 /**
  * Join the string parts of a submitted address into one line.
@@ -52,7 +53,7 @@ export function OrgVerificationTab({ orgId }: { orgId: string }) {
           <Fact label="Legal name">{data.legal_name}</Fact>
           <Fact label="Registration number">{data.registration_number}</Fact>
           <Fact label="Address">{formatAddress(data.address)}</Fact>
-          <Fact label="Tax document">{data.tax_document_type ? formatLabel(data.tax_document_type) : ""}</Fact>
+          <Fact label="Tax document">{taxDocumentLabel(data.tax_document_type)}</Fact>
           <Fact label="Submitted">{formatShortDate(data.kyb_submitted_at)}</Fact>
           <Fact label="Verified">{formatShortDate(data.kyb_verified_at)}</Fact>
         </dl>

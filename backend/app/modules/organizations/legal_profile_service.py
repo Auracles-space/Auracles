@@ -27,8 +27,9 @@ from app.modules.attestation.credential_service import (
     _safe_file_name,
 )
 from app.modules.attestation.schemas import CredentialEvidenceUploadSessionResponse
-from app.modules.organizations.models import OrgLegalProfile
+from app.modules.organizations.models import Organization, OrgLegalProfile
 from app.modules.organizations.schemas import OrgAttestorTaxDocumentRequest
+from app.modules.organizations.tax_documents import ensure_tax_document_type_allowed
 
 LEGAL_PROFILE_TAX_DOCUMENT_MAX_BYTES = CREDENTIAL_EVIDENCE_MAX_BYTES
 LEGAL_PROFILE_TAX_DOCUMENT_UPLOAD_TTL_SECONDS = CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS
@@ -147,6 +148,10 @@ async def set_tax_document(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Organization legal profile not found.",
             )
+        country = await db.scalar(
+            select(Organization.country).where(Organization.id == org_id)
+        )
+        ensure_tax_document_type_allowed(country or "", payload.tax_document_type)
         key = (
             f"org-legal-profiles/{org_id}/tax-documents/"
             f"{uuid4()}-{_safe_file_name(payload.file_name)}"

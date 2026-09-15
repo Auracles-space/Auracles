@@ -782,7 +782,8 @@ class OrgUndertakingsSignRequest(BaseModel):
 class OrgAttestorTaxDocumentRequest(BaseModel):
     """Request body to create a presigned tax-document upload session."""
 
-    tax_document_type: Literal["w9", "w8ben", "other"]
+    # The org's country narrows these further (see tax_documents.py).
+    tax_document_type: Literal["w9", "w8ben", "firs_tin", "tcc", "other"]
     file_name: str = Field(min_length=1, max_length=255)
     content_type: str = Field(min_length=1, max_length=255)
     size_bytes: int = Field(gt=0)

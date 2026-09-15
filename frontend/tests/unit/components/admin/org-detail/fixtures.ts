@@ -88,7 +88,7 @@ export const VERIFICATION: AdminOrgVerificationResponse = {
   kyb_submitted_at: "2026-09-02T09:00:00Z",
   kyb_verified_at: null,
   kyb_review_notes: "Tax document was blurry on first submission.",
-  tax_document_type: "tin_certificate",
+  tax_document_type: "tcc",
   documents: [
     { kind: "incorporation", file_name: "cac.pdf", download_url: "https://s3.example/cac.pdf?sig=1" },
     { kind: "tax", file_name: "tin.pdf", download_url: null },

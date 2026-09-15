@@ -16,12 +16,17 @@ vi.mock("@/lib/auth/form-client", async (importOriginal) => ({
   getAccessTokenHeaders: () => ({ Authorization: "Bearer test" }),
 }));
 
+const orgState = vi.hoisted(() => ({ country: "US" }));
+
 vi.mock("@/components/modules/organizations/organization-context", () => ({
-  useOrganization: () => ({ orgId: "org-1" }),
+  useOrganization: () => ({ orgId: "org-1", org: { country: orgState.country } }),
 }));
 
 describe("TaxDocumentGate", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    orgState.country = "US";
+  });
 
   it("uploads the tax document to S3 after reserving the key", async () => {
     // Reserving the key is not enough: without the S3 POST, the admin download
@@ -174,5 +179,74 @@ describe("TaxDocumentGate", () => {
 
     expect(await screen.findByText("Upload service is unavailable.")).toBeInTheDocument();
     expect(screen.queryByText("An unexpected error occurred.")).not.toBeInTheDocument();
+  });
+});
+
+describe("TaxDocumentGate document types by country", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    orgState.country = "US";
+  });
+
+  function optionLabels() {
+    const select = screen.getByLabelText(/Document type/i) as HTMLSelectElement;
+    return Array.from(select.options).map((option) => option.textContent);
+  }
+
+  it("offers Nigerian tax documents, not US IRS forms, to a Nigerian org", () => {
+    orgState.country = "NG";
+    render(<TaxDocumentGate application={null} onChange={vi.fn()} />);
+
+    expect(optionLabels()).toEqual([
+      "FIRS TIN certificate",
+      "Tax Clearance Certificate (TCC)",
+      "Other / Exemption",
+    ]);
+  });
+
+  it("offers US IRS forms, not Nigerian documents, elsewhere", () => {
+    render(<TaxDocumentGate application={null} onChange={vi.fn()} />);
+
+    expect(optionLabels()).toEqual([
+      "W-9 (US Persons)",
+      "W-8BEN (Non-US Persons)",
+      "Other / Exemption",
+    ]);
+  });
+
+  it("uploads a Nigerian org's default choice as a FIRS TIN certificate", async () => {
+    orgState.country = "NG";
+    vi.mocked(uploadOrgAttestorTaxDocument).mockResolvedValue({
+      error: { detail: "stop" },
+    } as never);
+    render(<TaxDocumentGate application={null} onChange={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText(/Upload Document/i), {
+      target: { files: [new File(["x"], "tin.pdf", { type: "application/pdf" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Upload Document/i }));
+
+    await waitFor(() => expect(uploadOrgAttestorTaxDocument).toHaveBeenCalled());
+    expect(vi.mocked(uploadOrgAttestorTaxDocument).mock.calls[0][0].body.tax_document_type).toBe(
+      "firs_tin",
+    );
+  });
+
+  it("names a stored Nigerian document on the on-file card", () => {
+    orgState.country = "NG";
+    render(
+      <TaxDocumentGate
+        application={
+          {
+            status: "draft",
+            tax_document_key: "org-attestor-tax-documents/org-1/app/tcc.pdf",
+            tax_document_type: "tcc",
+          } as never
+        }
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Tax Clearance Certificate (TCC)")).toBeInTheDocument();
   });
 });

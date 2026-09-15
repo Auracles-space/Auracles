@@ -3829,10 +3829,10 @@ export type OrgAttestorTaxDocumentRequest = {
     content_type: string;
     file_name: string;
     size_bytes: number;
-    tax_document_type: 'w9' | 'w8ben' | 'other';
+    tax_document_type: 'w9' | 'w8ben' | 'firs_tin' | 'tcc' | 'other';
 };
 
-export type tax_document_type = 'w9' | 'w8ben' | 'other';
+export type tax_document_type = 'w9' | 'w8ben' | 'firs_tin' | 'tcc' | 'other';
 
 /**
  * One organization capability row.

@@ -85,6 +85,8 @@ ORG_TAX_DOCUMENT_TYPE_ENUM = ENUM(
     "w9",
     "w8ben",
     "other",
+    "firs_tin",
+    "tcc",
     name="tax_document_type_enum",
     create_type=False,
 )

@@ -11177,6 +11177,8 @@ components:
           enum:
           - w9
           - w8ben
+          - firs_tin
+          - tcc
           - other
           title: Tax Document Type
           type: string

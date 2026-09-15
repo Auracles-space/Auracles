@@ -128,6 +128,7 @@ async def _create_org(
     attestor_status: str | None = "pending",
     suspended: bool = False,
     kyb_verified: bool = True,
+    country: str = "US",
 ) -> UUID:
     """Insert org + owner member (+ attestor capability); return org id.
 
@@ -140,7 +141,7 @@ async def _create_org(
             org = Organization(
                 slug=f"orgatt-{uuid4().hex[:6]}",
                 name="Org Attestor Endpoint",
-                country="US",
+                country=country,
                 created_by=owner_id,
                 suspended_at=datetime.now(UTC) if suspended else None,
             )
@@ -401,6 +402,81 @@ async def test_tax_document_upload_session(
     )
     assert res.status_code == 200
     assert res.json()["s3_key"].startswith("org-attestor-tax-documents/")
+
+
+def _tax_body(tax_document_type: str) -> dict[str, object]:
+    """Build a tax-document upload request for the given document type."""
+    return {
+        "tax_document_type": tax_document_type,
+        "file_name": "tax.pdf",
+        "content_type": "application/pdf",
+        "size_bytes": 2048,
+    }
+
+
+@pytest.mark.parametrize("tax_document_type", ["firs_tin", "tcc", "other"])
+async def test_nigerian_org_uploads_nigerian_tax_documents(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    tax_document_type: str,
+) -> None:
+    """A Nigerian org may upload a FIRS TIN certificate, a TCC, or other."""
+    owner_id = await _create_user("owner")
+    org_id = await _create_org(owner_id, country="NG")
+    path = _APPLICATION_PATH.format(org_id=org_id)
+    await client.post(path, json=_create_body(), headers=auth(owner_id))
+
+    res = await client.post(
+        f"{path}/tax-document",
+        json=_tax_body(tax_document_type),
+        headers=auth(owner_id),
+    )
+
+    assert res.status_code == 200
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(OrgAttestorApplication).where(
+                OrgAttestorApplication.org_id == org_id
+            )
+        )
+    assert application is not None
+    assert application.tax_document_type == tax_document_type
+
+
+@pytest.mark.parametrize(
+    ("country", "tax_document_type"),
+    [("NG", "w9"), ("NG", "w8ben"), ("US", "firs_tin"), ("GB", "tcc")],
+)
+async def test_tax_document_type_must_match_org_country(
+    client: AsyncClient,
+    migrated_database: None,
+    clean_state: FakeRedis,
+    country: str,
+    tax_document_type: str,
+) -> None:
+    """US IRS forms are refused for Nigerian orgs and Nigerian documents elsewhere."""
+    owner_id = await _create_user("owner")
+    org_id = await _create_org(owner_id, country=country)
+    path = _APPLICATION_PATH.format(org_id=org_id)
+    await client.post(path, json=_create_body(), headers=auth(owner_id))
+
+    res = await client.post(
+        f"{path}/tax-document",
+        json=_tax_body(tax_document_type),
+        headers=auth(owner_id),
+    )
+
+    assert res.status_code == 422
+    assert res.json()["detail"]["error_code"] == "tax_document_type_not_allowed"
+    async with async_session_factory() as session:
+        application = await session.scalar(
+            select(OrgAttestorApplication).where(
+                OrgAttestorApplication.org_id == org_id
+            )
+        )
+    assert application is not None
+    assert application.tax_document_key is None
 
 
 async def test_nominate_trial_member_requires_nda(
