@@ -49,7 +49,7 @@ type QueueCardProps = {
   isAdmin: boolean;
   /** Open the review workspace. */
   onOpen: () => void;
-  /** Start reassigning the reviewing member (active cards only). */
+  /** Start reassigning the reviewing member (before the review starts). */
   onReassign: () => void;
 };
 
@@ -109,7 +109,9 @@ export function QueueCard({
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">
-        {active ? (
+        {/* The server allows reassignment only before the reviewer starts
+            (status still "accepted"); after that it needs an admin. */}
+        {active && attestation.status === "accepted" ? (
           <Button disabled={!isAdmin} onClick={onReassign} variant="secondary">
             Reassign
           </Button>
