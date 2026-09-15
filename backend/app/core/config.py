@@ -13,6 +13,7 @@ from functools import lru_cache
 from typing import Literal, Self
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from cryptography.fernet import Fernet
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -85,6 +86,9 @@ class Settings(BaseSettings):
         env_file=_resolve_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
+        # A startup validation error otherwise prints every raw setting it was
+        # given, secrets included, into the logs.
+        hide_input_in_errors=True,
     )
 
     environment: str = Field(default="local", alias="ENVIRONMENT")
@@ -378,6 +382,35 @@ class Settings(BaseSettings):
             raise ValueError(
                 "PARTNER_WEBHOOK_ENCRYPTION_KEY must be set outside local."
             )
+        return self
+
+    @model_validator(mode="after")
+    def encryption_keys_are_valid_fernet_keys(self) -> Self:
+        """Refuse to boot with a malformed encryption key.
+
+        The placeholder checks above only reject the dev and placeholder
+        values. A key that is not 32 url-safe base64-encoded bytes (a missing
+        trailing "=" is enough) still loaded, then every encrypt or decrypt
+        raised, surfacing as a 500 on the first 2FA, payout-account, partner
+        webhook, or connector call instead of at deploy. Runs after the local
+        placeholder substitution. The value never appears in the error.
+        """
+        keys = (
+            ("TOTP_ENCRYPTION_KEY", self.totp_encryption_key),
+            ("PAYOUT_ACCOUNT_ENCRYPTION_KEY", self.payout_account_encryption_key),
+            ("PARTNER_WEBHOOK_ENCRYPTION_KEY", self.partner_webhook_encryption_key),
+            ("CONNECTOR_TOKEN_ENCRYPTION_KEY", self.connector_token_encryption_key),
+        )
+        for env_name, secret in keys:
+            try:
+                Fernet(secret.get_secret_value().encode("utf-8"))
+            except ValueError:
+                # binascii.Error subclasses ValueError; suppress the chain so the
+                # key material cannot leak through the exception context.
+                raise ValueError(
+                    f"{env_name} is not a valid Fernet key "
+                    "(32 url-safe base64-encoded bytes)."
+                ) from None
         return self
 
     @model_validator(mode="after")

@@ -266,3 +266,44 @@ def test_settings_rejects_dev_connector_token_key_outside_local() -> None:
         assert "CONNECTOR_TOKEN_ENCRYPTION_KEY must be set outside local" in str(exc)
     else:
         raise AssertionError("Expected dev connector token key validation to fail.")
+
+
+_ENCRYPTION_KEY_NAMES = (
+    "TOTP_ENCRYPTION_KEY",
+    "PAYOUT_ACCOUNT_ENCRYPTION_KEY",
+    "PARTNER_WEBHOOK_ENCRYPTION_KEY",
+    "CONNECTOR_TOKEN_ENCRYPTION_KEY",
+)
+
+
+def test_settings_rejects_malformed_encryption_keys_at_startup() -> None:
+    """A malformed encryption key must stop the app booting, in every environment.
+
+    The placeholder checks let a mistyped key through, and the failure then
+    surfaced as a 500 on the first payout-account save (a local key missing
+    its trailing "=" did exactly that). The error names the variable and
+    never echoes the value.
+    """
+    from pydantic import ValidationError
+
+    unpadded = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    for name in _ENCRYPTION_KEY_NAMES:
+        for bad in (unpadded, "not-a-fernet-key"):
+            try:
+                Settings(**{name: bad})
+            except ValidationError as exc:
+                message = str(exc)
+                assert f"{name} is not a valid Fernet key" in message
+                assert bad not in message
+            else:
+                raise AssertionError(f"Expected {name}={bad!r} to be rejected.")
+
+
+def test_settings_accepts_valid_encryption_keys() -> None:
+    """Correctly padded 32-byte url-safe base64 keys load normally."""
+    settings = Settings(
+        TOTP_ENCRYPTION_KEY=_VALID_TOTP_KEY,
+        PAYOUT_ACCOUNT_ENCRYPTION_KEY="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+    )
+
+    assert settings.payout_account_encryption_key.get_secret_value().endswith("=")
