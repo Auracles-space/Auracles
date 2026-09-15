@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import {
   listAdminAttestationDisputes,
+  markAttestationDisputeComplex,
   resolveAttestationDispute,
 } from "@/lib/generated/sdk.gen";
 import { AdminAttestationDisputesPanel } from "./admin-attestation-disputes-panel";
@@ -15,6 +16,14 @@ vi.mock("@/lib/auth/form-client", () => ({
 vi.mock("@/lib/generated/sdk.gen", () => ({
   listAdminAttestationDisputes: vi.fn(),
   resolveAttestationDispute: vi.fn(),
+  markAttestationDisputeComplex: vi.fn(),
+}));
+
+// The detail modal loads its own data; the panel only has to open it.
+vi.mock("./attestation-detail-modal", () => ({
+  AttestationDetailModal: ({ attestationId }: { attestationId: string }) => (
+    <div role="dialog">Attestation detail for {attestationId}</div>
+  ),
 }));
 
 /** One open dispute as the queue endpoint returns it. */
@@ -55,6 +64,65 @@ describe("AdminAttestationDisputesPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Lagos Assurance Partners")).toBeInTheDocument();
     expect(screen.getByText(/material inaccuracy/i)).toBeInTheDocument();
+  });
+
+  it("opens the disputed attestation so the admin can read the report first", async () => {
+    vi.mocked(listAdminAttestationDisputes).mockResolvedValue({
+      response: { ok: true },
+      data: { disputes: [openDispute({ attestation_id: "att-7" })] },
+    } as never);
+
+    render(<AdminAttestationDisputesPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "View attestation" }));
+
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Attestation detail for att-7");
+  });
+
+  it("marks an open dispute complex on its own, before any verdict", async () => {
+    // Complexity extends the deadline; set inside the verdict it closed the
+    // dispute in the same step, so the extra time was never usable.
+    vi.mocked(listAdminAttestationDisputes)
+      .mockResolvedValueOnce({
+        response: { ok: true },
+        data: { disputes: [openDispute()] },
+      } as never)
+      .mockResolvedValue({
+        response: { ok: true },
+        data: {
+          disputes: [openDispute({ is_complex: true, resolution_due_at: "2026-10-01T00:00:00Z" })],
+        },
+      } as never);
+    vi.mocked(markAttestationDisputeComplex).mockResolvedValue({
+      response: { ok: true },
+      data: { id: "dsp-1", is_complex: true },
+    } as never);
+
+    render(<AdminAttestationDisputesPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Mark as complex" }));
+
+    await waitFor(() =>
+      expect(markAttestationDisputeComplex).toHaveBeenCalledWith(
+        expect.objectContaining({ path: { dispute_id: "dsp-1" } }),
+      ),
+    );
+    expect(resolveAttestationDispute).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Complex/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark as complex" })).toBeNull();
+  });
+
+  it("keeps the complexity flag out of the verdict form", async () => {
+    vi.mocked(listAdminAttestationDisputes).mockResolvedValue({
+      response: { ok: true },
+      data: { disputes: [openDispute()] },
+    } as never);
+
+    render(<AdminAttestationDisputesPanel />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Resolve" }));
+
+    expect(screen.queryByRole("checkbox", { name: /complex dispute/i })).toBeNull();
   });
 
   it("resolves the selected dispute with the revision verdict", async () => {

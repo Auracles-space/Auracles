@@ -134,4 +134,60 @@ describe("AttestationDetailModal", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Declined")).toBeInTheDocument();
   });
+
+  it("shows the brief, report, scores, annotations and questions to judge a dispute", async () => {
+    vi.mocked(getAdminAttestationDetail).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        attestation: {
+          id: "att-3",
+          target_type: "framework",
+          target_id: "fw-1",
+          target_title: "Seed-Stage Playbook",
+          requestor_id: "user-1",
+          attestor_org_id: "org-1",
+          attestor_org_name: "Ikeji Advisory",
+          status: "disputed",
+          outcome: "conditional",
+          review_type: "compliance",
+          brief: { what_it_does: "Seed diligence for Nigerian VC teams." },
+          requested_specializations: [],
+          requested_jurisdictions: [],
+          fee_amount: "350000.00",
+          currency: "NGN",
+          escrow_id: "esc-1",
+          created_at: "2026-09-15T00:00:00Z",
+          updated_at: "2026-09-15T00:00:00Z",
+        },
+        offers: [],
+        report: {
+          outcome: "conditional",
+          summary: "Broadly aligned with Nigerian requirements.",
+          scope: "Reviewed against CAC and NDPA 2023.",
+          conditions: "Add FIRS and PenCom checks.",
+          rubric: [
+            { dimension_key: "regulatory_alignment", label: "Regulatory Alignment", score: 3, comment: "Cites NDPR 2019." },
+          ],
+          annotations: [
+            { id: "an-1", artifact_id: null, location_label: "Section 3", quoted_excerpt: null, annotation_type: "concern", comment: "Check the PSC register." },
+          ],
+          clarifications: [
+            { id: "cl-1", question: "Does FX cover 2024?", response: "Only pre-2024.", status: "answered" },
+          ],
+        },
+      },
+    } as never);
+
+    render(<AttestationDetailModal attestationId="att-3" onClose={vi.fn()} />);
+
+    expect(await screen.findByText("Seed-Stage Playbook")).toBeInTheDocument();
+    expect(screen.getByText("Seed diligence for Nigerian VC teams.")).toBeInTheDocument();
+    expect(screen.getByText("Broadly aligned with Nigerian requirements.")).toBeInTheDocument();
+    expect(screen.getByText("Add FIRS and PenCom checks.")).toBeInTheDocument();
+    expect(screen.getByText("Regulatory Alignment")).toBeInTheDocument();
+    expect(screen.getByText("Cites NDPR 2019.")).toBeInTheDocument();
+    expect(screen.getByText("Check the PSC register.")).toBeInTheDocument();
+    expect(screen.getByText("Does FX cover 2024?")).toBeInTheDocument();
+    expect(screen.getByText("Only pre-2024.")).toBeInTheDocument();
+  });
 });

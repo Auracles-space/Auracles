@@ -31,6 +31,8 @@ from app.modules.attestation import (
 from app.modules.attestation import report as report_service
 from app.modules.attestation.models import (
     Attestation,
+    AttestationAnnotation,
+    AttestationClarification,
     AttestationDispute,
     AttestationOffer,
     AttestationRubricDimension,
@@ -60,6 +62,7 @@ from app.modules.projects.models import Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
 from app.modules.webhooks.models import WebhookEvent
 from app.modules.workspace.models import WorkspaceMessage
+from app.shared.business_days import add_business_days
 from app.shared.models.audit_log import AuditLog
 from tests.conftest import open_step_up_window
 
@@ -1460,6 +1463,84 @@ async def test_requestor_raises_attestation_dispute_before_window_closes(
     assert body["dispute"]["resolution_due_at"] is not None
 
 
+async def test_admin_marks_open_dispute_complex_to_extend_the_deadline(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Marking a dispute complex extends its deadline while it is still open.
+
+    The flag used to be set only inside the verdict, which closed the dispute
+    in the same step, so the extra time could never be used.
+    """
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return the Redis test double holding the admin step-up window."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+    requestor_id = await create_user("complex-req@auracles.space", ["operator"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="complex",
+    )
+    admin_id = await create_admin_user()
+    attestation_id, _, _ = await create_report_submitted_attestation(
+        requestor_id, org_id, member_id
+    )
+    raised = await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={
+            "category": "scope_error",
+            "reason": "The report partly overstates what was verified here.",
+        },
+    )
+    dispute_id = raised.json()["id"]
+    path = f"/v1/admin/attestation-disputes/{dispute_id}/complex"
+
+    without_step_up = await client.post(path, headers=auth_headers(admin_id, ["admin"]))
+    as_requestor = await client.post(
+        path, headers=auth_headers(requestor_id, ["operator"])
+    )
+    await open_step_up_window(fake_redis, admin_id)
+    marked = await client.post(path, headers=auth_headers(admin_id, ["admin"]))
+    again = await client.post(path, headers=auth_headers(admin_id, ["admin"]))
+
+    async with async_session_factory() as session:
+        dispute = await session.get(AttestationDispute, UUID(dispute_id))
+        attestation = await session.get(Attestation, attestation_id)
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "attestation_dispute_marked_complex",
+                AuditLog.target_id == attestation_id,
+            )
+        )
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert without_step_up.status_code == 403
+    assert as_requestor.status_code == 403
+    assert marked.status_code == 200
+    assert again.status_code == 200
+    assert dispute is not None
+    assert dispute.is_complex is True
+    assert dispute.status == "open"
+    assert dispute.resolution_due_at == add_business_days(dispute.created_at, 15)
+    assert marked.json()["is_complex"] is True
+    assert attestation is not None
+    assert attestation.status == "disputed"
+    assert audit is not None
+
+
 async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     client: AsyncClient,
     migrated_database: None,
@@ -1853,6 +1934,207 @@ async def test_admin_detail_returns_offer_org_and_status(
     assert offer["org_id"] == str(org_id)
     assert offer["org_name"]
     assert offer["status"] == "offered"
+
+
+async def test_admin_detail_carries_the_report_needed_to_judge_a_dispute(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+) -> None:
+    """Admins resolving a dispute can read the report, scores, notes and Q&A.
+
+    The dispute queue showed only the requester's reason, so a verdict had to
+    be given without seeing the report it was about.
+    """
+    del migrated_database, matching_context
+    requestor_id = await create_user(
+        "detail-report-requestor@auracles.space", ["operator"]
+    )
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="detail-report",
+    )
+    admin_id = await create_admin_user()
+    attestation_id, _, _ = await create_report_submitted_attestation(
+        requestor_id, org_id, member_id
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = await session.get(Attestation, attestation_id)
+            assert attestation is not None
+            attestation.review_type = "quality"
+            attestation.outcome = "conditional"
+            attestation.conditions = "Update the data protection section."
+            dimension = await session.scalar(
+                select(AttestationRubricDimension)
+                .where(AttestationRubricDimension.review_type == "quality")
+                .order_by(AttestationRubricDimension.display_order)
+                .limit(1)
+            )
+            assert dimension is not None
+            session.add(
+                AttestationRubricScore(
+                    attestation_id=attestation_id,
+                    dimension_id=dimension.id,
+                    score=3,
+                    comment="Misses the 2023 data protection act.",
+                )
+            )
+            session.add(
+                AttestationAnnotation(
+                    attestation_id=attestation_id,
+                    location_label="Section 4 - Data protection",
+                    quoted_excerpt="NDPR 2019 checklist",
+                    annotation_type="concern",
+                    comment="Update to the Nigeria Data Protection Act 2023.",
+                )
+            )
+            session.add(
+                AttestationClarification(
+                    attestation_id=attestation_id,
+                    question="Does the FX section cover 2024 rules?",
+                    response="Only pre-2024 rules.",
+                    response_due_at=datetime.now(UTC) + timedelta(days=2),
+                    responded_at=datetime.now(UTC),
+                )
+            )
+
+    detail = await client.get(
+        f"/v1/admin/attestations/{attestation_id}",
+        headers=auth_headers(admin_id, ["admin"]),
+    )
+
+    assert detail.status_code == 200
+    report = detail.json()["report"]
+    assert report["outcome"] == "conditional"
+    assert report["summary"]
+    assert report["scope"]
+    assert report["conditions"] == "Update the data protection section."
+    assert report["rubric"] == [
+        {
+            "dimension_key": dimension.key,
+            "label": dimension.label,
+            "score": 3,
+            "comment": "Misses the 2023 data protection act.",
+        }
+    ]
+    assert report["annotations"][0]["annotation_type"] == "concern"
+    assert report["annotations"][0]["location_label"] == "Section 4 - Data protection"
+    assert (
+        report["clarifications"][0]["question"]
+        == "Does the FX section cover 2024 rules?"
+    )
+    assert report["clarifications"][0]["response"] == "Only pre-2024 rules."
+
+
+async def _attach_report_evidence(
+    attestation_id: UUID, attestor_user_id: UUID
+) -> tuple[str, str]:
+    """Attach one clean and one still-scanning evidence file to a report."""
+    clean_key = (
+        f"attestations/{attestation_id}/evidence/{attestor_user_id}/{uuid4()}-cac.pdf"
+    )
+    pending_key = (
+        f"attestations/{attestation_id}/evidence/{attestor_user_id}/{uuid4()}-bank.pdf"
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            for key, scan_status in (
+                (clean_key, "clean"),
+                (pending_key, "pending_scan"),
+            ):
+                session.add(
+                    AttestationUploadSession(
+                        attestation_id=attestation_id,
+                        user_id=attestor_user_id,
+                        purpose="report_evidence",
+                        s3_key=key,
+                        content_type="application/pdf",
+                        size_limit=10_000_000,
+                        scan_status=scan_status,
+                        consumed_at=datetime.now(UTC),
+                        expires_at=datetime.now(UTC) + timedelta(hours=1),
+                    )
+                )
+            attestation = await session.get(Attestation, attestation_id)
+            assert attestation is not None
+            attestation.evidence_references = {"file_keys": [clean_key, pending_key]}
+    return clean_key, pending_key
+
+
+async def test_report_evidence_files_open_for_requestor_and_admin_with_audit(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report evidence is downloadable by the requestor and admins, not others.
+
+    The attestor could attach evidence to a report, but nobody could ever open
+    it. Links are short-lived presigned URLs, issued only for scanned-clean
+    files, and every issue is audited.
+    """
+    del migrated_database, matching_context
+    issued: list[tuple[str, int]] = []
+
+    def fake_presigned_get(bucket: str, key: str, ttl: int, **_: Any) -> str:
+        issued.append((key, ttl))
+        return f"https://s3.test/{key}?sig=1"
+
+    from app.modules.attestation import report as report_module
+
+    monkeypatch.setattr(report_module.s3.storage, "presigned_get", fake_presigned_get)
+    requestor_id = await create_user("evidence-requestor@auracles.space", ["operator"])
+    outsider_id = await create_user("evidence-outsider@auracles.space", ["operator"])
+    org_id, attestor_user_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="evidence",
+    )
+    admin_id = await create_admin_user()
+    attestation_id, _, _ = await create_report_submitted_attestation(
+        requestor_id, org_id, member_id
+    )
+    clean_key, _pending_key = await _attach_report_evidence(
+        attestation_id, attestor_user_id
+    )
+    path = f"/v1/attestations/{attestation_id}/evidence-files"
+
+    as_requestor = await client.get(
+        path, headers=auth_headers(requestor_id, ["operator"])
+    )
+    as_admin = await client.get(path, headers=auth_headers(admin_id, ["admin"]))
+    as_outsider = await client.get(
+        path, headers=auth_headers(outsider_id, ["operator"])
+    )
+
+    assert as_requestor.status_code == 200
+    files = as_requestor.json()["files"]
+    assert [item["file_name"] for item in files] == ["cac.pdf", "bank.pdf"]
+    assert files[0]["scan_status"] == "clean"
+    assert files[0]["download_url"] == f"https://s3.test/{clean_key}?sig=1"
+    # A file still being scanned is listed but never linked.
+    assert files[1]["scan_status"] == "pending_scan"
+    assert files[1]["download_url"] is None
+    assert "s3_key" not in files[0]
+    assert as_admin.status_code == 200
+    assert as_outsider.status_code == 404
+    assert all(ttl <= 900 for _, ttl in issued)
+    async with async_session_factory() as session:
+        audits = (
+            (
+                await session.execute(
+                    select(AuditLog).where(
+                        AuditLog.action == "attestation_evidence_links_issued",
+                        AuditLog.target_id == attestation_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert {audit.actor_id for audit in audits} == {requestor_id, admin_id}
 
 
 async def test_admin_lists_needs_admin_attestations(

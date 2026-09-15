@@ -37,6 +37,7 @@ import { AttestationRatingCard } from "@/components/modules/attestation/attestat
 import { AttestationWithdrawPanel } from "@/components/modules/attestation/attestation-withdraw-panel";
 import { RequestorClarificationsPanel } from "@/components/modules/attestation/requestor-clarifications-panel";
 import { ReportRubricPanel } from "@/components/modules/attestation/report-rubric-panel";
+import { ReportEvidenceFiles } from "@/components/modules/attestation/report-evidence-files";
 import { requestorNextStep } from "@/components/modules/attestation/requestor-next-step";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
@@ -309,6 +310,7 @@ export function AttestationDetail({
             </div>
           ) : null}
           <ReportRubricPanel attestationId={attestationId} />
+          <ReportEvidenceFiles attestationId={attestationId} />
         </div>
       ) : null}
     </section>

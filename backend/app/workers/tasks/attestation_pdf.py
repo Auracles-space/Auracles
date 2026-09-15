@@ -191,6 +191,26 @@ async def _report_attestor_identity(
     }
 
 
+def evidence_note(evidence_references: dict[str, Any] | None) -> str | None:
+    """Describe attached report evidence for the PDF without storage paths.
+
+    The PDF used to print the raw evidence JSON, which exposed internal S3 keys
+    in a document the requestor downloads. The files themselves are opened
+    through audited presigned links on the attestation page.
+
+    Args:
+        evidence_references: The report's evidence JSON (``file_keys`` list).
+
+    Returns:
+        A one-line count such as "2 evidence files attached.", or None.
+    """
+    file_keys = (evidence_references or {}).get("file_keys") or []
+    count = len(file_keys) if isinstance(file_keys, list) else 0
+    if count == 0:
+        return None
+    return f"{count} evidence file{'' if count == 1 else 's'} attached."
+
+
 async def _build_report_context(attestation_id: str) -> dict[str, Any]:
     """Load one submitted attestation and assemble the report-render context."""
     parsed_attestation_id = UUID(attestation_id)
@@ -267,9 +287,7 @@ async def _build_report_context(attestation_id: str) -> dict[str, Any]:
         score_map,
         attestation.review_type or "",
     )
-    supplementary_notes = None
-    if attestation.evidence_references:
-        supplementary_notes = str(attestation.evidence_references)
+    supplementary_notes = evidence_note(attestation.evidence_references)
 
     return {
         "attestation_id": str(attestation.id),

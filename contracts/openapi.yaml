@@ -1,5 +1,78 @@
 components:
   schemas:
+    AdminAttestationReport:
+      properties:
+        outcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Outcome
+        summary:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Summary
+        scope:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Scope
+        conditions:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Conditions
+        rubric:
+          items:
+            $ref: '#/components/schemas/RequestorRubricItem'
+          type: array
+          title: Rubric
+        annotations:
+          items:
+            $ref: '#/components/schemas/AnnotationResponse'
+          type: array
+          title: Annotations
+        clarifications:
+          items:
+            $ref: '#/components/schemas/AdminClarificationItem'
+          type: array
+          title: Clarifications
+      type: object
+      required:
+      - outcome
+      - summary
+      - scope
+      - conditions
+      - rubric
+      - annotations
+      - clarifications
+      title: AdminAttestationReport
+      description: The submitted report an admin reads before ruling on a dispute.
+    AdminClarificationItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        question:
+          type: string
+          title: Question
+        response:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Response
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - id
+      - question
+      - response
+      - status
+      title: AdminClarificationItem
+      description: One clarification question and its answer, as the admin reads it.
     AdminOrgAttestationCounts:
       description: How many of the org's Attestations are in flight versus finished.
       properties:
@@ -998,20 +1071,28 @@ components:
       title: AdminAttestationAssignRequest
       type: object
     AdminAttestationDetailResponse:
-      description: 'Admin detail for one Attestation: the request plus its offer history.'
       properties:
         attestation:
           $ref: '#/components/schemas/AttestationRequestResponse'
         offers:
           items:
             $ref: '#/components/schemas/AdminAttestationOfferItem'
-          title: Offers
           type: array
+          title: Offers
+        report:
+          anyOf:
+          - $ref: '#/components/schemas/AdminAttestationReport'
+          - type: 'null'
+      type: object
       required:
       - attestation
       - offers
       title: AdminAttestationDetailResponse
-      type: object
+      description: 'Admin detail for one Attestation: the request, its offers, and its
+        report.
+
+
+        ``report`` is null until a report has been submitted.'
     AdminAttestationDisputeListItem:
       description: One Attestation dispute in the admin triage queue, carrying the
         attestation context an admin needs to judge it without a second lookup.
@@ -4596,6 +4677,47 @@ components:
       - created_at
       title: AttestationDisputeResponse
       type: object
+    AttestationEvidenceFile:
+      properties:
+        file_name:
+          type: string
+          title: File Name
+        scan_status:
+          type: string
+          title: Scan Status
+        download_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Download Url
+      type: object
+      required:
+      - file_name
+      - scan_status
+      - download_url
+      title: AttestationEvidenceFile
+      description: 'One report evidence file with a short-lived download link.
+
+
+        ``download_url`` is null until the file has scanned clean. The storage key
+
+        is never exposed.'
+    AttestationEvidenceFilesResponse:
+      properties:
+        files:
+          items:
+            $ref: '#/components/schemas/AttestationEvidenceFile'
+          type: array
+          title: Files
+        expires_in_seconds:
+          type: integer
+          title: Expires In Seconds
+      type: object
+      required:
+      - files
+      - expires_in_seconds
+      title: AttestationEvidenceFilesResponse
+      description: Evidence files the attestor attached to the report, in attach order.
     AttestationEvidenceUploadCreateRequest:
       description: Request body for creating an Attestation report evidence upload
         session.
@@ -16075,6 +16197,37 @@ paths:
       summary: List Attestation disputes for admin triage
       tags:
       - Attestation
+  /v1/admin/attestation-disputes/{dispute_id}/complex:
+    post:
+      tags:
+      - Attestation
+      summary: Mark an attestation dispute complex
+      description: Extend an open dispute's resolution deadline to 15 business days
+        from when it was raised. Idempotent. Requires an open step-up window.
+      operationId: mark_attestation_dispute_complex_v1_admin_attestation_disputes__dispute_id__complex_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dispute_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Dispute Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationDisputeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/admin/attestation-disputes/{dispute_id}/resolve:
     post:
       description: Resolve an Attestation dispute through a 2FA-gated admin action.
@@ -19801,6 +19954,38 @@ paths:
       summary: Submit Attestation Report
       tags:
       - Attestation
+  /v1/attestations/{attestation_id}/evidence-files:
+    get:
+      tags:
+      - Attestation
+      summary: List report evidence files with download links
+      description: Return the evidence files the attestor attached to the report, with
+        15-minute presigned download links for files that scanned clean. Visible to
+        the requestor, the attestor org, and admins; each link issue is audited.
+      operationId: list_attestation_evidence_files_v1_attestations__attestation_id__evidence_files_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: attestation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Attestation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationEvidenceFilesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/attestations/{attestation_id}/report/rubric:
     get:
       description: Return the attestor's per-dimension rubric scores and comments

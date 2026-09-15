@@ -18,7 +18,12 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { getAdminAttestationDetail } from "@/lib/generated/sdk.gen";
-import type { AdminAttestationDetailResponse } from "@/lib/generated/types.gen";
+import { formatLabel } from "@/lib/marketplace/format";
+import { ReportEvidenceFiles } from "@/components/modules/attestation/report-evidence-files";
+import type {
+  AdminAttestationDetailResponse,
+  AdminAttestationReport,
+} from "@/lib/generated/types.gen";
 import { StatusPill, attestationStatusKey } from "@/components/ui/status-pill";
 
 type AttestationDetailModalProps = {
@@ -87,7 +92,7 @@ export function AttestationDetailModal({
       role="dialog"
     >
       <div
-        className="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border-default bg-surface-1 p-6 shadow-xl sm:max-w-lg sm:rounded-2xl"
+        className="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl border border-border-default bg-surface-1 p-6 shadow-xl sm:max-w-2xl sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
@@ -112,10 +117,18 @@ export function AttestationDetailModal({
           <div className="mt-4 grid gap-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="font-heading text-base font-bold text-foreground">
+                {attestation.target_title ? (
+                  <p className="font-heading text-base font-bold text-foreground">
+                    {attestation.target_title}
+                  </p>
+                ) : null}
+                <p className="font-heading text-sm font-semibold text-foreground">
                   {attestation.review_type
                     ? `${attestation.review_type} review`
                     : "Attestation request"}
+                  {attestation.attestor_org_name
+                    ? ` · ${attestation.attestor_org_name}`
+                    : ""}
                 </p>
                 <p className="mt-1 text-xs text-foreground-muted">
                   {attestation.id} · {attestation.currency}{" "}
@@ -153,6 +166,14 @@ export function AttestationDetailModal({
                 </dd>
               </div>
             </dl>
+
+            <AttestationBriefSection brief={attestation.brief} />
+            {detail?.report ? (
+              <>
+                <AttestationReportSection report={detail.report} />
+                <ReportEvidenceFiles attestationId={attestation.id} />
+              </>
+            ) : null}
 
             <div>
               <p className="text-sm font-semibold text-foreground">
@@ -198,5 +219,134 @@ export function AttestationDetailModal({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** Human labels for the brief's free-text fields, in reading order. */
+const BRIEF_FIELDS: [string, string][] = [
+  ["what_it_does", "What it does"],
+  ["use_case", "Use case"],
+  ["jurisdiction", "Jurisdiction"],
+  ["focus_areas", "Focus areas"],
+  ["desired_outcome", "Desired outcome"],
+];
+
+/**
+ * The requestor's brief: what they asked the attestor to judge.
+ *
+ * @param brief - Raw brief object from the attestation, if any.
+ */
+function AttestationBriefSection({
+  brief,
+}: {
+  brief?: Record<string, unknown> | null;
+}) {
+  const entries = BRIEF_FIELDS.map(([key, label]) => [label, brief?.[key]] as const).filter(
+    (entry): entry is readonly [string, string] =>
+      typeof entry[1] === "string" && entry[1].trim() !== "",
+  );
+  if (entries.length === 0) return null;
+  return (
+    <section className="grid gap-2">
+      <h3 className="text-sm font-semibold text-foreground">Brief</h3>
+      <dl className="grid gap-2 text-sm">
+        {entries.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-xs font-semibold text-foreground-muted">{label}</dt>
+            <dd className="whitespace-pre-wrap break-words text-foreground">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/**
+ * The submitted report with everything behind it: outcome, summary, scope,
+ * conditions, the rubric scorecard, the reviewer's annotations, and the
+ * clarification thread. This is what an admin reads before ruling on a dispute.
+ *
+ * @param report - The report block from the admin detail endpoint.
+ */
+function AttestationReportSection({ report }: { report: AdminAttestationReport }) {
+  return (
+    <section className="grid gap-4 rounded-xl border border-border-default bg-surface-2 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">Report</h3>
+        {report.outcome ? (
+          <span className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+            {formatLabel(report.outcome)}
+          </span>
+        ) : null}
+      </div>
+      {[
+        ["Summary", report.summary],
+        ["Scope", report.scope],
+        ["Conditions", report.conditions],
+      ].map(([label, value]) =>
+        value ? (
+          <div key={label}>
+            <p className="text-xs font-semibold text-foreground-muted">{label}</p>
+            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground">{value}</p>
+          </div>
+        ) : null,
+      )}
+
+      {report.rubric.length > 0 ? (
+        <div>
+          <p className="text-xs font-semibold text-foreground-muted">Rubric</p>
+          <ul className="mt-2 grid gap-2">
+            {report.rubric.map((item) => (
+              <li className="rounded-lg bg-surface-1 p-3 text-sm" key={item.dimension_key}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-foreground">{item.label}</span>
+                  <span className="text-foreground-muted">
+                    {item.score !== null && item.score !== undefined ? `${item.score} / 5` : "Not scored"}
+                  </span>
+                </div>
+                {item.comment ? (
+                  <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{item.comment}</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {report.annotations.length > 0 ? (
+        <div>
+          <p className="text-xs font-semibold text-foreground-muted">Annotations</p>
+          <ul className="mt-2 grid gap-2">
+            {report.annotations.map((annotation) => (
+              <li className="rounded-lg bg-surface-1 p-3 text-sm" key={annotation.id}>
+                <p className="font-semibold text-foreground">
+                  {formatLabel(annotation.annotation_type)} · {annotation.location_label}
+                </p>
+                {annotation.quoted_excerpt ? (
+                  <p className="mt-1 italic text-foreground-muted">“{annotation.quoted_excerpt}”</p>
+                ) : null}
+                <p className="mt-1 whitespace-pre-wrap break-words text-foreground">{annotation.comment}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {report.clarifications.length > 0 ? (
+        <div>
+          <p className="text-xs font-semibold text-foreground-muted">Clarifications</p>
+          <ul className="mt-2 grid gap-2">
+            {report.clarifications.map((clarification) => (
+              <li className="rounded-lg bg-surface-1 p-3 text-sm" key={clarification.id}>
+                <p className="font-semibold text-foreground">{clarification.question}</p>
+                <p className="mt-1 whitespace-pre-wrap break-words text-foreground">
+                  {clarification.response ?? "No answer yet."}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
 }

@@ -203,6 +203,71 @@ async def list_admin_disputes(
     ]
 
 
+async def mark_dispute_complex(
+    db: AsyncSession,
+    *,
+    admin: User,
+    dispute_id: UUID,
+) -> AttestationDispute:
+    """Mark an open Attestation dispute complex, extending its resolution SLA.
+
+    Complex disputes get 15 business days from when they were raised instead
+    of the standard 5. This is its own step so an admin can take the extra
+    time before ruling; marking it inside the verdict closed the dispute at
+    the same moment. Idempotent: an already-complex dispute is returned as is.
+
+    Args:
+        db: Async database session.
+        admin: Authenticated admin performing the change.
+        dispute_id: Dispute to mark.
+
+    Returns:
+        The dispute with ``is_complex`` set and its deadline extended.
+
+    Raises:
+        HTTPException(404): The dispute does not exist.
+        HTTPException(409): The dispute is already resolved.
+    """
+    admin_id = admin.id
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        dispute = await db.scalar(
+            select(AttestationDispute)
+            .where(AttestationDispute.id == dispute_id)
+            .with_for_update()
+        )
+        if dispute is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Attestation dispute not found.",
+            )
+        if dispute.status == "resolved":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A resolved dispute cannot be marked complex.",
+            )
+        if not dispute.is_complex:
+            dispute.is_complex = True
+            dispute.resolution_due_at = add_business_days(
+                dispute.created_at, RESOLUTION_SLA_COMPLEX_BUSINESS_DAYS
+            )
+            await write_audit(
+                db=db,
+                actor_id=admin_id,
+                action="attestation_dispute_marked_complex",
+                target_type="attestation",
+                target_id=dispute.attestation_id,
+                metadata={
+                    "dispute_id": str(dispute.id),
+                    "resolution_due_at": dispute.resolution_due_at.isoformat(),
+                },
+            )
+        await db.flush()
+        await db.refresh(dispute)
+    return dispute
+
+
 async def resolve_dispute(
     *,
     db: AsyncSession,

@@ -45,6 +45,7 @@ from app.modules.attestation.schemas import (
     AttestationConsentRequest,
     AttestationDisputeCreateRequest,
     AttestationDisputeResponse,
+    AttestationEvidenceFilesResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
     AttestationFundingRequest,
@@ -730,6 +731,28 @@ async def accept_attestation_report(
 
 
 @router.get(
+    "/attestations/{attestation_id}/evidence-files",
+    response_model=AttestationEvidenceFilesResponse,
+    summary="List report evidence files with download links",
+    description=(
+        "Return the evidence files the attestor attached to the report, with "
+        "15-minute presigned download links for files that scanned clean. "
+        "Visible to the requestor, the attestor org, and admins; each link "
+        "issue is audited."
+    ),
+)
+async def list_attestation_evidence_files(
+    attestation_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationEvidenceFilesResponse:
+    """Return report evidence files with audited presigned download links."""
+    return await report_service.list_report_evidence_files(
+        db, user=user, attestation_id=attestation_id
+    )
+
+
+@router.get(
     "/attestations/{attestation_id}/report/rubric",
     response_model=RequestorReportRubricResponse,
     summary="Report rubric scorecard (requestor)",
@@ -798,6 +821,28 @@ async def list_admin_attestation_disputes(
             status_value=status_value,
         )
     )
+
+
+@router.post(
+    "/admin/attestation-disputes/{dispute_id}/complex",
+    response_model=AttestationDisputeResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
+    summary="Mark an attestation dispute complex",
+    description=(
+        "Extend an open dispute's resolution deadline to 15 business days from "
+        "when it was raised. Idempotent. Requires an open step-up window."
+    ),
+)
+async def mark_attestation_dispute_complex(
+    dispute_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AttestationDisputeResponse:
+    """Mark an open Attestation dispute complex. Requires an open step-up window."""
+    dispute = await dispute_service.mark_dispute_complex(
+        db=db, admin=admin, dispute_id=dispute_id
+    )
+    return AttestationDisputeResponse.model_validate(dispute)
 
 
 @router.post(

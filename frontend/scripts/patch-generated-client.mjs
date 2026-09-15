@@ -78,6 +78,8 @@ const compatibilityAliases = {
   getProject: "getProjectV1ProjectsProjectIdGet",
   getOrgProject: "getOrgProjectV1OrgsOrgIdProjectsProjectIdGet",
   getRelatedExploreFrameworks: "getRelatedFrameworksV1ExploreFrameworksFrameworkIdRelatedGet",
+  listAttestationEvidenceFiles: "listAttestationEvidenceFilesV1AttestationsAttestationIdEvidenceFilesGet",
+  markAttestationDisputeComplex: "markAttestationDisputeComplexV1AdminAttestationDisputesDisputeIdComplexPost",
   listAttestationReviewTypes: "listReviewTypesV1AttestationsReviewTypesGet",
   listAttestations: "listAttestationsV1AttestationsGet",
   listContributorFrameworks: "listFrameworksV1FrameworksGet",

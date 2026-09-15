@@ -20,11 +20,13 @@ import {
 } from "@/lib/auth/form-client";
 import {
   listAdminAttestationDisputes,
+  markAttestationDisputeComplex,
   resolveAttestationDispute,
 } from "@/lib/generated/sdk.gen";
 import type { AdminAttestationDisputeListItem } from "@/lib/generated/types.gen";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 import { Button } from "@/components/ui/button";
+import { AttestationDetailModal } from "@/components/modules/admin/attestation-detail-modal";
 import { Textarea } from "@/components/ui/textarea";
 import { TableSkeleton } from "@/components/ui/skeletons/table-skeleton";
 
@@ -104,9 +106,12 @@ export function AdminAttestationDisputesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  // The attestation whose report is open in the detail modal, if any.
+  const [viewingAttestationId, setViewingAttestationId] = useState<string | null>(
+    null,
+  );
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [notes, setNotes] = useState("");
-  const [isComplex, setIsComplex] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const loadDisputes = useCallback(async (status: StatusFilter) => {
@@ -139,7 +144,6 @@ export function AdminAttestationDisputesPanel() {
     setOpenId(null);
     setOutcome(null);
     setNotes("");
-    setIsComplex(false);
   }
 
   /**
@@ -155,8 +159,37 @@ export function AdminAttestationDisputesPanel() {
     setOpenId(dispute.id);
     setOutcome(null);
     setNotes("");
-    // An already-complex dispute must not read as standard-SLA in the form.
-    setIsComplex(dispute.is_complex);
+  }
+
+  /**
+   * Mark an open dispute complex, extending its deadline to 15 business days.
+   *
+   * Its own action so the admin can take the extra time before ruling; inside
+   * the verdict it closed the dispute in the same step.
+   *
+   * @param disputeId - The dispute to mark.
+   */
+  async function handleMarkComplex(disputeId: string) {
+    setError(null);
+    setNotice(null);
+    setBusyId(disputeId);
+    configureBrowserClient();
+    try {
+      const result = await markAttestationDisputeComplex({
+        headers: getAccessTokenHeaders(),
+        path: { dispute_id: disputeId },
+      });
+      if (!result.response.ok) {
+        setError(describeGeneratedError(result.error));
+        return;
+      }
+      setNotice("Marked complex. The resolution deadline is now 15 business days.");
+      await loadDisputes(statusFilter);
+    } catch {
+      setError("Failed to mark the dispute complex.");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   /**
@@ -177,7 +210,6 @@ export function AdminAttestationDisputesPanel() {
         body: {
           outcome,
           resolution_notes: notes,
-          is_complex: isComplex,
         },
       });
       if (!result.response.ok) {
@@ -274,10 +306,33 @@ export function AdminAttestationDisputesPanel() {
                   <span className="inline-flex rounded-badge border border-warning/30 bg-warning/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-warning">
                     {formatLabel(dispute.category)}
                   </span>
+                  {dispute.is_complex ? (
+                    <span className="inline-flex rounded-badge border border-info/30 bg-info/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-info">
+                      Complex
+                    </span>
+                  ) : null}
                   <DueBadge dispute={dispute} />
                 </div>
               </div>
               <p className="mt-3 text-sm text-foreground">{dispute.reason}</p>
+              {/* The verdict turns on the report, so the admin reads it first. */}
+              <Button
+                className="mt-3 mr-2"
+                onClick={() => setViewingAttestationId(dispute.attestation_id)}
+                variant="secondary"
+              >
+                View attestation
+              </Button>
+              {!dispute.resolved_at && !dispute.is_complex ? (
+                <Button
+                  className="mt-3 mr-2"
+                  disabled={busyId === dispute.id}
+                  onClick={() => void handleMarkComplex(dispute.id)}
+                  variant="secondary"
+                >
+                  Mark as complex
+                </Button>
+              ) : null}
 
               {dispute.resolved_at ? (
                 <p className="mt-3 text-xs text-foreground-muted">
@@ -329,17 +384,6 @@ export function AdminAttestationDisputesPanel() {
                     ))}
                   </fieldset>
 
-                  <label className="flex items-center gap-2 text-sm text-foreground">
-                    <input
-                      checked={isComplex}
-                      className="h-4 w-4 accent-accent"
-                      onChange={(event) => setIsComplex(event.target.checked)}
-                      type="checkbox"
-                    />
-                    Complex dispute (extends the resolution SLA to 15 business
-                    days)
-                  </label>
-
                   <label className="grid gap-2 text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
                     Resolution notes
                     <Textarea
@@ -365,6 +409,12 @@ export function AdminAttestationDisputesPanel() {
           ))
         )}
       </div>
+      {viewingAttestationId ? (
+        <AttestationDetailModal
+          attestationId={viewingAttestationId}
+          onClose={() => setViewingAttestationId(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -129,11 +129,14 @@ export type AdminAttestationAssignRequest = {
 };
 
 /**
- * Admin detail for one Attestation: the request plus its offer history.
+ * Admin detail for one Attestation: the request, its offers, and its report.
+ *
+ * ``report`` is null until a report has been submitted.
  */
 export type AdminAttestationDetailResponse = {
     attestation: AttestationRequestResponse;
     offers: Array<AdminAttestationOfferItem>;
+    report?: (AdminAttestationReport | null);
 };
 
 /**
@@ -206,6 +209,19 @@ export type AdminAttestationRefundRequest = {
 };
 
 /**
+ * The submitted report an admin reads before ruling on a dispute.
+ */
+export type AdminAttestationReport = {
+    outcome: (string | null);
+    summary: (string | null);
+    scope: (string | null);
+    conditions: (string | null);
+    rubric: Array<RequestorRubricItem>;
+    annotations: Array<AnnotationResponse>;
+    clarifications: Array<AdminClarificationItem>;
+};
+
+/**
  * One audit log entry for the admin oversight view.
  */
 export type AdminAuditLogItem = {
@@ -228,6 +244,16 @@ export type AdminAuditLogsResponse = {
     page: number;
     page_size: number;
     total: number;
+};
+
+/**
+ * One clarification question and its answer, as the admin reads it.
+ */
+export type AdminClarificationItem = {
+    id: string;
+    question: string;
+    response: (string | null);
+    status: string;
 };
 
 /**
@@ -1658,6 +1684,26 @@ export type AttestationDisputeSummary = {
     resolution_notes?: (string | null);
     resolved_at?: (string | null);
     status: string;
+};
+
+/**
+ * One report evidence file with a short-lived download link.
+ *
+ * ``download_url`` is null until the file has scanned clean. The storage key
+ * is never exposed.
+ */
+export type AttestationEvidenceFile = {
+    file_name: string;
+    scan_status: string;
+    download_url: (string | null);
+};
+
+/**
+ * Evidence files the attestor attached to the report, in attach order.
+ */
+export type AttestationEvidenceFilesResponse = {
+    files: Array<AttestationEvidenceFile>;
+    expires_in_seconds: number;
 };
 
 /**
@@ -5783,6 +5829,16 @@ export type ListAdminAttestationDisputesV1AdminAttestationDisputesGetResponse = 
 
 export type ListAdminAttestationDisputesV1AdminAttestationDisputesGetError = (HTTPValidationError);
 
+export type MarkAttestationDisputeComplexV1AdminAttestationDisputesDisputeIdComplexPostData = {
+    path: {
+        dispute_id: string;
+    };
+};
+
+export type MarkAttestationDisputeComplexV1AdminAttestationDisputesDisputeIdComplexPostResponse = (AttestationDisputeResponse);
+
+export type MarkAttestationDisputeComplexV1AdminAttestationDisputesDisputeIdComplexPostError = (HTTPValidationError);
+
 export type ResolveAttestationDisputeV1AdminAttestationDisputesDisputeIdResolvePostData = {
     body: AdminAttestationDisputeResolveRequest;
     path: {
@@ -6855,6 +6911,16 @@ export type SubmitAttestationReportV1AttestationsAttestationIdReportPostData = {
 export type SubmitAttestationReportV1AttestationsAttestationIdReportPostResponse = (AttestationRequestResponse);
 
 export type SubmitAttestationReportV1AttestationsAttestationIdReportPostError = (HTTPValidationError);
+
+export type ListAttestationEvidenceFilesV1AttestationsAttestationIdEvidenceFilesGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type ListAttestationEvidenceFilesV1AttestationsAttestationIdEvidenceFilesGetResponse = (AttestationEvidenceFilesResponse);
+
+export type ListAttestationEvidenceFilesV1AttestationsAttestationIdEvidenceFilesGetError = (HTTPValidationError);
 
 export type GetReportRubricV1AttestationsAttestationIdReportRubricGetData = {
     path: {

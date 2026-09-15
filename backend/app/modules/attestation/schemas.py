@@ -544,11 +544,55 @@ class AdminAttestationOfferItem(BaseModel):
     decline_reason: str | None = None
 
 
+class AttestationEvidenceFile(BaseModel):
+    """One report evidence file with a short-lived download link.
+
+    ``download_url`` is null until the file has scanned clean. The storage key
+    is never exposed.
+    """
+
+    file_name: str
+    scan_status: str
+    download_url: str | None
+
+
+class AttestationEvidenceFilesResponse(BaseModel):
+    """Evidence files the attestor attached to the report, in attach order."""
+
+    files: list[AttestationEvidenceFile]
+    expires_in_seconds: int
+
+
+class AdminClarificationItem(BaseModel):
+    """One clarification question and its answer, as the admin reads it."""
+
+    id: UUID
+    question: str
+    response: str | None
+    status: str
+
+
+class AdminAttestationReport(BaseModel):
+    """The submitted report an admin reads before ruling on a dispute."""
+
+    outcome: str | None
+    summary: str | None
+    scope: str | None
+    conditions: str | None
+    rubric: list[RequestorRubricItem]
+    annotations: list[AnnotationResponse]
+    clarifications: list[AdminClarificationItem]
+
+
 class AdminAttestationDetailResponse(BaseModel):
-    """Admin detail for one Attestation: the request plus its offer history."""
+    """Admin detail for one Attestation: the request, its offers, and its report.
+
+    ``report`` is null until a report has been submitted.
+    """
 
     attestation: AttestationRequestResponse
     offers: list[AdminAttestationOfferItem]
+    report: AdminAttestationReport | None = None
 
 
 class AttestorAssignmentResponse(BaseModel):

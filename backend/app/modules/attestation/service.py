@@ -28,6 +28,8 @@ from app.modules.attestation import notifications as attestation_notifications
 from app.modules.attestation.models import (
     SETTLED_ATTESTATION_STATUSES,
     Attestation,
+    AttestationAnnotation,
+    AttestationClarification,
     AttestationDispute,
     AttestationOffer,
     AttestationRubricDimension,
@@ -37,6 +39,9 @@ from app.modules.attestation.models import (
 from app.modules.attestation.schemas import (
     AdminAttestationDetailResponse,
     AdminAttestationOfferItem,
+    AdminAttestationReport,
+    AdminClarificationItem,
+    AnnotationResponse,
     AttestationConsentPendingResponse,
     AttestationDisputeSummary,
     AttestationFundingResponse,
@@ -258,8 +263,77 @@ async def get_admin_attestation_detail(
         )
         for offer, org_name in rows.all()
     ]
-    (attestation_item,) = await build_request_responses(db, [attestation])
-    return AdminAttestationDetailResponse(attestation=attestation_item, offers=offers)
+    (attestation_item,) = await build_request_responses(
+        db, [attestation], include_dispute=True
+    )
+    return AdminAttestationDetailResponse(
+        attestation=attestation_item,
+        offers=offers,
+        report=await _admin_report(db, attestation),
+    )
+
+
+async def _admin_report(
+    db: AsyncSession, attestation: Attestation
+) -> AdminAttestationReport | None:
+    """Assemble the submitted report an admin needs to rule on a dispute.
+
+    Returns None before a report exists. The route is admin-only; it gathers
+    the rubric scorecard, the reviewer's annotations and the clarification
+    thread in one place so a verdict is never given without the report.
+    """
+    if attestation.summary is None:
+        return None
+    rubric_rows = await db.execute(
+        select(
+            AttestationRubricDimension.key,
+            AttestationRubricDimension.label,
+            AttestationRubricScore.score,
+            AttestationRubricScore.comment,
+        )
+        .join(
+            AttestationRubricDimension,
+            AttestationRubricDimension.id == AttestationRubricScore.dimension_id,
+        )
+        .where(AttestationRubricScore.attestation_id == attestation.id)
+        .order_by(AttestationRubricDimension.display_order)
+    )
+    annotations = (
+        await db.execute(
+            select(AttestationAnnotation)
+            .where(AttestationAnnotation.attestation_id == attestation.id)
+            .order_by(AttestationAnnotation.id)
+        )
+    ).scalars()
+    clarifications = (
+        await db.execute(
+            select(AttestationClarification)
+            .where(AttestationClarification.attestation_id == attestation.id)
+            .order_by(AttestationClarification.sent_at)
+        )
+    ).scalars()
+    return AdminAttestationReport(
+        outcome=attestation.outcome,
+        summary=attestation.summary,
+        scope=attestation.scope,
+        conditions=attestation.conditions,
+        rubric=[
+            RequestorRubricItem(
+                dimension_key=key, label=label, score=score, comment=comment
+            )
+            for key, label, score, comment in rubric_rows.all()
+        ],
+        annotations=[AnnotationResponse.model_validate(row) for row in annotations],
+        clarifications=[
+            AdminClarificationItem(
+                id=row.id,
+                question=row.question,
+                response=row.response,
+                status="answered" if row.response else "open",
+            )
+            for row in clarifications
+        ],
+    )
 
 
 async def build_request_responses(

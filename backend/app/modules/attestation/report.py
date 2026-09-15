@@ -27,6 +27,8 @@ from app.modules.attestation.models import (
     AttestationUploadSession,
 )
 from app.modules.attestation.schemas import (
+    AttestationEvidenceFile,
+    AttestationEvidenceFilesResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
     AttestationReportSubmitRequest,
@@ -368,3 +370,106 @@ async def _platform_int_config(
             detail=f"{key} configuration is invalid.",
         )
     return parsed
+
+
+# Presigned evidence links live as long as artifact links (15 minutes).
+EVIDENCE_LINK_TTL_SECONDS = 900
+
+
+def _evidence_display_name(s3_key: str) -> str:
+    """Recover the uploaded file name from ``.../{uuid}-{safe_file_name}``."""
+    last_segment = s3_key.rsplit("/", 1)[-1]
+    prefix, name = last_segment[:36], last_segment[37:]
+    # The prefix is a hyphenated UUID, so split by length rather than on the
+    # first hyphen; a key without that shape still shows its last segment.
+    try:
+        UUID(prefix)
+    except ValueError:
+        return last_segment
+    return name if last_segment[36:37] == "-" and name else last_segment
+
+
+async def list_report_evidence_files(
+    db: AsyncSession,
+    *,
+    user: User,
+    attestation_id: UUID,
+) -> AttestationEvidenceFilesResponse:
+    """Return the report's evidence files with audited presigned download links.
+
+    Visible to whoever may read the attestation (requestor, attestor org,
+    admin); everyone else gets 404. Links are issued only for files that
+    scanned clean, and each issue is written to the audit log.
+
+    Args:
+        db: Async database session.
+        user: Authenticated caller.
+        attestation_id: Attestation whose report evidence is requested.
+
+    Returns:
+        The evidence files in the order the attestor attached them.
+
+    Raises:
+        HTTPException(404): The attestation is not visible to the caller.
+    """
+    from app.modules.attestation.matching_service import get_attestation_for_user
+
+    user_id = user.id
+    attestation = await get_attestation_for_user(
+        db, attestation_id=attestation_id, user=user
+    )
+    file_keys = _evidence_file_keys(attestation.evidence_references or {})
+    if not file_keys:
+        return AttestationEvidenceFilesResponse(
+            files=[], expires_in_seconds=EVIDENCE_LINK_TTL_SECONDS
+        )
+    sessions = {
+        row.s3_key: row
+        for row in (
+            await db.execute(
+                select(AttestationUploadSession).where(
+                    AttestationUploadSession.attestation_id == attestation.id,
+                    AttestationUploadSession.purpose == "report_evidence",
+                    AttestationUploadSession.s3_key.in_(file_keys),
+                )
+            )
+        ).scalars()
+    }
+    settings = get_settings()
+    files: list[AttestationEvidenceFile] = []
+    for key in file_keys:
+        upload = sessions.get(key)
+        if upload is None:
+            continue
+        name = _evidence_display_name(key)
+        url = (
+            s3.storage.presigned_get(
+                settings.s3_artifacts_bucket,
+                key,
+                EVIDENCE_LINK_TTL_SECONDS,
+                download_name=name,
+            )
+            if upload.scan_status == "clean"
+            else None
+        )
+        files.append(
+            AttestationEvidenceFile(
+                file_name=name, scan_status=upload.scan_status, download_url=url
+            )
+        )
+    linked = sum(1 for item in files if item.download_url)
+    if linked:
+        if db.in_transaction():
+            await db.rollback()
+        async with db.begin():
+            await write_audit(
+                db=db,
+                actor_id=user_id,
+                action="attestation_evidence_links_issued",
+                target_type="attestation",
+                target_id=attestation_id,
+                metadata={"links_issued": linked},
+            )
+    return AttestationEvidenceFilesResponse(
+        files=files, expires_in_seconds=EVIDENCE_LINK_TTL_SECONDS
+    )
