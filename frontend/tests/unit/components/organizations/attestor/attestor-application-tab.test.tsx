@@ -41,21 +41,31 @@ describe("AttestorApplicationTab", () => {
     );
   });
 
-  it("renders the activation gates with per-gate status", async () => {
+  it("renders the owner's steps with the review stage pinned above", async () => {
     vi.mocked(getOrgAttestorApplication).mockResolvedValue(
       ok({ status: "submitted", admin_feedback: null }) as never,
     );
     render(<AttestorApplicationTab />);
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: /Apply/i })).toBeInTheDocument(),
-    );
+
     expect(
-      screen.getByRole("heading", { name: /Trial attestation/i }),
+      await screen.findByRole("heading", { name: "Application in review" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /Activation/i })).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /^Step \d/ }).map((b) => b.getAttribute("aria-label")),
+    ).toEqual([
+      "Step 1: Details",
+      "Step 2: Undertakings",
+      "Step 3: Tax document",
+      "Step 4: Payout account",
+      "Step 5: Trial member",
+      "Step 6: Submit, complete",
+    ]);
+    // Review, trial, approval and activation are admin-driven: a track in the
+    // banner, never steps.
+    expect(screen.getByText("Activation").closest("li")).not.toBeNull();
   });
 
-  it("does not carry a KYB gate of its own", async () => {
+  it("does not carry a KYB step of its own", async () => {
     // Business verification happens on the organization before it can open an
     // application at all, so a KYB step here would be permanently complete and
     // would imply the flow still does the checking.
@@ -64,12 +74,9 @@ describe("AttestorApplicationTab", () => {
     );
     render(<AttestorApplicationTab />);
 
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: /Apply/i })).toBeInTheDocument(),
-    );
-    expect(
-      screen.queryByRole("heading", { name: /KYB verification/i }),
-    ).toBeNull();
+    await screen.findByRole("navigation", { name: "Application steps" });
+    expect(screen.queryByRole("button", { name: /KYB|verification/i })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /KYB verification/i })).toBeNull();
   });
 
   it("renders the unstarted Apply gate when no application exists (404)", async () => {
