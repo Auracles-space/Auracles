@@ -40,7 +40,10 @@ services:
   # worker. The worker streams files over TCP (INSTREAM) via CLAMAV_HOST.
   # First boot runs freshclam to fetch signatures (slow — hence start_period).
   clamav:
-    image: clamav/clamav:stable
+    # Debian variant: multi-arch (the Alpine-based clamav/clamav:stable has no
+    # arm64 build, so it never started on Apple Silicon) and the same base as
+    # the ECS worker's clamav/clamav:1.4-debian13-slim.
+    image: clamav/clamav-debian:stable
     ports:
       - "3310:3310"
     healthcheck:
