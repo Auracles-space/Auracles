@@ -3,6 +3,8 @@
  *
  * Rendered inside the shared AuthenticatedAppShell.
  */
+import { Suspense } from "react";
+
 import { TotpSetupPanel } from "@/components/modules/auth/totp-setup-panel";
 
 export default function TotpSetupPage() {
@@ -18,7 +20,10 @@ export default function TotpSetupPage() {
           </p>
         </header>
         <section className="rounded-card border border-border-default bg-surface-1 p-5 shadow-bento md:p-8">
-          <TotpSetupPanel />
+          {/* Suspense satisfies useSearchParams (the ?next= return link). */}
+          <Suspense fallback={null}>
+            <TotpSetupPanel />
+          </Suspense>
         </section>
       </div>
     </main>

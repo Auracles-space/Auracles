@@ -206,7 +206,9 @@ async def require_step_up(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "error_code": "totp_setup_required",
-                "onboarding_url": "/settings/security",
+                # The authenticated 2FA enrolment page; /settings/security
+                # never existed and 404'd for every user without 2FA.
+                "onboarding_url": "/2fa-setup",
                 "message": "Enable two-factor authentication before this action.",
             },
         )

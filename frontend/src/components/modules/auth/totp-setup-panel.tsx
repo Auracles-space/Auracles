@@ -10,9 +10,12 @@
  */
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { isLengthBetween } from "@/lib/forms/validators";
+import { toSafeInternalPath } from "@/lib/auth/onboarding";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -48,6 +51,9 @@ type PendingAction = "reset" | "regenerate" | null;
  * Render the authenticated TOTP management workflow.
  */
 export function TotpSetupPanel() {
+  // A step-up gate sends users here with ?next=<the page that needed 2FA>.
+  // Only an in-app path is honoured, so the link can never lead off-site.
+  const returnPath = toSafeInternalPath(useSearchParams()?.get("next") ?? undefined);
   const [status, setStatus] = useState<AccountStatus | null>(null);
   const [code, setCode] = useState("");
   const [confirmCode, setConfirmCode] = useState("");
@@ -279,6 +285,15 @@ export function TotpSetupPanel() {
             {status.backupCodesRemaining === 1 ? "code" : "codes"} remaining.
           </p>
         </div>
+
+        {returnPath ? (
+          <Link
+            className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-foreground px-6 text-sm font-semibold text-background outline-none transition hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent"
+            href={returnPath}
+          >
+            Continue where you left off
+          </Link>
+        ) : null}
 
         {pending ? (
           <div className="space-y-3 rounded-xl border border-border-default bg-surface-2 p-4">

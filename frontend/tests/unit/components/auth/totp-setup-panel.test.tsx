@@ -11,6 +11,12 @@ import {
 } from "@/lib/generated/sdk.gen";
 import type { TotpStatusResponse } from "@/lib/generated/types.gen";
 
+const search = vi.hoisted(() => ({ value: "" }));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(search.value),
+}));
+
 vi.mock("next/image", () => ({
   default: (props: { alt: string }) => <span aria-label={props.alt} />,
 }));
@@ -57,6 +63,7 @@ async function waitForLoaded() {
 
 describe("TotpSetupPanel", () => {
   beforeEach(() => {
+    search.value = "";
     vi.mocked(setupTotp).mockReset();
     vi.mocked(verifyTotp).mockReset();
     vi.mocked(disableTotp).mockReset();
@@ -140,6 +147,44 @@ describe("TotpSetupPanel", () => {
     expect(
       screen.queryByLabelText(/authenticator code/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("returns to the page that required 2FA once it is enabled", async () => {
+    // A step-up gate sends users here with ?next=<where they were>; without a
+    // way back they were stranded after enabling 2FA.
+    search.value =
+      "next=%2Fdashboard%2Forganizations%2Forg-1%2Fdanger-zone&error_code=totp_setup_required";
+    vi.mocked(setupTotp).mockResolvedValue({
+      data: SETUP_BODY,
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    vi.mocked(verifyTotp).mockResolvedValue({
+      data: { message: "ok" },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<TotpSetupPanel />);
+    await waitForLoaded();
+    fireEvent.click(screen.getByRole("button", { name: /start 2fa setup/i }));
+    fireEvent.change(await screen.findByLabelText(/authenticator code/i), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /verify and enable/i }));
+
+    const back = await screen.findByRole("link", { name: /continue where you left off/i });
+    expect(back).toHaveAttribute("href", "/dashboard/organizations/org-1/danger-zone");
+  });
+
+  it("ignores a next link that points off the site", async () => {
+    search.value = "next=https%3A%2F%2Fevil.example%2Fsteal";
+    mockStatus(true, 10);
+
+    render(<TotpSetupPanel />);
+    await waitForLoaded();
+
+    expect(screen.queryByRole("link", { name: /continue where you left off/i })).toBeNull();
   });
 
   it("copies backup codes to the clipboard", async () => {

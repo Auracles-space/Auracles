@@ -92,7 +92,7 @@ describe("retryWithStepUpOn403", () => {
     const deps = makeDeps();
     const response = new Response(
       JSON.stringify({
-        detail: { error_code: "totp_setup_required", onboarding_url: "/settings/security" },
+        detail: { error_code: "totp_setup_required", onboarding_url: "/2fa-setup" },
       }),
       { status: 403 },
     );
@@ -101,7 +101,7 @@ describe("retryWithStepUpOn403", () => {
     const result = await retryWithStepUpOn403(response, request, { body: undefined }, deps);
 
     expect(result).toBe(response);
-    expect(deps.onSetupRequired).toHaveBeenCalledWith("/settings/security");
+    expect(deps.onSetupRequired).toHaveBeenCalledWith("/2fa-setup");
     expect(deps.requestStepUp).not.toHaveBeenCalled();
   });
 

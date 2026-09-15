@@ -79,7 +79,7 @@ export async function retryWithStepUpOn403(
     return response;
   }
   if (code === "totp_setup_required") {
-    deps.onSetupRequired(parseStepUpOnboardingUrl(parsed) ?? "/settings/security");
+    deps.onSetupRequired(parseStepUpOnboardingUrl(parsed) ?? "/2fa-setup");
     return response;
   }
 

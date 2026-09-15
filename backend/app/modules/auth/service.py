@@ -1477,7 +1477,7 @@ async def open_step_up(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "error_code": "totp_setup_required",
-                "onboarding_url": "/settings/security",
+                "onboarding_url": "/2fa-setup",
                 "message": "Enable two-factor authentication before this action.",
             },
         )

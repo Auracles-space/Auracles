@@ -46,7 +46,7 @@ describe("step-up gate", () => {
     );
     expect(
       parseStepUpErrorCode({
-        detail: { error_code: "totp_setup_required", onboarding_url: "/settings/security" },
+        detail: { error_code: "totp_setup_required", onboarding_url: "/2fa-setup" },
       }),
     ).toBe("totp_setup_required");
     expect(parseStepUpErrorCode({ detail: { error_code: "role_required" } })).toBeNull();

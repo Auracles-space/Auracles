@@ -613,7 +613,7 @@ async def test_admin_without_2fa_is_told_to_enrol(
 
     assert response.status_code == 403
     assert response.json()["detail"]["error_code"] == "totp_setup_required"
-    assert response.json()["detail"]["onboarding_url"] == "/settings/security"
+    assert response.json()["detail"]["onboarding_url"] == "/2fa-setup"
 
 
 async def test_role_assignment_revokes_targets_existing_tokens(

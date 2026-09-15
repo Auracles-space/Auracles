@@ -78,7 +78,7 @@ async def test_rejects_when_two_factor_not_enrolled() -> None:
 
     assert excinfo.value.status_code == 403
     assert excinfo.value.detail["error_code"] == "totp_setup_required"
-    assert excinfo.value.detail["onboarding_url"] == "/settings/security"
+    assert excinfo.value.detail["onboarding_url"] == "/2fa-setup"
 
 
 async def test_if_enrolled_variant_skips_unenrolled_users() -> None:
