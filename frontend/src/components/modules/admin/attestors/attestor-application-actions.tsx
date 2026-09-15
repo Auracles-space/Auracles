@@ -94,7 +94,23 @@ export function AttestorApplicationActions({
         <p className="text-sm font-medium text-foreground">{gates.nextStep}</p>
       ) : null}
 
-      {gates.canStartTrial ? (
+      {gates.canStartTrial && fixtures.length === 0 ? (
+        // A trial runs against a fixture; without one the picker was an empty
+        // dropdown and Start trial stayed disabled with no reason given.
+        <p className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-foreground">
+          No calibration fixtures yet. A trial needs a fixture with a scanned artifact and a
+          complete answer key.{" "}
+          <a
+            className="font-semibold text-accent underline-offset-4 hover:underline"
+            href="/admin/attestors?tab=fixtures"
+          >
+            Create one on the Fixtures tab
+          </a>
+          .
+        </p>
+      ) : null}
+
+      {gates.canStartTrial && fixtures.length > 0 ? (
         <label className="grid gap-2 text-sm font-medium text-foreground sm:max-w-md">
           Calibration fixture for {orgName}
           <Select
