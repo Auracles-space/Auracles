@@ -16,6 +16,21 @@ from app.workers.tasks.admin_notifications import dispatch_admin_notification
 
 _TITLE = "Item awaiting admin review"
 
+# One title per review source, so an admin can tell an attestor application
+# from a dispute in the notification list without opening it.
+_DOMAIN_TITLES = {
+    "account_deletion": "Account deletion needs review",
+    "attestation": "Attestation needs manual assignment",
+    "credential": "Credential awaiting verification",
+    "developer_application": "Developer application submitted",
+    "org_attestor_application": "Attestor application submitted",
+    "org_kyb": "Business verification submitted",
+    "payout": "Payout needs attention",
+    "platform_balance": "Platform balance below floor",
+    "project_dispute": "Project dispute raised",
+    "refund": "Refund needs attention",
+}
+
 
 def notify_admins_review_pending(
     *,
@@ -23,7 +38,7 @@ def notify_admins_review_pending(
     target_id: UUID,
     body: str,
     link: str,
-    title: str = _TITLE,
+    title: str | None = None,
 ) -> None:
     """Queue one admin-review notification, fanned out to every admin account.
 
@@ -35,12 +50,13 @@ def notify_admins_review_pending(
             re-submitted or retried event never double-notifies an admin.
         body: Human-readable summary shown in the notification.
         link: Deep link to the admin surface that resolves the item.
-        title: Optional notification title; defaults to a generic review prompt.
+        title: Optional notification title; defaults to the domain's title, or
+            a generic review prompt for a domain without one.
     """
     try:
         dispatch_admin_notification.delay(
             notification_type="admin_review_pending",
-            title=title,
+            title=title or _DOMAIN_TITLES.get(domain, _TITLE),
             body=body,
             payload={"domain": domain, "target_id": str(target_id)},
             link=link,

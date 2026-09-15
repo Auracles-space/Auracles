@@ -65,7 +65,16 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
 from app.main import app  # noqa: E402
+
+# Background tasks enqueued by code under test must never reach the local
+# worker: it serves the dev database, so an admin review notice raised by a test
+# became a real notification for the seeded dev admins. The in-memory transport
+# accepts the publish and nothing consumes it, matching CI where no worker runs.
+from app.workers.celery_app import app as _celery_app  # noqa: E402
 from tests._guard import assert_local_datastores  # noqa: E402
+
+_celery_app.conf.broker_url = "memory://"
+_celery_app.conf.result_backend = "cache+memory://"
 
 
 @pytest.fixture(scope="session", autouse=True)

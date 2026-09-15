@@ -54,6 +54,7 @@ from app.modules.organizations.schemas import (
     TrialSubmitRequest,
     UpsertTrialAnswerKeyRequest,
 )
+from app.shared.errors import error_detail
 from app.workers.tasks.artifacts import scan_artifact
 
 _OPEN_TRIAL_STATES = ("assigned", "submitted")
@@ -147,6 +148,20 @@ async def _load_trial_for_admin(
     return trial
 
 
+async def _is_waiting_nominee(
+    db: AsyncSession, *, org_id: UUID, member_id: UUID
+) -> bool:
+    """Whether the member is the nominee on the org's live application."""
+    nominee = await db.scalar(
+        select(OrgAttestorApplication.id).where(
+            OrgAttestorApplication.org_id == org_id,
+            OrgAttestorApplication.trial_member_id == member_id,
+            OrgAttestorApplication.status.in_(("draft", "submitted", "needs_info")),
+        )
+    )
+    return nominee is not None
+
+
 async def load_nominee_trial(
     db: AsyncSession,
     *,
@@ -168,7 +183,23 @@ async def load_nominee_trial(
         HTTPException(404): No assigned or submitted trial exists.
         HTTPException(403): Caller is not the nominated trial member.
     """
-    application, trial = await _load_open_trial(db, org_id=org_id)
+    try:
+        application, trial = await _load_open_trial(db, org_id=org_id)
+    except HTTPException as exc:
+        # A nominee opens this page from their nomination notice before any
+        # trial exists; tell them they are nominated rather than "no trial".
+        if exc.status_code == status.HTTP_404_NOT_FOUND and await _is_waiting_nominee(
+            db, org_id=org_id, member_id=member.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_detail(
+                    "trial_not_started",
+                    "You are nominated for the calibration trial. It opens once "
+                    "an administrator starts it.",
+                ),
+            ) from None
+        raise
     if member.id != application.trial_member_id:
         logger.bind(
             module="organizations",

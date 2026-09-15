@@ -353,3 +353,36 @@ async def test_non_nominee_member_forbidden(
         headers=seeded_trial_http.other_member_headers,
     )
     assert response.status_code == 403
+
+
+async def test_nominee_waiting_for_the_trial_gets_trial_not_started(
+    client,
+    seeded_trial_http: SeededTrialHttpContext,
+) -> None:
+    """A nominee whose trial has not been started is told so, not "no trial".
+
+    Other members still get a plain 404 without the nominee wording.
+    """
+    from app.modules.attestation.models import AttestorTrial as _AttestorTrial
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                delete(_AttestorTrial).where(
+                    _AttestorTrial.org_id == seeded_trial_http.org_id
+                )
+            )
+
+    nominee = await client.get(
+        f"/v1/orgs/{seeded_trial_http.org_id}/attestor-trial",
+        headers=seeded_trial_http.nominee_headers,
+    )
+    other = await client.get(
+        f"/v1/orgs/{seeded_trial_http.org_id}/attestor-trial",
+        headers=seeded_trial_http.other_member_headers,
+    )
+
+    assert nominee.status_code == 404
+    assert nominee.json()["detail"]["error_code"] == "trial_not_started"
+    assert other.status_code == 404
+    assert "error_code" not in str(other.json()["detail"])

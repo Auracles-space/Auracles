@@ -444,8 +444,11 @@ async def submit_application(
     notify_admins_review_pending(
         domain="org_attestor_application",
         target_id=application.id,
-        body="An organization submitted an attestor application for KYB review.",
-        link="/admin/org-attestors",
+        body=(
+            "An organization submitted its attestor application. "
+            "Start the calibration trial."
+        ),
+        link="/admin/attestors?tab=applications",
     )
     return application
 
