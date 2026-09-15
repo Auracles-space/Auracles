@@ -27,6 +27,7 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { adminListOrgsV1AdminOrgsGet, adminReviewOrgKyb } from "@/lib/generated/sdk.gen";
+import { emitOrgVerificationChanged } from "@/components/modules/admin/admin-events";
 import type { AdminOrgResponse } from "@/lib/generated/types.gen";
 
 /**
@@ -86,6 +87,8 @@ export function AdminOrgVerificationQueue() {
         ? "Organization verified. Its capabilities can now be activated."
         : "Organization returned for changes.",
     );
+    // Keep the Organizations badge in the admin nav in step with the queue.
+    emitOrgVerificationChanged();
     await load();
   }
 

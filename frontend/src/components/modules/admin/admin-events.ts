@@ -15,3 +15,13 @@ export function emitNeedsAdminChanged(): void {
     window.dispatchEvent(new Event(NEEDS_ADMIN_CHANGED_EVENT));
   }
 }
+
+/** Fired when an admin verifies or returns an organization's business details. */
+export const ORG_VERIFICATION_CHANGED_EVENT = "auracles:org-verification-changed";
+
+/** Dispatch the org-verification-changed event (no-op during SSR). */
+export function emitOrgVerificationChanged(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(ORG_VERIFICATION_CHANGED_EVENT));
+  }
+}

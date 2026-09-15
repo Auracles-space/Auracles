@@ -15,12 +15,16 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import {
+  adminListOrgsV1AdminOrgsGet,
   listAdminAttestationDisputes,
   listAdminAttestations,
   listAdminProjectDisputes,
   listOrgAttestorApplicationsForAdmin,
 } from "@/lib/generated/sdk.gen";
-import { NEEDS_ADMIN_CHANGED_EVENT } from "@/components/modules/admin/admin-events";
+import {
+  NEEDS_ADMIN_CHANGED_EVENT,
+  ORG_VERIFICATION_CHANGED_EVENT,
+} from "@/components/modules/admin/admin-events";
 import { StepUpPill } from "@/components/modules/auth/step-up-pill";
 
 type AdminWorkspaceShellProps = {
@@ -155,6 +159,7 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
   const [needsAdminCount, setNeedsAdminCount] = useState(0);
   const [attestorCount, setAttestorCount] = useState(0);
   const [disputeCount, setDisputeCount] = useState(0);
+  const [pendingOrgCount, setPendingOrgCount] = useState(0);
 
   useEffect(() => {
     async function loadNeedsAdminCount() {
@@ -200,20 +205,42 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
         return;
       }
     }
+    async function loadPendingOrgCount() {
+      configureBrowserClient();
+      // One row is enough: the badge reads the total, and a failure leaves it
+      // at zero for the same reason as the needs-admin count above.
+      try {
+        const result = await adminListOrgsV1AdminOrgsGet({
+          headers: getAccessTokenHeaders(),
+          query: { kyb_status: "pending", page: 1, page_size: 1 },
+        });
+        if (result.response.ok && result.data) {
+          setPendingOrgCount(result.data.total);
+        }
+      } catch {
+        return;
+      }
+    }
     void loadNeedsAdminCount();
     void loadTrustCounts();
+    void loadPendingOrgCount();
     // Refresh the badge when an admin assigns or refunds a needs-admin request
     // elsewhere in the workspace, so the count never goes stale.
     const onChanged = () => void loadNeedsAdminCount();
+    const onOrgVerificationChanged = () => void loadPendingOrgCount();
     window.addEventListener(NEEDS_ADMIN_CHANGED_EVENT, onChanged);
-    return () =>
+    window.addEventListener(ORG_VERIFICATION_CHANGED_EVENT, onOrgVerificationChanged);
+    return () => {
       window.removeEventListener(NEEDS_ADMIN_CHANGED_EVENT, onChanged);
+      window.removeEventListener(ORG_VERIFICATION_CHANGED_EVENT, onOrgVerificationChanged);
+    };
   }, []);
 
   const badgeCounts: Record<string, number> = {
     "/admin/attestations": needsAdminCount,
     "/admin/attestors": attestorCount,
     "/admin/disputes": disputeCount,
+    "/admin/organizations": pendingOrgCount,
   };
 
   return (
