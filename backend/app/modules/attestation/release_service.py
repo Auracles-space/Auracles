@@ -79,6 +79,49 @@ async def accept_report(
     return attestation
 
 
+async def release_attestation_by_admin(
+    *,
+    db: AsyncSession,
+    attestation_id: UUID,
+    admin_id: UUID,
+    reason: str,
+) -> tuple[Attestation, UUID | None, list[UUID]]:
+    """Settle an attestation through the admin escrow release override.
+
+    Runs inside the caller's transaction and does exactly what an acceptance
+    does: releases the escrow, credits the attestor org, closes the request as
+    released, and publishes the badge. Only a submitted report with no open
+    dispute can be settled this way; a dispute is settled by its verdict.
+
+    Args:
+        db: Async session already inside the caller's transaction.
+        attestation_id: The attestation the escrow belongs to.
+        admin_id: Admin performing the override.
+        reason: Audited reason for the override.
+
+    Returns:
+        The attestation plus the reviewing member's user id and the attestor
+        org owners, for the post-commit release notification.
+
+    Raises:
+        HTTPException(404): The attestation does not exist.
+        HTTPException(409): No submitted report, or a dispute is open.
+    """
+    attestation = await _load_releasable_attestation(
+        db=db, attestation_id=attestation_id
+    )
+    await _release_and_close(
+        db=db,
+        attestation=attestation,
+        actor_id=admin_id,
+        reason=reason,
+        admin_override=True,
+    )
+    recipient_id = await _reviewing_member_user_id(db, attestation)
+    owner_ids = await _attestor_org_owner_ids(db, attestation)
+    return attestation, recipient_id, owner_ids
+
+
 async def auto_release_attestations(
     db: AsyncSession,
     *,
@@ -134,6 +177,7 @@ async def _release_and_close(
     attestation: Attestation,
     actor_id: UUID,
     reason: str,
+    admin_override: bool = False,
 ) -> None:
     """Release a report-submitted Attestation escrow and close the request."""
     if attestation.escrow_id is None:
@@ -153,6 +197,7 @@ async def _release_and_close(
         escrow_id=attestation.escrow_id,
         actor_id=actor_id,
         reason=reason,
+        admin_override=admin_override,
     )
     await credit_org_beneficiary(db=db, attestation=attestation)
     attestation.status = "released"

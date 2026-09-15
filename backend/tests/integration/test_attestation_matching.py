@@ -1541,6 +1541,126 @@ async def test_admin_marks_open_dispute_complex_to_extend_the_deadline(
     assert audit is not None
 
 
+async def test_admin_escrow_override_settles_an_attestation_like_a_release(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The admin escrow release override settles an attestation fully.
+
+    It used to move only the escrow: the fee never reached the attestor org's
+    balance and the attestation stayed report_submitted. It now credits the
+    org, closes the attestation as released, and notifies like an acceptance.
+    """
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+    notification_calls: list[dict[str, Any]] = []
+
+    async def override_redis() -> FakeRedis:
+        """Return the Redis test double holding the admin step-up window."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    requestor_id = await create_user("override-req@auracles.space", ["operator"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="override",
+    )
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
+    (
+        attestation_id,
+        transaction_id,
+        escrow_id,
+    ) = await create_report_submitted_attestation(requestor_id, org_id, member_id)
+
+    released = await client.post(
+        f"/v1/admin/escrows/{escrow_id}/release",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={"reason": "Requestor unreachable; report verified by admin."},
+    )
+
+    async with async_session_factory() as session:
+        attestation = await session.get(Attestation, attestation_id)
+        transaction = await session.get(Transaction, transaction_id)
+        escrow = await session.get(Escrow, escrow_id)
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert released.status_code == 200
+    assert escrow is not None
+    assert escrow.status == "released"
+    assert transaction is not None
+    assert transaction.payee_org_id == org_id
+    assert attestation is not None
+    assert attestation.status == "released"
+    assert attestation.closed_at is not None
+    assert attestation.report_published_eligible is True
+    assert "attestation_released" in {
+        call["notification_type"] for call in notification_calls
+    }
+
+
+async def test_admin_escrow_override_refuses_an_attestation_without_a_settleable_report(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disputed attestation must be settled through the dispute verdict."""
+    del migrated_database, matching_context
+    fake_redis = FakeRedis()
+
+    async def override_redis() -> FakeRedis:
+        """Return the Redis test double holding the admin step-up window."""
+        return fake_redis
+
+    app.dependency_overrides[get_redis] = override_redis
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask([]),
+    )
+    requestor_id = await create_user("override-disp@auracles.space", ["operator"])
+    org_id, _attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="override-disp",
+    )
+    admin_id = await create_admin_user()
+    await open_step_up_window(fake_redis, admin_id)
+    attestation_id, _, escrow_id = await create_report_submitted_attestation(
+        requestor_id, org_id, member_id
+    )
+    await client.post(
+        f"/v1/attestations/{attestation_id}/disputes",
+        headers=auth_headers(requestor_id, ["operator"]),
+        json={
+            "category": "scope_error",
+            "reason": "The report partly overstates what was verified here.",
+        },
+    )
+
+    released = await client.post(
+        f"/v1/admin/escrows/{escrow_id}/release",
+        headers=auth_headers(admin_id, ["admin"]),
+        json={"reason": "Trying to bypass the open dispute."},
+    )
+    async with async_session_factory() as session:
+        escrow = await session.get(Escrow, escrow_id)
+    app.dependency_overrides.pop(get_redis, None)
+
+    assert released.status_code == 409
+    assert escrow is not None
+    assert escrow.status == "held"
+
+
 async def test_admin_rejects_attestation_dispute_releases_and_publishes(
     client: AsyncClient,
     migrated_database: None,

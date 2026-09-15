@@ -2963,18 +2963,52 @@ async def release_escrow_override(
     escrow_id: UUID,
     reason: str,
 ) -> Escrow:
-    """Release held escrow funds through an audited admin override."""
+    """Release held escrow funds through an audited admin override.
+
+    An attestation escrow is settled through the attestation release path so
+    the attestor org is credited, the request closes as released, and everyone
+    is notified; releasing only the escrow left the fee off the org's balance
+    and the attestation stuck in ``report_submitted``.
+    """
+    from app.modules.attestation import notifications as attestation_notifications
+    from app.modules.attestation import release_service
+
     admin_id = admin.id
+    settled = None
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
-        escrow = await escrow_service.release(
-            db,
-            escrow_id=escrow_id,
-            actor_id=admin_id,
-            reason=reason,
-            admin_override=True,
+        held = await db.get(Escrow, escrow_id)
+        if (
+            held is not None
+            and held.ref_type == "attestation"
+            and held.status == "held"
+        ):
+            settled = await release_service.release_attestation_by_admin(
+                db=db,
+                attestation_id=held.ref_id,
+                admin_id=admin_id,
+                reason=reason,
+            )
+            escrow = held
+        else:
+            escrow = await escrow_service.release(
+                db,
+                escrow_id=escrow_id,
+                actor_id=admin_id,
+                reason=reason,
+                admin_override=True,
+            )
+    if settled is not None:
+        attestation, recipient_id, owner_ids = settled
+        await db.refresh(attestation)
+        attestation_notifications.notify_released(
+            attestation,
+            reason="admin_escrow_override",
+            recipient_id=recipient_id,
+            owner_ids=owner_ids,
         )
+        await db.refresh(escrow)
     return escrow
 
 
