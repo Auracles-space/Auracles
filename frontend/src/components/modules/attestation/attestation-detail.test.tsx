@@ -18,6 +18,10 @@ vi.mock("@/lib/auth/form-client", () => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
+  // The report's evidence files load on their own; an empty list keeps them quiet.
+  listAttestationEvidenceFiles: vi.fn(() =>
+    Promise.resolve({ data: { files: [], expires_in_seconds: 900 }, error: undefined, response: { ok: true } }),
+  ),
   getAttestation: vi.fn(),
   getAttestationFeePayment: vi.fn(),
   acceptAttestationReport: vi.fn(),

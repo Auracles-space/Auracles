@@ -356,7 +356,7 @@ async def build_request_responses(
         title_rows = await db.execute(
             select(Framework.id, Framework.title).where(Framework.id.in_(framework_ids))
         )
-        titles = dict(title_rows.all())
+        titles = {framework_id: title for framework_id, title in title_rows.all()}
     org_ids = {row.attestor_org_id for row in attestations if row.attestor_org_id}
     org_names: dict[UUID, str] = {}
     if org_ids:
@@ -365,7 +365,7 @@ async def build_request_responses(
                 Organization.id.in_(org_ids)
             )
         )
-        org_names = dict(org_rows.all())
+        org_names = {org_id: name for org_id, name in org_rows.all()}
     disputes: dict[UUID, AttestationDispute] = {}
     evidence_floor: int | None = None
     if include_dispute and attestations:
@@ -377,8 +377,8 @@ async def build_request_responses(
             )
             .order_by(AttestationDispute.created_at.desc())
         )
-        for dispute in dispute_rows.scalars().all():
-            disputes.setdefault(dispute.attestation_id, dispute)
+        for dispute_row in dispute_rows.scalars().all():
+            disputes.setdefault(dispute_row.attestation_id, dispute_row)
     items: list[AttestationRequestResponse] = []
     for row in attestations:
         item = AttestationRequestResponse.model_validate(row)
