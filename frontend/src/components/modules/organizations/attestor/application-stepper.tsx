@@ -49,10 +49,10 @@ export function ApplicationStepper({
           {steps.map((step, index) => (
             <span
               className={`h-1.5 flex-1 rounded-sm ${
-                index === activeIndex
-                  ? "bg-accent"
-                  : isComplete(step.id)
-                    ? "bg-success"
+                isComplete(step.id)
+                  ? "bg-success"
+                  : index === activeIndex
+                    ? "bg-accent"
                     : "bg-surface-3"
               }`}
               key={step.id}
@@ -72,8 +72,12 @@ export function ApplicationStepper({
                 aria-current={active ? "step" : undefined}
                 aria-label={`Step ${index + 1}: ${step.label}${complete ? ", complete" : ""}`}
                 className={`flex min-h-11 w-full flex-col items-start gap-2 rounded-xl border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+                  // Orange marks the step in progress; an open step that is
+                  // already done (e.g. Submit after approval) rings green.
                   active
-                    ? "border-accent/50 bg-surface-2"
+                    ? complete
+                      ? "border-success/50 bg-surface-2"
+                      : "border-accent/50 bg-surface-2"
                     : "border-border-default bg-surface-1 enabled:hover:bg-surface-2"
                 }`}
                 disabled={!enabled}

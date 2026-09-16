@@ -376,4 +376,17 @@ describe("AttestorApplicationTab stepper", () => {
     expect(screen.getByText("Review and trial").closest("li")).toHaveAttribute("aria-current", "step");
     expect(screen.queryByRole("button", { name: "Submit for review" })).toBeNull();
   });
+
+  it("rings the open Submit step green, not orange, once the application is approved", async () => {
+    context.capabilities = { attestor: "active" };
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: { ...readyDraft(), status: "approved" },
+    } as never);
+    render(<AttestorApplicationTab />);
+
+    const submit = await screen.findByRole("button", { name: "Step 6: Submit, complete" });
+    expect(submit).toHaveAttribute("aria-current", "step");
+    expect(submit.className).toContain("border-success");
+    expect(submit.className).not.toContain("border-accent");
+  });
 });
