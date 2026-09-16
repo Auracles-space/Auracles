@@ -50,6 +50,7 @@ from app.modules.financials import invoices as financials_invoices
 from app.modules.financials import notifications as financial_notifications
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
+from app.modules.financials.provider_fees import record_provider_fee
 from app.modules.financials.refunds import reverse_refund, settle_refund
 from app.modules.frameworks.models import Framework, License
 from app.modules.notifications.service import create_notification
@@ -1977,6 +1978,57 @@ def _paystack_event_id(event_type: str, envelope: dict[str, Any]) -> str:
     return f"{event_type}:{object_id}"
 
 
+async def _record_paystack_charge_fee(
+    db: AsyncSession,
+    envelope: dict[str, Any],
+) -> None:
+    """Record the fee Paystack kept on a successful charge as a platform cost.
+
+    Recorded for any charge that names a Paystack transaction Auracles booked,
+    including one that fails local settlement checks: the money reached the
+    Paystack balance, so Paystack's fee was taken either way. Keyed by the
+    charge reference, so a redelivery never counts the fee twice.
+
+    Args:
+        db: Session inside the webhook's transaction.
+        envelope: The normalized charge envelope.
+    """
+    event_object = _event_object(envelope)
+    fees = event_object.get("fees")
+    reference = _event_object_id(envelope)
+    currency = _event_currency(envelope)
+    if not isinstance(fees, int) or fees <= 0 or reference is None or currency is None:
+        return
+    raw_transaction_id = _event_metadata(envelope).get("transaction_id")
+    if raw_transaction_id is None:
+        return
+    try:
+        transaction_id = UUID(raw_transaction_id)
+    except ValueError:
+        return
+    transaction = await db.get(Transaction, transaction_id)
+    if transaction is None or transaction.provider != "paystack":
+        return
+    paid_at_raw = event_object.get("paid_at")
+    paid_at: datetime | None = None
+    if isinstance(paid_at_raw, str):
+        try:
+            paid_at = datetime.fromisoformat(paid_at_raw.replace("Z", "+00:00"))
+        except ValueError:
+            paid_at = None
+    await record_provider_fee(
+        db,
+        provider="paystack",
+        source_type="transaction",
+        source_id=transaction.id,
+        amount_minor=fees,
+        currency=currency,
+        provider_ref=reference,
+        origin="webhook",
+        occurred_at=paid_at,
+    )
+
+
 async def _dispatch_paystack_event(
     db: AsyncSession,
     *,
@@ -1986,6 +2038,8 @@ async def _dispatch_paystack_event(
 ) -> tuple[str, UUID | None, list[Callable[[], None]]]:
     """Dispatch a verified Paystack event and return status plus follow-up work."""
     metadata = _event_metadata(envelope)
+    if event_type == "charge.success":
+        await _record_paystack_charge_fee(db, envelope)
     if event_type == "charge.success" and metadata.get("kind") == "purchase":
         purchase_notices: list[Callable[[], None]] = []
         # The partner work queues partner webhook deliveries after commit; the

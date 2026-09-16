@@ -44,6 +44,7 @@ from app.modules.financials.models import (
     FinancialEvent,
     Payout,
     PayoutAccount,
+    ProviderFee,
     Transaction,
 )
 from app.modules.frameworks.models import Framework, License
@@ -73,6 +74,7 @@ async def reset_webhook_state() -> None:
     async with async_session_factory() as session:
         await session.execute(delete(WebhookEvent))
         await session.execute(delete(FinancialEvent))
+        await session.execute(delete(ProviderFee))
         await session.execute(delete(AuditLog))
         await session.execute(delete(PartnerCommission))
         await session.execute(delete(PartnerPurchaseAttribution))

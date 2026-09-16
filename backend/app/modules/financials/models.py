@@ -429,6 +429,70 @@ class FinancialEvent(Base):
     )
 
 
+class ProviderFee(Base):
+    """One fee a payment provider kept on a charge or transfer.
+
+    The platform absorbs provider fees, so each one is a platform cost that
+    Treasury subtracts from commission. Rows are append-only and keyed by the
+    provider reference the fee was charged on: a webhook redelivery or the
+    backfill cannot count a fee twice, while a second, distinct charge against
+    the same transaction (a double charge) is a second real cost.
+
+    ``source_id`` is polymorphic (a transaction, payout, partner payout or
+    platform withdrawal) and therefore not a foreign key.
+
+    Written only through
+    ``app.modules.financials.provider_fees.record_provider_fee``.
+    """
+
+    __tablename__ = "provider_fees"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_provider_fees_amount_positive"),
+        CheckConstraint(
+            "source_type IN ('transaction', 'payout', 'partner_payout', "
+            "'platform_withdrawal')",
+            name="ck_provider_fees_source_type",
+        ),
+        CheckConstraint(
+            "origin IN ('webhook', 'backfill')",
+            name="ck_provider_fees_origin",
+        ),
+        UniqueConstraint(
+            "provider",
+            "source_type",
+            "provider_ref",
+            name="uq_provider_fees_provider_source_ref",
+        ),
+        Index("idx_provider_fees_source", "source_type", "source_id"),
+        Index("idx_provider_fees_currency_occurred_at", "currency", "occurred_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    provider_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    origin: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Provider-side time, so statement months follow when the fee was charged
+    # rather than when a backfill happened to record it.
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
 class PlatformConfig(Base):
     """Mutable platform-wide financial configuration row."""
 

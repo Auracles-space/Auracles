@@ -101,8 +101,12 @@ Migration 0111 onward, one migration per slice.
 | occurred_at | timestamptz | provider time, used for statement months |
 | created_at | timestamptz | |
 
-- A unique constraint on `(provider, source_type, source_id)` makes webhook retries
-  and the backfill idempotent.
+- A unique constraint on `(provider, source_type, provider_ref)` makes webhook retries
+  and the backfill idempotent. It is keyed by reference rather than `source_id`, so a
+  double charge (a second, distinct charge on one transaction) records its second
+  real fee.
+- A charge fee is recorded even when local settlement refuses the charge (amount
+  mismatch, double charge): the money reached the balance and Paystack kept its fee.
 - Refunds do not reverse a fee, because Paystack keeps the charge fee. A refunded sale's
   fee stays as a cost.
 
