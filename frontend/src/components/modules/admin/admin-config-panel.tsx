@@ -49,6 +49,7 @@ const CONFIG_GROUPS: { title: string; keys: ConfigKey[] }[] = [
       "commission_rate",
       "min_payout_usd",
       "min_payout_ngn",
+      "min_platform_withdrawal_ngn",
       "refund_window_hours",
     ],
   },

@@ -116,6 +116,11 @@ const adminGroups: AdminNavGroup[] = [
         label: "Payouts",
         summary: "Monitor Contributor and Organization payouts and failed transfers.",
       },
+      {
+        href: "/admin/treasury",
+        label: "Treasury",
+        summary: "Platform money vs users' money, withdrawals, and monthly statements.",
+      },
     ],
   },
   {
