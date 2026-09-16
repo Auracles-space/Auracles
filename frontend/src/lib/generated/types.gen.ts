@@ -6713,6 +6713,10 @@ export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutResponse = (
 
 export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutError = (HTTPValidationError);
 
+export type AdminTreasuryBanksV1AdminTreasuryBanksGetResponse = (PayoutBanksResponse);
+
+export type AdminTreasuryBanksV1AdminTreasuryBanksGetError = unknown;
+
 export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostResponse = (FeeBackfillResponse);
 
 export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostError = unknown;

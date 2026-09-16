@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
+  type BankListLoader,
   PaystackBankFields,
   paystackDetailsComplete,
 } from "@/components/modules/financials/paystack-bank-fields";
@@ -22,8 +23,18 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { adminSetPlatformBankAccountV1AdminTreasuryBankAccountPut as setBankAccount } from "@/lib/generated/sdk.gen";
+import {
+  adminSetPlatformBankAccountV1AdminTreasuryBankAccountPut as setBankAccount,
+  adminTreasuryBanksV1AdminTreasuryBanksGet as listTreasuryBanks,
+} from "@/lib/generated/sdk.gen";
 import type { PlatformBankAccountItem } from "@/lib/generated/types.gen";
+
+/**
+ * Load banks from the Treasury API. The Contributor list requires the
+ * Contributor role, and its refusal reads as unfinished onboarding.
+ */
+const loadTreasuryBanks: BankListLoader = () =>
+  listTreasuryBanks({ headers: getAccessTokenHeaders() });
 
 /**
  * Render the bank account card.
@@ -97,6 +108,7 @@ export function BankAccountCard({
             bankCode={bankCode}
             disabled={busy}
             idPrefix="treasury-bank"
+            loadBanks={loadTreasuryBanks}
             onAccountNumberChange={setAccountNumber}
             onBankCodeChange={setBankCode}
           />

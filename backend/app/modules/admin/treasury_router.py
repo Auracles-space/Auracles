@@ -39,6 +39,8 @@ from app.modules.financials import (
     treasury_statement,
     unrecognized_transfers,
 )
+from app.modules.financials import service as financials_service
+from app.modules.financials.schemas import PayoutBanksResponse
 
 router = APIRouter(prefix="/admin/treasury", tags=["Admin Treasury"])
 
@@ -79,6 +81,22 @@ async def admin_platform_bank_account(
     """Return the active platform bank account, or null before one is set."""
     del admin
     return await platform_bank_account.get_platform_bank_account(db)
+
+
+@router.get(
+    "/banks",
+    response_model=PayoutBanksResponse,
+    summary="Banks for the platform bank account (super-admin)",
+    description=(
+        "Banks the platform bank account can be held at, read live from "
+        "Paystack. Super-admin only: the Contributor bank list requires the "
+        "Contributor role, which the super-admin need not hold."
+    ),
+)
+async def admin_treasury_banks(admin: SuperAdmin) -> PayoutBanksResponse:
+    """List banks for setting the platform bank account."""
+    del admin
+    return await financials_service.list_payout_banks()
 
 
 @router.put(

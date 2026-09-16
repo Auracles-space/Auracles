@@ -19,7 +19,9 @@ import {
   adminRequestPlatformWithdrawalV1AdminTreasuryWithdrawalsPost as requestWithdrawal,
   adminTreasuryStatementV1AdminTreasuryStatementsMonthGet as downloadStatement,
   adminTreasurySummaryV1AdminTreasurySummaryGet as getSummary,
+  adminTreasuryBanksV1AdminTreasuryBanksGet as listTreasuryBanks,
   adminUnrecognizedTransfersV1AdminTreasuryUnrecognizedTransfersGet as listTransfers,
+  listPayoutBanks,
 } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -46,6 +48,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   adminTreasuryStatementV1AdminTreasuryStatementsMonthGet: vi.fn(),
   adminRequestFeeBackfillV1AdminTreasuryFeeBackfillPost: vi.fn(),
   listPayoutBanks: vi.fn(async () => ({
+    data: undefined,
+    error: { detail: { error_code: "role_required" } },
+    response: new Response(null, { status: 403 }),
+  })),
+  adminTreasuryBanksV1AdminTreasuryBanksGet: vi.fn(async () => ({
     data: { banks: [{ name: "Guaranty Trust Bank", code: "058" }] },
     error: undefined,
     response: new Response(null, { status: 200 }),
@@ -299,5 +306,20 @@ describe("TreasuryPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Backfill fees/i }));
     expect(await screen.findByText(/Fee backfill queued/i)).toBeInTheDocument();
+  });
+
+  it("lists banks from the Treasury API, not the Contributor one", async () => {
+    // The Contributor list needs a role the super-admin need not hold; its
+    // refusal used to send the super-admin to identity verification.
+    mockPage({ superadmin: true });
+
+    render(<TreasuryPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /Change account/i }));
+
+    expect(
+      await screen.findByRole("option", { name: "Guaranty Trust Bank" }),
+    ).toBeInTheDocument();
+    expect(vi.mocked(listTreasuryBanks)).toHaveBeenCalled();
+    expect(vi.mocked(listPayoutBanks)).not.toHaveBeenCalled();
   });
 });

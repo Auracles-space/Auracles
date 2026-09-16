@@ -320,3 +320,36 @@ async def test_every_admin_can_view_the_active_account(
     assert after.json()["bank_account"]["account_last4"] == "6789"
     assert "recipient_code" not in after.json()["bank_account"]
     assert operator.status_code == 403
+
+
+async def test_superadmin_lists_banks_without_a_contributor_role(
+    client: AsyncClient,
+    bank_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The super-admin picks the platform bank without being a Contributor.
+
+    The Contributor bank list answered the admin-only super-admin with
+    ``role_required``, which the app treats as unfinished onboarding.
+    """
+
+    async def fake_service_list_banks(**_: Any) -> list[PaystackBank]:
+        """Return a fixed bank list."""
+        return [PaystackBank(name="Guaranty Trust Bank", code="058")]
+
+    monkeypatch.setattr(
+        "app.modules.financials.service.paystack.list_banks", fake_service_list_banks
+    )
+    admin_id = await _admin(superadmin=False)
+    superadmin_id = await _admin(superadmin=True)
+
+    by_superadmin = await client.get(
+        "/v1/admin/treasury/banks", headers=_headers(superadmin_id)
+    )
+    by_admin = await client.get("/v1/admin/treasury/banks", headers=_headers(admin_id))
+
+    assert by_superadmin.status_code == 200
+    assert by_superadmin.json() == {
+        "banks": [{"name": "Guaranty Trust Bank", "code": "058"}]
+    }
+    assert by_admin.status_code == 403

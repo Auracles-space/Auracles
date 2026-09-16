@@ -19175,6 +19175,24 @@ paths:
       summary: Set the platform bank account (super-admin)
       tags:
       - Admin Treasury
+  /v1/admin/treasury/banks:
+    get:
+      description: 'Banks the platform bank account can be held at, read live from Paystack. Super-admin
+        only: the Contributor bank list requires the Contributor role, which the super-admin need not
+        hold.'
+      operationId: admin_treasury_banks_v1_admin_treasury_banks_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutBanksResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Banks for the platform bank account (super-admin)
+      tags:
+      - Admin Treasury
   /v1/admin/treasury/fee-backfill:
     post:
       description: Queues a one-off lookup of the fee Paystack kept on every settled charge that has
