@@ -417,7 +417,7 @@ test("attestor org: offers show a match percentage and countdown; the workspace 
   await signIn(page);
   await mockApi(page, mocks);
 
-  await page.goto("/dashboard/organizations/org-1/offers");
+  await page.goto("/dashboard/organizations/org-1/attestor/offers");
   await expect(page.getByText("87% match")).toBeVisible();
   await expect(page.getByText(/Expires in \d+ h/)).toBeVisible();
   await expect(page.getByText("Awaiting your response")).toBeVisible();

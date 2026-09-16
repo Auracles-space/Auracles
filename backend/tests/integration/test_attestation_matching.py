@@ -2842,7 +2842,9 @@ async def test_requestor_withdraws_offered_request_refunds_and_supersedes_offers
         if call["notification_type"] == "attestation_withdrawn"
     ]
     assert [call["user_id"] for call in withdrawn] == [str(first_owner)]
-    assert withdrawn[0]["link"] == f"/dashboard/organizations/{first_org}/offers"
+    assert (
+        withdrawn[0]["link"] == f"/dashboard/organizations/{first_org}/attestor/offers"
+    )
 
 
 async def test_requestor_withdraws_needs_admin_request_with_refund(

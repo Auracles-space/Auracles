@@ -285,6 +285,6 @@ test("authenticated user can open Org Attestation workspaces", async ({
   await expect(page.getByRole("heading", { name: "Attestor organizations" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Audit Ltd" })).toBeVisible();
 
-  await page.goto("/dashboard/organizations/org-1/queue");
+  await page.goto("/dashboard/organizations/org-1/attestor/queue");
   await expect(page.getByText("Offers")).toBeVisible();
 });

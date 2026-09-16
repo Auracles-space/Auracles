@@ -1,14 +1,14 @@
-import { Metadata } from "next";
-import { AttestationQueueTab } from "@/components/modules/organizations/attestor/attestation-queue-tab";
+/**
+ * Old Queue tab URL, kept so existing links and bookmarks still land: the
+ * review queue now lives under the Attestor tab.
+ */
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Attestation Queue | Auracles",
-};
-
-export default function OrganizationQueuePage() {
-  return (
-    <div>
-      <AttestationQueueTab />
-    </div>
-  );
+export default async function OrganizationQueueRedirect({
+  params,
+}: {
+  params: Promise<{ orgId: string }>;
+}) {
+  const { orgId } = await params;
+  redirect(`/dashboard/organizations/${orgId}/attestor/queue`);
 }

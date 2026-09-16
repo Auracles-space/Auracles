@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
+import { attestorHubSections } from "@/lib/organizations/attestor-hub";
 import {
   ATTESTOR_APPLICATION_CHANGED_EVENT,
   NDA_SIGNED_EVENT,
@@ -198,9 +199,18 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     });
     tabs.push({ id: "teams", label: "Teams" });
   }
+  // Offers and the review queue live inside the Attestor tab once the org is
+  // an attestor, so the tab carries their combined count. A plain member gets
+  // the tab only when there is a queue for them to work.
+  const attestorSections = attestorHubSections({ isAdmin, capability: attestorCap, counts });
+  if (isVerified && (isAdmin || attestorSections.length > 0)) {
+    tabs.push({
+      id: "attestor",
+      label: "Attestor",
+      count: attestorSections.reduce((total, section) => total + section.count, 0),
+    });
+  }
   if (isVerified && isAdmin) {
-    tabs.push({ id: "attestor", label: "Attestor" });
-
     if (isOperator) {
       tabs.push({ id: "projects", label: "Projects" });
     }
@@ -208,18 +218,6 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
     if (isOperator || attestorActive || contributorActive) {
       tabs.push({ id: "financials", label: "Financials" });
     }
-
-    // Offers are attestation requests routed to attestor organizations, so the
-    // tab waits for the capability; the application lives on the Attestor tab.
-    if (attestorActive) {
-      tabs.push({ id: "offers", label: "Offers", count: counts?.offers });
-    }
-  }
-  // The Queue is where a staffed reviewing member reaches their assigned work,
-  // so it must be visible to plain members too — not just admins. The backend
-  // scopes a member to their own rows; the count badge stays admin-only.
-  if (isVerified && (isAdmin || attestorActive)) {
-    tabs.push({ id: "queue", label: "Queue", count: counts?.queue });
   }
   if (isOwner) {
     tabs.push({ id: "danger-zone", label: "Danger Zone" });
@@ -231,8 +229,13 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   // /dashboard/organizations/[orgId] -> ""
   const rawSegment = pathParts.length > 4 ? pathParts[4] : "";
   // Drill-in routes that live under a tab keep that tab highlighted. The
-  // attestation workspace sits at /attestations/[id] but belongs to Queue.
-  const SUB_ROUTE_TABS: Record<string, string> = { attestations: "queue" };
+  // attestation workspace sits at /attestations/[id] but belongs to the
+  // Attestor queue; /offers and /queue are old links that redirect there.
+  const SUB_ROUTE_TABS: Record<string, string> = {
+    attestations: "attestor",
+    offers: "attestor",
+    queue: "attestor",
+  };
   const activeSegment = SUB_ROUTE_TABS[rawSegment] ?? rawSegment;
   const activeId = tabs.some((t) => t.id === activeSegment) ? activeSegment : "";
 
@@ -269,6 +272,7 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
       kybStatus={myOrg.kyb_status ?? "unverified"}
       kybVerifiedAt={myOrg.kyb_verified_at ?? null}
       memberCount={myOrg.member_count ?? null}
+      counts={myOrg.counts}
       refreshOrganization={loadOrg}
     >
       <div className="mx-auto w-full max-w-7xl px-4 py-8 md:py-12">

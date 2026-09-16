@@ -34,8 +34,8 @@ def _workspace_link(org_id: UUID, attestation_id: UUID) -> str:
 
 
 def _offers_link(org_id: UUID) -> str:
-    """Return the attestor org's offers tab."""
-    return f"/dashboard/organizations/{org_id}/offers"
+    """Return the offers section of the attestor org's Attestor tab."""
+    return f"/dashboard/organizations/{org_id}/attestor/offers"
 
 
 def _org_side_link(attestation: Attestation) -> str:

@@ -132,7 +132,7 @@ export function AttestationWorkspace({ orgId, attestationId }: AttestationWorksp
     <div className="space-y-6">
       <button
         className="inline-flex min-h-12 items-center gap-2 text-sm font-semibold text-foreground-muted outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
-        onClick={() => router.push(`/dashboard/organizations/${orgId}/queue`)}
+        onClick={() => router.push(`/dashboard/organizations/${orgId}/attestor/queue`)}
         type="button"
       >
         <ArrowLeftIcon className="h-4 w-4" /> Back to queue
