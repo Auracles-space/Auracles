@@ -73,6 +73,58 @@ components:
       - status
       title: AdminClarificationItem
       description: One clarification question and its answer, as the admin reads it.
+    AdminConfigUpdateItem:
+      description: Single admin platform configuration change request.
+      properties:
+        key:
+          enum:
+          - commission_rate
+          - min_payout_usd
+          - min_payout_ngn
+          - min_platform_withdrawal_ngn
+          - refund_window_hours
+          - attestation_fee_framework
+          - attestation_fee_contributor
+          - attestation_fee_operator
+          - attestation_fee_credential
+          - attestation_fee_review_quality
+          - attestation_fee_review_compliance
+          - attestation_fee_review_expert
+          - attestation_fee_review_provenance
+          - attestation_cohort_size
+          - attestation_completion_sla_days_framework
+          - attestation_completion_sla_days_contributor
+          - attestation_completion_sla_days_operator
+          - attestation_completion_sla_days_credential
+          - attestation_offer_accept_hours
+          - attestation_dispute_window_business_days
+          - saved_search_alert_cadence_hours
+          - consent_version_terms_of_service
+          - consent_version_privacy_policy
+          - account_deletion_grace_days
+          - data_export_expiry_days
+          - reputation_weights_framework
+          - reputation_weights_contributor
+          - reputation_weights_operator
+          - reputation_weights_attestor
+          - reputation_min_activity_framework
+          - reputation_min_activity_contributor
+          - reputation_min_activity_operator
+          - reputation_prior
+          - reputation_prior_strength_k
+          - reputation_dispute_penalty
+          title: Key
+          type: string
+        value:
+          maxLength: 1000
+          minLength: 1
+          title: Value
+          type: string
+      required:
+      - key
+      - value
+      title: AdminConfigUpdateItem
+      type: object
     AdminOrgAttestationCounts:
       description: How many of the org's Attestations are in flight versus finished.
       properties:
@@ -1433,57 +1485,6 @@ components:
       required:
       - items
       title: AdminConfigResponse
-      type: object
-    AdminConfigUpdateItem:
-      description: Single admin platform configuration change request.
-      properties:
-        key:
-          enum:
-          - commission_rate
-          - min_payout_usd
-          - min_payout_ngn
-          - refund_window_hours
-          - attestation_fee_framework
-          - attestation_fee_contributor
-          - attestation_fee_operator
-          - attestation_fee_credential
-          - attestation_fee_review_quality
-          - attestation_fee_review_compliance
-          - attestation_fee_review_expert
-          - attestation_fee_review_provenance
-          - attestation_cohort_size
-          - attestation_completion_sla_days_framework
-          - attestation_completion_sla_days_contributor
-          - attestation_completion_sla_days_operator
-          - attestation_completion_sla_days_credential
-          - attestation_offer_accept_hours
-          - attestation_dispute_window_business_days
-          - saved_search_alert_cadence_hours
-          - consent_version_terms_of_service
-          - consent_version_privacy_policy
-          - account_deletion_grace_days
-          - data_export_expiry_days
-          - reputation_weights_framework
-          - reputation_weights_contributor
-          - reputation_weights_operator
-          - reputation_weights_attestor
-          - reputation_min_activity_framework
-          - reputation_min_activity_contributor
-          - reputation_min_activity_operator
-          - reputation_prior
-          - reputation_prior_strength_k
-          - reputation_dispute_penalty
-          title: Key
-          type: string
-        value:
-          maxLength: 1000
-          minLength: 1
-          title: Value
-          type: string
-      required:
-      - key
-      - value
-      title: AdminConfigUpdateItem
       type: object
     AdminConnectorItem:
       description: 'One external OAuth connection for admin oversight.
@@ -7268,6 +7269,17 @@ components:
       - commission_rate
       - minimum_payout
       title: EarningsResponse
+      type: object
+    FeeBackfillResponse:
+      description: Acknowledgement that the fee backfill was queued.
+      properties:
+        status:
+          const: queued
+          title: Status
+          type: string
+      required:
+      - status
+      title: FeeBackfillResponse
       type: object
     OrgEarningsResponse:
       description: Organization earnings plus the payout eligibility checklist (Slice
@@ -13500,6 +13512,190 @@ components:
       - payouts
       title: PayoutsResponse
       type: object
+    PlatformBankAccountItem:
+      description: Display-safe view of the active platform bank account.
+      properties:
+        account_last4:
+          title: Account Last4
+          type: string
+        account_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Name
+        bank_code:
+          title: Bank Code
+          type: string
+        bank_name:
+          title: Bank Name
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+        usable_from:
+          format: date-time
+          title: Usable From
+          type: string
+      required:
+      - id
+      - bank_name
+      - bank_code
+      - account_last4
+      - account_name
+      - usable_from
+      - created_at
+      title: PlatformBankAccountItem
+      type: object
+    PlatformBankAccountResponse:
+      description: The active platform bank account, or null before one is set.
+      properties:
+        bank_account:
+          anyOf:
+          - $ref: '#/components/schemas/PlatformBankAccountItem'
+          - type: 'null'
+      required:
+      - bank_account
+      title: PlatformBankAccountResponse
+      type: object
+    PlatformBankAccountSetRequest:
+      additionalProperties: false
+      description: 'Request body for setting or replacing the platform bank account.
+
+
+        The bank code must come from Paystack''s bank list; the account number is
+
+        a ten-digit NUBAN and is never stored — only its last four digits.'
+      properties:
+        account_number:
+          pattern: ^[0-9]{10}$
+          title: Account Number
+          type: string
+        bank_code:
+          maxLength: 20
+          minLength: 1
+          title: Bank Code
+          type: string
+      required:
+      - account_number
+      - bank_code
+      title: PlatformBankAccountSetRequest
+      type: object
+    PlatformWithdrawalItem:
+      description: One platform withdrawal, with its destination shown as last four only.
+      properties:
+        account_last4:
+          title: Account Last4
+          type: string
+        amount:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Amount
+          type: string
+        bank_name:
+          title: Bank Name
+          type: string
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completed At
+        currency:
+          title: Currency
+          type: string
+        failed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Failed At
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+        id:
+          format: uuid
+          title: Id
+          type: string
+        reference:
+          title: Reference
+          type: string
+        requested_at:
+          format: date-time
+          title: Requested At
+          type: string
+        requested_by:
+          format: uuid
+          title: Requested By
+          type: string
+        status:
+          title: Status
+          type: string
+      required:
+      - id
+      - amount
+      - currency
+      - status
+      - reference
+      - bank_name
+      - account_last4
+      - failure_reason
+      - requested_by
+      - requested_at
+      - completed_at
+      - failed_at
+      title: PlatformWithdrawalItem
+      type: object
+    PlatformWithdrawalRequest:
+      additionalProperties: false
+      description: 'Request body for withdrawing platform money to the platform bank account.
+
+
+        NGN only in v1; the currency is implied. Two decimal places at most.'
+      properties:
+        amount:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
+            type: string
+          title: Amount
+      required:
+      - amount
+      title: PlatformWithdrawalRequest
+      type: object
+    PlatformWithdrawalsResponse:
+      description: Paginated platform withdrawal history, newest first.
+      properties:
+        page:
+          minimum: 1.0
+          title: Page
+          type: integer
+        page_size:
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+        withdrawals:
+          items:
+            $ref: '#/components/schemas/PlatformWithdrawalItem'
+          title: Withdrawals
+          type: array
+      required:
+      - withdrawals
+      - total
+      - page
+      - page_size
+      title: PlatformWithdrawalsResponse
+      type: object
     PreviewArtifactRequest:
       description: Request body for selecting a Framework preview Artifact.
       properties:
@@ -15451,6 +15647,158 @@ components:
       - totp_enabled
       title: TotpStatusResponse
       type: object
+    TreasuryCurrencySummary:
+      description: 'One currency''s Treasury figures.
+
+
+        ``live_balance``, ``withdrawable`` and ``balance_gap`` are only set for the
+
+        currency Paystack holds, and only when the balance lookup succeeded
+
+        (``balance_unavailable`` is true when it did not).'
+      properties:
+        balance_gap:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Balance Gap
+        balance_unavailable:
+          title: Balance Unavailable
+          type: boolean
+        currency:
+          title: Currency
+          type: string
+        live_balance:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Live Balance
+        our_money:
+          $ref: '#/components/schemas/TreasuryOurMoney'
+        owed_to_users:
+          $ref: '#/components/schemas/TreasuryOwedToUsers'
+        withdrawable:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Withdrawable
+        withdrawable_here:
+          title: Withdrawable Here
+          type: boolean
+      required:
+      - currency
+      - withdrawable_here
+      - owed_to_users
+      - our_money
+      - live_balance
+      - withdrawable
+      - balance_gap
+      - balance_unavailable
+      title: TreasuryCurrencySummary
+      type: object
+    TreasuryOurMoney:
+      description: 'The platform''s own share: commission earned less what it has paid for.'
+      properties:
+        commission_attestation_fees:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Attestation Fees
+          type: string
+        commission_collections:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Collections
+          type: string
+        commission_framework_sales:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Framework Sales
+          type: string
+        commission_project_milestones:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Project Milestones
+          type: string
+        partner_commissions:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Partner Commissions
+          type: string
+        platform_withdrawals:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Platform Withdrawals
+          type: string
+        provider_fees:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Provider Fees
+          type: string
+        total:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Total
+          type: string
+      required:
+      - commission_framework_sales
+      - commission_collections
+      - commission_project_milestones
+      - commission_attestation_fees
+      - provider_fees
+      - partner_commissions
+      - platform_withdrawals
+      - total
+      title: TreasuryOurMoney
+      type: object
+    TreasuryOwedToUsers:
+      description: Money in the balance that belongs to users (liabilities).
+      properties:
+        contributor_balances:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Contributor Balances
+          type: string
+        held_escrow:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Held Escrow
+          type: string
+        org_balances:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Org Balances
+          type: string
+        partner_commissions:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Partner Commissions
+          type: string
+        total:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Total
+          type: string
+      required:
+      - held_escrow
+      - contributor_balances
+      - org_balances
+      - partner_commissions
+      - total
+      title: TreasuryOwedToUsers
+      type: object
+    TreasurySummaryResponse:
+      description: Treasury summary across every currency on the ledger.
+      properties:
+        currencies:
+          items:
+            $ref: '#/components/schemas/TreasuryCurrencySummary'
+          title: Currencies
+          type: array
+        live_balance_fetched_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Live Balance Fetched At
+        unreviewed_unrecognized_transfers:
+          title: Unreviewed Unrecognized Transfers
+          type: integer
+      required:
+      - currencies
+      - live_balance_fetched_at
+      - unreviewed_unrecognized_transfers
+      title: TreasurySummaryResponse
+      type: object
     TrialAnswerKeyItem:
       description: One answer-key row joined to its rubric dimension, for the admin
         editor.
@@ -15591,6 +15939,106 @@ components:
       required:
       - scores
       title: TrialSubmitRequest
+      type: object
+    UnrecognizedTransferItem:
+      description: A transfer out of the platform balance that Auracles did not start.
+      properties:
+        acknowledged_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Acknowledged At
+        acknowledged_by:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Acknowledged By
+        amount:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Amount
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        currency:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Currency
+        event_type:
+          title: Event Type
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+        provider:
+          title: Provider
+          type: string
+        recipient_bank:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Bank
+        recipient_last4:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Last4
+        recipient_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Name
+        reference:
+          title: Reference
+          type: string
+      required:
+      - id
+      - provider
+      - reference
+      - event_type
+      - amount
+      - currency
+      - recipient_name
+      - recipient_bank
+      - recipient_last4
+      - acknowledged_by
+      - acknowledged_at
+      - created_at
+      title: UnrecognizedTransferItem
+      type: object
+    UnrecognizedTransfersResponse:
+      description: Unrecognized transfers, unreviewed first then newest first.
+      properties:
+        page:
+          minimum: 1.0
+          title: Page
+          type: integer
+        page_size:
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+        transfers:
+          items:
+            $ref: '#/components/schemas/UnrecognizedTransferItem'
+          title: Transfers
+          type: array
+      required:
+      - transfers
+      - total
+      - page
+      - page_size
+      title: UnrecognizedTransfersResponse
       type: object
     UpsertTrialAnswerKeyRequest:
       description: Admin body to create or update one fixture answer-key row.
@@ -18682,6 +19130,283 @@ paths:
       summary: Trace one payment end to end
       tags:
       - Admin
+  /v1/admin/treasury/bank-account:
+    get:
+      description: 'The active platform bank account: bank, last four digits, the bank-confirmed account
+        name, and when withdrawals to it open.'
+      operationId: admin_platform_bank_account_v1_admin_treasury_bank_account_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformBankAccountResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Platform bank account (platform admin)
+      tags:
+      - Admin Treasury
+    put:
+      description: Registers the account with Paystack and makes it the withdrawal destination after
+        a 24-hour hold. Super-admin only, with step-up. Audited, and every admin is notified.
+      operationId: admin_set_platform_bank_account_v1_admin_treasury_bank_account_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformBankAccountSetRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformBankAccountResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Set the platform bank account (super-admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/banks:
+    get:
+      description: 'Banks the platform bank account can be held at, read live from Paystack. Super-admin
+        only: the Contributor bank list requires the Contributor role, which the super-admin need not
+        hold.'
+      operationId: admin_treasury_banks_v1_admin_treasury_banks_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutBanksResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Banks for the platform bank account (super-admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/fee-backfill:
+    post:
+      description: Queues a one-off lookup of the fee Paystack kept on every settled charge that has
+        no recorded fee. Safe to rerun. Super-admin only, with step-up. Audited when requested and
+        when finished.
+      operationId: admin_request_fee_backfill_v1_admin_treasury_fee_backfill_post
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeeBackfillResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Backfill Paystack fees on past charges (super-admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/statements/{month}:
+    get:
+      description: 'One Lagos-time month: opening balance, commission by source, refunds, provider
+        fees, partner commissions, withdrawals, closing balance, and users'' money at month end. Every
+        download is audited.'
+      operationId: admin_treasury_statement_v1_admin_treasury_statements__month__get
+      parameters:
+      - in: path
+        name: month
+        required: true
+        schema:
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+          title: Month
+          type: string
+      - in: query
+        name: currency
+        required: false
+        schema:
+          default: NGN
+          pattern: ^[A-Z]{3}$
+          title: Currency
+          type: string
+      responses:
+        '200':
+          content:
+            text/csv: {}
+          description: Statement CSV
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Monthly treasury statement CSV (platform admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/summary:
+    get:
+      description: 'Per currency: money owed to users, the platform''s own money, the live Paystack
+        balance, what can be withdrawn now, and the balance gap. Ledger figures are returned even when
+        Paystack is unavailable.'
+      operationId: admin_treasury_summary_v1_admin_treasury_summary_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreasurySummaryResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Platform treasury summary (platform admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/unrecognized-transfers:
+    get:
+      description: Provider transfers out of the platform balance that match no payout or platform
+        withdrawal, unreviewed first.
+      operationId: admin_unrecognized_transfers_v1_admin_treasury_unrecognized_transfers_get
+      parameters:
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnrecognizedTransfersResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Transfers not started by Auracles (platform admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/unrecognized-transfers/{transfer_id}/acknowledge:
+    post:
+      description: Records that the super-admin investigated the transfer. Audited.
+      operationId: admin_acknowledge_unrecognized_transfer_v1_admin_treasury_unrecognized_transfers__transfer_id__acknowledge_post
+      parameters:
+      - in: path
+        name: transfer_id
+        required: true
+        schema:
+          format: uuid
+          title: Transfer Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnrecognizedTransferItem'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Mark an unrecognized transfer reviewed (super-admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/withdrawals:
+    get:
+      description: Platform withdrawals newest first, with destination last four only.
+      operationId: admin_platform_withdrawals_v1_admin_treasury_withdrawals_get
+      parameters:
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformWithdrawalsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Platform withdrawal history (platform admin)
+      tags:
+      - Admin Treasury
+    post:
+      description: Queues a transfer of platform money to the platform bank account. Refused above
+        the withdrawable amount (402), below the minimum, while another withdrawal is in flight (409),
+        or while the bank account is inside its 24-hour hold. Super-admin only, with step-up.
+      operationId: admin_request_platform_withdrawal_v1_admin_treasury_withdrawals_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformWithdrawalRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformWithdrawalItem'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Withdraw platform money (super-admin)
+      tags:
+      - Admin Treasury
   /v1/admin/users:
     get:
       description: Return a paginated admin user directory with search and suspension

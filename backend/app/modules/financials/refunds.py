@@ -129,6 +129,7 @@ async def reverse_refund(
             # an admin can re-issue the refund.
             for escrow in escrows:
                 escrow.status = "held"
+                escrow.refunded_at = None
                 await write_audit(
                     db=db,
                     actor_id=None,
@@ -255,6 +256,7 @@ async def _reinstate_voided_commissions(
     for commission in commissions:
         commission.status = "pending"
         commission.cleared_at = None
+        commission.voided_at = None
         await write_audit(
             db=db,
             actor_id=None,

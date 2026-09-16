@@ -21,6 +21,20 @@ import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-c
 import { listPayoutBanks } from "@/lib/generated/sdk.gen";
 import type { PayoutBank } from "@/lib/generated/types.gen";
 
+/** Result shape shared by every bank-list endpoint. */
+type BankListResult = {
+  data?: { banks: PayoutBank[] };
+  error?: unknown;
+  response: Response;
+};
+
+/** Fetches the bank list; defaults to the Contributor payout endpoint. */
+export type BankListLoader = () => Promise<BankListResult>;
+
+/** Load banks from the Contributor payout endpoint. */
+const loadContributorBanks: BankListLoader = () =>
+  listPayoutBanks({ headers: getAccessTokenHeaders() });
+
 /** NUBAN account numbers are always exactly ten digits. */
 export const NUBAN_LENGTH = 10;
 
@@ -46,6 +60,8 @@ export function paystackDetailsComplete(
  * @param onAccountNumberChange - Called with the digits-only account number.
  * @param idPrefix - Prefix for input ids, so two instances can coexist.
  * @param disabled - Disables both inputs while a submission is in flight.
+ * @param loadBanks - Bank list source. Admin surfaces pass their own because
+ *   the Contributor endpoint requires the Contributor role.
  */
 export function PaystackBankFields({
   bankCode,
@@ -54,6 +70,7 @@ export function PaystackBankFields({
   onAccountNumberChange,
   idPrefix = "payout",
   disabled = false,
+  loadBanks = loadContributorBanks,
 }: {
   bankCode: string;
   accountNumber: string;
@@ -61,13 +78,14 @@ export function PaystackBankFields({
   onAccountNumberChange: (value: string) => void;
   idPrefix?: string;
   disabled?: boolean;
+  loadBanks?: BankListLoader;
 }) {
   const [banks, setBanks] = useState<PayoutBank[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadBanks() {
-      const result = await listPayoutBanks({ headers: getAccessTokenHeaders() });
+    async function loadBankList() {
+      const result = await loadBanks();
       if (!result.response.ok || !result.data) {
         setError(describeGeneratedError(result.error));
         return;
@@ -85,8 +103,8 @@ export function PaystackBankFields({
       );
     }
 
-    void loadBanks();
-  }, []);
+    void loadBankList();
+  }, [loadBanks]);
 
   return (
     <div className="grid gap-4 sm:max-w-md">

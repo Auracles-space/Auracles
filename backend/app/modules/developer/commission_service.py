@@ -90,6 +90,7 @@ async def clear_partner_commissions(db: AsyncSession) -> CommissionClearingResul
     for commission, transaction in rows:
         if transaction.status == "refunded":
             commission.status = "voided"
+            commission.voided_at = now
             voided_count += 1
             await write_audit(
                 db=db,

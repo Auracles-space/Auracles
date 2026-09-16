@@ -286,11 +286,11 @@ export type AdminConfigResponse = {
  * Single admin platform configuration change request.
  */
 export type AdminConfigUpdateItem = {
-    key: 'commission_rate' | 'min_payout_usd' | 'min_payout_ngn' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_fee_review_quality' | 'attestation_fee_review_compliance' | 'attestation_fee_review_expert' | 'attestation_fee_review_provenance' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_weights_attestor' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
+    key: 'commission_rate' | 'min_payout_usd' | 'min_payout_ngn' | 'min_platform_withdrawal_ngn' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_fee_review_quality' | 'attestation_fee_review_compliance' | 'attestation_fee_review_expert' | 'attestation_fee_review_provenance' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_weights_attestor' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
     value: string;
 };
 
-export type key = 'commission_rate' | 'min_payout_usd' | 'min_payout_ngn' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_fee_review_quality' | 'attestation_fee_review_compliance' | 'attestation_fee_review_expert' | 'attestation_fee_review_provenance' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_weights_attestor' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
+export type key = 'commission_rate' | 'min_payout_usd' | 'min_payout_ngn' | 'min_platform_withdrawal_ngn' | 'refund_window_hours' | 'attestation_fee_framework' | 'attestation_fee_contributor' | 'attestation_fee_operator' | 'attestation_fee_credential' | 'attestation_fee_review_quality' | 'attestation_fee_review_compliance' | 'attestation_fee_review_expert' | 'attestation_fee_review_provenance' | 'attestation_cohort_size' | 'attestation_completion_sla_days_framework' | 'attestation_completion_sla_days_contributor' | 'attestation_completion_sla_days_operator' | 'attestation_completion_sla_days_credential' | 'attestation_offer_accept_hours' | 'attestation_dispute_window_business_days' | 'saved_search_alert_cadence_hours' | 'consent_version_terms_of_service' | 'consent_version_privacy_policy' | 'account_deletion_grace_days' | 'data_export_expiry_days' | 'reputation_weights_framework' | 'reputation_weights_contributor' | 'reputation_weights_operator' | 'reputation_weights_attestor' | 'reputation_min_activity_framework' | 'reputation_min_activity_contributor' | 'reputation_min_activity_operator' | 'reputation_prior' | 'reputation_prior_strength_k' | 'reputation_dispute_penalty';
 
 /**
  * One external OAuth connection for admin oversight.
@@ -2932,6 +2932,13 @@ export type ExploreSearchFilters = {
 };
 
 /**
+ * Acknowledgement that the fee backfill was queued.
+ */
+export type FeeBackfillResponse = {
+    status: "queued";
+};
+
+/**
  * Admin body confirming a browser-uploaded fixture artifact object.
  */
 export type FixtureArtifactConfirmRequest = {
@@ -4785,6 +4792,74 @@ export type PayoutsResponse = {
 };
 
 /**
+ * Display-safe view of the active platform bank account.
+ */
+export type PlatformBankAccountItem = {
+    account_last4: string;
+    account_name: (string | null);
+    bank_code: string;
+    bank_name: string;
+    created_at: string;
+    id: string;
+    usable_from: string;
+};
+
+/**
+ * The active platform bank account, or null before one is set.
+ */
+export type PlatformBankAccountResponse = {
+    bank_account: (PlatformBankAccountItem | null);
+};
+
+/**
+ * Request body for setting or replacing the platform bank account.
+ *
+ * The bank code must come from Paystack's bank list; the account number is
+ * a ten-digit NUBAN and is never stored — only its last four digits.
+ */
+export type PlatformBankAccountSetRequest = {
+    account_number: string;
+    bank_code: string;
+};
+
+/**
+ * One platform withdrawal, with its destination shown as last four only.
+ */
+export type PlatformWithdrawalItem = {
+    account_last4: string;
+    amount: string;
+    bank_name: string;
+    completed_at: (string | null);
+    currency: string;
+    failed_at: (string | null);
+    failure_reason: (string | null);
+    id: string;
+    reference: string;
+    requested_at: string;
+    requested_by: string;
+    status: string;
+};
+
+/**
+ * Request body for withdrawing platform money to the platform bank account.
+ *
+ * NGN only in v1; the currency is implied. Two decimal places at most.
+ */
+export type PlatformWithdrawalRequest = {
+    amount: (number | string);
+};
+
+/**
+ * Paginated platform withdrawal history, newest first.
+ */
+export type PlatformWithdrawalsResponse = {
+    page: number;
+    page_size: number;
+    total: number;
+    withdrawals: Array<PlatformWithdrawalItem>;
+};
+
+/**
  * Request body for selecting a Framework preview Artifact.
  */
 export type PreviewArtifactRequest = {
@@ -5554,6 +5629,58 @@ export type TotpStatusResponse = {
 };
 
 /**
+ * One currency's Treasury figures.
+ *
+ * ``live_balance``, ``withdrawable`` and ``balance_gap`` are only set for the
+ * currency Paystack holds, and only when the balance lookup succeeded
+ * (``balance_unavailable`` is true when it did not).
+ */
+export type TreasuryCurrencySummary = {
+    balance_gap: (string | null);
+    balance_unavailable: boolean;
+    currency: string;
+    live_balance: (string | null);
+    our_money: TreasuryOurMoney;
+    owed_to_users: TreasuryOwedToUsers;
+    withdrawable: (string | null);
+    withdrawable_here: boolean;
+};
+
+/**
+ * The platform's own share: commission earned less what it has paid for.
+ */
+export type TreasuryOurMoney = {
+    commission_attestation_fees: string;
+    commission_collections: string;
+    commission_framework_sales: string;
+    commission_project_milestones: string;
+    partner_commissions: string;
+    platform_withdrawals: string;
+    provider_fees: string;
+    total: string;
+};
+
+/**
+ * Money in the balance that belongs to users (liabilities).
+ */
+export type TreasuryOwedToUsers = {
+    contributor_balances: string;
+    held_escrow: string;
+    org_balances: string;
+    partner_commissions: string;
+    total: string;
+};
+
+/**
+ * Treasury summary across every currency on the ledger.
+ */
+export type TreasurySummaryResponse = {
+    currencies: Array<TreasuryCurrencySummary>;
+    live_balance_fetched_at: (string | null);
+    unreviewed_unrecognized_transfers: number;
+};
+
+/**
  * One answer-key row joined to its rubric dimension, for the admin editor.
  */
 export type TrialAnswerKeyItem = {
@@ -5614,6 +5741,34 @@ export type TrialScoreInput = {
  */
 export type TrialSubmitRequest = {
     scores: Array<TrialScoreInput>;
+};
+
+/**
+ * A transfer out of the platform balance that Auracles did not start.
+ */
+export type UnrecognizedTransferItem = {
+    acknowledged_at: (string | null);
+    acknowledged_by: (string | null);
+    amount: (string | null);
+    created_at: string;
+    currency: (string | null);
+    event_type: string;
+    id: string;
+    provider: string;
+    recipient_bank: (string | null);
+    recipient_last4: (string | null);
+    recipient_name: (string | null);
+    reference: string;
+};
+
+/**
+ * Unrecognized transfers, unreviewed first then newest first.
+ */
+export type UnrecognizedTransfersResponse = {
+    page: number;
+    page_size: number;
+    total: number;
+    transfers: Array<UnrecognizedTransferItem>;
 };
 
 /**
@@ -6545,6 +6700,83 @@ export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetData = {
 export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetResponse = (AdminTransactionDetailResponse);
 
 export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetError = (HTTPValidationError);
+
+export type AdminPlatformBankAccountV1AdminTreasuryBankAccountGetResponse = (PlatformBankAccountResponse);
+
+export type AdminPlatformBankAccountV1AdminTreasuryBankAccountGetError = unknown;
+
+export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutData = {
+    body: PlatformBankAccountSetRequest;
+};
+
+export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutResponse = (PlatformBankAccountResponse);
+
+export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutError = (HTTPValidationError);
+
+export type AdminTreasuryBanksV1AdminTreasuryBanksGetResponse = (PayoutBanksResponse);
+
+export type AdminTreasuryBanksV1AdminTreasuryBanksGetError = unknown;
+
+export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostResponse = (FeeBackfillResponse);
+
+export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostError = unknown;
+
+export type AdminTreasuryStatementV1AdminTreasuryStatementsMonthGetData = {
+    path: {
+        month: string;
+    };
+    query?: {
+        currency?: string;
+    };
+};
+
+export type AdminTreasuryStatementV1AdminTreasuryStatementsMonthGetResponse = (unknown);
+
+export type AdminTreasuryStatementV1AdminTreasuryStatementsMonthGetError = (HTTPValidationError);
+
+export type AdminTreasurySummaryV1AdminTreasurySummaryGetResponse = (TreasurySummaryResponse);
+
+export type AdminTreasurySummaryV1AdminTreasurySummaryGetError = unknown;
+
+export type AdminUnrecognizedTransfersV1AdminTreasuryUnrecognizedTransfersGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type AdminUnrecognizedTransfersV1AdminTreasuryUnrecognizedTransfersGetResponse = (UnrecognizedTransfersResponse);
+
+export type AdminUnrecognizedTransfersV1AdminTreasuryUnrecognizedTransfersGetError = (HTTPValidationError);
+
+export type AdminAcknowledgeUnrecognizedTransferV1AdminTreasuryUnrecognizedTransfersTransferIdAcknowledgePostData = {
+    path: {
+        transfer_id: string;
+    };
+};
+
+export type AdminAcknowledgeUnrecognizedTransferV1AdminTreasuryUnrecognizedTransfersTransferIdAcknowledgePostResponse = (UnrecognizedTransferItem);
+
+export type AdminAcknowledgeUnrecognizedTransferV1AdminTreasuryUnrecognizedTransfersTransferIdAcknowledgePostError = (HTTPValidationError);
+
+export type AdminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type AdminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGetResponse = (PlatformWithdrawalsResponse);
+
+export type AdminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGetError = (HTTPValidationError);
+
+export type AdminRequestPlatformWithdrawalV1AdminTreasuryWithdrawalsPostData = {
+    body: PlatformWithdrawalRequest;
+};
+
+export type AdminRequestPlatformWithdrawalV1AdminTreasuryWithdrawalsPostResponse = (PlatformWithdrawalItem);
+
+export type AdminRequestPlatformWithdrawalV1AdminTreasuryWithdrawalsPostError = (HTTPValidationError);
 
 export type ListAdminUsersV1AdminUsersGetData = {
     query?: {

@@ -75,6 +75,7 @@ EDITABLE_PLATFORM_CONFIG_KEYS = {
     "commission_rate",
     "min_payout_usd",
     "min_payout_ngn",
+    "min_platform_withdrawal_ngn",
     "refund_window_hours",
     "attestation_fee_framework",
     "attestation_fee_contributor",
@@ -120,6 +121,8 @@ MIN_PAYOUT_NGN_MAX = Decimal("10000000.00")
 MIN_PAYOUT_RANGES = {
     "min_payout_usd": (MIN_PAYOUT_USD_MIN, MIN_PAYOUT_USD_MAX),
     "min_payout_ngn": (MIN_PAYOUT_NGN_MIN, MIN_PAYOUT_NGN_MAX),
+    # Platform withdrawals (treasury decision 10) share the naira bounds.
+    "min_platform_withdrawal_ngn": (MIN_PAYOUT_NGN_MIN, MIN_PAYOUT_NGN_MAX),
 }
 REFUND_WINDOW_HOURS_MIN = 0
 REFUND_WINDOW_HOURS_MAX = 720

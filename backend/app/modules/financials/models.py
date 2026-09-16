@@ -207,6 +207,12 @@ class Escrow(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # When the escrow was refunded; cleared if the provider declines the refund.
+    # Treasury statements need it to know the money was still held before then.
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     released_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),
@@ -426,6 +432,238 @@ class FinancialEvent(Base):
         JSONB,
         nullable=False,
         server_default=text("'{}'::jsonb"),
+    )
+
+
+class ProviderFee(Base):
+    """One fee a payment provider kept on a charge or transfer.
+
+    The platform absorbs provider fees, so each one is a platform cost that
+    Treasury subtracts from commission. Rows are append-only and keyed by the
+    provider reference the fee was charged on: a webhook redelivery or the
+    backfill cannot count a fee twice, while a second, distinct charge against
+    the same transaction (a double charge) is a second real cost.
+
+    ``source_id`` is polymorphic (a transaction, payout, partner payout or
+    platform withdrawal) and therefore not a foreign key.
+
+    Written only through
+    ``app.modules.financials.provider_fees.record_provider_fee``.
+    """
+
+    __tablename__ = "provider_fees"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_provider_fees_amount_positive"),
+        CheckConstraint(
+            "source_type IN ('transaction', 'payout', 'partner_payout', "
+            "'platform_withdrawal')",
+            name="ck_provider_fees_source_type",
+        ),
+        CheckConstraint(
+            "origin IN ('webhook', 'backfill')",
+            name="ck_provider_fees_origin",
+        ),
+        UniqueConstraint(
+            "provider",
+            "source_type",
+            "provider_ref",
+            name="uq_provider_fees_provider_source_ref",
+        ),
+        Index("idx_provider_fees_source", "source_type", "source_id"),
+        Index("idx_provider_fees_currency_occurred_at", "currency", "occurred_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    provider_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    origin: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Provider-side time, so statement months follow when the fee was charged
+    # rather than when a backfill happened to record it.
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
+
+class PlatformBankAccount(Base):
+    """The bank account the platform withdraws its own money to.
+
+    Rows are never edited: a change inserts a new row and stamps
+    ``replaced_at`` on the previous one, so every destination the platform's
+    money could have been sent to stays on record. At most one row is active
+    (``replaced_at IS NULL``), enforced by a partial unique index.
+
+    Only the bank-confirmed name, bank and last four digits are kept in the
+    clear. The Paystack recipient code — the only thing a transfer needs — is
+    encrypted; the full account number is not stored at all.
+    """
+
+    __tablename__ = "platform_bank_accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "account_last4 ~ '^[0-9]{4}$'",
+            name="ck_platform_bank_accounts_last4_digits",
+        ),
+        Index(
+            "uq_platform_bank_accounts_active",
+            text("(replaced_at IS NULL)"),
+            unique=True,
+            postgresql_where=text("replaced_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
+    bank_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_last4: Mapped[str] = mapped_column(String(4), nullable=False)
+    account_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recipient_code_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    # A withdrawal to this account is refused before this time (decision 3).
+    usable_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("clock_timestamp()"),
+    )
+    replaced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class PlatformWithdrawal(Base):
+    """One transfer of the platform's own money to its bank account.
+
+    ``pending`` → ``processing`` once Paystack accepted the transfer, then
+    ``completed`` or ``failed`` from the transfer webhook. Pending, processing
+    and completed withdrawals all count against the platform's money; a failed
+    one does not, which is how its amount returns to withdrawable (decision 8).
+
+    A partial unique index allows at most one pending or processing withdrawal
+    per currency, so two racing requests cannot both pass the balance check.
+    ``provider_ref`` is our own ``platform-withdrawal-<id>`` reference: the
+    idempotency key for the transfer and the value the webhook carries back.
+    """
+
+    __tablename__ = "platform_withdrawals"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_platform_withdrawals_amount_positive"),
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name="ck_platform_withdrawals_status",
+        ),
+        Index(
+            "uq_platform_withdrawals_one_in_flight",
+            "currency",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'processing')"),
+        ),
+        Index("idx_platform_withdrawals_requested_at", "requested_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    bank_account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("platform_bank_accounts.id"),
+        nullable=False,
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="pending"
+    )
+    provider_ref: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("clock_timestamp()"),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class UnrecognizedTransfer(Base):
+    """A provider transfer out of the platform balance that Auracles did not start.
+
+    Recorded when a transfer webhook matches no payout or platform withdrawal,
+    for example a transfer made directly from the Paystack dashboard. One row
+    per transfer reference: later events for the same transfer (a reversal)
+    update ``event_type`` but never raise a second alert. Stays on Treasury
+    until the super-admin marks it reviewed.
+    """
+
+    __tablename__ = "unrecognized_transfers"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "provider_ref", name="uq_unrecognized_transfers_ref"
+        ),
+        Index(
+            "idx_unrecognized_transfers_unreviewed",
+            "created_at",
+            postgresql_where=text("acknowledged_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
+    provider_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # Enough to identify where the money went; never the full account number.
+    recipient_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recipient_bank: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recipient_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    acknowledged_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
 
 

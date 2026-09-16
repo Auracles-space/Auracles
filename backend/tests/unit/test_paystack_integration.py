@@ -16,6 +16,7 @@ from app.integrations.paystack import (
     PaystackProviderError,
     create_subaccount,
     create_transfer_recipient,
+    fetch_transaction,
     initialize_transaction,
     initiate_transfer,
     list_banks,
@@ -282,6 +283,59 @@ async def test_paystack_list_banks_drops_exact_duplicates() -> None:
         ("Alpha Microfinance Bank", "50572"),
         ("Beta Microfinance Bank", "50572"),
     ]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_fetches_a_transaction_fee_by_reference() -> None:
+    """The verify lookup returns the fee Paystack kept, in minor units."""
+    respx.get("https://api.paystack.co/transaction/verify/sale-ref-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": {
+                    "reference": "sale-ref-1",
+                    "status": "success",
+                    "currency": "NGN",
+                    "amount": 1000000,
+                    "fees": 15000,
+                    "paid_at": "2026-08-01T10:15:00.000Z",
+                },
+            },
+        )
+    )
+
+    result = await fetch_transaction(reference="sale-ref-1", settings=PAYSTACK_SETTINGS)
+
+    assert result.reference == "sale-ref-1"
+    assert result.status == "success"
+    assert result.currency == "NGN"
+    assert result.fees_minor == 15000
+    assert result.paid_at is not None
+    assert result.paid_at.isoformat() == "2026-08-01T10:15:00+00:00"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_paystack_transaction_without_a_fee_reports_none() -> None:
+    """A transaction with no fee field reports no fee rather than zero."""
+    respx.get("https://api.paystack.co/transaction/verify/abandoned-1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "status": True,
+                "data": {"reference": "abandoned-1", "status": "abandoned"},
+            },
+        )
+    )
+
+    result = await fetch_transaction(
+        reference="abandoned-1", settings=PAYSTACK_SETTINGS
+    )
+
+    assert result.fees_minor is None
+    assert result.paid_at is None
 
 
 def test_paystack_webhook_signature_matrix_accepts_only_valid_raw_payload() -> None:

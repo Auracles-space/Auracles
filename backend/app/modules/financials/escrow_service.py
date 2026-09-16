@@ -344,6 +344,7 @@ async def refund(
         )
 
     escrow.status = "refunded"
+    escrow.refunded_at = datetime.now(UTC)
     transaction = await db.get(Transaction, escrow.transaction_id)
     if transaction is not None:
         transaction.status = "refunded"

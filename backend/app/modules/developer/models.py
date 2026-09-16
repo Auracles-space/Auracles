@@ -454,6 +454,12 @@ class PartnerCommission(CreatedAtMixin, Base):
         nullable=False,
         server_default="pending",
     )
+    # When the commission was voided; cleared if a declined refund reinstates
+    # it. Treasury statements count the commission as a cost until then.
+    voided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     cleared_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
