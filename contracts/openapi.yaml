@@ -7269,6 +7269,17 @@ components:
       - minimum_payout
       title: EarningsResponse
       type: object
+    FeeBackfillResponse:
+      description: Acknowledgement that the fee backfill was queued.
+      properties:
+        status:
+          const: queued
+          title: Status
+          type: string
+      required:
+      - status
+      title: FeeBackfillResponse
+      type: object
     OrgEarningsResponse:
       description: Organization earnings plus the payout eligibility checklist (Slice
         C).
@@ -19161,6 +19172,24 @@ paths:
       security:
       - HTTPBearer: []
       summary: Set the platform bank account (super-admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/fee-backfill:
+    post:
+      description: Queues a one-off lookup of the fee Paystack kept on every settled charge that has
+        no recorded fee. Safe to rerun. Super-admin only, with step-up. Audited when requested and
+        when finished.
+      operationId: admin_request_fee_backfill_v1_admin_treasury_fee_backfill_post
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeeBackfillResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Backfill Paystack fees on past charges (super-admin)
       tags:
       - Admin Treasury
   /v1/admin/treasury/summary:

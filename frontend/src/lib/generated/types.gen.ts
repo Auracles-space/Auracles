@@ -2932,6 +2932,13 @@ export type ExploreSearchFilters = {
 };
 
 /**
+ * Acknowledgement that the fee backfill was queued.
+ */
+export type FeeBackfillResponse = {
+    status: "queued";
+};
+
+/**
  * Admin body confirming a browser-uploaded fixture artifact object.
  */
 export type FixtureArtifactConfirmRequest = {
@@ -6705,6 +6712,10 @@ export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutData = {
 export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutResponse = (PlatformBankAccountResponse);
 
 export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutError = (HTTPValidationError);
+
+export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostResponse = (FeeBackfillResponse);
+
+export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostError = unknown;
 
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetResponse = (TreasurySummaryResponse);
 

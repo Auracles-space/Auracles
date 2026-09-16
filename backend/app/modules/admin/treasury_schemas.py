@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -156,3 +157,9 @@ class UnrecognizedTransfersResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class FeeBackfillResponse(BaseModel):
+    """Acknowledgement that the fee backfill was queued."""
+
+    status: Literal["queued"]

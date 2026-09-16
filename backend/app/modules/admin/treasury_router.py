@@ -20,6 +20,7 @@ from app.core.dependencies import (
     require_superadmin,
 )
 from app.modules.admin.treasury_schemas import (
+    FeeBackfillResponse,
     PlatformBankAccountResponse,
     PlatformBankAccountSetRequest,
     PlatformWithdrawalItem,
@@ -33,6 +34,7 @@ from app.modules.auth.models import User
 from app.modules.financials import (
     platform_bank_account,
     platform_withdrawals,
+    provider_fee_backfill,
     treasury,
     unrecognized_transfers,
 )
@@ -180,3 +182,23 @@ async def admin_acknowledge_unrecognized_transfer(
     return await unrecognized_transfers.acknowledge_unrecognized_transfer(
         db, transfer_id=transfer_id, actor_id=admin.id
     )
+
+
+@router.post(
+    "/fee-backfill",
+    response_model=FeeBackfillResponse,
+    status_code=202,
+    dependencies=[Depends(require_step_up_after(require_superadmin))],
+    summary="Backfill Paystack fees on past charges (super-admin)",
+    description=(
+        "Queues a one-off lookup of the fee Paystack kept on every settled "
+        "charge that has no recorded fee. Safe to rerun. Super-admin only, "
+        "with step-up. Audited when requested and when finished."
+    ),
+)
+async def admin_request_fee_backfill(
+    admin: SuperAdmin, db: DatabaseSession
+) -> FeeBackfillResponse:
+    """Queue the Paystack fee backfill."""
+    await provider_fee_backfill.request_fee_backfill(db, actor_id=admin.id)
+    return FeeBackfillResponse(status="queued")

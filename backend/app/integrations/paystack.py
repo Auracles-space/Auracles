@@ -7,8 +7,10 @@ import hmac
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -512,6 +514,74 @@ async def list_refunds(
                 )
             )
     return refunds
+
+
+@dataclass(frozen=True)
+class PaystackTransaction:
+    """The parts of a Paystack charge Treasury needs to cost it.
+
+    Attributes:
+        reference: Our charge reference.
+        status: Paystack's charge status (``success``, ``abandoned``, ...).
+        currency: ISO currency, when reported.
+        fees_minor: Fee Paystack kept, in minor units; None when not reported.
+        paid_at: When the charge was paid, when reported.
+    """
+
+    reference: str
+    status: str | None
+    currency: str | None
+    fees_minor: int | None
+    paid_at: datetime | None
+
+
+async def fetch_transaction(
+    *,
+    reference: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> PaystackTransaction:
+    """Look up one charge by our reference, including the fee Paystack kept.
+
+    Used by the one-off fee backfill for charges settled before fees were
+    recorded from webhooks (treasury decision 7).
+
+    Args:
+        reference: The charge reference we stored as ``provider_ref``.
+        settings: Settings override, defaulting to the app settings.
+        client: HTTP client override, for reuse across a batch.
+
+    Returns:
+        The charge's status, currency, fee and payment time.
+
+    Raises:
+        PaystackProviderError: On transport failure or a malformed response.
+    """
+    data = await _get_json(
+        f"/transaction/verify/{quote(reference, safe='')}",
+        {},
+        settings=settings,
+        client=client,
+    )
+    if not isinstance(data, dict):
+        raise PaystackProviderError("Paystack transaction response was not an object.")
+    fees = data.get("fees")
+    currency = data.get("currency")
+    charge_status = data.get("status")
+    paid_at_raw = data.get("paid_at")
+    paid_at: datetime | None = None
+    if isinstance(paid_at_raw, str):
+        try:
+            paid_at = datetime.fromisoformat(paid_at_raw.replace("Z", "+00:00"))
+        except ValueError:
+            paid_at = None
+    return PaystackTransaction(
+        reference=reference,
+        status=charge_status if isinstance(charge_status, str) else None,
+        currency=currency.upper() if isinstance(currency, str) else None,
+        fees_minor=fees if isinstance(fees, int) else None,
+        paid_at=paid_at,
+    )
 
 
 async def fetch_balance(
