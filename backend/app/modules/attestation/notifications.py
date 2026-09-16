@@ -266,6 +266,25 @@ def notify_reassigned(
     )
 
 
+def notify_review_withdrawn_on_revocation(
+    attestation: Attestation, *, org_id: UUID, reviewer_id: UUID
+) -> None:
+    """Tell a reviewer their review was taken back when the org lost attestor status."""
+    _dispatch(
+        user_id=reviewer_id,
+        notification_type="attestation_reassigned",
+        title="Attestation review withdrawn",
+        body=(
+            "Your organization's attestor status was revoked, so this review "
+            "was returned to an administrator to reassign."
+        ),
+        attestation=attestation,
+        dedupe_suffix=f"revoked:{org_id}:{reviewer_id}",
+        extra_payload={"org_id": str(org_id)},
+        link=f"/dashboard/organizations/{org_id}/attestor/queue",
+    )
+
+
 def notify_needs_admin(attestation: Attestation) -> None:
     """Notify the requestor and fan out to admins when matching needs help."""
     _dispatch(

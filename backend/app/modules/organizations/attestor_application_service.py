@@ -29,7 +29,7 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.admin.notifications import notify_admins_review_pending
-from app.modules.attestation import rubrics
+from app.modules.attestation import matching_service, rubrics
 from app.modules.attestation.credential_service import (
     CREDENTIAL_EVIDENCE_MAX_BYTES,
     CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
@@ -1520,16 +1520,19 @@ async def admin_set_capability_status(
 ) -> None:
     """Suspend, reinstate, or revoke an org's attestor capability.
 
-    Revocation marks the matching profile inactive; suspension leaves the
-    profile intact (matching filters on the capability status). Reinstatement
-    reactivates the profile. Every member's derived attestor role is then
-    re-evaluated after commit.
+    Revocation marks the matching profile inactive and moves the org's work
+    on: open offers go to the next eligible org and undelivered reviews go to
+    admins to reassign (``matching_service.release_revoked_org_work``).
+    Suspension leaves the profile and work intact (matching filters on the
+    capability status). Reinstatement reactivates the profile. Every member's
+    derived attestor role is then re-evaluated after commit.
 
     Raises:
         HTTPException(404): If the org has no attestor capability.
     """
     if db.in_transaction():
         await db.rollback()
+    revoked_work = None
     async with db.begin():
         capability = await db.scalar(
             select(OrgCapability)
@@ -1563,6 +1566,11 @@ async def admin_set_capability_status(
                 profile.active = False
             elif status_value == "active":
                 profile.active = True
+        if status_value == "revoked":
+            await db.flush()
+            revoked_work = await matching_service.release_revoked_org_work(
+                db, org_id=org_id
+            )
         await write_audit(
             db=db,
             actor_id=admin_id,
@@ -1572,6 +1580,10 @@ async def admin_set_capability_status(
             metadata={"status": status_value, "reason": reason},
         )
 
+    # Notify before the role sync: it runs its own transactions, which expire
+    # the attestations and offers these notices read.
+    if revoked_work is not None:
+        await matching_service.notify_revoked_org_work(db, revoked_work)
     await _sync_org_member_roles(db, org_id)
     if changed:
         org_notifications.notify_capability_status(
