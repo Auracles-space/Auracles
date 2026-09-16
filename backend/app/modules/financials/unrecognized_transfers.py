@@ -19,7 +19,7 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 from loguru import logger
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import Boolean, func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,7 +108,7 @@ async def record_unrecognized_transfer(
         )
         .returning(
             UnrecognizedTransfer.id,
-            literal_column("(xmax = 0)"),
+            literal_column("(xmax = 0)", type_=Boolean),
         )
     )
     row_id, inserted = (await db.execute(statement)).one()
