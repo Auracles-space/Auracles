@@ -1930,6 +1930,7 @@ async def _void_partner_commission_for_refund(
         return
 
     commission.status = "voided"
+    commission.voided_at = datetime.now(UTC)
     await write_audit(
         db=db,
         actor_id=operator_id,

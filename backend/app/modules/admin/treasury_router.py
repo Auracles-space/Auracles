@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from app.core.dependencies import (
     DatabaseSession,
@@ -36,6 +36,7 @@ from app.modules.financials import (
     platform_withdrawals,
     provider_fee_backfill,
     treasury,
+    treasury_statement,
     unrecognized_transfers,
 )
 
@@ -202,3 +203,32 @@ async def admin_request_fee_backfill(
     """Queue the Paystack fee backfill."""
     await provider_fee_backfill.request_fee_backfill(db, actor_id=admin.id)
     return FeeBackfillResponse(status="queued")
+
+
+@router.get(
+    "/statements/{month}",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}, "description": "Statement CSV"}},
+    summary="Monthly treasury statement CSV (platform admin)",
+    description=(
+        "One Lagos-time month: opening balance, commission by source, refunds, "
+        "provider fees, partner commissions, withdrawals, closing balance, and "
+        "users' money at month end. Every download is audited."
+    ),
+)
+async def admin_treasury_statement(
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+    month: Annotated[str, Path(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")],
+    currency: Annotated[str, Query(pattern=r"^[A-Z]{3}$")] = "NGN",
+) -> Response:
+    """Return one month's statement as a CSV attachment."""
+    body = await treasury_statement.download_statement(
+        db, month=month, currency=currency, actor_id=admin.id
+    )
+    filename = f"auracles-treasury-{currency}-{month}.csv"
+    return Response(
+        content=body,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

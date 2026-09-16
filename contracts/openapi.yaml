@@ -19192,6 +19192,44 @@ paths:
       summary: Backfill Paystack fees on past charges (super-admin)
       tags:
       - Admin Treasury
+  /v1/admin/treasury/statements/{month}:
+    get:
+      description: 'One Lagos-time month: opening balance, commission by source, refunds, provider
+        fees, partner commissions, withdrawals, closing balance, and users'' money at month end. Every
+        download is audited.'
+      operationId: admin_treasury_statement_v1_admin_treasury_statements__month__get
+      parameters:
+      - in: path
+        name: month
+        required: true
+        schema:
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+          title: Month
+          type: string
+      - in: query
+        name: currency
+        required: false
+        schema:
+          default: NGN
+          pattern: ^[A-Z]{3}$
+          title: Currency
+          type: string
+      responses:
+        '200':
+          content:
+            text/csv: {}
+          description: Statement CSV
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Monthly treasury statement CSV (platform admin)
+      tags:
+      - Admin Treasury
   /v1/admin/treasury/summary:
     get:
       description: 'Per currency: money owed to users, the platform''s own money, the live Paystack

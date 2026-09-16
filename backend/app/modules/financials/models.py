@@ -207,6 +207,12 @@ class Escrow(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # When the escrow was refunded; cleared if the provider declines the refund.
+    # Treasury statements need it to know the money was still held before then.
+    refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     released_by: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id"),

@@ -6717,6 +6717,19 @@ export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostResponse = (Fee
 
 export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostError = unknown;
 
+export type AdminTreasuryStatementV1AdminTreasuryStatementsMonthGetData = {
+    path: {
+        month: string;
+    };
+    query?: {
+        currency?: string;
+    };
+};
+
+export type AdminTreasuryStatementV1AdminTreasuryStatementsMonthGetResponse = (unknown);
+
+export type AdminTreasuryStatementV1AdminTreasuryStatementsMonthGetError = (HTTPValidationError);
+
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetResponse = (TreasurySummaryResponse);
 
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetError = unknown;

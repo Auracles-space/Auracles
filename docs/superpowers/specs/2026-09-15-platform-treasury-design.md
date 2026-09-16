@@ -247,7 +247,7 @@ full account number or recipient code.
 | PUT | `/bank-account` | super-admin + step-up | Set or replace |
 | GET | `/unrecognized-transfers` | admin | List |
 | POST | `/unrecognized-transfers/{id}/acknowledge` | super-admin | Mark reviewed (audited) |
-| GET | `/statements/{yyyy-mm}.csv` | admin | Monthly statement, audited `treasury_statement_downloaded` |
+| GET | `/statements/{yyyy-mm}?currency=NGN` | admin | Monthly statement, audited `treasury_statement_downloaded` |
 | POST | `/fee-backfill` | super-admin + step-up | Queue backfill (202) |
 
 Every action writes an audit row. Non-super-admin action attempts → 403
@@ -269,8 +269,16 @@ reference, amount`.
 8. Users' money at month end: held escrow, contributor balances, org balances, partner
    money.
 
-- Uses the `as_of` variant of the summary queries, so the summary and the statement
-  share one code path.
+- Figures for any past moment are rebuilt from existing timestamps (human decision
+  2026-09-16, no snapshots): a sale counts at `created_at`, milestone and attestation
+  commission when its escrow was released, a refund when it was requested, fees,
+  partner commissions and withdrawals at their own timestamps. The latest month is
+  tested to match the live summary.
+- An escrow is held until `released_at` or `refunded_at`; a partner commission is a cost
+  from `created_at` and is handed back in the month of `voided_at` (statement row
+  `partner_commissions,voided`). Both columns were added in migration 0115 and
+  backfilled from `escrow_refunded` ledger events and `partner_commission_voided`
+  audit rows.
 - Amounts are written as plain decimals with no currency symbol, so spreadsheets parse
   them.
 
