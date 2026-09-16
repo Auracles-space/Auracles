@@ -1,5 +1,14 @@
-import { OrganizationTeams } from "@/components/modules/organizations/organization-teams";
+/**
+ * Old Teams tab URL, kept so existing links still land: teams now live under
+ * the Members tab.
+ */
+import { redirect } from "next/navigation";
 
-export default function OrganizationTeamsPage() {
-  return <OrganizationTeams />;
+export default async function OrganizationTeamsRedirect({
+  params,
+}: {
+  params: Promise<{ orgId: string }>;
+}) {
+  const { orgId } = await params;
+  redirect(`/dashboard/organizations/${orgId}/members/teams`);
 }

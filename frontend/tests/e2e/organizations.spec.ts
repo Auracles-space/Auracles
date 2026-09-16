@@ -416,7 +416,7 @@ test("an admin invites, filters to expired and resends; an invitee accepts from 
   (testInfo as unknown as { orgState: OrgState }).orgState = state;
   await signIn(page, context, state);
 
-  await page.goto(`/dashboard/organizations/${orgId}/invitations`);
+  await page.goto(`/dashboard/organizations/${orgId}/members/invitations`);
   await page.getByLabel("Invite by email").fill("musa@kanoaudit.ng");
   await page.getByRole("button", { name: /Send|Invite/ }).last().click();
 

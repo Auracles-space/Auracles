@@ -144,7 +144,7 @@ export function OrganizationMembers() {
         {isAdmin ? (
           <Link
             className="inline-flex min-h-11 items-center justify-center rounded-xl border border-transparent bg-foreground px-5 text-sm font-semibold text-background transition-colors hover:bg-foreground/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            href={`/dashboard/organizations/${orgId}/invitations`}
+            href={`/dashboard/organizations/${orgId}/members/invitations`}
           >
             Invite a member
           </Link>

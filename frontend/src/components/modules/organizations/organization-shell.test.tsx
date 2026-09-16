@@ -290,7 +290,7 @@ describe("OrganizationShell action-count badges", () => {
     );
   });
 
-  it("folds offer and queue counts into the Attestor tab, with invitations separate", async () => {
+  it("folds offer and queue counts into Attestor, and invitations into Members", async () => {
     vi.mocked(listMyOrgs).mockResolvedValue({
       response: { ok: true },
       data: {
@@ -311,7 +311,7 @@ describe("OrganizationShell action-count badges", () => {
     expect(await screen.findByRole("tab", { name: /Attestor/i })).toHaveTextContent("5");
     expect(screen.queryByRole("tab", { name: /Offers/i })).toBeNull();
     expect(screen.queryByRole("tab", { name: /Queue/i })).toBeNull();
-    expect(screen.getByRole("tab", { name: /Invitations/i })).toHaveTextContent("1");
+    expect(screen.getByRole("tab", { name: /Members/i })).toHaveTextContent("1");
   });
 
   it("refetches counts when the window regains focus", async () => {
@@ -505,9 +505,8 @@ describe("OrganizationShell unverified organization", () => {
 
     expect(await screen.findByText("Verification")).toBeInTheDocument();
     expect(screen.getByText("Profile")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^Members$/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^Teams$/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^Invitations/ })).toBeInTheDocument();
+    // Invitations and Teams are sections inside Members, which stays open.
+    expect(screen.getByRole("tab", { name: /^Members/ })).toBeInTheDocument();
     expect(screen.queryByText("Calibration Trial")).toBeNull();
     expect(screen.queryByText("Frameworks")).toBeNull();
     expect(screen.queryByText("Operator")).toBeNull();
@@ -740,4 +739,109 @@ describe("OrganizationShell NDA tab after an attestor application is saved", () 
 
     expect(await screen.findByRole("tab", { name: /NDA/i })).toBeInTheDocument();
   });
+});
+
+describe("OrganizationShell tab order", () => {
+  /** Mock one membership and NDA state, then render the shell. */
+  async function renderShell({
+    role = "owner",
+    kybStatus = "verified",
+    capabilities = {},
+    nda = { required: false, signed: false },
+    counts = { offers: 0, queue: 0, invitations: 0 },
+  }: {
+    role?: string;
+    kybStatus?: string;
+    capabilities?: Record<string, string>;
+    nda?: { required: boolean; signed: boolean };
+    counts?: Record<string, number>;
+  }): Promise<string[]> {
+    vi.mocked(listMyOrgs).mockResolvedValue({
+      response: { ok: true },
+      data: {
+        organizations: [
+          {
+            org: { id: "org-1", name: "Test Org" },
+            role,
+            kyb_status: kybStatus,
+            capabilities,
+            grants: {},
+            counts,
+          },
+        ],
+      },
+    } as never);
+    vi.mocked(getOrgNda).mockResolvedValue({
+      data: {
+        required: nda.required,
+        current_version: "1.0",
+        signed_version: nda.signed ? "1.0" : null,
+        signed_at: nda.signed ? "2026-09-15T00:00:00Z" : null,
+      },
+    } as never);
+    render(<OrganizationShell orgId="org-1">child</OrganizationShell>);
+    await screen.findByRole("tab", { name: /^Profile$/ });
+    // NDA status loads separately from the membership; let it settle.
+    await act(async () => {});
+    return screen.getAllByRole("tab").map((tab) => tab.textContent ?? "");
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPathname = "/dashboard/organizations/org-1";
+  });
+
+  it("puts daily work first and one-off setup last for a verified owner", async () => {
+    const tabs = await renderShell({
+      capabilities: { attestor: "active", operator: "active", contributor: "active" },
+      nda: { required: true, signed: true },
+    });
+
+    expect(tabs).toEqual([
+      "Profile",
+      "Attestor",
+      "Projects",
+      "Frameworks",
+      "Operator",
+      "Financials",
+      "Members",
+      "NDA",
+      "Calibration Trial",
+      "Verification",
+      "Danger Zone",
+    ]);
+  });
+
+  it("puts Verification second while the org is unverified", async () => {
+    const tabs = await renderShell({ kybStatus: "pending" });
+
+    expect(tabs[0]).toBe("Profile");
+    expect(tabs[1]).toMatch(/^Verification/);
+    expect(tabs).toContain("Members");
+    expect(tabs).not.toContain("Invitations");
+    expect(tabs).not.toContain("Teams");
+  });
+
+  it("puts an unsigned NDA right after Profile", async () => {
+    const tabs = await renderShell({
+      capabilities: { attestor: "active" },
+      nda: { required: true, signed: false },
+    });
+
+    expect(tabs[0]).toBe("Profile");
+    expect(tabs[1]).toMatch(/^NDA/);
+  });
+
+  it.each(["invitations", "teams", "members/invitations", "members/teams"])(
+    "selects the Members tab on /%s",
+    async (segment) => {
+      mockPathname = `/dashboard/organizations/org-1/${segment}`;
+      await renderShell({});
+
+      expect(screen.getByRole("tab", { name: /^Members/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+    },
+  );
 });

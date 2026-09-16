@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState, ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useRefetchOnFocus } from "@/lib/hooks/use-refetch-on-focus";
 import { attestorHubSections } from "@/lib/organizations/attestor-hub";
+import { memberSections } from "@/lib/organizations/member-sections";
 import {
   ATTESTOR_APPLICATION_CHANGED_EVENT,
   NDA_SIGNED_EVENT,
@@ -155,33 +156,42 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
 
   const isVerified = myOrg.kyb_status === "verified";
 
-  // People tabs are open from day one (Decision 2): an owner can invite the
-  // team while verification is in review. Only capability tabs, which front
-  // APIs the backend refuses for an unverified org, stay gated.
-  const tabs: TabItem[] = [
-    { id: "", label: "Profile" },
-    // Business verification gates every capability, so it is the first thing a
-    // new org needs and stays visible afterwards as the record of its identity.
-    {
-      id: "verification",
-      label: "Verification",
-      dot: !isVerified,
-      dotLabel: "Verification required",
-    },
-    { id: "members", label: "Members" },
-  ];
-  if (isVerified) {
-    // Any member may be nominated for the attestor calibration trial; the page
-    // resolves to a friendly "no active trial" state for non-nominees.
-    tabs.push({ id: "attestor-trial", label: "Calibration Trial" });
+  const counts = myOrg.counts;
+  // Offers and the review queue live inside the Attestor tab once the org is
+  // an attestor, and invitations and teams inside Members, so each tab carries
+  // its sections' combined count. A plain member gets the Attestor tab only
+  // when there is a queue for them to work.
+  const attestorSections = attestorHubSections({ isAdmin, capability: attestorCap, counts });
+  const peopleSections = memberSections({ isAdmin, counts });
+  const sumCounts = (sections: { count: number }[]) =>
+    sections.reduce((total, section) => total + section.count, 0);
+
+  const verificationTab: TabItem = {
+    id: "verification",
+    label: "Verification",
+    dot: !isVerified,
+    dotLabel: "Verification required",
+  };
+  const ndaTab: TabItem = {
+    id: "nda",
+    label: "NDA",
+    dot: ndaUnsigned,
+    dotLabel: "NDA signature required",
+  };
+  const showNda = isVerified && needsNda;
+
+  // Most-used first: the org's daily work, then its people, then one-off
+  // setup, then the destructive zone. Setup that is blocking right now jumps
+  // the queue: business verification gates every capability, and an unsigned
+  // NDA blocks attestation work.
+  const tabs: TabItem[] = [{ id: "", label: "Profile" }];
+  if (!isVerified) tabs.push(verificationTab);
+  if (showNda && ndaUnsigned) tabs.push(ndaTab);
+  if (isVerified && (isAdmin || attestorSections.length > 0)) {
+    tabs.push({ id: "attestor", label: "Attestor", count: sumCounts(attestorSections) });
   }
-  if (isVerified && needsNda) {
-    tabs.push({
-      id: "nda",
-      label: "NDA",
-      dot: ndaUnsigned,
-      dotLabel: "NDA signature required",
-    });
+  if (isVerified && isAdmin && isOperator) {
+    tabs.push({ id: "projects", label: "Projects" });
   }
   if (isVerified && contributorActive && (isAdmin || contributorGrant)) {
     tabs.push({ id: "frameworks", label: "Frameworks" });
@@ -189,36 +199,20 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   if (isVerified && isOperator) {
     tabs.push({ id: "operator", label: "Operator" });
   }
-  
-  const counts = myOrg.counts;
-  if (isAdmin) {
-    tabs.push({
-      id: "invitations",
-      label: "Invitations",
-      count: counts?.invitations,
-    });
-    tabs.push({ id: "teams", label: "Teams" });
+  if (isVerified && isAdmin && (isOperator || attestorActive || contributorActive)) {
+    tabs.push({ id: "financials", label: "Financials" });
   }
-  // Offers and the review queue live inside the Attestor tab once the org is
-  // an attestor, so the tab carries their combined count. A plain member gets
-  // the tab only when there is a queue for them to work.
-  const attestorSections = attestorHubSections({ isAdmin, capability: attestorCap, counts });
-  if (isVerified && (isAdmin || attestorSections.length > 0)) {
-    tabs.push({
-      id: "attestor",
-      label: "Attestor",
-      count: attestorSections.reduce((total, section) => total + section.count, 0),
-    });
+  // People tabs are open from day one (Decision 2): an owner can invite the
+  // team while verification is in review.
+  tabs.push({ id: "members", label: "Members", count: sumCounts(peopleSections) });
+  if (showNda && !ndaUnsigned) tabs.push(ndaTab);
+  if (isVerified) {
+    // Any member may be nominated for the attestor calibration trial; the page
+    // resolves to a friendly "no active trial" state for non-nominees.
+    tabs.push({ id: "attestor-trial", label: "Calibration Trial" });
   }
-  if (isVerified && isAdmin) {
-    if (isOperator) {
-      tabs.push({ id: "projects", label: "Projects" });
-    }
-
-    if (isOperator || attestorActive || contributorActive) {
-      tabs.push({ id: "financials", label: "Financials" });
-    }
-  }
+  // Kept after verification as the record of the org's identity.
+  if (isVerified) tabs.push(verificationTab);
   if (isOwner) {
     tabs.push({ id: "danger-zone", label: "Danger Zone" });
   }
@@ -230,11 +224,14 @@ export function OrganizationShell({ orgId, children }: OrganizationShellProps) {
   const rawSegment = pathParts.length > 4 ? pathParts[4] : "";
   // Drill-in routes that live under a tab keep that tab highlighted. The
   // attestation workspace sits at /attestations/[id] but belongs to the
-  // Attestor queue; /offers and /queue are old links that redirect there.
+  // Attestor queue; /offers and /queue, and /invitations and /teams, are old
+  // links that redirect into the Attestor and Members tabs.
   const SUB_ROUTE_TABS: Record<string, string> = {
     attestations: "attestor",
     offers: "attestor",
     queue: "attestor",
+    invitations: "members",
+    teams: "members",
   };
   const activeSegment = SUB_ROUTE_TABS[rawSegment] ?? rawSegment;
   const activeId = tabs.some((t) => t.id === activeSegment) ? activeSegment : "";
