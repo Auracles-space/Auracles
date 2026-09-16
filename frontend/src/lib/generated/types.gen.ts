@@ -5554,6 +5554,56 @@ export type TotpStatusResponse = {
 };
 
 /**
+ * One currency's Treasury figures.
+ *
+ * ``live_balance``, ``withdrawable`` and ``balance_gap`` are only set for the
+ * currency Paystack holds, and only when the balance lookup succeeded
+ * (``balance_unavailable`` is true when it did not).
+ */
+export type TreasuryCurrencySummary = {
+    balance_gap: (string | null);
+    balance_unavailable: boolean;
+    currency: string;
+    live_balance: (string | null);
+    our_money: TreasuryOurMoney;
+    owed_to_users: TreasuryOwedToUsers;
+    withdrawable: (string | null);
+    withdrawable_here: boolean;
+};
+
+/**
+ * The platform's own share: commission earned less what it has paid for.
+ */
+export type TreasuryOurMoney = {
+    commission_attestation_fees: string;
+    commission_collections: string;
+    commission_framework_sales: string;
+    commission_project_milestones: string;
+    partner_commissions: string;
+    provider_fees: string;
+    total: string;
+};
+
+/**
+ * Money in the balance that belongs to users (liabilities).
+ */
+export type TreasuryOwedToUsers = {
+    contributor_balances: string;
+    held_escrow: string;
+    org_balances: string;
+    partner_commissions: string;
+    total: string;
+};
+
+/**
+ * Treasury summary across every currency on the ledger.
+ */
+export type TreasurySummaryResponse = {
+    currencies: Array<TreasuryCurrencySummary>;
+    live_balance_fetched_at: (string | null);
+};
+
+/**
  * One answer-key row joined to its rubric dimension, for the admin editor.
  */
 export type TrialAnswerKeyItem = {
@@ -6545,6 +6595,10 @@ export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetData = {
 export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetResponse = (AdminTransactionDetailResponse);
 
 export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetError = (HTTPValidationError);
+
+export type AdminTreasurySummaryV1AdminTreasurySummaryGetResponse = (TreasurySummaryResponse);
+
+export type AdminTreasurySummaryV1AdminTreasurySummaryGetError = unknown;
 
 export type ListAdminUsersV1AdminUsersGetData = {
     query?: {

@@ -10,7 +10,7 @@ from cryptography.fernet import InvalidToken
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
-from sqlalchemy import exists, func, or_, select, text
+from sqlalchemy import ColumnElement, exists, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -228,6 +228,38 @@ async def _minimum_payout(db: AsyncSession, currency: str) -> Decimal:
     )
 
 
+def earning_class_filter(earning_class: str) -> ColumnElement[bool]:
+    """Return the SQL predicate for transactions that credit a payee's balance.
+
+    ``_MARKETPLACE_EARNING_CLASS`` covers framework and collection purchases
+    and released project milestones; ``_ATTESTATION_EARNING_CLASS`` covers
+    released attestation fees. Callers add ``status == 'completed'``. Shared
+    by the individual and org balances and by Treasury, so "money a payee has
+    earned" has exactly one definition.
+    """
+    released_escrow_exists = exists(
+        select(Escrow.id).where(
+            Escrow.ref_id == Transaction.ref_id,
+            Escrow.ref_type == Transaction.ref_type,
+            Escrow.status == "released",
+        )
+    )
+    if earning_class == _ATTESTATION_EARNING_CLASS:
+        return (
+            (Transaction.transaction_type == "attestation_fee")
+            & (Transaction.ref_type == "attestation")
+            & released_escrow_exists
+        )
+    return or_(
+        Transaction.transaction_type == "purchase",
+        (
+            (Transaction.transaction_type == "milestone")
+            & (Transaction.ref_type == "project_milestone")
+            & released_escrow_exists
+        ),
+    )
+
+
 async def _sum_transactions(
     db: AsyncSession,
     *,
@@ -247,28 +279,7 @@ async def _sum_transactions(
     instead of the gross ``amount``, so a later commission-rate change never
     reprices settled earnings.
     """
-    released_escrow_exists = exists(
-        select(Escrow.id).where(
-            Escrow.ref_id == Transaction.ref_id,
-            Escrow.ref_type == Transaction.ref_type,
-            Escrow.status == "released",
-        )
-    )
-    if earning_class == _ATTESTATION_EARNING_CLASS:
-        class_filter = or_(
-            (Transaction.transaction_type == "attestation_fee")
-            & (Transaction.ref_type == "attestation")
-            & released_escrow_exists
-        )
-    else:
-        class_filter = or_(
-            Transaction.transaction_type == "purchase",
-            (
-                (Transaction.transaction_type == "milestone")
-                & (Transaction.ref_type == "project_milestone")
-                & released_escrow_exists
-            ),
-        )
+    class_filter = earning_class_filter(earning_class)
     filters = [
         Transaction.payee_id == contributor_id,
         class_filter,
@@ -2294,28 +2305,7 @@ async def _sum_org_transactions(
     net: bool = False,
 ) -> Decimal:
     """Return completed org earnings for one earning class, gross or net."""
-    released_escrow_exists = exists(
-        select(Escrow.id).where(
-            Escrow.ref_id == Transaction.ref_id,
-            Escrow.ref_type == Transaction.ref_type,
-            Escrow.status == "released",
-        )
-    )
-    if earning_class == _ATTESTATION_EARNING_CLASS:
-        class_filter = or_(
-            (Transaction.transaction_type == "attestation_fee")
-            & (Transaction.ref_type == "attestation")
-            & released_escrow_exists
-        )
-    else:
-        class_filter = or_(
-            Transaction.transaction_type == "purchase",
-            (
-                (Transaction.transaction_type == "milestone")
-                & (Transaction.ref_type == "project_milestone")
-                & released_escrow_exists
-            ),
-        )
+    class_filter = earning_class_filter(earning_class)
     filters = [
         Transaction.payee_org_id == org_id,
         class_filter,

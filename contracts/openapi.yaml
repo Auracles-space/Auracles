@@ -15451,6 +15451,149 @@ components:
       - totp_enabled
       title: TotpStatusResponse
       type: object
+    TreasuryCurrencySummary:
+      description: 'One currency''s Treasury figures.
+
+
+        ``live_balance``, ``withdrawable`` and ``balance_gap`` are only set for the
+
+        currency Paystack holds, and only when the balance lookup succeeded
+
+        (``balance_unavailable`` is true when it did not).'
+      properties:
+        balance_gap:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Balance Gap
+        balance_unavailable:
+          title: Balance Unavailable
+          type: boolean
+        currency:
+          title: Currency
+          type: string
+        live_balance:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Live Balance
+        our_money:
+          $ref: '#/components/schemas/TreasuryOurMoney'
+        owed_to_users:
+          $ref: '#/components/schemas/TreasuryOwedToUsers'
+        withdrawable:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Withdrawable
+        withdrawable_here:
+          title: Withdrawable Here
+          type: boolean
+      required:
+      - currency
+      - withdrawable_here
+      - owed_to_users
+      - our_money
+      - live_balance
+      - withdrawable
+      - balance_gap
+      - balance_unavailable
+      title: TreasuryCurrencySummary
+      type: object
+    TreasuryOurMoney:
+      description: 'The platform''s own share: commission earned less what it has paid for.'
+      properties:
+        commission_attestation_fees:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Attestation Fees
+          type: string
+        commission_collections:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Collections
+          type: string
+        commission_framework_sales:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Framework Sales
+          type: string
+        commission_project_milestones:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Commission Project Milestones
+          type: string
+        partner_commissions:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Partner Commissions
+          type: string
+        provider_fees:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Provider Fees
+          type: string
+        total:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Total
+          type: string
+      required:
+      - commission_framework_sales
+      - commission_collections
+      - commission_project_milestones
+      - commission_attestation_fees
+      - provider_fees
+      - partner_commissions
+      - total
+      title: TreasuryOurMoney
+      type: object
+    TreasuryOwedToUsers:
+      description: Money in the balance that belongs to users (liabilities).
+      properties:
+        contributor_balances:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Contributor Balances
+          type: string
+        held_escrow:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Held Escrow
+          type: string
+        org_balances:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Org Balances
+          type: string
+        partner_commissions:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Partner Commissions
+          type: string
+        total:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Total
+          type: string
+      required:
+      - held_escrow
+      - contributor_balances
+      - org_balances
+      - partner_commissions
+      - total
+      title: TreasuryOwedToUsers
+      type: object
+    TreasurySummaryResponse:
+      description: Treasury summary across every currency on the ledger.
+      properties:
+        currencies:
+          items:
+            $ref: '#/components/schemas/TreasuryCurrencySummary'
+          title: Currencies
+          type: array
+        live_balance_fetched_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Live Balance Fetched At
+      required:
+      - currencies
+      - live_balance_fetched_at
+      title: TreasurySummaryResponse
+      type: object
     TrialAnswerKeyItem:
       description: One answer-key row joined to its rubric dimension, for the admin
         editor.
@@ -18682,6 +18825,24 @@ paths:
       summary: Trace one payment end to end
       tags:
       - Admin
+  /v1/admin/treasury/summary:
+    get:
+      description: 'Per currency: money owed to users, the platform''s own money, the live Paystack
+        balance, what can be withdrawn now, and the balance gap. Ledger figures are returned even when
+        Paystack is unavailable.'
+      operationId: admin_treasury_summary_v1_admin_treasury_summary_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TreasurySummaryResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Platform treasury summary (platform admin)
+      tags:
+      - Admin Treasury
   /v1/admin/users:
     get:
       description: Return a paginated admin user directory with search and suspension
