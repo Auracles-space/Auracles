@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   bankAccountOnHold,
+  formatCountdown,
   isNegativeAmount,
   recentStatementMonths,
 } from "@/lib/financials/treasury";
@@ -39,5 +40,14 @@ describe("bankAccountOnHold", () => {
     expect(bankAccountOnHold({ usable_from: "2026-09-17T00:00:00Z" }, now)).toBe(true);
     expect(bankAccountOnHold({ usable_from: "2026-09-16T11:59:00Z" }, now)).toBe(false);
     expect(bankAccountOnHold(null, now)).toBe(false);
+  });
+});
+
+describe("formatCountdown", () => {
+  it("shows hours and minutes for long waits, minutes and seconds for short", () => {
+    expect(formatCountdown(23 * 3_600_000 + 59 * 60_000 + 5_000)).toBe("23h 59m");
+    expect(formatCountdown(4 * 60_000 + 32_000)).toBe("4m 32s");
+    expect(formatCountdown(9_000)).toBe("0m 09s");
+    expect(formatCountdown(-1)).toBe("0m 00s");
   });
 });

@@ -58,3 +58,22 @@ export function bankAccountOnHold(
 ): boolean {
   return account != null && new Date(account.usable_from).getTime() > now.getTime();
 }
+
+/**
+ * Format the time left on a hold for a live countdown.
+ *
+ * Long waits read as hours and minutes; the last hour counts seconds so the
+ * admin can see it moving.
+ *
+ * @param milliseconds - Time remaining; negative values read as zero.
+ */
+export function formatCountdown(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}

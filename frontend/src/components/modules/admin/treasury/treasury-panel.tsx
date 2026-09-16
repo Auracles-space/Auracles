@@ -23,7 +23,7 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { bankAccountOnHold } from "@/lib/financials/treasury";
+import { bankAccountOnHold, formatCountdown } from "@/lib/financials/treasury";
 import {
   adminPlatformBankAccountV1AdminTreasuryBankAccountGet as getBankAccount,
   adminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGet as listWithdrawals,
@@ -62,6 +62,7 @@ export function TreasuryPanel() {
   const [error, setError] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const latestRequest = useRef(0);
 
   const load = useCallback(async () => {
@@ -107,6 +108,20 @@ export function TreasuryPanel() {
   }, [load]);
   useRefetchOnFocus(refetch);
 
+  // Tick once a second only while the bank account hold is running, so the
+  // countdown moves and Withdraw enables the moment the hold ends.
+  const holdEndsAt = data?.bankAccount
+    ? new Date(data.bankAccount.usable_from).getTime()
+    : null;
+  const holdRunning = holdEndsAt != null && holdEndsAt > now;
+  useEffect(() => {
+    if (!holdRunning) {
+      return;
+    }
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [holdRunning]);
+
   if (error && !data) {
     return <p className="rounded-xl border border-error/30 bg-error/10 p-4 text-sm text-error">{error}</p>;
   }
@@ -122,7 +137,7 @@ export function TreasuryPanel() {
     paystackBlock.withdrawable != null &&
     Number(paystackBlock.withdrawable) > 0 &&
     data.bankAccount != null &&
-    !bankAccountOnHold(data.bankAccount, new Date()) &&
+    !bankAccountOnHold(data.bankAccount, new Date(now)) &&
     !inFlight;
 
   return (
@@ -146,6 +161,11 @@ export function TreasuryPanel() {
             <Button disabled={!canWithdraw} onClick={() => setWithdrawOpen(true)}>
               Withdraw
             </Button>
+            {holdRunning && holdEndsAt != null ? (
+              <p aria-live="polite" className="text-xs text-foreground-muted">
+                Withdrawals open in {formatCountdown(holdEndsAt - now)}
+              </p>
+            ) : null}
             {inFlight ? (
               <p className="text-xs text-foreground-muted">A withdrawal is in progress.</p>
             ) : null}

@@ -7,7 +7,8 @@
  * money, change the bank account, or run the fee backfill.
  */
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TreasuryPanel } from "@/components/modules/admin/treasury/treasury-panel";
 import { loadCurrentUserSession } from "@/lib/auth/current-user-session";
@@ -321,5 +322,36 @@ describe("TreasuryPanel", () => {
     ).toBeInTheDocument();
     expect(vi.mocked(listTreasuryBanks)).toHaveBeenCalled();
     expect(vi.mocked(listPayoutBanks)).not.toHaveBeenCalled();
+  });
+
+  describe("while the bank account is on hold", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("counts down beside Withdraw and enables it when the hold ends", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const now = Date.now();
+      mockPage({
+        superadmin: true,
+        bankAccount: {
+          ...BANK_ACCOUNT,
+          usable_from: new Date(now + 90_000).toISOString(),
+        },
+      });
+
+      render(<TreasuryPanel />);
+
+      const withdraw = await screen.findByRole("button", { name: /^Withdraw$/i });
+      expect(withdraw).toBeDisabled();
+      expect(screen.getByText(/Withdrawals open in 1m (29|30)s/)).toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(91_000);
+      });
+
+      expect(screen.getByRole("button", { name: /^Withdraw$/i })).toBeEnabled();
+      expect(screen.queryByText(/Withdrawals open in/)).not.toBeInTheDocument();
+    });
   });
 });
