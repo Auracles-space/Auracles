@@ -1,21 +1,16 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AttestorHubLayout } from "./attestor-hub-layout";
 
-const nav = vi.hoisted(() => ({ pathname: "/dashboard/organizations/org-1/attestor", replace: vi.fn() }));
+const nav = vi.hoisted(() => ({
+  pathname: "/dashboard/organizations/org-1/attestor",
+  replace: vi.fn(),
+  push: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
   usePathname: () => nav.pathname,
-  useRouter: () => ({ replace: nav.replace, push: vi.fn() }),
-}));
-
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
-    <a href={href} {...rest}>
-      {children}
-    </a>
-  ),
+  useRouter: () => ({ replace: nav.replace, push: nav.push }),
 }));
 
 // The layout reads role, capability, and counts from the org shell's context.
@@ -33,6 +28,7 @@ const BASE = "/dashboard/organizations/org-1/attestor";
 describe("AttestorHubLayout", () => {
   beforeEach(() => {
     nav.replace.mockReset();
+    nav.push.mockReset();
     nav.pathname = BASE;
     org.role = "owner";
     org.capabilities = {};
@@ -47,7 +43,7 @@ describe("AttestorHubLayout", () => {
     expect(nav.replace).not.toHaveBeenCalled();
   });
 
-  it("gives an admin of an active attestor Offers, Queue, and Application with counts", () => {
+  it("gives an admin of an active attestor Offers and Queue with counts", () => {
     org.capabilities = { attestor: "active" };
     org.counts = { offers: 2, queue: 3, invitations: 0 };
     nav.pathname = `${BASE}/queue`;
@@ -55,15 +51,13 @@ describe("AttestorHubLayout", () => {
     render(<AttestorHubLayout>queue-page</AttestorHubLayout>);
 
     const sections = screen.getByRole("navigation", { name: /attestor sections/i });
-    const links = Array.from(sections.querySelectorAll("a"));
-    expect(links.map((link) => link.getAttribute("href"))).toEqual([
-      `${BASE}/offers`,
-      `${BASE}/queue`,
-      `${BASE}/application`,
-    ]);
-    expect(links[0]).toHaveTextContent("Offers2");
-    expect(links[1]).toHaveAttribute("aria-current", "page");
+    const buttons = Array.from(sections.querySelectorAll("button"));
+    expect(buttons.map((button) => button.textContent)).toEqual(["Offers2", "Queue3"]);
+    expect(buttons[1]).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("queue-page")).toBeInTheDocument();
+
+    fireEvent.click(buttons[0]);
+    expect(nav.push).toHaveBeenCalledWith(`${BASE}/offers`);
   });
 
   it("opens the section that needs attention when the tab has no section", async () => {
@@ -74,6 +68,16 @@ describe("AttestorHubLayout", () => {
 
     await waitFor(() => expect(nav.replace).toHaveBeenCalledWith(`${BASE}/offers`));
     expect(screen.queryByText("application")).toBeNull();
+  });
+
+  it("leaves the application behind once the org is an attestor", async () => {
+    org.capabilities = { attestor: "active" };
+    nav.pathname = `${BASE}/application`;
+
+    render(<AttestorHubLayout>application-page</AttestorHubLayout>);
+
+    await waitFor(() => expect(nav.replace).toHaveBeenCalledWith(`${BASE}/queue`));
+    expect(screen.queryByText("application-page")).toBeNull();
   });
 
   it("sends a plain member to their queue and hides a one-section nav", async () => {

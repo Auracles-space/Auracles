@@ -277,8 +277,9 @@ test("authenticated user can open Org Attestation workspaces", async ({
   await expect(page.getByRole("heading", { name: "Organizations" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Audit Ltd" })).toBeVisible();
 
+  // An approved attestor's tab opens on its work, not the finished application.
   await page.goto("/dashboard/organizations/org-1/attestor");
-  await expect(page.getByRole("heading", { name: "Attestor Application" })).toBeVisible();
+  await expect(page).toHaveURL(/\/attestor\/(offers|queue)$/);
 
   await page.goto("/admin/org-attestors");
   await expect(page).toHaveURL(/\/admin\/attestors/);

@@ -10,11 +10,10 @@ describe("attestorHubSections", () => {
     expect(attestorHubSections({ isAdmin: true, capability: "pending", counts })).toEqual([]);
   });
 
-  it("gives an admin of an active attestor offers, queue, and the application", () => {
+  it("gives an admin of an active attestor offers and the queue, not the application", () => {
     expect(attestorHubSections({ isAdmin: true, capability: "active", counts })).toEqual([
       { id: "offers", label: "Offers", count: 2 },
       { id: "queue", label: "Queue", count: 3 },
-      { id: "application", label: "Application", count: 0 },
     ]);
   });
 
@@ -28,7 +27,7 @@ describe("attestorHubSections", () => {
     for (const capability of ["suspended", "revoked"]) {
       expect(
         attestorHubSections({ isAdmin: true, capability, counts }).map((s) => s.id),
-      ).toEqual(["queue", "application"]);
+      ).toEqual(["queue"]);
     }
     expect(attestorHubSections({ isAdmin: false, capability: "suspended", counts })).toEqual([]);
   });
