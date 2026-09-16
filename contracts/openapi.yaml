@@ -73,6 +73,58 @@ components:
       - status
       title: AdminClarificationItem
       description: One clarification question and its answer, as the admin reads it.
+    AdminConfigUpdateItem:
+      description: Single admin platform configuration change request.
+      properties:
+        key:
+          enum:
+          - commission_rate
+          - min_payout_usd
+          - min_payout_ngn
+          - min_platform_withdrawal_ngn
+          - refund_window_hours
+          - attestation_fee_framework
+          - attestation_fee_contributor
+          - attestation_fee_operator
+          - attestation_fee_credential
+          - attestation_fee_review_quality
+          - attestation_fee_review_compliance
+          - attestation_fee_review_expert
+          - attestation_fee_review_provenance
+          - attestation_cohort_size
+          - attestation_completion_sla_days_framework
+          - attestation_completion_sla_days_contributor
+          - attestation_completion_sla_days_operator
+          - attestation_completion_sla_days_credential
+          - attestation_offer_accept_hours
+          - attestation_dispute_window_business_days
+          - saved_search_alert_cadence_hours
+          - consent_version_terms_of_service
+          - consent_version_privacy_policy
+          - account_deletion_grace_days
+          - data_export_expiry_days
+          - reputation_weights_framework
+          - reputation_weights_contributor
+          - reputation_weights_operator
+          - reputation_weights_attestor
+          - reputation_min_activity_framework
+          - reputation_min_activity_contributor
+          - reputation_min_activity_operator
+          - reputation_prior
+          - reputation_prior_strength_k
+          - reputation_dispute_penalty
+          title: Key
+          type: string
+        value:
+          maxLength: 1000
+          minLength: 1
+          title: Value
+          type: string
+      required:
+      - key
+      - value
+      title: AdminConfigUpdateItem
+      type: object
     AdminOrgAttestationCounts:
       description: How many of the org's Attestations are in flight versus finished.
       properties:
@@ -1433,57 +1485,6 @@ components:
       required:
       - items
       title: AdminConfigResponse
-      type: object
-    AdminConfigUpdateItem:
-      description: Single admin platform configuration change request.
-      properties:
-        key:
-          enum:
-          - commission_rate
-          - min_payout_usd
-          - min_payout_ngn
-          - refund_window_hours
-          - attestation_fee_framework
-          - attestation_fee_contributor
-          - attestation_fee_operator
-          - attestation_fee_credential
-          - attestation_fee_review_quality
-          - attestation_fee_review_compliance
-          - attestation_fee_review_expert
-          - attestation_fee_review_provenance
-          - attestation_cohort_size
-          - attestation_completion_sla_days_framework
-          - attestation_completion_sla_days_contributor
-          - attestation_completion_sla_days_operator
-          - attestation_completion_sla_days_credential
-          - attestation_offer_accept_hours
-          - attestation_dispute_window_business_days
-          - saved_search_alert_cadence_hours
-          - consent_version_terms_of_service
-          - consent_version_privacy_policy
-          - account_deletion_grace_days
-          - data_export_expiry_days
-          - reputation_weights_framework
-          - reputation_weights_contributor
-          - reputation_weights_operator
-          - reputation_weights_attestor
-          - reputation_min_activity_framework
-          - reputation_min_activity_contributor
-          - reputation_min_activity_operator
-          - reputation_prior
-          - reputation_prior_strength_k
-          - reputation_dispute_penalty
-          title: Key
-          type: string
-        value:
-          maxLength: 1000
-          minLength: 1
-          title: Value
-          type: string
-      required:
-      - key
-      - value
-      title: AdminConfigUpdateItem
       type: object
     AdminConnectorItem:
       description: 'One external OAuth connection for admin oversight.

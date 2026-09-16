@@ -27,6 +27,7 @@ DEFAULT_PLATFORM_CONFIG = {
     "commission_rate": "0.15",
     "min_payout_usd": "50",
     "min_payout_ngn": "50000",
+    "min_platform_withdrawal_ngn": "10000.00",
     "refund_window_hours": "48",
     "attestation_fee_framework": "250.00",
     "attestation_fee_contributor": "300.00",
@@ -397,6 +398,47 @@ async def test_admin_updates_ngn_payout_floor_within_range(
     assert stored is not None
     assert stored.value == "75000"
     assert stored.updated_by == admin_id
+
+
+async def test_superadmin_can_tune_the_platform_withdrawal_minimum(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_config_context: FakeRedis,
+) -> None:
+    """The ₦10,000 platform withdrawal minimum is super-admin-editable.
+
+    Treasury decision 10: the floor on withdrawing the platform's own money
+    moves without a deploy, inside the same naira bounds as payouts.
+    """
+    del migrated_database
+    admin_id, totp_secret = await create_admin_user()
+    assert totp_secret is not None
+    await open_step_up_window(admin_config_context, admin_id)
+
+    accepted = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Batch platform withdrawals into larger transfers.",
+            "updates": [{"key": "min_platform_withdrawal_ngn", "value": "25000"}],
+        },
+    )
+    below_floor = await client.patch(
+        "/v1/admin/config",
+        headers=auth_headers(admin_id),
+        json={
+            "reason": "Should not pass.",
+            "updates": [{"key": "min_platform_withdrawal_ngn", "value": "100"}],
+        },
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.get(PlatformConfig, "min_platform_withdrawal_ngn")
+
+    assert accepted.status_code == 200
+    assert below_floor.status_code == 422
+    assert stored is not None
+    assert stored.value == "25000"
 
 
 async def test_admin_config_rejects_missing_step_up_ranges_and_uneditable_keys(
