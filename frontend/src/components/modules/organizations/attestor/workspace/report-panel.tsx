@@ -223,7 +223,7 @@ export function ReportPanel({
 
       // Success
       toast.success("Report submitted successfully.");
-      router.push(`/dashboard/organizations/${orgId}/queue`);
+      router.push(`/dashboard/organizations/${orgId}/attestor/queue`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {

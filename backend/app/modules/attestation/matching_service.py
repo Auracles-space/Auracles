@@ -1277,6 +1277,177 @@ async def _rank_eligible_attestors(
     return [row[3] for row in scored_profiles[:limit]]
 
 
+# Reviews a revoked org has not delivered yet. Once the report is in
+# (report_submitted, disputed) the requestor or an admin settles it instead.
+UNDELIVERED_REVIEW_STATUSES = ("accepted", "in_review", "revision_requested")
+
+
+@dataclass
+class RevokedOrgWork:
+    """What revoking an org's attestor capability moved, for post-commit notices.
+
+    Attributes:
+        rematched: Attestations whose open offer was withdrawn, each with the
+            offers sent to the next cohort (empty when none was eligible).
+        returned: Undelivered reviews sent to admins, each with the user id of
+            the reviewer it was taken from (None when nobody was staffed).
+    """
+
+    org_id: UUID
+    rematched: list[tuple[Attestation, list[AttestationOffer]]]
+    returned: list[tuple[Attestation, UUID | None]]
+
+
+async def release_revoked_org_work(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    now: datetime | None = None,
+) -> RevokedOrgWork:
+    """Take open offers and undelivered reviews away from a revoked attestor org.
+
+    Runs inside the caller's revocation transaction so the capability change
+    and the moved work commit together. Open offers are superseded and, once
+    their cohort has no live offer left, the request is offered to the next
+    eligible cohort (or falls to ``needs_admin``). Undelivered reviews go to
+    ``needs_admin`` with the org cleared, which also locks the org out of the
+    workspace. The fee is credited only at escrow release, so no money moves.
+
+    Args:
+        db: Session with an open transaction.
+        org_id: The org whose attestor capability is being revoked.
+        now: Clock override for tests.
+
+    Returns:
+        The moved work, for ``notify_revoked_org_work`` after commit.
+    """
+    current_time = now or datetime.now(UTC)
+    work = RevokedOrgWork(org_id=org_id, rematched=[], returned=[])
+
+    open_offers = list(
+        (
+            await db.execute(
+                select(AttestationOffer)
+                .where(
+                    AttestationOffer.org_id == org_id,
+                    AttestationOffer.status == "offered",
+                )
+                .order_by(AttestationOffer.attestation_id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for offer in open_offers:
+        attestation = await _load_locked_attestation(db, offer.attestation_id)
+        offer.status = "superseded"
+        offer.responded_at = current_time
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="attestation_offer_withdrawn",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={
+                "offer_id": str(offer.id),
+                "org_id": str(org_id),
+                "reason": "attestor_capability_revoked",
+            },
+        )
+        next_offers: list[AttestationOffer] = []
+        if attestation.status == "offered" and await _current_cohort_is_exhausted(
+            db, attestation.id, offer.cohort_index
+        ):
+            attestation.status = "matching"
+            next_offers = await offer_next_cohort(
+                db, attestation_id=attestation.id, now=current_time
+            )
+        work.rematched.append((attestation, next_offers))
+
+    reviews = list(
+        (
+            await db.execute(
+                select(Attestation)
+                .where(
+                    Attestation.attestor_org_id == org_id,
+                    Attestation.status.in_(UNDELIVERED_REVIEW_STATUSES),
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for attestation in reviews:
+        reviewer_user_id = None
+        if attestation.reviewing_member_id is not None:
+            reviewer_user_id = await db.scalar(
+                select(OrgMember.user_id).where(
+                    OrgMember.id == attestation.reviewing_member_id
+                )
+            )
+        await db.execute(
+            update(AttestationOffer)
+            .where(
+                AttestationOffer.attestation_id == attestation.id,
+                AttestationOffer.org_id == org_id,
+                AttestationOffer.status == "accepted",
+            )
+            .values(status="superseded", responded_at=current_time)
+        )
+        previous_status = attestation.status
+        attestation.status = "needs_admin"
+        attestation.attestor_org_id = None
+        attestation.reviewing_member_id = None
+        attestation.accepted_at = None
+        attestation.completion_due_at = None
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="attestation_reassigned",
+            target_type="attestation",
+            target_id=attestation.id,
+            metadata={
+                "reason": "attestor_capability_revoked",
+                "attestor_org_id": str(org_id),
+                "previous_status": previous_status,
+            },
+        )
+        work.returned.append((attestation, reviewer_user_id))
+
+    if work.rematched or work.returned:
+        logger.bind(
+            module="attestation",
+            action="release_revoked_org_work",
+            org_id=str(org_id),
+        ).info(
+            "revoked_org_work_released",
+            withdrawn_offers=len(work.rematched),
+            returned_reviews=len(work.returned),
+        )
+    return work
+
+
+async def notify_revoked_org_work(db: AsyncSession, work: RevokedOrgWork) -> None:
+    """Send the notices for work moved off a revoked org (post-commit).
+
+    Args:
+        db: Session for resolving offer recipients.
+        work: The result of ``release_revoked_org_work``.
+    """
+    for attestation, next_offers in work.rematched:
+        await notify_new_offers(db, attestation, next_offers)
+        if attestation.status == "needs_admin":
+            attestation_notifications.notify_needs_admin(attestation)
+    for attestation, reviewer_user_id in work.returned:
+        if reviewer_user_id is not None:
+            attestation_notifications.notify_review_withdrawn_on_revocation(
+                attestation, org_id=work.org_id, reviewer_id=reviewer_user_id
+            )
+        attestation_notifications.notify_needs_admin(attestation)
+
+
 async def _next_cohort_index(db: AsyncSession, attestation_id: UUID) -> int:
     """Return the next zero-based cohort index for an Attestation."""
     current_max = await db.scalar(

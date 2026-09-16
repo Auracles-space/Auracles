@@ -162,6 +162,18 @@ describe("AttestorApplicationTab", () => {
       expect(listMyOrganizations).not.toHaveBeenCalled();
     });
 
+    it("marks every review stage done, Activation included, once active", async () => {
+      context.capabilities = { attestor: "active" };
+      render(<AttestorApplicationTab />);
+
+      await screen.findByText("Active");
+      for (const label of ["Submit", "Review and trial", "Approval", "Activation"]) {
+        const stage = screen.getByText(label, { selector: "li" });
+        expect(stage.className).toContain("text-success");
+        expect(stage).not.toHaveAttribute("aria-current");
+      }
+    });
+
     it("shows Suspended with the admin's reason instead of Active", async () => {
       context.capabilities = { attestor: "suspended" };
       vi.mocked(listMyOrganizations).mockResolvedValue({
@@ -363,5 +375,18 @@ describe("AttestorApplicationTab stepper", () => {
     expect(screen.getByText(/will start the calibration trial/i)).toBeInTheDocument();
     expect(screen.getByText("Review and trial").closest("li")).toHaveAttribute("aria-current", "step");
     expect(screen.queryByRole("button", { name: "Submit for review" })).toBeNull();
+  });
+
+  it("rings the open Submit step green, not orange, once the application is approved", async () => {
+    context.capabilities = { attestor: "active" };
+    vi.mocked(getOrgAttestorApplication).mockResolvedValue({
+      data: { ...readyDraft(), status: "approved" },
+    } as never);
+    render(<AttestorApplicationTab />);
+
+    const submit = await screen.findByRole("button", { name: "Step 6: Submit, complete" });
+    expect(submit).toHaveAttribute("aria-current", "step");
+    expect(submit.className).toContain("border-success");
+    expect(submit.className).not.toContain("border-accent");
   });
 });

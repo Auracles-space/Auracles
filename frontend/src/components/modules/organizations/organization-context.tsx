@@ -23,6 +23,8 @@ type OrganizationContextType = {
   kybVerifiedAt: string | null;
   /** Number of members, or null when the API entry does not carry it yet. */
   memberCount: number | null;
+  /** Attention counts (offers, queue, invitations) from the membership entry. */
+  counts: MyOrganizationResponse["counts"];
   isSuspended: boolean;
   markSuspended: () => void;
   refreshOrganization: () => Promise<void>;
@@ -54,6 +56,7 @@ export function OrganizationProvider({
   kybStatus = "verified",
   kybVerifiedAt = null,
   memberCount = null,
+  counts,
   refreshOrganization,
 }: {
   children: ReactNode;
@@ -65,6 +68,7 @@ export function OrganizationProvider({
   kybStatus?: string;
   kybVerifiedAt?: string | null;
   memberCount?: number | null;
+  counts?: MyOrganizationResponse["counts"];
   refreshOrganization?: () => Promise<void>;
 }) {
   // Seed from the org's persisted suspension state so the banner shows on load;
@@ -82,6 +86,7 @@ export function OrganizationProvider({
         kybStatus,
         kybVerifiedAt,
         memberCount,
+        counts,
         isSuspended,
         markSuspended: () => setIsSuspended(true),
         refreshOrganization: refreshOrganization ?? (async () => {}),

@@ -108,7 +108,9 @@ def test_offer_received_links_to_the_org_offers_tab(
         attestation, offer=offer, recipient_id=recipient
     )
 
-    assert recorder.sent[0]["link"] == f"/dashboard/organizations/{org_id}/offers"
+    assert (
+        recorder.sent[0]["link"] == f"/dashboard/organizations/{org_id}/attestor/offers"
+    )
 
 
 def test_attestor_side_events_link_to_the_workspace(
@@ -205,4 +207,4 @@ def test_withdrawn_tells_each_org_holding_an_open_offer(
 
     call = _by_user(recorder, recipient)
     assert call["notification_type"] == "attestation_withdrawn"
-    assert call["link"] == f"/dashboard/organizations/{org_id}/offers"
+    assert call["link"] == f"/dashboard/organizations/{org_id}/attestor/offers"

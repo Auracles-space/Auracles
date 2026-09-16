@@ -98,7 +98,7 @@ describe("OrganizationMembers", () => {
     );
   });
 
-  it("renders each member's role as a pill and links to the invitations tab", async () => {
+  it("renders each member's role as a pill and links to the invitations section", async () => {
     renderMembers("admin");
 
     expect(await screen.findByText("Ada Okafor")).toBeInTheDocument();
@@ -108,7 +108,7 @@ describe("OrganizationMembers", () => {
 
     expect(screen.getByRole("link", { name: /invite a member/i })).toHaveAttribute(
       "href",
-      "/dashboard/organizations/org-1/invitations",
+      "/dashboard/organizations/org-1/members/invitations",
     );
   });
 

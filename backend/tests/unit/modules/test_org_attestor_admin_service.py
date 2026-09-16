@@ -355,6 +355,48 @@ async def test_suspend_revokes_and_reinstate_regrants_roles(
     assert await _role_count(members[0]) == 1
 
 
+@pytest.mark.parametrize("status_value", ["revoked", "suspended"])
+async def test_revoked_or_suspended_org_cannot_reapply(
+    admin_state: None, status_value: str
+) -> None:
+    """A revoked org appeals through support; a suspended one awaits reinstatement.
+
+    Only an admin reinstating the capability brings the org back, so a fresh
+    application would only stall in review.
+    """
+    from fastapi import HTTPException
+
+    from app.modules.organizations.schemas import OrgAttestorApplicationCreateRequest
+
+    org_id, admin_id, members = await _org_with_members()
+    application_id = await _gated_application(org_id, members[0])
+    async with async_session_factory() as session:
+        await svc.admin_approve(
+            session, application_id=application_id, admin_id=admin_id
+        )
+    async with async_session_factory() as session:
+        await svc.admin_set_capability_status(
+            session, org_id=org_id, admin_id=admin_id, status_value=status_value
+        )
+
+    async with async_session_factory() as session:
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.create_application(
+                session,
+                org_id=org_id,
+                actor_id=members[0],
+                payload=OrgAttestorApplicationCreateRequest(
+                    sectors=["private_equity"],
+                    functions=["compliance"],
+                    jurisdictions=["united_states"],
+                    credentials_summary="Reapplication after losing attestor status.",
+                    professional_references="New references list.",
+                ),
+            )
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail["error_code"] == f"attestor_capability_{status_value}"
+
+
 async def test_needs_info_transition(admin_state: None) -> None:
     """Needs-info moves a submitted application to needs_info with feedback.
 

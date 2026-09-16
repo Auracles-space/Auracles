@@ -15,8 +15,9 @@ import {
 import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import { ReportPanel } from "./report-panel";
 
+const push = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push }),
 }));
 
 vi.mock("@/components/ui/toast", () => ({
@@ -307,6 +308,10 @@ describe("ReportPanel", () => {
           }),
         }),
       ),
+    );
+    // The queue lives under the Attestor tab; the old /queue URL only redirects.
+    await waitFor(() =>
+      expect(push).toHaveBeenCalledWith("/dashboard/organizations/org-1/attestor/queue"),
     );
   });
 });

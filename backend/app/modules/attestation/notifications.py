@@ -34,8 +34,8 @@ def _workspace_link(org_id: UUID, attestation_id: UUID) -> str:
 
 
 def _offers_link(org_id: UUID) -> str:
-    """Return the attestor org's offers tab."""
-    return f"/dashboard/organizations/{org_id}/offers"
+    """Return the offers section of the attestor org's Attestor tab."""
+    return f"/dashboard/organizations/{org_id}/attestor/offers"
 
 
 def _org_side_link(attestation: Attestation) -> str:
@@ -263,6 +263,25 @@ def notify_reassigned(
         dedupe_suffix=f"attestor:{old_attestor_id}",
         extra_payload={"old_attestor_id": str(old_attestor_id)},
         link=_org_side_link(attestation),
+    )
+
+
+def notify_review_withdrawn_on_revocation(
+    attestation: Attestation, *, org_id: UUID, reviewer_id: UUID
+) -> None:
+    """Tell a reviewer their review was taken back when the org lost attestor status."""
+    _dispatch(
+        user_id=reviewer_id,
+        notification_type="attestation_reassigned",
+        title="Attestation review withdrawn",
+        body=(
+            "Your organization's attestor status was revoked, so this review "
+            "was returned to an administrator to reassign."
+        ),
+        attestation=attestation,
+        dedupe_suffix=f"revoked:{org_id}:{reviewer_id}",
+        extra_payload={"org_id": str(org_id)},
+        link=f"/dashboard/organizations/{org_id}/attestor/queue",
     )
 
 

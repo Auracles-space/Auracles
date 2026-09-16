@@ -29,7 +29,7 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.integrations import s3
 from app.modules.admin.notifications import notify_admins_review_pending
-from app.modules.attestation import rubrics
+from app.modules.attestation import matching_service, rubrics
 from app.modules.attestation.credential_service import (
     CREDENTIAL_EVIDENCE_MAX_BYTES,
     CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS,
@@ -64,6 +64,7 @@ from app.modules.organizations.schemas import (
     OrgUndertakingsSignRequest,
 )
 from app.modules.organizations.tax_documents import ensure_tax_document_type_allowed
+from app.shared.errors import error_detail
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
 # Org tax-document uploads reuse the shared credential-evidence upload limits.
@@ -96,6 +97,14 @@ COI_VALIDITY = timedelta(days=365)
 
 # Statuses under the org's live-application uniqueness guarantee.
 _LIVE_STATUSES = ("draft", "submitted", "needs_info")
+# Why an org that lost attestor status cannot start a new application.
+_CAPABILITY_REAPPLY_REFUSALS = {
+    "revoked": "Your attestor status was revoked. Contact support to appeal.",
+    "suspended": (
+        "Your attestor status is suspended. It returns when an administrator "
+        "reinstates it."
+    ),
+}
 # Statuses that still accept content edits.
 _EDITABLE_STATUSES = ("draft", "needs_info")
 # Statuses that still accept gate completion (undertakings, tax, nomination).
@@ -201,7 +210,9 @@ async def create_application(
 
     Raises:
         HTTPException(409): If the org already holds an active attestor
-            capability, or a live application already exists.
+            capability, its capability is revoked or suspended
+            (``attestor_capability_revoked``/``_suspended``), or a live
+            application already exists.
     """
     if db.in_transaction():
         await db.rollback()
@@ -214,17 +225,26 @@ async def create_application(
             # included. Gating here is what lets this flow drop its own KYB
             # step: an org reaching the gate walk is already checked.
             await kyb_service.require_org_kyb_verified(db, org_id=org_id)
-            active_capability = await db.scalar(
-                select(OrgCapability).where(
+            capability_status = await db.scalar(
+                select(OrgCapability.status).where(
                     OrgCapability.org_id == org_id,
                     OrgCapability.capability == "attestor",
-                    OrgCapability.status == "active",
                 )
             )
-            if active_capability is not None:
+            if capability_status == "active":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Organization is already an active attestor.",
+                )
+            # Only an admin reinstating the capability brings a revoked or
+            # suspended org back, so a new application would stall in review.
+            if capability_status in _CAPABILITY_REAPPLY_REFUSALS:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=error_detail(
+                        f"attestor_capability_{capability_status}",
+                        _CAPABILITY_REAPPLY_REFUSALS[capability_status],
+                    ),
                 )
             application = OrgAttestorApplication(
                 org_id=org_id,
@@ -1520,16 +1540,19 @@ async def admin_set_capability_status(
 ) -> None:
     """Suspend, reinstate, or revoke an org's attestor capability.
 
-    Revocation marks the matching profile inactive; suspension leaves the
-    profile intact (matching filters on the capability status). Reinstatement
-    reactivates the profile. Every member's derived attestor role is then
-    re-evaluated after commit.
+    Revocation marks the matching profile inactive and moves the org's work
+    on: open offers go to the next eligible org and undelivered reviews go to
+    admins to reassign (``matching_service.release_revoked_org_work``).
+    Suspension leaves the profile and work intact (matching filters on the
+    capability status). Reinstatement reactivates the profile. Every member's
+    derived attestor role is then re-evaluated after commit.
 
     Raises:
         HTTPException(404): If the org has no attestor capability.
     """
     if db.in_transaction():
         await db.rollback()
+    revoked_work = None
     async with db.begin():
         capability = await db.scalar(
             select(OrgCapability)
@@ -1563,6 +1586,11 @@ async def admin_set_capability_status(
                 profile.active = False
             elif status_value == "active":
                 profile.active = True
+        if status_value == "revoked":
+            await db.flush()
+            revoked_work = await matching_service.release_revoked_org_work(
+                db, org_id=org_id
+            )
         await write_audit(
             db=db,
             actor_id=admin_id,
@@ -1572,6 +1600,10 @@ async def admin_set_capability_status(
             metadata={"status": status_value, "reason": reason},
         )
 
+    # Notify before the role sync: it runs its own transactions, which expire
+    # the attestations and offers these notices read.
+    if revoked_work is not None:
+        await matching_service.notify_revoked_org_work(db, revoked_work)
     await _sync_org_member_roles(db, org_id)
     if changed:
         org_notifications.notify_capability_status(
