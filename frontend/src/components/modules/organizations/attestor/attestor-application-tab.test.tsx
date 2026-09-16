@@ -162,6 +162,18 @@ describe("AttestorApplicationTab", () => {
       expect(listMyOrganizations).not.toHaveBeenCalled();
     });
 
+    it("marks every review stage done, Activation included, once active", async () => {
+      context.capabilities = { attestor: "active" };
+      render(<AttestorApplicationTab />);
+
+      await screen.findByText("Active");
+      for (const label of ["Submit", "Review and trial", "Approval", "Activation"]) {
+        const stage = screen.getByText(label, { selector: "li" });
+        expect(stage.className).toContain("text-success");
+        expect(stage).not.toHaveAttribute("aria-current");
+      }
+    });
+
     it("shows Suspended with the admin's reason instead of Active", async () => {
       context.capabilities = { attestor: "suspended" };
       vi.mocked(listMyOrganizations).mockResolvedValue({

@@ -39,6 +39,9 @@ export function ApplicationStatusBanner({
   children,
 }: ApplicationStatusBannerProps) {
   const tone = describeStatus(stage.status).tone;
+  // Activation is the last stage, so an active attestor has nothing left in
+  // progress: every stage reads as done rather than leaving Activation current.
+  const trackFinished = stage.status === "active";
   const feedbackClasses =
     tone === "error"
       ? "border-error/30 bg-error/10 text-error"
@@ -82,9 +85,9 @@ export function ApplicationStatusBanner({
         <ol className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {REVIEW_TRACK.map((label, index) => (
             <li
-              aria-current={index === trackIndex ? "step" : undefined}
+              aria-current={index === trackIndex && !trackFinished ? "step" : undefined}
               className={`rounded-xl border px-3 py-2 text-xs ${
-                index < trackIndex
+                index < trackIndex || trackFinished
                   ? "border-success/30 bg-success/10 text-success"
                   : index === trackIndex
                     ? "border-accent/50 bg-surface-2 font-semibold text-foreground"
