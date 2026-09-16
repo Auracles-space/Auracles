@@ -35,7 +35,13 @@ from app.modules.admin.treasury_schemas import (
     TreasurySummaryResponse,
 )
 from app.modules.developer.models import PartnerCommission, PartnerPayout
-from app.modules.financials.models import Escrow, Payout, ProviderFee, Transaction
+from app.modules.financials.models import (
+    Escrow,
+    Payout,
+    PlatformWithdrawal,
+    ProviderFee,
+    Transaction,
+)
 from app.modules.financials.service import (
     _ATTESTATION_EARNING_CLASS,
     _MARKETPLACE_EARNING_CLASS,
@@ -190,6 +196,22 @@ async def _provider_fees(db: AsyncSession, *, currency: str) -> Decimal:
     )
 
 
+async def _platform_withdrawals(db: AsyncSession, *, currency: str) -> Decimal:
+    """Return platform withdrawals that have left, or are leaving, the balance.
+
+    Pending and processing count as gone so a second withdrawal can never be
+    sized against money already on its way out; failed ones do not count.
+    """
+    return _money(
+        await db.scalar(
+            select(func.sum(PlatformWithdrawal.amount)).where(
+                PlatformWithdrawal.currency == currency,
+                PlatformWithdrawal.status.in_(("pending", "processing", "completed")),
+            )
+        )
+    )
+
+
 async def _currencies(db: AsyncSession) -> list[str]:
     """Return the withdrawable currency first, then every other ledger currency."""
     rows: Iterable[str] = (
@@ -199,7 +221,7 @@ async def _currencies(db: AsyncSession) -> list[str]:
     return [WITHDRAWABLE_CURRENCY, *others]
 
 
-async def _live_balances() -> dict[str, int] | None:
+async def live_balances() -> dict[str, int] | None:
     """Fetch the live Paystack balance, or None when Paystack cannot answer."""
     try:
         return await paystack.fetch_balance()
@@ -210,7 +232,7 @@ async def _live_balances() -> dict[str, int] | None:
         return None
 
 
-async def _currency_summary(
+async def currency_summary(
     db: AsyncSession,
     *,
     currency: str,
@@ -249,10 +271,14 @@ async def _currency_summary(
         commission_attestation_fees=commission["attestation_fees"],
         provider_fees=await _provider_fees(db, currency=currency),
         partner_commissions=await _total_partner_commissions(db, currency=currency),
+        platform_withdrawals=await _platform_withdrawals(db, currency=currency),
         total=_ZERO,
     )
     ours.total = (
-        sum(commission.values(), _ZERO) - ours.provider_fees - ours.partner_commissions
+        sum(commission.values(), _ZERO)
+        - ours.provider_fees
+        - ours.partner_commissions
+        - ours.platform_withdrawals
     )
 
     withdrawable_here = currency == WITHDRAWABLE_CURRENCY
@@ -292,10 +318,10 @@ async def get_treasury_summary(db: AsyncSession) -> TreasurySummaryResponse:
     Returns:
         One block per currency, the withdrawable currency first.
     """
-    balances = await _live_balances()
+    balances = await live_balances()
     fetched_at = datetime.now(UTC) if balances is not None else None
     currencies = [
-        await _currency_summary(db, currency=currency, balances=balances)
+        await currency_summary(db, currency=currency, balances=balances)
         for currency in await _currencies(db)
     ]
     return TreasurySummaryResponse(

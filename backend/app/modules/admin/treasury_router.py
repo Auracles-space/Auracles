@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.core.dependencies import (
     DatabaseSession,
@@ -21,10 +21,17 @@ from app.core.dependencies import (
 from app.modules.admin.treasury_schemas import (
     PlatformBankAccountResponse,
     PlatformBankAccountSetRequest,
+    PlatformWithdrawalItem,
+    PlatformWithdrawalRequest,
+    PlatformWithdrawalsResponse,
     TreasurySummaryResponse,
 )
 from app.modules.auth.models import User
-from app.modules.financials import platform_bank_account, treasury
+from app.modules.financials import (
+    platform_bank_account,
+    platform_withdrawals,
+    treasury,
+)
 
 router = APIRouter(prefix="/admin/treasury", tags=["Admin Treasury"])
 
@@ -85,5 +92,48 @@ async def admin_set_platform_bank_account(
 ) -> PlatformBankAccountResponse:
     """Set or replace the platform bank account."""
     return await platform_bank_account.set_platform_bank_account(
+        db, actor_id=admin.id, payload=payload
+    )
+
+
+@router.get(
+    "/withdrawals",
+    response_model=PlatformWithdrawalsResponse,
+    summary="Platform withdrawal history (platform admin)",
+    description="Platform withdrawals newest first, with destination last four only.",
+)
+async def admin_platform_withdrawals(
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> PlatformWithdrawalsResponse:
+    """Return platform withdrawal history."""
+    del admin
+    return await platform_withdrawals.list_platform_withdrawals(
+        db, page=page, page_size=page_size
+    )
+
+
+@router.post(
+    "/withdrawals",
+    response_model=PlatformWithdrawalItem,
+    status_code=202,
+    dependencies=[Depends(require_step_up_after(require_superadmin))],
+    summary="Withdraw platform money (super-admin)",
+    description=(
+        "Queues a transfer of platform money to the platform bank account. "
+        "Refused above the withdrawable amount (402), below the minimum, while "
+        "another withdrawal is in flight (409), or while the bank account is "
+        "inside its 24-hour hold. Super-admin only, with step-up."
+    ),
+)
+async def admin_request_platform_withdrawal(
+    payload: PlatformWithdrawalRequest,
+    admin: SuperAdmin,
+    db: DatabaseSession,
+) -> PlatformWithdrawalItem:
+    """Request a platform withdrawal."""
+    return await platform_withdrawals.request_platform_withdrawal(
         db, actor_id=admin.id, payload=payload
     )

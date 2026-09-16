@@ -548,6 +548,69 @@ class PlatformBankAccount(Base):
     )
 
 
+class PlatformWithdrawal(Base):
+    """One transfer of the platform's own money to its bank account.
+
+    ``pending`` → ``processing`` once Paystack accepted the transfer, then
+    ``completed`` or ``failed`` from the transfer webhook. Pending, processing
+    and completed withdrawals all count against the platform's money; a failed
+    one does not, which is how its amount returns to withdrawable (decision 8).
+
+    A partial unique index allows at most one pending or processing withdrawal
+    per currency, so two racing requests cannot both pass the balance check.
+    ``provider_ref`` is our own ``platform-withdrawal-<id>`` reference: the
+    idempotency key for the transfer and the value the webhook carries back.
+    """
+
+    __tablename__ = "platform_withdrawals"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_platform_withdrawals_amount_positive"),
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'completed', 'failed')",
+            name="ck_platform_withdrawals_status",
+        ),
+        Index(
+            "uq_platform_withdrawals_one_in_flight",
+            "currency",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'processing')"),
+        ),
+        Index("idx_platform_withdrawals_requested_at", "requested_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    bank_account_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("platform_bank_accounts.id"),
+        nullable=False,
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="pending"
+    )
+    provider_ref: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("clock_timestamp()"),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class PlatformConfig(Base):
     """Mutable platform-wide financial configuration row."""
 

@@ -351,6 +351,7 @@ async def test_summary_splits_users_money_from_ours(
         "commission_attestation_fees": "15000.00",
         "provider_fees": "250.00",
         "partner_commissions": "500.00",
+        "platform_withdrawals": "0.00",
         "total": "15750.00",
     }
     assert ngn["live_balance"] == "259000.00"

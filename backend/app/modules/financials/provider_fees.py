@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from loguru import logger
@@ -86,3 +86,14 @@ async def record_provider_fee(
             source_id=str(source_id),
         ).info("provider_fee_recorded", provider=provider, origin=origin)
     return fee_id is not None
+
+
+def paystack_transfer_fee_minor(transfer: dict[str, Any]) -> int | None:
+    """Return the fee Paystack charged on a transfer, in kobo, if reported.
+
+    Paystack reports it as ``fee_charged`` on transfer objects. Treasury open
+    item A: confirm against a live test-mode ``transfer.success`` payload; the
+    balance-gap warning surfaces any fee this misses.
+    """
+    fee = transfer.get("fee_charged")
+    return fee if isinstance(fee, int) and fee > 0 else None

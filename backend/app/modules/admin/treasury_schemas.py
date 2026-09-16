@@ -34,6 +34,7 @@ class TreasuryOurMoney(BaseModel):
     commission_attestation_fees: Decimal
     provider_fees: Decimal
     partner_commissions: Decimal
+    platform_withdrawals: Decimal
     total: Decimal
 
 
@@ -91,3 +92,40 @@ class PlatformBankAccountResponse(BaseModel):
     """The active platform bank account, or null before one is set."""
 
     bank_account: PlatformBankAccountItem | None
+
+
+class PlatformWithdrawalRequest(BaseModel):
+    """Request body for withdrawing platform money to the platform bank account.
+
+    NGN only in v1; the currency is implied. Two decimal places at most.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+
+
+class PlatformWithdrawalItem(BaseModel):
+    """One platform withdrawal, with its destination shown as last four only."""
+
+    id: UUID
+    amount: Decimal
+    currency: str
+    status: str
+    reference: str
+    bank_name: str
+    account_last4: str
+    failure_reason: str | None
+    requested_by: UUID
+    requested_at: datetime
+    completed_at: datetime | None
+    failed_at: datetime | None
+
+
+class PlatformWithdrawalsResponse(BaseModel):
+    """Paginated platform withdrawal history, newest first."""
+
+    withdrawals: list[PlatformWithdrawalItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)

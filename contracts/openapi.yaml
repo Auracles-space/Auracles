@@ -13573,6 +13573,117 @@ components:
       - bank_code
       title: PlatformBankAccountSetRequest
       type: object
+    PlatformWithdrawalItem:
+      description: One platform withdrawal, with its destination shown as last four only.
+      properties:
+        account_last4:
+          title: Account Last4
+          type: string
+        amount:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Amount
+          type: string
+        bank_name:
+          title: Bank Name
+          type: string
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completed At
+        currency:
+          title: Currency
+          type: string
+        failed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Failed At
+        failure_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Reason
+        id:
+          format: uuid
+          title: Id
+          type: string
+        reference:
+          title: Reference
+          type: string
+        requested_at:
+          format: date-time
+          title: Requested At
+          type: string
+        requested_by:
+          format: uuid
+          title: Requested By
+          type: string
+        status:
+          title: Status
+          type: string
+      required:
+      - id
+      - amount
+      - currency
+      - status
+      - reference
+      - bank_name
+      - account_last4
+      - failure_reason
+      - requested_by
+      - requested_at
+      - completed_at
+      - failed_at
+      title: PlatformWithdrawalItem
+      type: object
+    PlatformWithdrawalRequest:
+      additionalProperties: false
+      description: 'Request body for withdrawing platform money to the platform bank account.
+
+
+        NGN only in v1; the currency is implied. Two decimal places at most.'
+      properties:
+        amount:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
+            type: string
+          title: Amount
+      required:
+      - amount
+      title: PlatformWithdrawalRequest
+      type: object
+    PlatformWithdrawalsResponse:
+      description: Paginated platform withdrawal history, newest first.
+      properties:
+        page:
+          minimum: 1.0
+          title: Page
+          type: integer
+        page_size:
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+        withdrawals:
+          items:
+            $ref: '#/components/schemas/PlatformWithdrawalItem'
+          title: Withdrawals
+          type: array
+      required:
+      - withdrawals
+      - total
+      - page
+      - page_size
+      title: PlatformWithdrawalsResponse
+      type: object
     PreviewArtifactRequest:
       description: Request body for selecting a Framework preview Artifact.
       properties:
@@ -15599,6 +15710,10 @@ components:
           pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
           title: Partner Commissions
           type: string
+        platform_withdrawals:
+          pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+          title: Platform Withdrawals
+          type: string
         provider_fees:
           pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
           title: Provider Fees
@@ -15614,6 +15729,7 @@ components:
       - commission_attestation_fees
       - provider_fees
       - partner_commissions
+      - platform_withdrawals
       - total
       title: TreasuryOurMoney
       type: object
@@ -18959,6 +19075,75 @@ paths:
       security:
       - HTTPBearer: []
       summary: Platform treasury summary (platform admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/withdrawals:
+    get:
+      description: Platform withdrawals newest first, with destination last four only.
+      operationId: admin_platform_withdrawals_v1_admin_treasury_withdrawals_get
+      parameters:
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformWithdrawalsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Platform withdrawal history (platform admin)
+      tags:
+      - Admin Treasury
+    post:
+      description: Queues a transfer of platform money to the platform bank account. Refused above
+        the withdrawable amount (402), below the minimum, while another withdrawal is in flight (409),
+        or while the bank account is inside its 24-hour hold. Super-admin only, with step-up.
+      operationId: admin_request_platform_withdrawal_v1_admin_treasury_withdrawals_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformWithdrawalRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformWithdrawalItem'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Withdraw platform money (super-admin)
       tags:
       - Admin Treasury
   /v1/admin/users:

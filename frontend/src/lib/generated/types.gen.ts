@@ -4816,6 +4816,43 @@ export type PlatformBankAccountSetRequest = {
 };
 
 /**
+ * One platform withdrawal, with its destination shown as last four only.
+ */
+export type PlatformWithdrawalItem = {
+    account_last4: string;
+    amount: string;
+    bank_name: string;
+    completed_at: (string | null);
+    currency: string;
+    failed_at: (string | null);
+    failure_reason: (string | null);
+    id: string;
+    reference: string;
+    requested_at: string;
+    requested_by: string;
+    status: string;
+};
+
+/**
+ * Request body for withdrawing platform money to the platform bank account.
+ *
+ * NGN only in v1; the currency is implied. Two decimal places at most.
+ */
+export type PlatformWithdrawalRequest = {
+    amount: (number | string);
+};
+
+/**
+ * Paginated platform withdrawal history, newest first.
+ */
+export type PlatformWithdrawalsResponse = {
+    page: number;
+    page_size: number;
+    total: number;
+    withdrawals: Array<PlatformWithdrawalItem>;
+};
+
+/**
  * Request body for selecting a Framework preview Artifact.
  */
 export type PreviewArtifactRequest = {
@@ -5611,6 +5648,7 @@ export type TreasuryOurMoney = {
     commission_framework_sales: string;
     commission_project_milestones: string;
     partner_commissions: string;
+    platform_withdrawals: string;
     provider_fees: string;
     total: string;
 };
@@ -6642,6 +6680,25 @@ export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutError = (HTT
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetResponse = (TreasurySummaryResponse);
 
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetError = unknown;
+
+export type AdminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type AdminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGetResponse = (PlatformWithdrawalsResponse);
+
+export type AdminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGetError = (HTTPValidationError);
+
+export type AdminRequestPlatformWithdrawalV1AdminTreasuryWithdrawalsPostData = {
+    body: PlatformWithdrawalRequest;
+};
+
+export type AdminRequestPlatformWithdrawalV1AdminTreasuryWithdrawalsPostResponse = (PlatformWithdrawalItem);
+
+export type AdminRequestPlatformWithdrawalV1AdminTreasuryWithdrawalsPostError = (HTTPValidationError);
 
 export type ListAdminUsersV1AdminUsersGetData = {
     query?: {

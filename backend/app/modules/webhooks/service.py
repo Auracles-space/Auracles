@@ -50,7 +50,13 @@ from app.modules.financials import invoices as financials_invoices
 from app.modules.financials import notifications as financial_notifications
 from app.modules.financials.ledger import record_financial_event
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
-from app.modules.financials.provider_fees import record_provider_fee
+from app.modules.financials.platform_withdrawals import (
+    apply_withdrawal_transfer_outcome,
+)
+from app.modules.financials.provider_fees import (
+    paystack_transfer_fee_minor,
+    record_provider_fee,
+)
 from app.modules.financials.refunds import reverse_refund, settle_refund
 from app.modules.frameworks.models import Framework, License
 from app.modules.notifications.service import create_notification
@@ -1607,6 +1613,22 @@ async def _handle_transfer_event(
     payout.status = payout_status
     if payout_status == "completed":
         payout.completed_at = datetime.now(UTC)
+        fee_minor = (
+            paystack_transfer_fee_minor(_event_object(event))
+            if provider == "paystack"
+            else None
+        )
+        if fee_minor is not None:
+            await record_provider_fee(
+                db,
+                provider="paystack",
+                source_type="payout",
+                source_id=payout.id,
+                amount_minor=fee_minor,
+                currency=payout.currency,
+                provider_ref=transfer_id,
+                origin="webhook",
+            )
     await write_audit(
         db=db,
         actor_id=payout.contributor_id,
@@ -2077,6 +2099,23 @@ async def _dispatch_paystack_event(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
         return "processed", None, failure_notices
+    if event_type in {"transfer.success", "transfer.failed", "transfer.reversed"}:
+        transfer_reference = _event_object_id(envelope)
+        withdrawal_notices = (
+            await apply_withdrawal_transfer_outcome(
+                db,
+                reference=transfer_reference,
+                outcome=("completed" if event_type == "transfer.success" else "failed"),
+                transfer=_event_object(envelope),
+            )
+            if transfer_reference is not None
+            else None
+        )
+        if withdrawal_notices is not None:
+            await _mark_event_status(
+                db, event_id=event_id, status_="processed", provider="paystack"
+            )
+            return "processed", None, withdrawal_notices
     if event_type == "transfer.success":
         # Terminal on this rail, unlike Stripe. A Paystack transfer settles
         # directly to the beneficiary's bank rather than into a provider-held
