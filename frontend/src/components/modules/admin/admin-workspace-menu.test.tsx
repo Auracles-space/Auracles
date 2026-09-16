@@ -112,4 +112,18 @@ describe("AdminWorkspaceShell menu on small screens", () => {
     fireEvent.click(screen.getByRole("button", { name: /Close menu/i }));
     expect(screen.queryByRole("dialog", { name: /Admin navigation/i })).toBeNull();
   });
+
+  it("keeps the page beside the sidebar on wide screens", () => {
+    // An empty drawer wrapper sat in the layout grid between the sidebar and
+    // the page, pushing the page onto a second row under the sidebar.
+    renderShell();
+
+    const page = screen.getByText("Treasury page").parentElement;
+    expect(page?.previousElementSibling?.tagName).toBe("ASIDE");
+    const gridItems = Array.from(page?.parentElement?.children ?? []);
+    const wideScreenItems = gridItems.filter(
+      (item) => !item.className.includes("xl:hidden"),
+    );
+    expect(wideScreenItems).toHaveLength(2);
+  });
 });

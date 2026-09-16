@@ -196,19 +196,15 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
           </nav>
         </aside>
 
-        <div id="admin-nav-drawer">
-          <AdminNavDrawer onClose={closeMenu} open={menuOpen}>
-            <AdminWorkspaceIntro />
-            <AdminNavLinks
-              badgeCounts={badgeCounts}
-              onNavigate={closeMenu}
-              pathname={pathname}
-            />
-          </AdminNavDrawer>
-        </div>
-
         <div className="min-w-0">{children}</div>
       </div>
+
+      {/* Outside the layout grid: even closed, a grid child would take the
+          page's column on wide screens and push the page under the sidebar. */}
+      <AdminNavDrawer onClose={closeMenu} open={menuOpen}>
+        <AdminWorkspaceIntro />
+        <AdminNavLinks badgeCounts={badgeCounts} onNavigate={closeMenu} pathname={pathname} />
+      </AdminNavDrawer>
     </section>
   );
 }

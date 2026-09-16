@@ -281,6 +281,7 @@ export function AdminNavDrawer({
       <div
         aria-label="Admin navigation"
         aria-modal="true"
+        id="admin-nav-drawer"
         className="absolute inset-y-0 left-0 grid w-[min(20rem,88vw)] content-start gap-4 overflow-y-auto border-r border-border-default bg-background p-4 shadow-sm motion-safe:animate-[fade-in_120ms_ease-out]"
         role="dialog"
       >
