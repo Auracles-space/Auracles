@@ -1097,6 +1097,7 @@ export type AdminPayoutDirectoryResponse = {
  */
 export type AdminPayoutItem = {
     amount: string;
+    awaiting_otp?: boolean;
     beneficiary_id: string;
     beneficiary_name?: (string | null);
     beneficiary_type: 'contributor' | 'org';
@@ -4828,6 +4829,7 @@ export type PlatformBankAccountSetRequest = {
 export type PlatformWithdrawalItem = {
     account_last4: string;
     amount: string;
+    awaiting_otp: boolean;
     bank_name: string;
     completed_at: (string | null);
     currency: string;

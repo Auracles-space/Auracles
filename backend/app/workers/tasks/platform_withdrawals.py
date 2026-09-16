@@ -22,6 +22,10 @@ from app.core.security import decrypt_payout_provider_account_id
 from app.integrations import paystack
 from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.financials.models import PlatformBankAccount, PlatformWithdrawal
+from app.modules.financials.transfer_holds import (
+    PAYSTACK_OTP_STATUS,
+    alert_transfer_held_for_otp,
+)
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -59,7 +63,7 @@ async def _send_platform_withdrawal(withdrawal_id: str) -> dict[str, str]:
         if withdrawal.status != "pending":
             return {"withdrawal_id": withdrawal_id, "status": withdrawal.status}
 
-        await paystack.initiate_transfer(
+        transfer = await paystack.initiate_transfer(
             amount=withdrawal.amount,
             currency=withdrawal.currency,
             recipient=decrypt_payout_provider_account_id(
@@ -78,6 +82,12 @@ async def _send_platform_withdrawal(withdrawal_id: str) -> dict[str, str]:
             # The webhook may already have settled it; never move it backwards.
             if locked.status == "pending":
                 locked.status = "processing"
+            held_for_otp = (
+                locked.status == "processing"
+                and transfer.status == PAYSTACK_OTP_STATUS
+            )
+            if held_for_otp:
+                locked.awaiting_otp = True
             await write_audit(
                 db=db,
                 actor_id=None,
@@ -87,6 +97,17 @@ async def _send_platform_withdrawal(withdrawal_id: str) -> dict[str, str]:
                 metadata={"amount": str(locked.amount), "currency": locked.currency},
             )
             resulting_status = locked.status
+            amount = locked.amount
+            currency = locked.currency
+    if held_for_otp:
+        alert_transfer_held_for_otp(
+            notify=notify_admins_review_pending,
+            what="A platform withdrawal",
+            target_id=parsed_id,
+            amount=amount,
+            currency=currency,
+            link="/admin/treasury",
+        )
     return {"withdrawal_id": withdrawal_id, "status": resulting_status}
 
 

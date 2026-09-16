@@ -147,6 +147,7 @@ function mockPage({
   summaryResult = summary(),
   bankAccount = BANK_ACCOUNT as typeof BANK_ACCOUNT | null,
   transfers = [] as (typeof TRANSFER)[],
+  withdrawals = [] as Record<string, unknown>[],
 } = {}) {
   vi.mocked(loadCurrentUserSession).mockResolvedValue({
     is_superadmin: superadmin,
@@ -154,7 +155,7 @@ function mockPage({
   vi.mocked(getSummary).mockResolvedValue(summaryResult as never);
   vi.mocked(getBankAccount).mockResolvedValue(ok({ bank_account: bankAccount }) as never);
   vi.mocked(listWithdrawals).mockResolvedValue(
-    ok({ withdrawals: [], total: 0, page: 1, page_size: 20 }) as never,
+    ok({ withdrawals, total: withdrawals.length, page: 1, page_size: 20 }) as never,
   );
   vi.mocked(listTransfers).mockResolvedValue(
     ok({ transfers, total: transfers.length, page: 1, page_size: 20 }) as never,
@@ -353,5 +354,35 @@ describe("TreasuryPanel", () => {
       expect(screen.getByRole("button", { name: /^Withdraw$/i })).toBeEnabled();
       expect(screen.queryByText(/Withdrawals open in/)).not.toBeInTheDocument();
     });
+  });
+
+  it("says a withdrawal is waiting for a Paystack OTP", async () => {
+    mockPage({
+      superadmin: true,
+      withdrawals: [
+        {
+          id: "w-1",
+          amount: "10000.00",
+          currency: "NGN",
+          status: "processing",
+          reference: "platform-withdrawal-w-1",
+          bank_name: "Fidelity Bank",
+          account_last4: "5047",
+          failure_reason: null,
+          awaiting_otp: true,
+          requested_by: "admin-1",
+          requested_at: "2026-09-16T12:26:52Z",
+          completed_at: null,
+          failed_at: null,
+        },
+      ],
+    });
+
+    render(<TreasuryPanel />);
+
+    expect(
+      await screen.findByText(/waiting for a Paystack OTP/i, { selector: "li" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/Waiting for OTP/i).length).toBeGreaterThan(0);
   });
 });

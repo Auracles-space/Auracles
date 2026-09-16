@@ -1614,6 +1614,7 @@ async def _handle_transfer_event(
         return []
     previous_status = payout.status
     payout.status = payout_status
+    payout.awaiting_otp = False
     if payout_status == "completed":
         payout.completed_at = datetime.now(UTC)
         fee_minor = (

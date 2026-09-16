@@ -349,6 +349,11 @@ class Payout(Base):
         server_default="pending",
     )
     provider_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Paystack accepted the transfer but is holding it for a one-time code
+    # (transfer OTP is on for the account); cleared when the transfer settles.
+    awaiting_otp: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     initiated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -601,6 +606,12 @@ class PlatformWithdrawal(Base):
     )
     provider_ref: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Paystack accepted the transfer but is holding it for a one-time code
+    # (transfer OTP is on for the account). No webhook follows until someone
+    # finalizes it, so the page says so instead of showing plain processing.
+    awaiting_otp: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     requested_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )

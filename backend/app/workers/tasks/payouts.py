@@ -19,7 +19,12 @@ from app.core.audit import write_audit
 from app.core.database import async_session_factory
 from app.core.security import decrypt_payout_provider_account_id
 from app.integrations import paystack, stripe
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.financials.models import Payout, PayoutAccount
+from app.modules.financials.transfer_holds import (
+    PAYSTACK_OTP_STATUS,
+    alert_transfer_held_for_otp,
+)
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -78,6 +83,7 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
         # so a mismatch would address the money nowhere.
         provider = payout_account.provider
 
+        held_for_otp = False
         if provider == "paystack":
             # Our own reference, not Paystack's id, is the durable handle: it
             # is the idempotency key for a retried transfer AND the only value
@@ -94,6 +100,7 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
             )
             provider_ref = reference
             audit_ref = paystack_transfer.transfer_code or reference
+            held_for_otp = paystack_transfer.status == PAYSTACK_OTP_STATUS
         else:
             stripe_transfer = await stripe.create_transfer(
                 amount=payout.net_amount,
@@ -116,6 +123,7 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
                 raise ValueError("Payout not found.")
             payout.status = "processing"
             payout.provider_ref = provider_ref
+            payout.awaiting_otp = held_for_otp
             await write_audit(
                 db=db,
                 actor_id=payout.contributor_id,
@@ -127,6 +135,17 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
                     "transfer_ref": audit_ref[-4:],
                     "net_amount": str(payout.net_amount),
                 },
+            )
+            payout_amount = payout.net_amount
+            payout_currency = payout.currency
+        if held_for_otp:
+            alert_transfer_held_for_otp(
+                notify=notify_admins_review_pending,
+                what="A payout",
+                target_id=parsed_payout_id,
+                amount=payout_amount,
+                currency=payout_currency,
+                link="/admin/payouts",
             )
         return {
             "payout_id": str(parsed_payout_id),

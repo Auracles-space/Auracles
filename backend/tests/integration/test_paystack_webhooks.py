@@ -1331,6 +1331,28 @@ async def test_transfer_success_completes_the_payout(
     assert ledger.provider == "paystack"
 
 
+async def test_transfer_success_clears_a_payout_otp_hold(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """Once Paystack settles a payout, it is no longer waiting for an OTP."""
+    payout_id, reference = await create_processing_paystack_payout()
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(Payout).where(Payout.id == payout_id).values(awaiting_otp=True)
+            )
+    paystack_context["event"] = transfer_event("transfer.success", reference=reference)
+
+    await post_webhook(client)
+
+    async with async_session_factory() as session:
+        payout = await session.get(Payout, payout_id)
+    assert payout is not None
+    assert payout.status == "completed"
+    assert payout.awaiting_otp is False
+
+
 async def test_transfer_failed_records_the_cause_and_alerts_admins(
     client: AsyncClient,
     paystack_context: dict[str, Any],

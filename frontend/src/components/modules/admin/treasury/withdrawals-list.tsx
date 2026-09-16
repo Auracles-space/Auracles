@@ -11,6 +11,18 @@ import type { PlatformWithdrawalItem } from "@/lib/generated/types.gen";
 import { formatMoney } from "@/lib/marketplace/format";
 
 /**
+ * Render a withdrawal's status, naming an OTP hold instead of "processing".
+ *
+ * @param withdrawal - The withdrawal.
+ */
+function WithdrawalStatus({ withdrawal }: { withdrawal: PlatformWithdrawalItem }) {
+  if (withdrawal.status === "processing" && withdrawal.awaiting_otp) {
+    return <Pill tone="warning">Waiting for OTP</Pill>;
+  }
+  return <Pill tone={toneForStatus(withdrawal.status)}>{withdrawal.status}</Pill>;
+}
+
+/**
  * Render the withdrawal history.
  *
  * @param withdrawals - Withdrawals, newest first.
@@ -33,7 +45,7 @@ export function WithdrawalsList({ withdrawals }: { withdrawals: PlatformWithdraw
                   <span className="font-semibold tabular-nums">
                     {formatMoney(withdrawal.amount, withdrawal.currency)}
                   </span>
-                  <Pill tone={toneForStatus(withdrawal.status)}>{withdrawal.status}</Pill>
+                  <WithdrawalStatus withdrawal={withdrawal} />
                 </div>
                 <span className="text-foreground-muted">
                   {withdrawal.bank_name} ****{withdrawal.account_last4}
@@ -68,7 +80,7 @@ export function WithdrawalsList({ withdrawals }: { withdrawals: PlatformWithdraw
                     {withdrawal.bank_name} ****{withdrawal.account_last4}
                   </td>
                   <td className="py-3">
-                    <Pill tone={toneForStatus(withdrawal.status)}>{withdrawal.status}</Pill>
+                    <WithdrawalStatus withdrawal={withdrawal} />
                     {withdrawal.failure_reason ? (
                       <p className="mt-1 text-xs text-error">{withdrawal.failure_reason}</p>
                     ) : null}
