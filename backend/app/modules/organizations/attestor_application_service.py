@@ -64,6 +64,7 @@ from app.modules.organizations.schemas import (
     OrgUndertakingsSignRequest,
 )
 from app.modules.organizations.tax_documents import ensure_tax_document_type_allowed
+from app.shared.errors import error_detail
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
 # Org tax-document uploads reuse the shared credential-evidence upload limits.
@@ -96,6 +97,14 @@ COI_VALIDITY = timedelta(days=365)
 
 # Statuses under the org's live-application uniqueness guarantee.
 _LIVE_STATUSES = ("draft", "submitted", "needs_info")
+# Why an org that lost attestor status cannot start a new application.
+_CAPABILITY_REAPPLY_REFUSALS = {
+    "revoked": "Your attestor status was revoked. Contact support to appeal.",
+    "suspended": (
+        "Your attestor status is suspended. It returns when an administrator "
+        "reinstates it."
+    ),
+}
 # Statuses that still accept content edits.
 _EDITABLE_STATUSES = ("draft", "needs_info")
 # Statuses that still accept gate completion (undertakings, tax, nomination).
@@ -201,7 +210,9 @@ async def create_application(
 
     Raises:
         HTTPException(409): If the org already holds an active attestor
-            capability, or a live application already exists.
+            capability, its capability is revoked or suspended
+            (``attestor_capability_revoked``/``_suspended``), or a live
+            application already exists.
     """
     if db.in_transaction():
         await db.rollback()
@@ -214,17 +225,26 @@ async def create_application(
             # included. Gating here is what lets this flow drop its own KYB
             # step: an org reaching the gate walk is already checked.
             await kyb_service.require_org_kyb_verified(db, org_id=org_id)
-            active_capability = await db.scalar(
-                select(OrgCapability).where(
+            capability_status = await db.scalar(
+                select(OrgCapability.status).where(
                     OrgCapability.org_id == org_id,
                     OrgCapability.capability == "attestor",
-                    OrgCapability.status == "active",
                 )
             )
-            if active_capability is not None:
+            if capability_status == "active":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Organization is already an active attestor.",
+                )
+            # Only an admin reinstating the capability brings a revoked or
+            # suspended org back, so a new application would stall in review.
+            if capability_status in _CAPABILITY_REAPPLY_REFUSALS:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=error_detail(
+                        f"attestor_capability_{capability_status}",
+                        _CAPABILITY_REAPPLY_REFUSALS[capability_status],
+                    ),
                 )
             application = OrgAttestorApplication(
                 org_id=org_id,
