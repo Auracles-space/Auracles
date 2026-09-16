@@ -155,6 +155,7 @@ async def test_admin_lists_payouts_without_account_details(
     assert item["status"] == "failed"
     assert item["net_amount"] == "270.00"
     assert item["provider_ref"] == "tr_failed_123"
+    assert item["awaiting_otp"] is False
     # PII guard: the payout-account destination must never leak.
     assert "acct_secret_destination" not in response.text
     assert "provider_account_id" not in item

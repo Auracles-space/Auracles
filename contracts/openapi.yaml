@@ -3058,6 +3058,10 @@ components:
         amount:
           title: Amount
           type: string
+        awaiting_otp:
+          default: false
+          title: Awaiting Otp
+          type: boolean
         beneficiary_id:
           format: uuid
           title: Beneficiary Id
@@ -13595,6 +13599,9 @@ components:
           pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
           title: Amount
           type: string
+        awaiting_otp:
+          title: Awaiting Otp
+          type: boolean
         bank_name:
           title: Bank Name
           type: string
@@ -13645,6 +13652,7 @@ components:
       - bank_name
       - account_last4
       - failure_reason
+      - awaiting_otp
       - requested_by
       - requested_at
       - completed_at

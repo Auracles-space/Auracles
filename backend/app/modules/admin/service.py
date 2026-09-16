@@ -1407,6 +1407,7 @@ async def list_admin_payouts(
                 "currency": payout.currency,
                 "status": payout.status,
                 "provider_ref": payout.provider_ref,
+                "awaiting_otp": payout.awaiting_otp,
                 "initiated_at": payout.initiated_at,
                 "completed_at": payout.completed_at,
             }

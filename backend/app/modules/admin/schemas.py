@@ -465,6 +465,8 @@ class AdminPayoutItem(BaseModel):
     currency: str
     status: Literal["pending", "processing", "completed", "failed"]
     provider_ref: str | None
+    # Paystack is holding the transfer for a one-time code; see payouts task.
+    awaiting_otp: bool = False
     initiated_at: datetime
     completed_at: datetime | None
 

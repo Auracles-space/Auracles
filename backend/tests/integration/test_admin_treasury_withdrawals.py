@@ -375,4 +375,5 @@ async def test_every_admin_can_list_withdrawals(
     assert item["status"] == "pending"
     assert item["bank_name"] == "Guaranty Trust Bank"
     assert item["account_last4"] == "6789"
+    assert item["awaiting_otp"] is False
     assert "recipient_code" not in item

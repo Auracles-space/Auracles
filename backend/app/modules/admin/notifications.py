@@ -27,6 +27,7 @@ _DOMAIN_TITLES = {
     "org_attestor_application": "Attestor application submitted",
     "org_kyb": "Business verification submitted",
     "payout": "Payout needs attention",
+    "paystack_transfer_otp": "Paystack is holding a transfer for an OTP",
     "platform_balance": "Platform balance below floor",
     "platform_bank_account": "Platform bank account changed",
     "project_dispute": "Project dispute raised",

@@ -258,14 +258,25 @@ export function AdminPayoutsPanel() {
                 <span className="md:hidden text-xs text-foreground-muted block mb-1 font-semibold uppercase tracking-wider">
                   Status
                 </span>
-                <span
-                  className={[
-                    "inline-flex items-center rounded-badge border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                    STATUS_STYLES[item.status],
-                  ].join(" ")}
-                >
-                  {item.status}
-                </span>
+                {item.status === "processing" && item.awaiting_otp ? (
+                  // Paystack holds every transfer for a one-time code while
+                  // transfer OTP is on; "processing" alone would hide that.
+                  <span
+                    className="inline-flex items-center rounded-badge border border-warning/30 bg-warning/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-warning"
+                    title="Finalize it in the Paystack dashboard, or turn off transfer OTP under Settings, Preferences, Transfers."
+                  >
+                    Waiting for OTP
+                  </span>
+                ) : (
+                  <span
+                    className={[
+                      "inline-flex items-center rounded-badge border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                      STATUS_STYLES[item.status],
+                    ].join(" ")}
+                  >
+                    {item.status}
+                  </span>
+                )}
               </div>
 
               {/* Initiated cell */}

@@ -170,3 +170,27 @@ async def test_user_payout_transfer_fee_is_recorded(
     assert fee.source_type == "payout"
     assert fee.source_id == payout_id
     assert str(fee.amount) == "10.75"
+
+
+async def test_settling_a_withdrawal_clears_its_otp_flag(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],  # noqa: F811
+    monkeypatch: Any,
+) -> None:
+    """Once Paystack reports the outcome, the transfer is no longer held."""
+    _capture_notifications(monkeypatch)
+    withdrawal_id, reference = await _processing_withdrawal()
+    async with async_session_factory() as session:
+        async with session.begin():
+            await session.execute(
+                update(PlatformWithdrawal)
+                .where(PlatformWithdrawal.id == withdrawal_id)
+                .values(awaiting_otp=True)
+            )
+    paystack_context["event"] = transfer_event("transfer.success", reference=reference)
+
+    await post_webhook(client)
+
+    withdrawal = await _load(withdrawal_id)
+    assert withdrawal.status == "completed"
+    assert withdrawal.awaiting_otp is False

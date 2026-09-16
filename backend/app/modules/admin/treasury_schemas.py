@@ -118,6 +118,7 @@ class PlatformWithdrawalItem(BaseModel):
     bank_name: str
     account_last4: str
     failure_reason: str | None
+    awaiting_otp: bool
     requested_by: UUID
     requested_at: datetime
     completed_at: datetime | None

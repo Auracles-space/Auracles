@@ -38,16 +38,20 @@ class FakeStripeTransfer:
     def __init__(self, transfer_id: str) -> None:
         """Store the provider transfer id."""
         self.id = transfer_id
-        self.status = "pending"
+        self.status = FakePaystackTransfer.next_status
 
 
 class FakePaystackTransfer:
     """Stand-in for a Paystack transfer result."""
 
+    # Status the next fake transfer reports; tests set "otp" to simulate an
+    # account that holds every transfer for a one-time code.
+    next_status = "pending"
+
     def __init__(self, transfer_id: str, transfer_code: str) -> None:
         """Store the provider transfer id, status, and transfer code."""
         self.id = transfer_id
-        self.status = "pending"
+        self.status = FakePaystackTransfer.next_status
         self.transfer_code = transfer_code
 
 
@@ -123,7 +127,15 @@ def payout_task_context(
         )
         return FakePaystackTransfer("998877", "TRF_contributor_123")
 
+    notifications: list[dict[str, Any]] = []
+    calls["notifications"] = notifications
+    FakePaystackTransfer.next_status = "pending"
     cleanup()
+    monkeypatch.setattr(
+        payouts,
+        "notify_admins_review_pending",
+        lambda **kwargs: notifications.append(kwargs),
+    )
     monkeypatch.setattr(payouts.stripe, "create_transfer", fake_stripe_transfer)
     monkeypatch.setattr(payouts.paystack, "initiate_transfer", fake_paystack_transfer)
     try:
@@ -288,3 +300,46 @@ def test_processing_a_payout_twice_does_not_transfer_twice(
 
     assert first["provider_ref"] == second["provider_ref"]
     assert len(payout_task_context["paystack"]) == 1
+
+
+def test_paystack_holding_a_payout_for_otp_alerts_admins(
+    migrated_database: None,
+    payout_task_context: dict[str, list[dict[str, Any]]],
+) -> None:
+    """A transfer Paystack holds for an OTP never moves on its own.
+
+    With transfer OTP switched on in Paystack, every payout stops at `otp`
+    and no webhook follows, so admins must be told to finalize it or turn the
+    setting off.
+    """
+    FakePaystackTransfer.next_status = "otp"
+    payout_id = create_pending_payout(
+        provider="paystack",
+        provider_account_id="RCP_contributor_1",
+    )
+
+    payouts.process_payout.apply(args=[str(payout_id)]).get()
+
+    notices = payout_task_context["notifications"]
+    assert [notice["domain"] for notice in notices] == ["paystack_transfer_otp"]
+    assert notices[0]["target_id"] == payout_id
+    assert "OTP" in notices[0]["body"]
+    payout = _load_payout(payout_id)
+    assert payout.status == "processing"
+    assert payout.awaiting_otp is True
+
+
+def test_a_payout_paystack_sends_straight_away_raises_no_otp_alert(
+    migrated_database: None,
+    payout_task_context: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Only a held transfer alerts."""
+    payout_id = create_pending_payout(
+        provider="paystack",
+        provider_account_id="RCP_contributor_1",
+    )
+
+    payouts.process_payout.apply(args=[str(payout_id)]).get()
+
+    assert payout_task_context["notifications"] == []
+    assert _load_payout(payout_id).awaiting_otp is False

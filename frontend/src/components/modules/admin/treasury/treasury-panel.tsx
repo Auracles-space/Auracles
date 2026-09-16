@@ -177,6 +177,9 @@ export function TreasuryPanel() {
         bankAccount={data.bankAccount}
         block={paystackBlock}
         unreviewedTransfers={data.summary.unreviewed_unrecognized_transfers}
+        withdrawalAwaitingOtp={data.withdrawals.some(
+          (withdrawal) => withdrawal.status === "processing" && withdrawal.awaiting_otp,
+        )}
       />
       {notice ? (
         <p className="rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success" role="status">

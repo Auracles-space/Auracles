@@ -73,6 +73,7 @@ def _item(
         bank_name=account.bank_name,
         account_last4=account.account_last4,
         failure_reason=withdrawal.failure_reason,
+        awaiting_otp=withdrawal.awaiting_otp,
         requested_by=withdrawal.requested_by,
         requested_at=withdrawal.requested_at,
         completed_at=withdrawal.completed_at,
@@ -339,6 +340,7 @@ async def apply_withdrawal_transfer_outcome(
     previous_status = withdrawal.status
     now = datetime.now(UTC)
     withdrawal.status = outcome
+    withdrawal.awaiting_otp = False
     if outcome == "completed":
         withdrawal.completed_at = now
         fee_minor = paystack_transfer_fee_minor(transfer)

@@ -38,12 +38,16 @@ async def task_context(
     async with async_session_factory() as session:
         await clear_identity_state_async(session)
         await session.commit()
-    context: dict[str, Any] = {"transfers": [], "notifications": []}
+    context: dict[str, Any] = {
+        "transfers": [],
+        "notifications": [],
+        "status": "pending",
+    }
 
     async def fake_initiate_transfer(**kwargs: Any) -> PaystackTransfer:
-        """Record the transfer request."""
+        """Record the transfer request and report the configured status."""
         context["transfers"].append(kwargs)
-        return PaystackTransfer(id="1", status="pending", transfer_code="TRF_1")
+        return PaystackTransfer(id="1", status=context["status"], transfer_code="TRF_1")
 
     def fake_notify(**kwargs: Any) -> None:
         """Capture admin notifications."""
@@ -178,4 +182,33 @@ async def test_initiation_failure_leaves_a_sent_withdrawal_alone(
     )
 
     assert (await _load(withdrawal_id)).status == "processing"
+    assert task_context["notifications"] == []
+
+
+async def test_a_withdrawal_held_for_otp_is_flagged_and_alerts_admins(
+    task_context: dict[str, Any],
+) -> None:
+    """Paystack holding the transfer for an OTP is visible, not silent."""
+    withdrawal_id = await _withdrawal()
+    task_context["status"] = "otp"
+
+    await task_module._send_platform_withdrawal(str(withdrawal_id))
+
+    withdrawal = await _load(withdrawal_id)
+    assert withdrawal.status == "processing"
+    assert withdrawal.awaiting_otp is True
+    assert [n["domain"] for n in task_context["notifications"]] == [
+        "paystack_transfer_otp"
+    ]
+
+
+async def test_a_withdrawal_sent_straight_away_is_not_flagged(
+    task_context: dict[str, Any],
+) -> None:
+    """A transfer Paystack accepted without an OTP raises nothing."""
+    withdrawal_id = await _withdrawal()
+
+    await task_module._send_platform_withdrawal(str(withdrawal_id))
+
+    assert (await _load(withdrawal_id)).awaiting_otp is False
     assert task_context["notifications"] == []

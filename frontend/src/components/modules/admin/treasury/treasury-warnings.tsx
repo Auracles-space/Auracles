@@ -3,8 +3,9 @@
  *
  * Surfaces, above every figure, the conditions that mean the numbers or the
  * money cannot be taken at face value: the live balance is short of the
- * ledger, Paystack could not be reached, a transfer left the balance outside
- * Auracles, or the bank account was changed less than 24 hours ago.
+ * ledger, Paystack could not be reached, a withdrawal is held for an OTP, a
+ * transfer left the balance outside Auracles, or the bank account was changed
+ * less than 24 hours ago.
  *
  * Maps to: platform treasury design, decisions 3 and 5.
  */
@@ -29,15 +30,18 @@ const TONE: Record<Tone, string> = {
  * @param block - The withdrawable currency's summary.
  * @param unreviewedTransfers - Transfers not started by Auracles, unreviewed.
  * @param bankAccount - The active platform bank account, if any.
+ * @param withdrawalAwaitingOtp - A withdrawal Paystack is holding for an OTP.
  */
 export function TreasuryWarnings({
   block,
   unreviewedTransfers,
   bankAccount,
+  withdrawalAwaitingOtp = false,
 }: {
   block: TreasuryCurrencySummary;
   unreviewedTransfers: number;
   bankAccount: PlatformBankAccountItem | null;
+  withdrawalAwaitingOtp?: boolean;
 }) {
   const warnings: { tone: Tone; text: string }[] = [];
   if (block.balance_unavailable) {
@@ -51,6 +55,12 @@ export function TreasuryWarnings({
     warnings.push({
       tone: "error",
       text: `Paystack holds ${missing} less than the ledger says it should. Check recent transfers and fees before withdrawing.`,
+    });
+  }
+  if (withdrawalAwaitingOtp) {
+    warnings.push({
+      tone: "warning",
+      text: "A withdrawal is waiting for a Paystack OTP and will not be sent until someone enters it. Finalize it in the Paystack dashboard, or turn off transfer OTP under Settings, Preferences, Transfers.",
     });
   }
   if (unreviewedTransfers > 0) {
