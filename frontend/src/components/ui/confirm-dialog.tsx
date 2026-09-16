@@ -65,6 +65,13 @@ export function ConfirmDialog({
   const titleId = useId();
   const confirmRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // Callers usually pass an inline onClose, which changes identity on every
+  // render. Reading it through a ref keeps the open effect (and its focus
+  // move) tied to `open` alone, so typing in a field does not steal focus.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // Close on Escape and move focus to the confirm button on open so keyboard
   // users land inside the dialog rather than behind it.
@@ -74,7 +81,7 @@ export function ConfirmDialog({
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        onClose();
+        onCloseRef.current();
       }
     }
     document.addEventListener("keydown", handleKeyDown);
@@ -91,7 +98,7 @@ export function ConfirmDialog({
     return () => document.removeEventListener("keydown", handleKeyDown);
     // busy is intentionally omitted: refocusing on every busy flip would yank
     // the cursor out of a field the user is typing in.
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open || typeof document === "undefined") {
     return null;
