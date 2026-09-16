@@ -28,6 +28,7 @@ _DOMAIN_TITLES = {
     "org_kyb": "Business verification submitted",
     "payout": "Payout needs attention",
     "platform_balance": "Platform balance below floor",
+    "platform_bank_account": "Platform bank account changed",
     "project_dispute": "Project dispute raised",
     "refund": "Refund needs attention",
 }

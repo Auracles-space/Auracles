@@ -13500,6 +13500,79 @@ components:
       - payouts
       title: PayoutsResponse
       type: object
+    PlatformBankAccountItem:
+      description: Display-safe view of the active platform bank account.
+      properties:
+        account_last4:
+          title: Account Last4
+          type: string
+        account_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Account Name
+        bank_code:
+          title: Bank Code
+          type: string
+        bank_name:
+          title: Bank Name
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+        usable_from:
+          format: date-time
+          title: Usable From
+          type: string
+      required:
+      - id
+      - bank_name
+      - bank_code
+      - account_last4
+      - account_name
+      - usable_from
+      - created_at
+      title: PlatformBankAccountItem
+      type: object
+    PlatformBankAccountResponse:
+      description: The active platform bank account, or null before one is set.
+      properties:
+        bank_account:
+          anyOf:
+          - $ref: '#/components/schemas/PlatformBankAccountItem'
+          - type: 'null'
+      required:
+      - bank_account
+      title: PlatformBankAccountResponse
+      type: object
+    PlatformBankAccountSetRequest:
+      additionalProperties: false
+      description: 'Request body for setting or replacing the platform bank account.
+
+
+        The bank code must come from Paystack''s bank list; the account number is
+
+        a ten-digit NUBAN and is never stored — only its last four digits.'
+      properties:
+        account_number:
+          pattern: ^[0-9]{10}$
+          title: Account Number
+          type: string
+        bank_code:
+          maxLength: 20
+          minLength: 1
+          title: Bank Code
+          type: string
+      required:
+      - account_number
+      - bank_code
+      title: PlatformBankAccountSetRequest
+      type: object
     PreviewArtifactRequest:
       description: Request body for selecting a Framework preview Artifact.
       properties:
@@ -18825,6 +18898,51 @@ paths:
       summary: Trace one payment end to end
       tags:
       - Admin
+  /v1/admin/treasury/bank-account:
+    get:
+      description: 'The active platform bank account: bank, last four digits, the bank-confirmed account
+        name, and when withdrawals to it open.'
+      operationId: admin_platform_bank_account_v1_admin_treasury_bank_account_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformBankAccountResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Platform bank account (platform admin)
+      tags:
+      - Admin Treasury
+    put:
+      description: Registers the account with Paystack and makes it the withdrawal destination after
+        a 24-hour hold. Super-admin only, with step-up. Audited, and every admin is notified.
+      operationId: admin_set_platform_bank_account_v1_admin_treasury_bank_account_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformBankAccountSetRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformBankAccountResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Set the platform bank account (super-admin)
+      tags:
+      - Admin Treasury
   /v1/admin/treasury/summary:
     get:
       description: 'Per currency: money owed to users, the platform''s own money, the live Paystack

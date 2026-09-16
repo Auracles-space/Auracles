@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TreasuryOwedToUsers(BaseModel):
@@ -59,3 +60,34 @@ class TreasurySummaryResponse(BaseModel):
 
     currencies: list[TreasuryCurrencySummary]
     live_balance_fetched_at: datetime | None
+
+
+class PlatformBankAccountSetRequest(BaseModel):
+    """Request body for setting or replacing the platform bank account.
+
+    The bank code must come from Paystack's bank list; the account number is
+    a ten-digit NUBAN and is never stored — only its last four digits.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    account_number: str = Field(pattern=r"^[0-9]{10}$")
+    bank_code: str = Field(min_length=1, max_length=20)
+
+
+class PlatformBankAccountItem(BaseModel):
+    """Display-safe view of the active platform bank account."""
+
+    id: UUID
+    bank_name: str
+    bank_code: str
+    account_last4: str
+    account_name: str | None
+    usable_from: datetime
+    created_at: datetime
+
+
+class PlatformBankAccountResponse(BaseModel):
+    """The active platform bank account, or null before one is set."""
+
+    bank_account: PlatformBankAccountItem | None

@@ -493,6 +493,61 @@ class ProviderFee(Base):
     )
 
 
+class PlatformBankAccount(Base):
+    """The bank account the platform withdraws its own money to.
+
+    Rows are never edited: a change inserts a new row and stamps
+    ``replaced_at`` on the previous one, so every destination the platform's
+    money could have been sent to stays on record. At most one row is active
+    (``replaced_at IS NULL``), enforced by a partial unique index.
+
+    Only the bank-confirmed name, bank and last four digits are kept in the
+    clear. The Paystack recipient code — the only thing a transfer needs — is
+    encrypted; the full account number is not stored at all.
+    """
+
+    __tablename__ = "platform_bank_accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "account_last4 ~ '^[0-9]{4}$'",
+            name="ck_platform_bank_accounts_last4_digits",
+        ),
+        Index(
+            "uq_platform_bank_accounts_active",
+            text("(replaced_at IS NULL)"),
+            unique=True,
+            postgresql_where=text("replaced_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
+    bank_code: Mapped[str] = mapped_column(String(20), nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_last4: Mapped[str] = mapped_column(String(4), nullable=False)
+    account_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recipient_code_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    # A withdrawal to this account is refused before this time (decision 3).
+    usable_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("clock_timestamp()"),
+    )
+    replaced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class PlatformConfig(Base):
     """Mutable platform-wide financial configuration row."""
 

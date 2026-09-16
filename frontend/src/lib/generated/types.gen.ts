@@ -4785,6 +4785,37 @@ export type PayoutsResponse = {
 };
 
 /**
+ * Display-safe view of the active platform bank account.
+ */
+export type PlatformBankAccountItem = {
+    account_last4: string;
+    account_name: (string | null);
+    bank_code: string;
+    bank_name: string;
+    created_at: string;
+    id: string;
+    usable_from: string;
+};
+
+/**
+ * The active platform bank account, or null before one is set.
+ */
+export type PlatformBankAccountResponse = {
+    bank_account: (PlatformBankAccountItem | null);
+};
+
+/**
+ * Request body for setting or replacing the platform bank account.
+ *
+ * The bank code must come from Paystack's bank list; the account number is
+ * a ten-digit NUBAN and is never stored — only its last four digits.
+ */
+export type PlatformBankAccountSetRequest = {
+    account_number: string;
+    bank_code: string;
+};
+
+/**
  * Request body for selecting a Framework preview Artifact.
  */
 export type PreviewArtifactRequest = {
@@ -6595,6 +6626,18 @@ export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetData = {
 export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetResponse = (AdminTransactionDetailResponse);
 
 export type GetAdminTransactionDetailV1AdminTransactionsTransactionIdGetError = (HTTPValidationError);
+
+export type AdminPlatformBankAccountV1AdminTreasuryBankAccountGetResponse = (PlatformBankAccountResponse);
+
+export type AdminPlatformBankAccountV1AdminTreasuryBankAccountGetError = unknown;
+
+export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutData = {
+    body: PlatformBankAccountSetRequest;
+};
+
+export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutResponse = (PlatformBankAccountResponse);
+
+export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutError = (HTTPValidationError);
 
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetResponse = (TreasurySummaryResponse);
 

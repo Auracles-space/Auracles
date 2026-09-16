@@ -118,7 +118,6 @@ Migration 0111 onward, one migration per slice.
 | provider | enum | paystack |
 | bank_code, bank_name | varchar | |
 | account_last4 | char(4) | only display field |
-| account_number_encrypted | text | same Fernet helper as payout accounts |
 | account_name | varchar | name Paystack resolved from the bank |
 | recipient_code_encrypted | text | Paystack transfer recipient |
 | usable_from | timestamptz | `created_at + 24h` |
@@ -126,6 +125,10 @@ Migration 0111 onward, one migration per slice.
 | created_at | timestamptz | |
 | replaced_at | timestamptz null | |
 
+- The full account number is not stored: withdrawals need only the encrypted recipient
+  code, and display needs only the last 4 digits.
+- The 24h hold applies to the first account too, since a hijacked first setup is as
+  dangerous as a change.
 - At most one row has `replaced_at IS NULL` (partial unique index).
 - A change inserts a new row and stamps `replaced_at` on the old one. Rows are never
   updated in place, so history is kept.
