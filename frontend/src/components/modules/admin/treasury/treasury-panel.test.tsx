@@ -347,11 +347,17 @@ describe("TreasuryPanel", () => {
       expect(withdraw).toBeDisabled();
       expect(screen.getByText(/Withdrawals open in 1m (29|30)s/)).toBeInTheDocument();
 
-      await act(async () => {
-        vi.advanceTimersByTime(91_000);
-      });
+      // Tick a second at a time, as the page does, and let each re-render
+      // flush: one 91-second jump passed locally but not on slower CI runners.
+      for (let second = 0; second < 92; second += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(1_000);
+        });
+      }
 
-      expect(screen.getByRole("button", { name: /^Withdraw$/i })).toBeEnabled();
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: /^Withdraw$/i })).toBeEnabled(),
+      );
       expect(screen.queryByText(/Withdrawals open in/)).not.toBeInTheDocument();
     });
   });
