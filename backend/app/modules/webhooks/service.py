@@ -58,6 +58,9 @@ from app.modules.financials.provider_fees import (
     record_provider_fee,
 )
 from app.modules.financials.refunds import reverse_refund, settle_refund
+from app.modules.financials.unrecognized_transfers import (
+    record_unrecognized_transfer,
+)
 from app.modules.frameworks.models import Framework, License
 from app.modules.notifications.service import create_notification
 from app.modules.organizations import notifications as org_notifications
@@ -2116,6 +2119,25 @@ async def _dispatch_paystack_event(
                 db, event_id=event_id, status_="processed", provider="paystack"
             )
             return "processed", None, withdrawal_notices
+        known_payout, _ = (
+            await _payout_for_transfer(db, envelope)
+            if transfer_reference is not None
+            else (None, "")
+        )
+        if known_payout is None and transfer_reference is not None:
+            # Matches no payout and no platform withdrawal: money left the
+            # balance by some route Auracles did not start (decision 5).
+            rogue_notices = await record_unrecognized_transfer(
+                db,
+                provider="paystack",
+                reference=transfer_reference,
+                event_type=event_type,
+                transfer=_event_object(envelope),
+            )
+            await _mark_event_status(
+                db, event_id=event_id, status_="processed", provider="paystack"
+            )
+            return "processed", None, rogue_notices
     if event_type == "transfer.success":
         # Terminal on this rail, unlike Stripe. A Paystack transfer settles
         # directly to the beneficiary's bank rather than into a provider-held

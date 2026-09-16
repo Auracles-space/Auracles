@@ -41,6 +41,7 @@ from app.modules.financials.models import (
     PlatformWithdrawal,
     ProviderFee,
     Transaction,
+    UnrecognizedTransfer,
 )
 from app.modules.financials.service import (
     _ATTESTATION_EARNING_CLASS,
@@ -324,6 +325,13 @@ async def get_treasury_summary(db: AsyncSession) -> TreasurySummaryResponse:
         await currency_summary(db, currency=currency, balances=balances)
         for currency in await _currencies(db)
     ]
+    unreviewed = await db.scalar(
+        select(func.count())
+        .select_from(UnrecognizedTransfer)
+        .where(UnrecognizedTransfer.acknowledged_at.is_(None))
+    )
     return TreasurySummaryResponse(
-        currencies=currencies, live_balance_fetched_at=fetched_at
+        currencies=currencies,
+        live_balance_fetched_at=fetched_at,
+        unreviewed_unrecognized_transfers=unreviewed or 0,
     )

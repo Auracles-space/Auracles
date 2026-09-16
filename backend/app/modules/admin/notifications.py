@@ -31,6 +31,7 @@ _DOMAIN_TITLES = {
     "platform_bank_account": "Platform bank account changed",
     "project_dispute": "Project dispute raised",
     "refund": "Refund needs attention",
+    "unrecognized_transfer": "Transfer not started by Auracles",
 }
 
 

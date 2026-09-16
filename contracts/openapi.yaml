@@ -15778,9 +15778,13 @@ components:
             type: string
           - type: 'null'
           title: Live Balance Fetched At
+        unreviewed_unrecognized_transfers:
+          title: Unreviewed Unrecognized Transfers
+          type: integer
       required:
       - currencies
       - live_balance_fetched_at
+      - unreviewed_unrecognized_transfers
       title: TreasurySummaryResponse
       type: object
     TrialAnswerKeyItem:
@@ -15923,6 +15927,106 @@ components:
       required:
       - scores
       title: TrialSubmitRequest
+      type: object
+    UnrecognizedTransferItem:
+      description: A transfer out of the platform balance that Auracles did not start.
+      properties:
+        acknowledged_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Acknowledged At
+        acknowledged_by:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Acknowledged By
+        amount:
+          anyOf:
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Amount
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        currency:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Currency
+        event_type:
+          title: Event Type
+          type: string
+        id:
+          format: uuid
+          title: Id
+          type: string
+        provider:
+          title: Provider
+          type: string
+        recipient_bank:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Bank
+        recipient_last4:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Last4
+        recipient_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Name
+        reference:
+          title: Reference
+          type: string
+      required:
+      - id
+      - provider
+      - reference
+      - event_type
+      - amount
+      - currency
+      - recipient_name
+      - recipient_bank
+      - recipient_last4
+      - acknowledged_by
+      - acknowledged_at
+      - created_at
+      title: UnrecognizedTransferItem
+      type: object
+    UnrecognizedTransfersResponse:
+      description: Unrecognized transfers, unreviewed first then newest first.
+      properties:
+        page:
+          minimum: 1.0
+          title: Page
+          type: integer
+        page_size:
+          maximum: 100.0
+          minimum: 1.0
+          title: Page Size
+          type: integer
+        total:
+          title: Total
+          type: integer
+        transfers:
+          items:
+            $ref: '#/components/schemas/UnrecognizedTransferItem'
+          title: Transfers
+          type: array
+      required:
+      - transfers
+      - total
+      - page
+      - page_size
+      title: UnrecognizedTransfersResponse
       type: object
     UpsertTrialAnswerKeyRequest:
       description: Admin body to create or update one fixture answer-key row.
@@ -19075,6 +19179,77 @@ paths:
       security:
       - HTTPBearer: []
       summary: Platform treasury summary (platform admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/unrecognized-transfers:
+    get:
+      description: Provider transfers out of the platform balance that match no payout or platform
+        withdrawal, unreviewed first.
+      operationId: admin_unrecognized_transfers_v1_admin_treasury_unrecognized_transfers_get
+      parameters:
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnrecognizedTransfersResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Transfers not started by Auracles (platform admin)
+      tags:
+      - Admin Treasury
+  /v1/admin/treasury/unrecognized-transfers/{transfer_id}/acknowledge:
+    post:
+      description: Records that the super-admin investigated the transfer. Audited.
+      operationId: admin_acknowledge_unrecognized_transfer_v1_admin_treasury_unrecognized_transfers__transfer_id__acknowledge_post
+      parameters:
+      - in: path
+        name: transfer_id
+        required: true
+        schema:
+          format: uuid
+          title: Transfer Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnrecognizedTransferItem'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Mark an unrecognized transfer reviewed (super-admin)
       tags:
       - Admin Treasury
   /v1/admin/treasury/withdrawals:

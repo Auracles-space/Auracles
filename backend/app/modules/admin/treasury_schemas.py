@@ -61,6 +61,7 @@ class TreasurySummaryResponse(BaseModel):
 
     currencies: list[TreasuryCurrencySummary]
     live_balance_fetched_at: datetime | None
+    unreviewed_unrecognized_transfers: int
 
 
 class PlatformBankAccountSetRequest(BaseModel):
@@ -126,6 +127,32 @@ class PlatformWithdrawalsResponse(BaseModel):
     """Paginated platform withdrawal history, newest first."""
 
     withdrawals: list[PlatformWithdrawalItem]
+    total: int
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+
+
+class UnrecognizedTransferItem(BaseModel):
+    """A transfer out of the platform balance that Auracles did not start."""
+
+    id: UUID
+    provider: str
+    reference: str
+    event_type: str
+    amount: Decimal | None
+    currency: str | None
+    recipient_name: str | None
+    recipient_bank: str | None
+    recipient_last4: str | None
+    acknowledged_by: UUID | None
+    acknowledged_at: datetime | None
+    created_at: datetime
+
+
+class UnrecognizedTransfersResponse(BaseModel):
+    """Unrecognized transfers, unreviewed first then newest first."""
+
+    transfers: list[UnrecognizedTransferItem]
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)

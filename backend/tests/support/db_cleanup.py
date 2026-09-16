@@ -25,6 +25,7 @@ from app.modules.financials.models import (
     FinancialEvent,
     PlatformBankAccount,
     PlatformWithdrawal,
+    UnrecognizedTransfer,
 )
 from app.modules.integrations.models import OAuthConnection
 from app.modules.notifications.models import (
@@ -40,6 +41,7 @@ async def clear_identity_state_async(session: AsyncSession) -> None:
 
     Ordered so every foreign key to `users` is cleared before the users are.
     """
+    await session.execute(delete(UnrecognizedTransfer))
     await session.execute(delete(PlatformWithdrawal))
     await session.execute(delete(PlatformBankAccount))
     await session.execute(delete(NotificationDeliveryMarker))
@@ -61,6 +63,7 @@ def clear_identity_state_sync(session: Session) -> None:
 
     Ordered so every foreign key to `users` is cleared before the users are.
     """
+    session.execute(delete(UnrecognizedTransfer))
     session.execute(delete(PlatformWithdrawal))
     session.execute(delete(PlatformBankAccount))
     session.execute(delete(NotificationDeliveryMarker))

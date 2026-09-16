@@ -611,6 +611,56 @@ class PlatformWithdrawal(Base):
     )
 
 
+class UnrecognizedTransfer(Base):
+    """A provider transfer out of the platform balance that Auracles did not start.
+
+    Recorded when a transfer webhook matches no payout or platform withdrawal,
+    for example a transfer made directly from the Paystack dashboard. One row
+    per transfer reference: later events for the same transfer (a reversal)
+    update ``event_type`` but never raise a second alert. Stays on Treasury
+    until the super-admin marks it reviewed.
+    """
+
+    __tablename__ = "unrecognized_transfers"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider", "provider_ref", name="uq_unrecognized_transfers_ref"
+        ),
+        Index(
+            "idx_unrecognized_transfers_unreviewed",
+            "created_at",
+            postgresql_where=text("acknowledged_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
+    provider_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # Enough to identify where the money went; never the full account number.
+    recipient_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recipient_bank: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recipient_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    acknowledged_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=text("now()")
+    )
+
+
 class PlatformConfig(Base):
     """Mutable platform-wide financial configuration row."""
 

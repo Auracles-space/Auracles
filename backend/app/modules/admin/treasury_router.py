@@ -9,6 +9,7 @@ Maps to: platform treasury design §API.
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
@@ -25,12 +26,15 @@ from app.modules.admin.treasury_schemas import (
     PlatformWithdrawalRequest,
     PlatformWithdrawalsResponse,
     TreasurySummaryResponse,
+    UnrecognizedTransferItem,
+    UnrecognizedTransfersResponse,
 )
 from app.modules.auth.models import User
 from app.modules.financials import (
     platform_bank_account,
     platform_withdrawals,
     treasury,
+    unrecognized_transfers,
 )
 
 router = APIRouter(prefix="/admin/treasury", tags=["Admin Treasury"])
@@ -136,4 +140,43 @@ async def admin_request_platform_withdrawal(
     """Request a platform withdrawal."""
     return await platform_withdrawals.request_platform_withdrawal(
         db, actor_id=admin.id, payload=payload
+    )
+
+
+@router.get(
+    "/unrecognized-transfers",
+    response_model=UnrecognizedTransfersResponse,
+    summary="Transfers not started by Auracles (platform admin)",
+    description=(
+        "Provider transfers out of the platform balance that match no payout "
+        "or platform withdrawal, unreviewed first."
+    ),
+)
+async def admin_unrecognized_transfers(
+    admin: PlatformAdmin,
+    db: DatabaseSession,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> UnrecognizedTransfersResponse:
+    """Return unrecognized transfers."""
+    del admin
+    return await unrecognized_transfers.list_unrecognized_transfers(
+        db, page=page, page_size=page_size
+    )
+
+
+@router.post(
+    "/unrecognized-transfers/{transfer_id}/acknowledge",
+    response_model=UnrecognizedTransferItem,
+    summary="Mark an unrecognized transfer reviewed (super-admin)",
+    description="Records that the super-admin investigated the transfer. Audited.",
+)
+async def admin_acknowledge_unrecognized_transfer(
+    transfer_id: UUID,
+    admin: SuperAdmin,
+    db: DatabaseSession,
+) -> UnrecognizedTransferItem:
+    """Mark one unrecognized transfer reviewed."""
+    return await unrecognized_transfers.acknowledge_unrecognized_transfer(
+        db, transfer_id=transfer_id, actor_id=admin.id
     )

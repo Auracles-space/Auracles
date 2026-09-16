@@ -5670,6 +5670,7 @@ export type TreasuryOwedToUsers = {
 export type TreasurySummaryResponse = {
     currencies: Array<TreasuryCurrencySummary>;
     live_balance_fetched_at: (string | null);
+    unreviewed_unrecognized_transfers: number;
 };
 
 /**
@@ -5733,6 +5734,34 @@ export type TrialScoreInput = {
  */
 export type TrialSubmitRequest = {
     scores: Array<TrialScoreInput>;
+};
+
+/**
+ * A transfer out of the platform balance that Auracles did not start.
+ */
+export type UnrecognizedTransferItem = {
+    acknowledged_at: (string | null);
+    acknowledged_by: (string | null);
+    amount: (string | null);
+    created_at: string;
+    currency: (string | null);
+    event_type: string;
+    id: string;
+    provider: string;
+    recipient_bank: (string | null);
+    recipient_last4: (string | null);
+    recipient_name: (string | null);
+    reference: string;
+};
+
+/**
+ * Unrecognized transfers, unreviewed first then newest first.
+ */
+export type UnrecognizedTransfersResponse = {
+    page: number;
+    page_size: number;
+    total: number;
+    transfers: Array<UnrecognizedTransferItem>;
 };
 
 /**
@@ -6680,6 +6709,27 @@ export type AdminSetPlatformBankAccountV1AdminTreasuryBankAccountPutError = (HTT
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetResponse = (TreasurySummaryResponse);
 
 export type AdminTreasurySummaryV1AdminTreasurySummaryGetError = unknown;
+
+export type AdminUnrecognizedTransfersV1AdminTreasuryUnrecognizedTransfersGetData = {
+    query?: {
+        page?: number;
+        page_size?: number;
+    };
+};
+
+export type AdminUnrecognizedTransfersV1AdminTreasuryUnrecognizedTransfersGetResponse = (UnrecognizedTransfersResponse);
+
+export type AdminUnrecognizedTransfersV1AdminTreasuryUnrecognizedTransfersGetError = (HTTPValidationError);
+
+export type AdminAcknowledgeUnrecognizedTransferV1AdminTreasuryUnrecognizedTransfersTransferIdAcknowledgePostData = {
+    path: {
+        transfer_id: string;
+    };
+};
+
+export type AdminAcknowledgeUnrecognizedTransferV1AdminTreasuryUnrecognizedTransfersTransferIdAcknowledgePostResponse = (UnrecognizedTransferItem);
+
+export type AdminAcknowledgeUnrecognizedTransferV1AdminTreasuryUnrecognizedTransfersTransferIdAcknowledgePostError = (HTTPValidationError);
 
 export type AdminPlatformWithdrawalsV1AdminTreasuryWithdrawalsGetData = {
     query?: {
