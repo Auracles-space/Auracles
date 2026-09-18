@@ -1814,6 +1814,27 @@ export type AttestationRatingResponse = {
 };
 
 /**
+ * Autosaved report fields for an attestation still under review.
+ */
+export type AttestationReportDraftRequest = {
+    conditions?: string;
+    outcome?: ('approved' | 'conditional' | 'rejected' | null);
+    scope?: string;
+    summary?: string;
+};
+
+/**
+ * The reviewer's saved report draft, or empty fields when none exists.
+ */
+export type AttestationReportDraftResponse = {
+    conditions: string;
+    outcome: (string | null);
+    scope: string;
+    summary: string;
+    updated_at: (string | null);
+};
+
+/**
  * Structured report fields submitted by the assigned Attestor.
  */
 export type AttestationReportSubmitRequest = {
@@ -7207,6 +7228,27 @@ export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostData
 export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostResponse = (AttestationRequestResponse);
 
 export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostError = (HTTPValidationError);
+
+export type GetAttestationReportDraftV1AttestationsAttestationIdReportDraftGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationReportDraftV1AttestationsAttestationIdReportDraftGetResponse = (AttestationReportDraftResponse);
+
+export type GetAttestationReportDraftV1AttestationsAttestationIdReportDraftGetError = (HTTPValidationError);
+
+export type SaveAttestationReportDraftV1AttestationsAttestationIdReportDraftPutData = {
+    body: AttestationReportDraftRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type SaveAttestationReportDraftV1AttestationsAttestationIdReportDraftPutResponse = (AttestationReportDraftResponse);
+
+export type SaveAttestationReportDraftV1AttestationsAttestationIdReportDraftPutError = (HTTPValidationError);
 
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
     body: AttestationEvidenceUploadCreateRequest;

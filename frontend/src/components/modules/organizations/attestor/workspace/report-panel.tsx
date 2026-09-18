@@ -10,10 +10,12 @@
 
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import {
+  getAttestationReportDraft,
   listRubricScores,
+  saveAttestationReportDraft,
   submitAttestationReport
 } from "@/lib/generated/sdk.gen";
 import {
@@ -34,6 +36,8 @@ export interface ReportPanelProps {
   orgId: string;
   /** Current attestation status; the form is editable only while submittable. */
   status?: string;
+  /** Quiet period before an edit is autosaved; shortened in tests. */
+  draftSaveDelayMs?: number;
 }
 
 // Statuses the backend accepts a report submission in (report.py). Outside
@@ -56,6 +60,10 @@ function describeLockedState(status: string): string {
   return "This attestation is closed. The report can no longer be edited.";
 }
 
+// Long enough that autosave does not fire on every keystroke, short enough
+// that a reviewer who closes the tab mid-sentence loses nothing that matters.
+const DEFAULT_DRAFT_SAVE_DELAY_MS = 1200;
+
 // Mirrors the backend quality gate's `attestation_report_min_words` default.
 // The gate sums rubric comment words + summary words + conditions words (scope
 // is not counted). Kept in sync manually; the backend 422 remains the backstop
@@ -73,6 +81,7 @@ export function ReportPanel({
   canWrite,
   orgId,
   status = "in_review",
+  draftSaveDelayMs = DEFAULT_DRAFT_SAVE_DELAY_MS,
 }: ReportPanelProps) {
   const router = useRouter();
   const toast = useToast();
@@ -97,6 +106,81 @@ export function ReportPanel({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The report is written across sittings, so it is saved server-side as the
+  // reviewer types. Editing only starts once the saved draft has been read
+  // back, otherwise an empty form would autosave over the saved work.
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  // A reviewer can start typing before the saved draft comes back; their words
+  // win over whatever the server was still fetching.
+  const editedRef = useRef(false);
+  const [draftState, setDraftState] = useState<"idle" | "saving" | "saved">("idle");
+  const editable = canWrite && SUBMITTABLE_STATUSES.includes(status);
+
+  useEffect(() => {
+    if (!editable) return;
+    let active = true;
+    /** Read back whatever the reviewer had already written. */
+    async function loadDraft() {
+      try {
+        const res = await getAttestationReportDraft({
+          path: { attestation_id: attestationId },
+          headers: getAccessTokenHeaders(),
+        });
+        if (!active) return;
+        if (!res.error && res.data && !editedRef.current) {
+          const draft = res.data;
+          if (draft.outcome) {
+            setOutcome(draft.outcome as "approved" | "conditional" | "rejected");
+          }
+          setSummary(draft.summary ?? "");
+          setScope(draft.scope ?? "");
+          setConditions(draft.conditions ?? "");
+        }
+      } catch {
+        // Non-fatal: the reviewer starts from a blank form and autosave still
+        // runs, so nothing written from here on is lost.
+      } finally {
+        if (active) setDraftLoaded(true);
+      }
+    }
+    void loadDraft();
+    return () => {
+      active = false;
+    };
+  }, [attestationId, editable]);
+
+  useEffect(() => {
+    if (!editable || !draftLoaded || isSubmitting) return;
+    const handle = setTimeout(() => {
+      /** Persist the current fields; failures stay silent and retry on the next edit. */
+      async function saveDraft() {
+        setDraftState("saving");
+        try {
+          const res = await saveAttestationReportDraft({
+            path: { attestation_id: attestationId },
+            body: { outcome: outcome || null, summary, scope, conditions },
+            headers: getAccessTokenHeaders(),
+          });
+          setDraftState(res.error ? "idle" : "saved");
+        } catch {
+          setDraftState("idle");
+        }
+      }
+      void saveDraft();
+    }, draftSaveDelayMs);
+    return () => clearTimeout(handle);
+  }, [
+    attestationId,
+    conditions,
+    draftLoaded,
+    draftSaveDelayMs,
+    editable,
+    isSubmitting,
+    outcome,
+    scope,
+    summary,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -243,7 +327,10 @@ export function ReportPanel({
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-foreground mb-1">Outcome <span className="text-error">*</span></label>
-          <Select value={outcome} onChange={(e) => setOutcome(e.target.value as "approved" | "conditional" | "rejected")} required>
+          <Select value={outcome} onChange={(e) => {
+              editedRef.current = true;
+              setOutcome(e.target.value as "approved" | "conditional" | "rejected");
+            }} required>
             <option value="" disabled>Select an outcome...</option>
             <option value="approved">Approved</option>
             <option value="conditional">Conditional Approval</option>
@@ -256,7 +343,10 @@ export function ReportPanel({
           <p className="text-xs text-foreground-muted mb-2">Required. Counts toward the report length below.</p>
           <Textarea
             value={summary}
-            onChange={(e) => setSummary(e.target.value)}
+            onChange={(e) => {
+              editedRef.current = true;
+              setSummary(e.target.value);
+            }}
             required
             className="min-h-[100px]"
             placeholder="This framework demonstrates excellent compliance with..."
@@ -268,7 +358,10 @@ export function ReportPanel({
           <p className="text-xs text-foreground-muted mb-2">Required. What was reviewed and its limitations — not counted toward report length.</p>
           <Textarea
             value={scope}
-            onChange={(e) => setScope(e.target.value)}
+            onChange={(e) => {
+              editedRef.current = true;
+              setScope(e.target.value);
+            }}
             required
             className="min-h-[100px]"
             placeholder="Review covered version 2.1 of the framework..."
@@ -281,7 +374,10 @@ export function ReportPanel({
             <p className="text-xs text-foreground-muted mb-2">Required for a conditional outcome. Counts toward the report length below.</p>
             <Textarea
               value={conditions}
-              onChange={(e) => setConditions(e.target.value)}
+              onChange={(e) => {
+                editedRef.current = true;
+                setConditions(e.target.value);
+              }}
               required
               className="min-h-[100px]"
               placeholder="Conditions that must be met for full approval..."
@@ -306,6 +402,11 @@ export function ReportPanel({
               {" "}(scope excluded).
             </span>
           </p>
+          {draftState !== "idle" && (
+            <p className="text-xs text-foreground-muted">
+              {draftState === "saving" ? "Saving…" : "Draft saved"}
+            </p>
+          )}
           {!evidence.settled && (
             <p className="text-xs text-foreground-muted">
               Waiting for the evidence check to finish.

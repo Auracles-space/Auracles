@@ -198,6 +198,25 @@ class AttestationReportSubmitRequest(BaseModel):
     evidence_references: dict[str, Any] = Field(default_factory=dict)
 
 
+class AttestationReportDraftRequest(BaseModel):
+    """Autosaved report fields for an attestation still under review."""
+
+    outcome: Literal["approved", "conditional", "rejected"] | None = None
+    summary: str = Field(default="", max_length=10000)
+    scope: str = Field(default="", max_length=10000)
+    conditions: str = Field(default="", max_length=10000)
+
+
+class AttestationReportDraftResponse(BaseModel):
+    """The reviewer's saved report draft, or empty fields when none exists."""
+
+    outcome: str | None
+    summary: str
+    scope: str
+    conditions: str
+    updated_at: datetime | None
+
+
 class RubricScoreUpsertRequest(BaseModel):
     """Draft score and comment for one rubric dimension."""
 

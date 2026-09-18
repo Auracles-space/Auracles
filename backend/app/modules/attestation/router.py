@@ -54,6 +54,8 @@ from app.modules.attestation.schemas import (
     AttestationPackageResponse,
     AttestationRatingCreate,
     AttestationRatingResponse,
+    AttestationReportDraftRequest,
+    AttestationReportDraftResponse,
     AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
@@ -739,6 +741,53 @@ async def get_attestation_report_evidence_upload(
         attestor=attestor,
         attestation_id=attestation_id,
         upload_session_id=upload_session_id,
+    )
+
+
+@router.put(
+    "/attestations/{attestation_id}/report/draft",
+    response_model=AttestationReportDraftResponse,
+    summary="Save the report draft",
+    description=(
+        "Save the reviewing member's unfinished report as they write it, so a "
+        "reload does not lose the work. Private to the member; cleared once "
+        "the report is submitted."
+    ),
+)
+async def save_attestation_report_draft(
+    attestation_id: UUID,
+    payload: AttestationReportDraftRequest,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationReportDraftResponse:
+    """Save the reviewing member's unfinished report."""
+    return await report_service.save_report_draft(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        payload=payload,
+    )
+
+
+@router.get(
+    "/attestations/{attestation_id}/report/draft",
+    response_model=AttestationReportDraftResponse,
+    summary="Load the report draft",
+    description=(
+        "Return the reviewing member's own saved report draft, or empty "
+        "fields when nothing has been written yet."
+    ),
+)
+async def get_attestation_report_draft(
+    attestation_id: UUID,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationReportDraftResponse:
+    """Return the reviewing member's saved report draft."""
+    return await report_service.get_report_draft(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
     )
 
 

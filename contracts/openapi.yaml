@@ -4785,6 +4785,67 @@ components:
       - scan_status
       title: AttestationEvidenceUploadSessionResponse
       type: object
+    AttestationReportDraftRequest:
+      additionalProperties: false
+      description: Autosaved report fields for an attestation still under review.
+      properties:
+        conditions:
+          default: ''
+          maxLength: 10000
+          title: Conditions
+          type: string
+        outcome:
+          anyOf:
+          - enum:
+            - approved
+            - conditional
+            - rejected
+            type: string
+          - type: 'null'
+          title: Outcome
+        scope:
+          default: ''
+          maxLength: 10000
+          title: Scope
+          type: string
+        summary:
+          default: ''
+          maxLength: 10000
+          title: Summary
+          type: string
+      title: AttestationReportDraftRequest
+      type: object
+    AttestationReportDraftResponse:
+      description: The reviewer's saved report draft, or empty fields when none exists.
+      properties:
+        conditions:
+          title: Conditions
+          type: string
+        outcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Outcome
+        scope:
+          title: Scope
+          type: string
+        summary:
+          title: Summary
+          type: string
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated At
+      required:
+      - outcome
+      - summary
+      - scope
+      - conditions
+      - updated_at
+      title: AttestationReportDraftResponse
+      type: object
     AttestationEvidenceUploadStatusResponse:
       description: 'Scan state of one report evidence upload session.
 
@@ -20876,6 +20937,74 @@ paths:
       security:
       - HTTPBearer: []
       summary: Open the review workspace
+      tags:
+      - Attestation
+  /v1/attestations/{attestation_id}/report/draft:
+    get:
+      description: Return the reviewing member's own saved report draft, or empty
+        fields when nothing has been written yet.
+      operationId: get_attestation_report_draft_v1_attestations__attestation_id__report_draft_get
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationReportDraftResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Load the report draft
+      tags:
+      - Attestation
+    put:
+      description: Save the reviewing member's unfinished report as they write it,
+        so a reload does not lose the work. Private to the member; cleared once the
+        report is submitted.
+      operationId: save_attestation_report_draft_v1_attestations__attestation_id__report_draft_put
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationReportDraftRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationReportDraftResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Save the report draft
       tags:
       - Attestation
   /v1/attestations/{attestation_id}/uploads:

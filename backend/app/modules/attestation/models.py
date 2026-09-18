@@ -763,6 +763,45 @@ class AttestationRubricScore(UpdatedAtMixin, CreatedAtMixin, Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class AttestationReportDraft(UpdatedAtMixin, CreatedAtMixin, Base):
+    """One reviewer's unfinished report for an attestation.
+
+    The final report runs to hundreds of words and is written across sittings,
+    so it is saved as the reviewer types rather than held in the browser. The
+    draft is private to the member who wrote it and is deleted once the report
+    is submitted.
+    """
+
+    __tablename__ = "attestation_report_drafts"
+    __table_args__ = (
+        UniqueConstraint(
+            "attestation_id",
+            "user_id",
+            name="uq_attestation_report_drafts_attestation_user",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    attestation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("attestations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    scope: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    conditions: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+
+
 class AttestationAnnotation(UpdatedAtMixin, CreatedAtMixin, Base):
     """Free-anchor annotation attached to one attestation workspace."""
 

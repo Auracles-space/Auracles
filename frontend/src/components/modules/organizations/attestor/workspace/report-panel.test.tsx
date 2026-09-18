@@ -7,7 +7,12 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listRubricScores, submitAttestationReport } from "@/lib/generated/sdk.gen";
+import {
+  getAttestationReportDraft,
+  listRubricScores,
+  saveAttestationReportDraft,
+  submitAttestationReport,
+} from "@/lib/generated/sdk.gen";
 import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import { ReportPanel } from "./report-panel";
 
@@ -26,7 +31,9 @@ vi.mock("@/lib/auth/form-client", async (importActual) => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
+  getAttestationReportDraft: vi.fn(),
   listRubricScores: vi.fn(),
+  saveAttestationReportDraft: vi.fn(),
   submitAttestationReport: vi.fn(),
 }));
 
@@ -84,6 +91,25 @@ describe("ReportPanel", () => {
     // Default: rubric comments already clear the 150-word report minimum, so
     // the field-level minimum tests stay focused on their own assertions.
     vi.mocked(listRubricScores).mockResolvedValue(rubricWithWords(200) as never);
+    // Default: nothing written yet, so the form starts empty.
+    vi.mocked(getAttestationReportDraft).mockResolvedValue(
+      ok({
+        outcome: null,
+        summary: "",
+        scope: "",
+        conditions: "",
+        updated_at: null,
+      }) as never,
+    );
+    vi.mocked(saveAttestationReportDraft).mockResolvedValue(
+      ok({
+        outcome: null,
+        summary: "",
+        scope: "",
+        conditions: "",
+        updated_at: "2026-09-18T10:00:00Z",
+      }) as never,
+    );
   });
 
   const validSummary = "This review summary is long enough for submission.";
@@ -323,5 +349,73 @@ describe("ReportPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "stub-clean" }));
     await waitFor(() => expect(submit).toBeEnabled());
+  });
+
+  it("restores the saved draft so a refresh does not lose the report", async () => {
+    // The report fields used to live only in this component's state, so any
+    // refresh sent the reviewer back to a blank form.
+    vi.mocked(getAttestationReportDraft).mockResolvedValue(
+      ok({
+        outcome: "conditional",
+        summary: "Controls are sound apart from access review cadence.",
+        scope: "Reviewed policy set v2.1.",
+        conditions: "Quarterly access reviews must be evidenced.",
+        updated_at: "2026-09-18T09:30:00Z",
+      }) as never,
+    );
+
+    render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
+
+    await waitFor(() =>
+      expect(summaryInput()).toHaveValue(
+        "Controls are sound apart from access review cadence.",
+      ),
+    );
+    expect(scopeInput()).toHaveValue("Reviewed policy set v2.1.");
+    expect(screen.getByRole("combobox")).toHaveValue("conditional");
+    expect(
+      screen.getByPlaceholderText(/must be met for full approval/i),
+    ).toHaveValue("Quarterly access reviews must be evidenced.");
+  });
+
+  it("saves the report as it is written", async () => {
+    render(
+      <ReportPanel
+        attestationId="att-1"
+        canWrite
+        orgId="org-1"
+        draftSaveDelayMs={1}
+      />,
+    );
+    await waitFor(() => expect(getAttestationReportDraft).toHaveBeenCalled());
+
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+
+    await waitFor(() =>
+      expect(saveAttestationReportDraft).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { attestation_id: "att-1" },
+          body: expect.objectContaining({ summary: validSummary }),
+        }),
+      ),
+    );
+    expect(await screen.findByText(/draft saved/i)).toBeInTheDocument();
+  });
+
+  it("does not touch the draft once the report is locked", async () => {
+    render(
+      <ReportPanel
+        attestationId="att-1"
+        canWrite
+        orgId="org-1"
+        status="report_submitted"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/Your report is with the requestor/i)).toBeInTheDocument(),
+    );
+    expect(getAttestationReportDraft).not.toHaveBeenCalled();
+    expect(saveAttestationReportDraft).not.toHaveBeenCalled();
   });
 });

@@ -35,6 +35,7 @@ from app.modules.attestation.models import (
     AttestationClarification,
     AttestationDispute,
     AttestationOffer,
+    AttestationReportDraft,
     AttestationRubricDimension,
     AttestationRubricScore,
     AttestationUploadSession,
@@ -1140,6 +1141,19 @@ async def test_confirming_an_evidence_upload_scans_it_before_submission(
     upload_session_id = upload_response.json()["id"]
     evidence_key = upload_response.json()["s3_key"]
 
+    # The reviewer's autosaved draft is cleared once the report is in.
+    draft_response = await client.put(
+        f"/v1/attestations/{attestation_id}/report/draft",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": report_summary,
+            "scope": "Credential, process, and sample evidence review.",
+            "conditions": "",
+        },
+    )
+    assert draft_response.status_code == 200, draft_response.text
+
     confirm_response = await client.post(
         f"/v1/attestations/{attestation_id}/uploads/{upload_session_id}/confirm",
         headers=auth_headers(attestor_id, ["attestor"]),
@@ -1171,6 +1185,13 @@ async def test_confirming_an_evidence_upload_scans_it_before_submission(
         },
     )
 
+    async with async_session_factory() as session:
+        remaining_drafts = await session.scalar(
+            select(func.count())
+            .select_from(AttestationReportDraft)
+            .where(AttestationReportDraft.attestation_id == attestation_id)
+        )
+
     assert confirm_response.status_code == 200, confirm_response.text
     assert confirm_response.json()["scan_status"] == "pending_scan"
     assert dispatched_scans == [upload_session_id]
@@ -1179,6 +1200,7 @@ async def test_confirming_an_evidence_upload_scans_it_before_submission(
     # The report lands on the first attempt: no "still scanning" refusal.
     assert report_response.status_code == 200, report_response.text
     assert report_response.json()["status"] == "report_submitted"
+    assert remaining_drafts == 0
 
 
 async def test_confirming_an_evidence_upload_that_never_arrived_is_refused(

@@ -13,7 +13,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
@@ -24,6 +24,7 @@ from app.modules.attestation import quality_gate, rubrics
 from app.modules.attestation.dependencies import resolve_attestor_actor
 from app.modules.attestation.models import (
     Attestation,
+    AttestationReportDraft,
     AttestationUploadSession,
 )
 from app.modules.attestation.schemas import (
@@ -32,6 +33,8 @@ from app.modules.attestation.schemas import (
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
     AttestationEvidenceUploadStatusResponse,
+    AttestationReportDraftRequest,
+    AttestationReportDraftResponse,
     AttestationReportSubmitRequest,
 )
 from app.modules.auth.models import User
@@ -304,6 +307,121 @@ async def _load_attestation_for_read(
     return attestation
 
 
+def _draft_response(
+    draft: AttestationReportDraft | None,
+) -> AttestationReportDraftResponse:
+    """Render one report draft, or empty fields when nothing is saved yet."""
+    if draft is None:
+        return AttestationReportDraftResponse(
+            outcome=None,
+            summary="",
+            scope="",
+            conditions="",
+            updated_at=None,
+        )
+    return AttestationReportDraftResponse(
+        outcome=draft.outcome,
+        summary=draft.summary,
+        scope=draft.scope,
+        conditions=draft.conditions,
+        updated_at=draft.updated_at,
+    )
+
+
+async def save_report_draft(
+    *,
+    db: AsyncSession,
+    attestor: User,
+    attestation_id: UUID,
+    payload: AttestationReportDraftRequest,
+) -> AttestationReportDraftResponse:
+    """Save the reviewer's unfinished report so a reload does not lose it.
+
+    Reports run to hundreds of words and are written across sittings. The
+    draft is private to the member writing it and is cleared when the report
+    is submitted.
+
+    Args:
+        db: Async session for DB operations.
+        attestor: The reviewing member writing the report.
+        attestation_id: Attestation under review.
+        payload: The report fields as they currently stand.
+
+    Returns:
+        The saved draft.
+
+    Raises:
+        HTTPException(404): If the caller is not this attestation's reviewer.
+        HTTPException(409): If the attestation is not in a writable state.
+    """
+    attestor_id = attestor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        await _load_assigned_attestation_for_update(
+            db=db,
+            attestation_id=attestation_id,
+            user_id=attestor_id,
+            allowed_statuses={"in_review", "revision_requested"},
+        )
+        draft = await db.scalar(
+            select(AttestationReportDraft)
+            .where(
+                AttestationReportDraft.attestation_id == attestation_id,
+                AttestationReportDraft.user_id == attestor_id,
+            )
+            .with_for_update()
+        )
+        if draft is None:
+            draft = AttestationReportDraft(
+                attestation_id=attestation_id,
+                user_id=attestor_id,
+            )
+            db.add(draft)
+        draft.outcome = payload.outcome
+        draft.summary = payload.summary
+        draft.scope = payload.scope
+        draft.conditions = payload.conditions
+        await db.flush()
+        await db.refresh(draft)
+        response = _draft_response(draft)
+    return response
+
+
+async def get_report_draft(
+    *,
+    db: AsyncSession,
+    attestor: User,
+    attestation_id: UUID,
+) -> AttestationReportDraftResponse:
+    """Return the reviewer's own saved report draft, if there is one.
+
+    Args:
+        db: Async session for DB operations.
+        attestor: The reviewing member whose draft is wanted.
+        attestation_id: Attestation under review.
+
+    Returns:
+        The saved draft, or empty fields when nothing is saved.
+
+    Raises:
+        HTTPException(404): If the caller is not this attestation's reviewer.
+    """
+    attestor_id = attestor.id
+    attestation = await _load_attestation_for_read(
+        db=db, attestation_id=attestation_id
+    )
+    await resolve_attestor_actor(db, attestation=attestation, user_id=attestor_id)
+    draft = await db.scalar(
+        select(AttestationReportDraft).where(
+            AttestationReportDraft.attestation_id == attestation_id,
+            AttestationReportDraft.user_id == attestor_id,
+        )
+    )
+    return _draft_response(draft)
+
+
 async def submit_report(
     *,
     db: AsyncSession,
@@ -417,6 +535,12 @@ async def submit_report(
                 "attestor_id": str(attestor_id),
                 "requestor_id": str(attestation.requestor_id),
             },
+        )
+        # The report is in; the working draft behind it has served its purpose.
+        await db.execute(
+            delete(AttestationReportDraft).where(
+                AttestationReportDraft.attestation_id == attestation_id
+            )
         )
         await db.flush()
 
