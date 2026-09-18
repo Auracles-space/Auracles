@@ -1732,6 +1732,16 @@ export type AttestationEvidenceUploadSessionResponse = {
 };
 
 /**
+ * Scan state of one report evidence upload session.
+ * Returned when the browser confirms an upload and while it polls for the scan verdict, so the reviewer sees why Submit is still held.
+ */
+export type AttestationEvidenceUploadStatusResponse = {
+    id: string;
+    s3_key: string;
+    scan_status: string;
+};
+
+/**
  * Optional request body for funding an owner-approved Attestation fee.
  */
 export type AttestationFundingRequest = {
@@ -7208,6 +7218,28 @@ export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestatio
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostResponse = (AttestationEvidenceUploadSessionResponse);
 
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostError = (HTTPValidationError);
+
+export type GetAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGetData = {
+    path: {
+        attestation_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type GetAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGetResponse = (AttestationEvidenceUploadStatusResponse);
+
+export type GetAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGetError = (HTTPValidationError);
+
+export type ConfirmAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdConfirmPostData = {
+    path: {
+        attestation_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type ConfirmAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdConfirmPostResponse = (AttestationEvidenceUploadStatusResponse);
+
+export type ConfirmAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdConfirmPostError = (HTTPValidationError);
 
 export type ListPublicAttestorDirectoryV1AttestorOrgsGetData = {
     query?: {

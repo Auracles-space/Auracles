@@ -7,11 +7,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createAttestationEvidenceUpload,
-  listRubricScores,
-  submitAttestationReport,
-} from "@/lib/generated/sdk.gen";
+import { listRubricScores, submitAttestationReport } from "@/lib/generated/sdk.gen";
 import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import { ReportPanel } from "./report-panel";
 
@@ -30,9 +26,35 @@ vi.mock("@/lib/auth/form-client", async (importActual) => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
-  createAttestationEvidenceUpload: vi.fn(),
   listRubricScores: vi.fn(),
   submitAttestationReport: vi.fn(),
+}));
+
+// The uploader owns the upload-confirm-scan handshake and is covered by its
+// own tests; here it stands in as a switch so the panel's gating is testable.
+vi.mock("./report-evidence-uploader", () => ({
+  ReportEvidenceUploader: ({
+    onChange,
+  }: {
+    onChange: (selection: { fileKeys: string[]; settled: boolean }) => void;
+  }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => onChange({ fileKeys: [], settled: false })}
+      >
+        stub-scanning
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onChange({ fileKeys: ["attestations/att-1/evidence/report.pdf"], settled: true })
+        }
+      >
+        stub-clean
+      </button>
+    </div>
+  ),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -243,56 +265,20 @@ describe("ReportPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("submits uploaded evidence as file_keys", async () => {
-    vi.mocked(createAttestationEvidenceUpload).mockResolvedValue(
-      ok({
-        id: "upload-session-1",
-        s3_key: "attestations/att-1/evidence/member-1/report.pdf",
-        url: "https://uploads.example.test",
-        fields: { key: "attestations/att-1/evidence/member-1/report.pdf" },
-        expires_at: "2026-07-17T12:00:00Z",
-        size_limit: 26214400,
-        scan_status: "pending_scan",
-      }) as never,
-    );
+  it("submits evidence the uploader reported clean as file_keys", async () => {
     vi.mocked(submitAttestationReport).mockResolvedValue(
       ok({ id: "att-1", status: "report_submitted" }) as never,
     );
 
-    const { container } = render(
-      <ReportPanel
-        attestationId="att-1"
-        canWrite
-        orgId="org-1"
-      />,
-    );
+    render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
 
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "approved" },
     });
-    fireEvent.change(
-      screen.getByPlaceholderText(
-        /This framework demonstrates excellent compliance with/i,
-      ),
-      {
-        target: { value: "This review summary is long enough for submission." },
-      },
-    );
-    fireEvent.change(
-      screen.getByPlaceholderText(/Review covered version 2\.1 of the framework/i),
-      {
-        target: { value: "Reviewed the framework artifacts and supporting notes." },
-      },
-    );
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+    fireEvent.change(scopeInput(), { target: { value: validScope } });
+    fireEvent.click(screen.getByRole("button", { name: "stub-clean" }));
 
-    const file = new File(["evidence"], "report.pdf", {
-      type: "application/pdf",
-    });
-    const fileInput = container.querySelector('input[type="file"]');
-    expect(fileInput).not.toBeNull();
-    fireEvent.change(fileInput as HTMLInputElement, {
-      target: { files: [file] },
-    });
     const submit = screen.getByRole("button", { name: /Submit Report/i });
     await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
@@ -303,7 +289,7 @@ describe("ReportPanel", () => {
           path: { attestation_id: "att-1" },
           body: expect.objectContaining({
             evidence_references: {
-              file_keys: ["attestations/att-1/evidence/member-1/report.pdf"],
+              file_keys: ["attestations/att-1/evidence/report.pdf"],
             },
           }),
         }),
@@ -313,5 +299,29 @@ describe("ReportPanel", () => {
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith("/dashboard/organizations/org-1/attestor/queue"),
     );
+  });
+
+  it("holds submission while an evidence file is still being checked", async () => {
+    // Submitting mid-scan was the bug: the backend refused the report and the
+    // retry re-uploaded the file, so it could never succeed.
+    render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "approved" },
+    });
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+    fireEvent.change(scopeInput(), { target: { value: validScope } });
+    const submit = screen.getByRole("button", { name: /Submit Report/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "stub-scanning" }));
+
+    await waitFor(() => expect(submit).toBeDisabled());
+    expect(
+      screen.getByText(/Waiting for the evidence check to finish/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "stub-clean" }));
+    await waitFor(() => expect(submit).toBeEnabled());
   });
 });

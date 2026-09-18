@@ -173,6 +173,18 @@ class AttestationEvidenceUploadSessionResponse(BaseModel):
     scan_status: str
 
 
+class AttestationEvidenceUploadStatusResponse(BaseModel):
+    """Scan state of one report evidence upload session.
+
+    Returned when the browser confirms an upload and while it polls for the
+    scan verdict, so the reviewer sees why Submit is still held.
+    """
+
+    id: UUID
+    s3_key: str
+    scan_status: str
+
+
 class AttestationReportSubmitRequest(BaseModel):
     """Structured report fields submitted by the assigned Attestor."""
 

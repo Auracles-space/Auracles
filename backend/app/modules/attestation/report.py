@@ -31,6 +31,7 @@ from app.modules.attestation.schemas import (
     AttestationEvidenceFilesResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
+    AttestationEvidenceUploadStatusResponse,
     AttestationReportSubmitRequest,
 )
 from app.modules.auth.models import User
@@ -41,6 +42,10 @@ from app.workers.tasks.attestation_pdf import render_attestation_report_pdf
 from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
 
 REPORT_EVIDENCE_UPLOAD_TTL_SECONDS = 300
+# The presigned POST is short-lived, but the session it belongs to must outlive
+# the report being written around it: a reviewer who attaches evidence and then
+# spends an hour on the summary would otherwise submit against a dead key.
+REPORT_EVIDENCE_SESSION_TTL_SECONDS = 24 * 60 * 60
 REPORT_EVIDENCE_MAX_BYTES = 25 * 1024 * 1024
 DEFAULT_DISPUTE_WINDOW_BUSINESS_DAYS = 5
 
@@ -74,7 +79,7 @@ async def create_report_evidence_upload_session(
         await db.rollback()
 
     now = datetime.now(UTC)
-    expires_at = now + timedelta(seconds=REPORT_EVIDENCE_UPLOAD_TTL_SECONDS)
+    expires_at = now + timedelta(seconds=REPORT_EVIDENCE_SESSION_TTL_SECONDS)
     key = (
         f"attestations/{attestation_id}/evidence/{attestor_id}/{uuid4()}-"
         f"{_safe_file_name(payload.file_name)}"
@@ -117,6 +122,186 @@ async def create_report_evidence_upload_session(
         size_limit=REPORT_EVIDENCE_MAX_BYTES,
         scan_status=upload_session.scan_status,
     )
+
+
+async def _load_own_report_evidence_session(
+    *,
+    db: AsyncSession,
+    attestation_id: UUID,
+    attestor_id: UUID,
+    upload_session_id: UUID,
+    now: datetime,
+) -> AttestationUploadSession:
+    """Load one unconsumed report evidence session owned by this reviewer.
+
+    Args:
+        db: Async session for DB operations.
+        attestation_id: Attestation the evidence belongs to.
+        attestor_id: Reviewing member who created the upload session.
+        upload_session_id: Session to load.
+        now: Current time, used to reject expired sessions.
+
+    Returns:
+        The upload session, locked for update.
+
+    Raises:
+        HTTPException(404): If no such live session belongs to this reviewer.
+    """
+    upload_session = await db.scalar(
+        select(AttestationUploadSession)
+        .where(
+            AttestationUploadSession.id == upload_session_id,
+            AttestationUploadSession.attestation_id == attestation_id,
+            AttestationUploadSession.user_id == attestor_id,
+            AttestationUploadSession.purpose == "report_evidence",
+            AttestationUploadSession.consumed_at.is_(None),
+            AttestationUploadSession.expires_at > now,
+        )
+        .with_for_update()
+    )
+    if upload_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidence upload not found.",
+        )
+    return upload_session
+
+
+async def confirm_report_evidence_upload(
+    *,
+    db: AsyncSession,
+    attestor: User,
+    attestation_id: UUID,
+    upload_session_id: UUID,
+) -> AttestationEvidenceUploadStatusResponse:
+    """Start the virus scan for evidence the browser has finished uploading.
+
+    Storage accepts the file directly from the browser, so the API only learns
+    the upload happened when the browser says so. Scanning starts here rather
+    than at submission, where it would have refused the very report it was
+    scanning for.
+
+    Args:
+        db: Async session for DB operations.
+        attestor: The reviewing member confirming their own upload.
+        attestation_id: Attestation under review.
+        upload_session_id: Upload session to scan.
+
+    Returns:
+        The session's scan state after the scan is queued.
+
+    Raises:
+        HTTPException(404): If the session is not this reviewer's live upload.
+        HTTPException(422): If no file reached storage under the session's key.
+    """
+    attestor_id = attestor.id
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    settings = get_settings()
+    async with db.begin():
+        await _load_assigned_attestation_for_update(
+            db=db,
+            attestation_id=attestation_id,
+            user_id=attestor_id,
+            allowed_statuses={"in_review", "revision_requested"},
+        )
+        upload_session = await _load_own_report_evidence_session(
+            db=db,
+            attestation_id=attestation_id,
+            attestor_id=attestor_id,
+            upload_session_id=upload_session_id,
+            now=now,
+        )
+        scan_status = upload_session.scan_status
+        s3_key = upload_session.s3_key
+        # A scan already ran (or is running): confirming twice is harmless.
+        needs_scan = scan_status == "pending_scan"
+        if needs_scan and not s3.storage.object_exists(
+            settings.s3_artifacts_bucket, s3_key
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Upload the evidence file before confirming it.",
+            )
+
+    if needs_scan:
+        scan_attestation_upload.delay(str(upload_session_id))
+    return AttestationEvidenceUploadStatusResponse(
+        id=upload_session_id,
+        s3_key=s3_key,
+        scan_status=scan_status,
+    )
+
+
+async def get_report_evidence_upload_status(
+    *,
+    db: AsyncSession,
+    attestor: User,
+    attestation_id: UUID,
+    upload_session_id: UUID,
+) -> AttestationEvidenceUploadStatusResponse:
+    """Return one evidence upload's scan state while the browser waits on it.
+
+    Args:
+        db: Async session for DB operations.
+        attestor: The reviewing member who owns the upload.
+        attestation_id: Attestation under review.
+        upload_session_id: Upload session to report on.
+
+    Returns:
+        The session's current scan state.
+
+    Raises:
+        HTTPException(404): If the session is not this reviewer's live upload.
+    """
+    attestor_id = attestor.id
+    now = datetime.now(UTC)
+    await resolve_attestor_actor(
+        db,
+        attestation=await _load_attestation_for_read(
+            db=db, attestation_id=attestation_id
+        ),
+        user_id=attestor_id,
+    )
+    upload_session = await db.scalar(
+        select(AttestationUploadSession).where(
+            AttestationUploadSession.id == upload_session_id,
+            AttestationUploadSession.attestation_id == attestation_id,
+            AttestationUploadSession.user_id == attestor_id,
+            AttestationUploadSession.purpose == "report_evidence",
+            AttestationUploadSession.consumed_at.is_(None),
+            AttestationUploadSession.expires_at > now,
+        )
+    )
+    if upload_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidence upload not found.",
+        )
+    return AttestationEvidenceUploadStatusResponse(
+        id=upload_session.id,
+        s3_key=upload_session.s3_key,
+        scan_status=upload_session.scan_status,
+    )
+
+
+async def _load_attestation_for_read(
+    *,
+    db: AsyncSession,
+    attestation_id: UUID,
+) -> Attestation:
+    """Load one Attestation without locking it, for read-only checks."""
+    attestation = await db.scalar(
+        select(Attestation).where(Attestation.id == attestation_id)
+    )
+    if attestation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attestation not found.",
+        )
+    return attestation
 
 
 async def submit_report(

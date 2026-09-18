@@ -48,6 +48,7 @@ from app.modules.attestation.schemas import (
     AttestationEvidenceFilesResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
+    AttestationEvidenceUploadStatusResponse,
     AttestationFundingRequest,
     AttestationFundingResponse,
     AttestationPackageResponse,
@@ -689,6 +690,55 @@ async def create_attestation_report_evidence_upload_session(
         attestor=attestor,
         attestation_id=attestation_id,
         payload=payload,
+    )
+
+
+@router.post(
+    "/attestations/{attestation_id}/uploads/{upload_session_id}/confirm",
+    response_model=AttestationEvidenceUploadStatusResponse,
+    summary="Confirm one report evidence upload",
+    description=(
+        "Tell the API an evidence file finished uploading to storage, which "
+        "starts its virus scan. Called by the reviewing member's browser; "
+        "safe to call more than once."
+    ),
+)
+async def confirm_attestation_report_evidence_upload(
+    attestation_id: UUID,
+    upload_session_id: UUID,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationEvidenceUploadStatusResponse:
+    """Queue the virus scan for one uploaded report evidence file."""
+    return await report_service.confirm_report_evidence_upload(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        upload_session_id=upload_session_id,
+    )
+
+
+@router.get(
+    "/attestations/{attestation_id}/uploads/{upload_session_id}",
+    response_model=AttestationEvidenceUploadStatusResponse,
+    summary="Report evidence upload scan state",
+    description=(
+        "Return one evidence upload's scan state so the reviewing member's "
+        "browser can wait for the verdict before submitting the report."
+    ),
+)
+async def get_attestation_report_evidence_upload(
+    attestation_id: UUID,
+    upload_session_id: UUID,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationEvidenceUploadStatusResponse:
+    """Return the scan state of one report evidence upload."""
+    return await report_service.get_report_evidence_upload_status(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        upload_session_id=upload_session_id,
     )
 
 

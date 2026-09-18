@@ -10,13 +10,16 @@
 
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
 import {
-  createAttestationEvidenceUpload,
   listRubricScores,
   submitAttestationReport
 } from "@/lib/generated/sdk.gen";
+import {
+  ReportEvidenceUploader,
+  type EvidenceSelection,
+} from "./report-evidence-uploader";
 import type { RubricScoreItem } from "@/lib/generated/types.gen";
 import { getAccessTokenHeaders, describeGeneratedError } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
@@ -79,7 +82,13 @@ export function ReportPanel({
   const [scope, setScope] = useState("");
   const [conditions, setConditions] = useState("");
 
-  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  // Evidence is uploaded and virus-checked by the child as files are chosen,
+  // so submission only carries keys that already came back clean. An empty
+  // selection is settled: a report needs no evidence.
+  const [evidence, setEvidence] = useState<EvidenceSelection>({
+    fileKeys: [],
+    settled: true,
+  });
 
   // Rubric comment words count toward the report-length gate, but live in a
   // separate tab. Fetch them so the word counter and submit gate mirror the
@@ -124,48 +133,6 @@ export function ReportPanel({
     };
   }, [attestationId]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setEvidenceFiles(Array.from(e.target.files));
-    }
-  };
-
-  const uploadFile = async (file: File): Promise<string> => {
-    // 1. Get presigned URL
-    const res = await createAttestationEvidenceUpload({
-      path: { attestation_id: attestationId },
-      body: {
-        file_name: file.name,
-        content_type: file.type || "application/octet-stream",
-        size_bytes: file.size
-      },
-      headers: getAccessTokenHeaders()
-    });
-
-    if (res.error || !res.data) {
-      throw new Error("Failed to get upload session for " + file.name);
-    }
-
-    const { url, fields, s3_key: s3Key } = res.data;
-
-    // 2. Upload to S3
-    const formData = new FormData();
-    Object.entries(fields || {}).forEach(([key, value]) => {
-      formData.append(key, value as string);
-    });
-    formData.append("file", file);
-
-    const s3Res = await fetch(url, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!s3Res.ok) {
-      throw new Error("Failed to upload " + file.name + " to storage.");
-    }
-
-    return s3Key;
-  };
 
   // Mirror the backend contract: outcome set; summary and scope present
   // (non-empty required fields); conditions present when the outcome is
@@ -184,7 +151,12 @@ export function ReportPanel({
     summary.trim().length > 0 &&
     scope.trim().length > 0 &&
     (!conditionsRequired || conditions.trim().length > 0) &&
-    meetsLength;
+    meetsLength &&
+    evidence.settled;
+
+  const handleEvidenceChange = useCallback((selection: EvidenceSelection) => {
+    setEvidence(selection);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,14 +166,7 @@ export function ReportPanel({
     setError(null);
 
     try {
-      // Upload all files first
-      const fileKeys: string[] = [];
-      for (const file of evidenceFiles) {
-        const fileKey = await uploadFile(file);
-        fileKeys.push(fileKey);
-      }
-
-      // Submit report
+      const fileKeys = evidence.fileKeys;
       const res = await submitAttestationReport({
         path: { attestation_id: attestationId },
         body: {
@@ -324,23 +289,11 @@ export function ReportPanel({
           </div>
         )}
 
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">Evidence Files (Optional)</label>
-          <p className="text-xs text-foreground-muted mb-2">Attach any supporting documents (PDFs, spreadsheets).</p>
-          <input 
-            type="file" 
-            multiple 
-            onChange={handleFileChange}
-            className="block w-full text-sm text-foreground-muted file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-foreground file:text-background hover:file:bg-foreground/90 transition-colors"
-          />
-          {evidenceFiles.length > 0 && (
-            <ul className="mt-2 text-sm text-foreground-muted list-disc list-inside">
-              {evidenceFiles.map(f => (
-                <li key={f.name}>{f.name} ({(f.size / 1024).toFixed(1)} KB)</li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <ReportEvidenceUploader
+          attestationId={attestationId}
+          disabled={isSubmitting}
+          onChange={handleEvidenceChange}
+        />
 
         <div className="flex flex-col gap-3 pt-4 border-t border-border-default sm:flex-row sm:items-center sm:justify-between">
           <p
@@ -353,6 +306,11 @@ export function ReportPanel({
               {" "}(scope excluded).
             </span>
           </p>
+          {!evidence.settled && (
+            <p className="text-xs text-foreground-muted">
+              Waiting for the evidence check to finish.
+            </p>
+          )}
           <Button
             type="submit"
             disabled={isSubmitting || !isValid}

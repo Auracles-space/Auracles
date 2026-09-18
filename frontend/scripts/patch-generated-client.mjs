@@ -21,6 +21,10 @@ const compatibilityAliases = {
   approveDeliverable: "approveDeliverableV1ProjectsProjectIdMilestonesMilestoneIdDeliverablesDeliverableIdApprovePost",
   confirmArtifactUpload: "confirmArtifactUploadV1FrameworksFrameworkIdArtifactsConfirmPost",
   createAttestationDispute: "createAttestationDisputeV1AttestationsAttestationIdDisputesPost",
+  confirmAttestationEvidenceUpload:
+    "confirmAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdConfirmPost",
+  getAttestationEvidenceUpload:
+    "getAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGet",
   createCredential: "createCredentialV1CredentialsPost",
   createDispute: "createDisputeV1ProjectsProjectIdDisputesPost",
   listDisputes: "listDisputesV1ProjectsProjectIdDisputesGet",
