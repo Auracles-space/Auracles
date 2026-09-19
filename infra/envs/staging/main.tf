@@ -131,6 +131,12 @@ module "ecs" {
     module.s3.thumbnails_bucket,
   ]
 
+  # Only these two are erased from; avatars and thumbnails are overwritten.
+  s3_delete_bucket_names = [
+    module.s3.artifacts_bucket,
+    module.s3.reports_bucket,
+  ]
+
   environment_variables = {
     ENVIRONMENT          = "staging"
     LOG_FORMAT           = "json"

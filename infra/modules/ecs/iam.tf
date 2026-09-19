@@ -50,9 +50,7 @@ resource "aws_iam_role" "task" {
 
 # S3 only, and only the four application buckets. Presigned URLs are minted
 # with these same credentials, so download/upload authority stays inside this
-# grant. No delete on objects the app never deletes: artifacts are immutable
-# once written (versioning covers mistakes); the app overwrites avatars and
-# thumbnails by key instead of deleting.
+# grant.
 data "aws_iam_policy_document" "task_s3" {
   statement {
     sid = "ObjectRW"
@@ -61,6 +59,17 @@ data "aws_iam_policy_document" "task_s3" {
       "s3:PutObject",
     ]
     resources = [for name in var.s3_bucket_names : "arn:aws:s3:::${name}/*"]
+  }
+
+  # Delete is granted only on the buckets the application legitimately erases
+  # from: GDPR erasure (KYC documents in artifacts, export bundles in reports),
+  # the artifact orphan sweep, replaced framework files, and withdrawn trial
+  # submissions. Avatars and thumbnails are overwritten by key, never deleted,
+  # so they stay outside this grant.
+  statement {
+    sid       = "ObjectDelete"
+    actions   = ["s3:DeleteObject"]
+    resources = [for name in var.s3_delete_bucket_names : "arn:aws:s3:::${name}/*"]
   }
 
   statement {

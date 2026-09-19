@@ -74,6 +74,11 @@ variable "s3_bucket_names" {
   type        = list(string)
 }
 
+variable "s3_delete_bucket_names" {
+  description = "Buckets the task role may delete objects from: those the app erases from (GDPR erasure, artifact orphan sweep). A subset of s3_bucket_names."
+  type        = list(string)
+}
+
 variable "clamav_image" {
   description = "ClamAV sidecar image for the worker task. Must carry linux/arm64 — the plain version tags (1.4) are amd64-only and the pull fails with 'manifest does not contain descriptor matching platform'; the -debian variants are the multi-arch ones."
   type        = string
