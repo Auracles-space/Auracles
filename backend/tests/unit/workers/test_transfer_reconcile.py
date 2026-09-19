@@ -35,6 +35,7 @@ from app.modules.financials.models import (
     PayoutAccount,
     PlatformBankAccount,
     PlatformWithdrawal,
+    ProviderFee,
 )
 from app.shared.models.audit_log import AuditLog
 from app.workers.tasks import transfer_reconcile
@@ -60,13 +61,19 @@ def reconcile_context(
     settings = get_settings()
     sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
     session_factory = sessionmaker(sync_engine)
-    state: dict[str, Any] = {"status": "abandoned", "verified": [], "notices": []}
+    state: dict[str, Any] = {
+        "status": "abandoned",
+        "fee_charged": 0,
+        "verified": [],
+        "notices": [],
+    }
 
     def cleanup() -> None:
         """Delete payout rows in dependency order."""
         with session_factory() as session:
             session.execute(delete(AuditLog))
             session.execute(delete(FinancialEvent))
+            session.execute(delete(ProviderFee))
             session.execute(delete(PlatformWithdrawal))
             session.execute(delete(PlatformBankAccount))
             session.execute(delete(Payout))
@@ -78,7 +85,11 @@ def reconcile_context(
     async def fake_verify(*, reference: str) -> dict[str, Any]:
         """Report the status the test asked for, recording the lookup."""
         state["verified"].append(reference)
-        return {"status": state["status"], "reference": reference}
+        return {
+            "status": state["status"],
+            "reference": reference,
+            "fee_charged": state["fee_charged"],
+        }
 
     cleanup()
     monkeypatch.setattr(transfer_reconcile.paystack, "verify_transfer", fake_verify)
@@ -220,6 +231,39 @@ def test_transfer_that_succeeded_without_a_webhook_completes(
     payout = _load_payout(payout_id)
     assert payout.status == "completed"
     assert payout.awaiting_otp is False
+
+
+def test_a_reconciled_success_records_the_provider_fee(
+    migrated_database: None,
+    reconcile_context: dict[str, Any],
+) -> None:
+    """A payout settled here records its fee, as the webhook path does.
+
+    The platform absorbs Paystack's transfer fee, so treasury subtracts every
+    recorded fee from the platform's own money. A payout completed by this
+    task rather than by a webhook must therefore cost the same, or the
+    platform's available balance reads higher than the money that exists.
+    """
+    reconcile_context["status"] = "success"
+    reconcile_context["fee_charged"] = 10000
+    payout_id = create_held_payout()
+
+    transfer_reconcile.reconcile_held_transfers.apply().get()
+
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(sync_engine)
+    with session_factory() as session:
+        fee = session.scalar(select(ProviderFee))
+        assert fee is not None
+        source_type = fee.source_type
+        source_id = fee.source_id
+        amount = str(fee.amount)
+    sync_engine.dispose()
+
+    assert source_type == "payout"
+    assert source_id == payout_id
+    assert amount == "100.00"
 
 
 def test_payouts_not_held_for_a_code_are_never_verified(

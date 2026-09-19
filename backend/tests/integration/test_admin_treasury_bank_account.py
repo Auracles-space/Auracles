@@ -353,3 +353,60 @@ async def test_superadmin_lists_banks_without_a_contributor_role(
         "banks": [{"name": "Guaranty Trust Bank", "code": "058"}]
     }
     assert by_admin.status_code == 403
+
+
+async def test_superadmin_checks_the_account_holder_before_setting_it(
+    client: AsyncClient,
+    bank_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The name behind a NUBAN is readable before the account is registered.
+
+    A mistyped account number almost always belongs to a real stranger rather
+    than being invalid, and the platform bank account is where the platform's
+    own money goes. The check registers nothing, so a rejected name leaves
+    nothing to undo.
+    """
+
+    async def fake_resolve(**_: Any) -> str:
+        """Name the holder Paystack reports."""
+        return "AURACLES TECHNOLOGIES LTD"
+
+    monkeypatch.setattr(
+        "app.modules.financials.service.paystack.resolve_account_name", fake_resolve
+    )
+    superadmin_id = await _admin(superadmin=True)
+
+    response = await client.post(
+        "/v1/admin/treasury/resolve-account",
+        headers=_headers(superadmin_id),
+        json=PAYLOAD,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"account_name": "AURACLES TECHNOLOGIES LTD"}
+    # Checking a name must not create a transfer recipient, or a rejected
+    # check would leave a usable destination behind at the provider.
+    assert bank_context["recipients"] == []
+    assert await _accounts() == []
+
+
+async def test_an_ordinary_admin_cannot_check_an_account_holder(
+    client: AsyncClient,
+    bank_context: dict[str, Any],
+) -> None:
+    """Only the super-admin may turn an account number into a person's name.
+
+    The lookup is the same capability the Contributor endpoint rate-limits
+    for privacy reasons, so it is held to the role that owns treasury.
+    """
+    del bank_context
+    admin_id = await _admin(superadmin=False)
+
+    response = await client.post(
+        "/v1/admin/treasury/resolve-account",
+        headers=_headers(admin_id),
+        json=PAYLOAD,
+    )
+
+    assert response.status_code == 403

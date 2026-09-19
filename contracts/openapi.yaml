@@ -19528,6 +19528,39 @@ paths:
       summary: Backfill Paystack fees on past charges (super-admin)
       tags:
       - Admin Treasury
+  /v1/admin/treasury/resolve-account:
+    post:
+      description: Return the name the bank holds for an account number so it can be
+        confirmed before it becomes the platform's withdrawal destination. A mistyped
+        number usually belongs to somebody else rather than being invalid, so this is
+        the only point at which the mistake is visible. Registers nothing. Super-admin
+        only, because the Contributor lookup requires the Contributor role, which the
+        super-admin need not hold. Rate limited per caller.
+      operationId: admin_treasury_resolve_account_v1_admin_treasury_resolve_account_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutAccountResolveRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountResolveResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Check the platform account holder before setting it (super-admin)
+      tags:
+      - Admin Treasury
   /v1/admin/treasury/statements/{month}:
     get:
       description: 'One Lagos-time month: opening balance, commission by source, refunds, provider

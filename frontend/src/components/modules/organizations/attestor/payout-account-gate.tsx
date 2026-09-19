@@ -12,12 +12,18 @@
  * deployment Stripe Connect cannot pay out at all, so the org's bank details
  * are collected here and registered with Paystack instead of redirecting.
  *
+ * On that rail the holder's name is shown for acceptance first. Registering
+ * an account here also links it to the application, so a mistyped number
+ * would satisfy the approval gate with a stranger's bank account — and this
+ * is the surface an applicant reaches before any payout settings page.
+ *
  * Maps to: FR-ATT / org-attestor design step 5 (payout account).
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   onboardOrgPayoutAccount,
+  resolveOrgPayoutAccountName,
   updateOrgAttestorApplication,
 } from "@/lib/generated/sdk.gen";
 import type { OrgAttestorApplicationResponse } from "@/lib/generated/types.gen";
@@ -28,9 +34,10 @@ import {
 } from "@/lib/auth/form-client";
 import { Button } from "@/components/ui/button";
 import {
-  PaystackBankFields,
-  paystackDetailsComplete,
-} from "@/components/modules/financials/paystack-bank-fields";
+  type BankDetails,
+  ConfirmBankAccount,
+  type ResolveResult,
+} from "@/components/modules/financials/confirm-bank-account";
 import { payoutProviderForCountry } from "@/lib/marketplace/currency";
 
 /**
@@ -51,8 +58,6 @@ export function PayoutAccountGate({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
 
   // The org's own country is not loaded here, but it does not need to be: on an
   // NGN deployment every country settles through Paystack, and on a USD one an
@@ -63,8 +68,35 @@ export function PayoutAccountGate({
   const canEdit =
     application?.status === "draft" || application?.status === "needs_info";
 
+  /** Ask the bank who holds an account, registering nothing. */
+  const resolveAccount = useCallback(
+    async ({ accountNumber, bankCode }: BankDetails): Promise<ResolveResult> => {
+      configureBrowserClient();
+      const result = await resolveOrgPayoutAccountName({
+        path: { org_id: orgId },
+        body: { account_number: accountNumber, bank_code: bankCode },
+        headers: getAccessTokenHeaders(),
+      });
+      if (result.error || !result.data) {
+        return { error: describeGeneratedError(result.error) };
+      }
+      return { name: result.data.account_name };
+    },
+    [orgId],
+  );
+
+  /** Register and link the account once its holder has been accepted. */
+  const confirmAccount = useCallback(
+    (details: BankDetails) => handleSetup(details),
+    // handleSetup closes over orgId and onChange, both stable for a render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orgId, onChange],
+  );
+
   /** Onboard an org payout destination on its rail, then link it. */
-  async function handleSetup() {
+  async function handleSetup(
+    details?: BankDetails,
+  ): Promise<{ error: string } | null> {
     setLoading(true);
     setError(null);
     try {
@@ -73,10 +105,10 @@ export function PayoutAccountGate({
       configureBrowserClient();
       const onboard = await onboardOrgPayoutAccount({
         path: { org_id: orgId },
-        body: isPaystackRail
+        body: details
           ? {
-              account_number: accountNumber,
-              bank_code: bankCode,
+              account_number: details.accountNumber,
+              bank_code: details.bankCode,
               provider: "paystack" as const,
             }
           : {
@@ -87,8 +119,9 @@ export function PayoutAccountGate({
         headers: getAccessTokenHeaders(),
       });
       if (onboard.error || !onboard.data) {
-        setError(describeGeneratedError(onboard.error));
-        return;
+        const message = describeGeneratedError(onboard.error);
+        setError(message);
+        return { error: message };
       }
 
       // Link the account to the application before navigating away: the gate
@@ -101,8 +134,9 @@ export function PayoutAccountGate({
         headers: getAccessTokenHeaders(),
       });
       if (link.error) {
-        setError(describeGeneratedError(link.error));
-        return;
+        const message = describeGeneratedError(link.error);
+        setError(message);
+        return { error: message };
       }
 
       // Redirect to provider verification. Navigate before refetching so the
@@ -110,11 +144,14 @@ export function PayoutAccountGate({
       // to a refetch when the provider returned no onboarding URL.
       if (onboard.data.onboarding_url) {
         window.location.assign(onboard.data.onboarding_url);
-        return;
+        return null;
       }
       onChange();
+      return null;
     } catch (caught) {
-      setError(describeGeneratedError(caught));
+      const message = describeGeneratedError(caught);
+      setError(message);
+      return { error: message };
     } finally {
       setLoading(false);
     }
@@ -170,26 +207,22 @@ export function PayoutAccountGate({
           : "Connect a payout destination so your organization can receive attestation earnings. You'll be redirected to the provider to finish verification."}
       </p>
       {isPaystackRail ? (
-        <PaystackBankFields
-          accountNumber={accountNumber}
-          bankCode={bankCode}
-          disabled={loading}
+        <ConfirmBankAccount
+          confirmLabel="Yes, use this account"
           idPrefix="org-attestor-payout"
-          onAccountNumberChange={setAccountNumber}
-          onBankCodeChange={setBankCode}
+          onConfirm={confirmAccount}
+          resolve={resolveAccount}
         />
-      ) : null}
-      <Button
-        type="button"
-        onClick={handleSetup}
-        disabled={
-          loading ||
-          (isPaystackRail && !paystackDetailsComplete(bankCode, accountNumber))
-        }
-        loading={loading}
-      >
-        Set up payout account
-      </Button>
+      ) : (
+        <Button
+          type="button"
+          onClick={() => void handleSetup()}
+          disabled={loading}
+          loading={loading}
+        >
+          Set up payout account
+        </Button>
+      )}
     </div>
   );
 }

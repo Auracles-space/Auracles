@@ -8,10 +8,11 @@ Maps to: platform treasury design §API.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query, Response
+from redis.asyncio import Redis
 
 from app.core.dependencies import (
     DatabaseSession,
@@ -19,6 +20,8 @@ from app.core.dependencies import (
     require_step_up_after,
     require_superadmin,
 )
+from app.core.rate_limit import RedisCounter
+from app.core.redis import get_redis
 from app.modules.admin.treasury_schemas import (
     FeeBackfillResponse,
     PlatformBankAccountResponse,
@@ -40,9 +43,15 @@ from app.modules.financials import (
     unrecognized_transfers,
 )
 from app.modules.financials import service as financials_service
-from app.modules.financials.schemas import PayoutBanksResponse
+from app.modules.financials.schemas import (
+    PayoutAccountResolveRequest,
+    PayoutAccountResolveResponse,
+    PayoutBanksResponse,
+)
 
 router = APIRouter(prefix="/admin/treasury", tags=["Admin Treasury"])
+
+RedisConnection = Annotated[Redis, Depends(get_redis)]
 
 PlatformAdmin = Annotated[User, Depends(require_role("admin"))]
 SuperAdmin = Annotated[User, Depends(require_superadmin)]
@@ -97,6 +106,33 @@ async def admin_treasury_banks(admin: SuperAdmin) -> PayoutBanksResponse:
     """List banks for setting the platform bank account."""
     del admin
     return await financials_service.list_payout_banks()
+
+
+@router.post(
+    "/resolve-account",
+    response_model=PayoutAccountResolveResponse,
+    summary="Check the platform account holder before setting it (super-admin)",
+    description=(
+        "Return the name the bank holds for an account number so it can be "
+        "confirmed before it becomes the platform's withdrawal destination. "
+        "A mistyped number usually belongs to somebody else rather than "
+        "being invalid, so this is the only point at which the mistake is "
+        "visible. Registers nothing. Super-admin only, because the "
+        "Contributor lookup requires the Contributor role, which the "
+        "super-admin need not hold. Rate limited per caller."
+    ),
+)
+async def admin_treasury_resolve_account(
+    payload: PayoutAccountResolveRequest,
+    admin: SuperAdmin,
+    redis: RedisConnection,
+) -> PayoutAccountResolveResponse:
+    """Name the holder of a bank account without registering it."""
+    return await financials_service.resolve_payout_account_name(
+        redis=cast(RedisCounter, redis),
+        actor_id=admin.id,
+        payload=payload,
+    )
 
 
 @router.put(

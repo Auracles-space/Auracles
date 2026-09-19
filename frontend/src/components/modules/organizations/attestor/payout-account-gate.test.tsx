@@ -15,6 +15,11 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   })),
   onboardOrgPayoutAccount: vi.fn(),
   updateOrgAttestorApplication: vi.fn(),
+  resolveOrgPayoutAccountName: vi.fn(async () => ({
+    data: { account_name: "ATTESTOR ORG LLC" },
+    error: undefined,
+    response: { ok: true },
+  })),
 }));
 
 // Keep the real describeGeneratedError so surfaced copy is what users read;
@@ -153,7 +158,10 @@ describe("PayoutAccountGate", () => {
     fireEvent.change(screen.getByLabelText(/Account number/i), {
       target: { value: "0123456789" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Set up payout account/i }));
+    fireEvent.click(screen.getByRole("button", { name: /check account/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /yes, use this account/i }),
+    );
 
     await waitFor(() => {
       expect(onboardOrgPayoutAccount).toHaveBeenCalledWith(
@@ -169,6 +177,32 @@ describe("PayoutAccountGate", () => {
     // No redirect exists on this rail, so the gate must refresh in place
     // rather than dead-ending on a null onboarding URL.
     await waitFor(() => expect(onChange).toHaveBeenCalled());
+    vi.unstubAllEnvs();
+  });
+
+  it("names the account holder before registering the org's account", async () => {
+    // This is the surface an applicant actually reaches first, and a mistyped
+    // NUBAN belongs to a real stranger rather than being rejected. Registering
+    // it also links it to the application, so the mistake would satisfy the
+    // approval gate with somebody else's bank account.
+    vi.stubEnv("NEXT_PUBLIC_PLATFORM_CURRENCY", "NGN");
+    vi.resetModules();
+    const { PayoutAccountGate: NgnGate } = await import("./payout-account-gate");
+    const onChange = vi.fn();
+
+    render(<NgnGate application={draftApp()} onChange={onChange} orgId="org-1" />);
+
+    fireEvent.change(await screen.findByLabelText(/Bank/i), {
+      target: { value: "044" },
+    });
+    fireEvent.change(screen.getByLabelText(/Account number/i), {
+      target: { value: "0123456789" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /check account/i }));
+
+    expect(await screen.findByText("ATTESTOR ORG LLC")).toBeInTheDocument();
+    expect(onboardOrgPayoutAccount).not.toHaveBeenCalled();
+    expect(updateOrgAttestorApplication).not.toHaveBeenCalled();
     vi.unstubAllEnvs();
   });
 

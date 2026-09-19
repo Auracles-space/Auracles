@@ -8,16 +8,22 @@
  * needs step-up, is announced to all admins, and holds withdrawals for 24
  * hours, which the copy states before the change is made.
  *
+ * Setting an account names its holder first and waits for acceptance, the
+ * same question the Contributor and organization surfaces ask. The 24-hour
+ * hold would catch a mistyped number eventually, but only if somebody
+ * re-reads the card; the name is the moment the mistake is actually visible.
+ *
  * Maps to: platform treasury design, decision 3.
  */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import type { BankListLoader } from "@/components/modules/financials/paystack-bank-fields";
 import {
-  type BankListLoader,
-  PaystackBankFields,
-  paystackDetailsComplete,
-} from "@/components/modules/financials/paystack-bank-fields";
+  type BankDetails,
+  ConfirmBankAccount,
+  type ResolveResult,
+} from "@/components/modules/financials/confirm-bank-account";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -26,6 +32,7 @@ import {
 import {
   adminSetPlatformBankAccountV1AdminTreasuryBankAccountPut as setBankAccount,
   adminTreasuryBanksV1AdminTreasuryBanksGet as listTreasuryBanks,
+  adminTreasuryResolveAccountV1AdminTreasuryResolveAccountPost as resolveTreasuryAccount,
 } from "@/lib/generated/sdk.gen";
 import type { PlatformBankAccountItem } from "@/lib/generated/types.gen";
 
@@ -53,29 +60,40 @@ export function BankAccountCard({
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function save() {
-    setBusy(true);
-    setError(null);
-    configureBrowserClient();
-    const result = await setBankAccount({
-      headers: getAccessTokenHeaders(),
-      body: { account_number: accountNumber, bank_code: bankCode },
-    });
-    setBusy(false);
-    if (!result.response.ok) {
-      setError(describeGeneratedError(result.error));
-      return;
-    }
-    setEditing(false);
-    setBankCode("");
-    setAccountNumber("");
-    onChanged();
-  }
+  /** Ask the bank who holds an account, registering nothing. */
+  const resolve = useCallback(
+    async ({ accountNumber, bankCode }: BankDetails): Promise<ResolveResult> => {
+      configureBrowserClient();
+      const result = await resolveTreasuryAccount({
+        headers: getAccessTokenHeaders(),
+        body: { account_number: accountNumber, bank_code: bankCode },
+      });
+      if (!result.response.ok || !result.data) {
+        return { error: describeGeneratedError(result.error) };
+      }
+      return { name: result.data.account_name };
+    },
+    [],
+  );
+
+  /** Set the platform account once its holder has been accepted. */
+  const confirm = useCallback(
+    async ({ accountNumber, bankCode }: BankDetails) => {
+      configureBrowserClient();
+      const result = await setBankAccount({
+        headers: getAccessTokenHeaders(),
+        body: { account_number: accountNumber, bank_code: bankCode },
+      });
+      if (!result.response.ok) {
+        return { error: describeGeneratedError(result.error) };
+      }
+      setEditing(false);
+      onChanged();
+      return null;
+    },
+    [onChanged],
+  );
 
   return (
     <section className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm">
@@ -103,24 +121,14 @@ export function BankAccountCard({
             Paystack confirms the account name with the bank. Withdrawals to a new
             account open 24 hours after the change, and every admin is notified.
           </p>
-          <PaystackBankFields
-            accountNumber={accountNumber}
-            bankCode={bankCode}
-            disabled={busy}
+          <ConfirmBankAccount
+            confirmLabel="Yes, use this account"
             idPrefix="treasury-bank"
             loadBanks={loadTreasuryBanks}
-            onAccountNumberChange={setAccountNumber}
-            onBankCodeChange={setBankCode}
+            onConfirm={confirm}
+            resolve={resolve}
           />
-          {error ? <p className="text-sm text-error">{error}</p> : null}
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              disabled={!paystackDetailsComplete(bankCode, accountNumber)}
-              loading={busy}
-              onClick={() => void save()}
-            >
-              Save bank account
-            </Button>
+          <div>
             <Button onClick={() => setEditing(false)} variant="secondary">
               Cancel
             </Button>
