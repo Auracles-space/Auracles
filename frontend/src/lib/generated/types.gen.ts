@@ -6849,6 +6849,14 @@ export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostResponse = (Fee
 
 export type AdminRequestFeeBackfillV1AdminTreasuryFeeBackfillPostError = unknown;
 
+export type AdminTreasuryResolveAccountV1AdminTreasuryResolveAccountPostData = {
+    body: PayoutAccountResolveRequest;
+};
+
+export type AdminTreasuryResolveAccountV1AdminTreasuryResolveAccountPostResponse = (PayoutAccountResolveResponse);
+
+export type AdminTreasuryResolveAccountV1AdminTreasuryResolveAccountPostError = (HTTPValidationError);
+
 export type AdminTreasuryStatementV1AdminTreasuryStatementsMonthGetData = {
     path: {
         month: string;
