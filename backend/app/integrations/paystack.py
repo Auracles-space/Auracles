@@ -50,7 +50,11 @@ class PaystackProviderError(RuntimeError):
         message: str | None = None,
         status_code: int | None = None,
     ) -> None:
-        super().__init__(detail)
+        # The provider's wording goes into the string form, because every
+        # caller logs `str(exc)`. Kept out of it, a refusal we failed to
+        # classify would leave nothing in the logs to classify it by — which
+        # is the whole reason the message is carried at all.
+        super().__init__(f"{detail} {message}" if message else detail)
         self.message = message
         self.status_code = status_code
 
