@@ -34,6 +34,7 @@ from app.modules.financials.schemas import (
     OrgPayoutHistoryResponse,
     OrgPurchasesResponse,
     PayoutAccountOnboardResponse,
+    PayoutAccountsResponse,
     PayoutRequest,
     PayoutResponse,
     PurchaseRequest,
@@ -2124,6 +2125,26 @@ async def delete_org_payment_method(
     return OrgPaymentMethodDeleteResponse(**response.model_dump())
 
 
+@router.get(
+    "/{org_id}/financials/payout-accounts",
+    response_model=PayoutAccountsResponse,
+    summary="List organization payout accounts",
+    description=(
+        "Return the organization's active payout destinations, with provider "
+        "references masked. Lets an owner confirm which bank account earnings "
+        "are addressed to. Owner/admin only."
+    ),
+)
+async def list_org_payout_accounts(
+    org_id: UUID,
+    context: VerifiedOrgAdmin,
+    db: DatabaseSession,
+) -> PayoutAccountsResponse:
+    """List the org's active payout destinations."""
+    del context
+    return await financials_service.list_org_payout_accounts(db, org_id=org_id)
+
+
 @router.post(
     "/{org_id}/financials/payout-accounts",
     response_model=PayoutAccountOnboardResponse,
@@ -2147,6 +2168,40 @@ async def onboard_org_payout_account(
     del org_id
     return await financials_service.onboard_org_payout_account(
         db, org=context.org, actor=context.user, payload=payload
+    )
+
+
+@router.post(
+    "/{org_id}/financials/payout-accounts/{payout_account_id}/replace",
+    response_model=PayoutAccountOnboardResponse,
+    summary="Replace an organization payout account",
+    description=(
+        "Register a new payout destination and retire the named one in a "
+        "single action, moving anything linked to it across. Removal is not "
+        "offered on its own, because an approved attestor application points "
+        "at a specific account, so retiring it alone would leave the "
+        "organization approved but unpayable. Requires an open step-up 2FA "
+        "window. Owner only."
+    ),
+    dependencies=[
+        Depends(require_step_up_after(require_org_role("owner", verified=True)))
+    ],
+)
+async def replace_org_payout_account(
+    org_id: UUID,
+    payout_account_id: UUID,
+    payload: OrgPayoutAccountOnboardRequest,
+    context: VerifiedOrgOwner,
+    db: DatabaseSession,
+) -> PayoutAccountOnboardResponse:
+    """Swap an org payout destination for a newly registered one."""
+    del org_id
+    return await financials_service.replace_org_payout_account(
+        db,
+        org=context.org,
+        actor=context.user,
+        payout_account_id=payout_account_id,
+        payload=payload,
     )
 
 

@@ -10,7 +10,7 @@ from cryptography.fernet import InvalidToken
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
-from sqlalchemy import ColumnElement, exists, func, or_, select, text
+from sqlalchemy import ColumnElement, exists, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -3109,6 +3109,212 @@ async def onboard_org_payout_account(
     )
 
 
+async def replace_org_payout_account(
+    db: AsyncSession,
+    *,
+    org: Organization,
+    actor: User,
+    payout_account_id: UUID,
+    payload: OrgPayoutAccountOnboardRequest,
+) -> PayoutAccountOnboardResponse:
+    """Swap an organization's payout destination for a newly registered one.
+
+    Registering and retiring happen together rather than as a delete followed
+    by an add. An approved attestor application points at a specific payout
+    account, and the approval gate reads that column: removing the account on
+    its own would leave the organization approved but unpayable, with a
+    checklist still reporting a linked account. Anything pointing at the old
+    account is moved to the new one inside the same transaction.
+
+    Stripe Connect is refused deliberately. The bank details behind a Connect
+    account live at Stripe, so replacing them is done there — minting a second
+    Connect account here would leave the organization with an unverified
+    destination and no way back to the verified one.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org: Organization that owns the account being replaced.
+        actor: Owner performing the replacement, for the audit row.
+        payout_account_id: The destination to retire.
+        payload: Bank details for the replacement destination.
+
+    Returns:
+        The newly registered payout account and its bank-confirmed name.
+
+    Raises:
+        HTTPException(404): The account is not this organization's, or is gone.
+        HTTPException(409): A payout is already in flight for this org.
+        HTTPException(422): The rail cannot replace an account in place.
+        HTTPException(502): Paystack rejected the account or was unreachable.
+    """
+    org_id = org.id
+    actor_id = actor.id
+    log = logger.bind(
+        module="financials",
+        action="replace_org_payout_account",
+        org_id=org_id,
+        user_id=actor_id,
+    )
+
+    existing = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.id == payout_account_id,
+            PayoutAccount.org_id == org_id,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payout account not found.",
+        )
+    if existing.provider != "paystack":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Change the bank details for this account with Stripe instead. "
+                "Stripe holds them, so they cannot be replaced here."
+            ),
+        )
+
+    # Money already addressed to the old account must land before it is
+    # retired; replacing mid-transfer would leave a payout referencing a
+    # destination the organization can no longer see.
+    in_flight = await db.scalar(
+        select(Payout.id)
+        .where(
+            Payout.org_id == org_id,
+            Payout.status.in_(("pending", "processing")),
+        )
+        .limit(1)
+    )
+    if in_flight is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A payout is still in progress. Replace this account once it "
+                "has completed."
+            ),
+        )
+
+    if payload.provider != "paystack":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="This organization settles through Paystack.",
+        )
+    # Narrowed by the request validator, which rejects a Paystack payload
+    # missing either field before it can reach the provider.
+    assert payload.account_number is not None
+    assert payload.bank_code is not None
+
+    try:
+        recipient = await paystack.create_transfer_recipient(
+            name=org.name,
+            account_number=payload.account_number,
+            bank_code=payload.bank_code,
+            currency=platform_currency(),
+        )
+    except PaystackProviderError as exc:
+        log.error("payout_account_provider_failed: {error}", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payout provider is unavailable.",
+        ) from exc
+
+    lookup_hash = hash_payout_provider_account_id(recipient.recipient_code)
+    shared_with = await _guard_payout_destination_sharing(
+        db,
+        provider="paystack",
+        lookup_hash=lookup_hash,
+        actor_id=actor_id,
+        owner_ref={"org_id": str(org_id)},
+    )
+
+    if db.in_transaction():
+        await db.rollback()
+    try:
+        async with db.begin():
+            retired = await db.scalar(
+                select(PayoutAccount)
+                .where(
+                    PayoutAccount.id == payout_account_id,
+                    PayoutAccount.org_id == org_id,
+                    PayoutAccount.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if retired is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Payout account not found.",
+                )
+            retired.deleted_at = datetime.now(UTC)
+            retired.is_default = False
+
+            payout_account = PayoutAccount(
+                org_id=org_id,
+                provider="paystack",
+                provider_account_id=encrypt_payout_provider_account_id(
+                    recipient.recipient_code
+                ),
+                provider_account_lookup_hash=lookup_hash,
+                account_type="nuban",
+                is_default=True,
+                # Paystack resolved the account against the bank to create the
+                # recipient, so there is nothing further to confirm.
+                verified_at=datetime.now(UTC),
+            )
+            db.add(payout_account)
+            await db.flush()
+
+            await db.execute(
+                update(OrgAttestorApplication)
+                .where(
+                    OrgAttestorApplication.org_id == org_id,
+                    OrgAttestorApplication.payout_account_id == payout_account_id,
+                )
+                .values(payout_account_id=payout_account.id)
+            )
+
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="payout_account_replaced",
+                target_type="payout_account",
+                target_id=payout_account.id,
+                metadata={
+                    "provider": "paystack",
+                    "org_id": str(org_id),
+                    "replaced_payout_account_id": str(payout_account_id),
+                    "provider_account_ref": _masked_provider_ref(
+                        recipient.recipient_code
+                    ),
+                    "bank_code": payload.bank_code,
+                },
+            )
+            if shared_with:
+                await _audit_shared_payout_destination(
+                    db,
+                    actor_id=actor_id,
+                    payout_account=payout_account,
+                    owner_count=shared_with + 1,
+                )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payout account already exists.",
+        ) from exc
+
+    log.info("payout_account_replaced", provider="paystack")
+    return PayoutAccountOnboardResponse(
+        provider="paystack",
+        onboarding_url=None,
+        payout_account=_payout_account_response(payout_account),
+        account_name=recipient.account_name,
+    )
+
+
 async def _org_has_approved_attestor_application(
     db: AsyncSession,
     *,
@@ -3935,6 +4141,43 @@ async def list_payout_accounts(
                 select(PayoutAccount)
                 .where(
                     PayoutAccount.user_id == contributor.id,
+                    PayoutAccount.deleted_at.is_(None),
+                )
+                .order_by(PayoutAccount.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return PayoutAccountsResponse(
+        payout_accounts=[
+            _payout_account_response(payout_account)
+            for payout_account in payout_accounts
+        ]
+    )
+
+
+async def list_org_payout_accounts(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> PayoutAccountsResponse:
+    """List the organization's active payout destinations.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: Organization whose destinations are read.
+
+    Returns:
+        The org's non-deleted payout accounts, newest first, with provider
+        references masked.
+    """
+    payout_accounts = (
+        (
+            await db.execute(
+                select(PayoutAccount)
+                .where(
+                    PayoutAccount.org_id == org_id,
                     PayoutAccount.deleted_at.is_(None),
                 )
                 .order_by(PayoutAccount.created_at.desc())

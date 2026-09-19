@@ -8772,6 +8772,16 @@ export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMeth
 
 export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteError = (HTTPValidationError);
 
+export type ListOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGetResponse = (PayoutAccountsResponse);
+
+export type ListOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGetError = (HTTPValidationError);
+
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData = {
     body: OrgPayoutAccountOnboardRequest;
     path: {
@@ -8782,6 +8792,18 @@ export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData =
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostResponse = (PayoutAccountOnboardResponse);
 
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostError = (HTTPValidationError);
+
+export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostData = {
+    body: OrgPayoutAccountOnboardRequest;
+    path: {
+        org_id: string;
+        payout_account_id: string;
+    };
+};
+
+export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostResponse = (PayoutAccountOnboardResponse);
+
+export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostError = (HTTPValidationError);
 
 export type ListOrgPayoutsV1OrgsOrgIdFinancialsPayoutsGetData = {
     path: {

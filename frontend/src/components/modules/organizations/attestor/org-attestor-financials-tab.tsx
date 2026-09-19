@@ -42,6 +42,7 @@ import { useOrganization } from "@/components/modules/organizations/organization
 
 import { OrgEarningsSummary } from "./org-earnings-summary";
 import { OrgInvoiceList } from "./org-invoice-list";
+import { OrgPayoutAccountCard } from "./org-payout-account-card";
 import { OrgPayoutActions } from "./org-payout-actions";
 import { OrgPayoutHistory } from "./org-payout-history";
 
@@ -122,6 +123,12 @@ export function OrgAttestorFinancialsTab({ orgId }: OrgAttestorFinancialsTabProp
         earnings={earnings}
         isOwner={isOwner}
         onRefresh={fetchData}
+        orgId={orgId}
+      />
+
+      <OrgPayoutAccountCard
+        isOwner={isOwner}
+        onChange={fetchData}
         orgId={orgId}
       />
 

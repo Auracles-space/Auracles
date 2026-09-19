@@ -26320,6 +26320,37 @@ paths:
       tags:
       - Organizations
   /v1/orgs/{org_id}/financials/payout-accounts:
+    get:
+      description: Return the organization's active payout destinations, with provider
+        references masked. Lets an owner confirm which bank account earnings are
+        addressed to. Owner/admin only.
+      operationId: list_org_payout_accounts_v1_orgs__org_id__financials_payout_accounts_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List organization payout accounts
+      tags:
+      - Organizations
     post:
       description: Create a provider-held payout destination owned by the organization.
         Provider routing follows the org's registered country. Requires an open
@@ -26355,6 +26386,53 @@ paths:
       security:
       - HTTPBearer: []
       summary: Onboard an organization payout account
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/financials/payout-accounts/{payout_account_id}/replace:
+    post:
+      description: Register a new payout destination and retire the named one in
+        a single action, moving anything linked to it across. Removal is not offered
+        on its own, because an approved attestor application points at a specific
+        account, so retiring it alone would leave the organization approved but
+        unpayable. Requires an open step-up 2FA window. Owner only.
+      operationId: replace_org_payout_account_v1_orgs__org_id__financials_payout_accounts__payout_account_id__replace_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      - in: path
+        name: payout_account_id
+        required: true
+        schema:
+          format: uuid
+          title: Payout Account Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgPayoutAccountOnboardRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountOnboardResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Replace an organization payout account
       tags:
       - Organizations
   /v1/orgs/{org_id}/financials/payouts:

@@ -27,6 +27,14 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   requestOrgPayout: vi.fn(),
   listOrgInvoices: vi.fn(),
   getOrgAttestorApplication: vi.fn(),
+  // The connected-account card loads on mount; these tests assert on the
+  // surrounding tab, so it resolves empty rather than being asserted here.
+  listOrgPayoutAccounts: vi.fn(async () => ({
+    data: { payout_accounts: [] },
+    error: undefined,
+    response: { ok: true },
+  })),
+  replaceOrgPayoutAccount: vi.fn(),
 }));
 
 // Keep the real getAccessTokenHeaders/describeGeneratedError; only stub
