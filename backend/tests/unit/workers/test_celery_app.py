@@ -21,14 +21,16 @@ def test_celery_app_registers_developer_beat_tasks() -> None:
     assert "app.workers.tasks.developer_beat" in celery_app.conf.include
     assert "app.workers.tasks.developer_payouts" in celery_app.conf.include
     assert "app.workers.tasks.partner_webhooks" in celery_app.conf.include
-    assert celery_app.conf.beat_schedule["clear-partner-commissions-hourly"] == {
-        "task": "app.workers.tasks.developer_beat.clear_partner_commissions",
-        "schedule": 3600.0,
-    }
-    assert celery_app.conf.beat_schedule["recompute-partner-tiers-monthly"] == {
-        "task": "app.workers.tasks.developer_beat.recompute_partner_tiers",
-        "schedule": 2592000.0,
-    }
+    entry = celery_app.conf.beat_schedule["clear-partner-commissions-hourly"]
+    assert entry["task"] == "app.workers.tasks.developer_beat.clear_partner_commissions"
+    # Clock-anchored rather than an interval: beat keeps interval countdowns
+    # in a file the container discards, so on Spot a restart resets them.
+    assert len(entry["schedule"].minute) == 1
+    monthly = celery_app.conf.beat_schedule["recompute-partner-tiers-monthly"]
+    assert monthly["task"] == "app.workers.tasks.developer_beat.recompute_partner_tiers"
+    # A 30-day interval was never a month and never survived a restart; the
+    # first of the month is both what was meant and what beat can keep.
+    assert monthly["schedule"].day_of_month == {1}
     assert celery_app.conf.beat_schedule["retry-partner-webhooks-minutely"] == {
         "task": "app.workers.tasks.partner_webhooks.retry_due_partner_webhooks",
         "schedule": 60.0,

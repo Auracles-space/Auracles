@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from celery.schedules import crontab
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
@@ -214,7 +215,10 @@ def test_reconciliation_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.reconcile_pending_refunds_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def _seed_held_paystack_escrow(amount: Decimal) -> UUID:
@@ -439,7 +443,10 @@ def test_stranded_payout_sweeper_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.requeue_stranded_payouts_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def _seed_refund_intent(
@@ -609,7 +616,10 @@ def test_refund_intent_sweep_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.reconcile_refund_intents_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def _seed_webhook_event(*, received_at: datetime) -> UUID:
@@ -669,7 +679,10 @@ def test_webhook_event_pruning_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.prune_webhook_events_task"
     )
-    assert entry["schedule"] == 86400.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def test_balance_floor_is_registered_on_the_beat_schedule() -> None:
@@ -679,7 +692,10 @@ def test_balance_floor_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.check_platform_balance_floor_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def _seed_pending_payout(amount: Decimal, currency: str = "NGN") -> UUID:
@@ -800,4 +816,7 @@ def test_payout_coverage_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.check_pending_payout_coverage_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
