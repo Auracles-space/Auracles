@@ -356,3 +356,68 @@ def test_paystack_webhook_signature_matrix_accepts_only_valid_raw_payload() -> N
 
     with pytest.raises(PaystackProviderError):
         verify_webhook(payload, "bad-signature", settings=PAYSTACK_SETTINGS)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_refused_transfer_keeps_paystack_s_own_explanation() -> None:
+    """A refusal carries the provider's message, not just its status code.
+
+    Paystack refuses a transfer it cannot fund with a 400 and an explanation
+    in the body. Discarding that leaves every 400 looking alike, so a payout
+    waiting on the platform balance cannot be told apart from a genuinely
+    broken request — and the difference decides whether retrying can ever
+    succeed.
+    """
+    respx.post("https://api.paystack.co/transfer").mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "status": False,
+                "message": "Your balance is not enough to fulfil this request",
+            },
+        )
+    )
+
+    with pytest.raises(PaystackProviderError) as caught:
+        await initiate_transfer(
+            amount=Decimal("315000.00"),
+            currency="NGN",
+            recipient="RCP_test",
+            reason="Auracles payout",
+            reference="payout-test",
+            settings=PAYSTACK_SETTINGS,
+        )
+
+    assert caught.value.status_code == 400
+    assert caught.value.message == "Your balance is not enough to fulfil this request"
+    assert caught.value.insufficient_balance is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_an_unrelated_refusal_is_not_read_as_a_funding_problem() -> None:
+    """Only a balance refusal defers a payout; everything else is a real error.
+
+    Treating an ordinary rejection as a funding shortfall would leave a
+    broken payout retrying hourly forever while telling the contributor to
+    wait for money that was never the problem.
+    """
+    respx.post("https://api.paystack.co/transfer").mock(
+        return_value=httpx.Response(
+            400,
+            json={"status": False, "message": "Recipient specified does not exist"},
+        )
+    )
+
+    with pytest.raises(PaystackProviderError) as caught:
+        await initiate_transfer(
+            amount=Decimal("100.00"),
+            currency="NGN",
+            recipient="RCP_missing",
+            reason="Auracles payout",
+            reference="payout-test-2",
+            settings=PAYSTACK_SETTINGS,
+        )
+
+    assert caught.value.insufficient_balance is False

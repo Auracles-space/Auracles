@@ -366,7 +366,13 @@ class PayoutRequest(BaseModel):
 
 
 class PayoutResponse(BaseModel):
-    """Contributor-facing payout request and processing status."""
+    """Contributor-facing payout request and processing status.
+
+    `delay_reason` explains a payout that is still waiting on something the
+    beneficiary cannot influence, so a long `pending` can be read rather than
+    guessed at. It is null in the ordinary case, including while a payout is
+    merely new.
+    """
 
     id: UUID
     payout_account_id: UUID
@@ -376,6 +382,7 @@ class PayoutResponse(BaseModel):
     net_amount: Decimal
     status: str
     provider_ref: str | None
+    delay_reason: str | None = None
     initiated_at: datetime
     completed_at: datetime | None
 

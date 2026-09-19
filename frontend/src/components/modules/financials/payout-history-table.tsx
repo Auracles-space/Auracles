@@ -149,6 +149,19 @@ type PayoutRowProps = {
 };
 
 /**
+ * Plain-language reason a payout is still waiting, keyed by the API's code.
+ *
+ * Only reasons the beneficiary can neither cause nor fix appear here, so the
+ * text says what is happening and that it needs nothing from them. An
+ * unrecognized code renders nothing rather than the raw value, since a code
+ * leaking into the page would read as a fault on their side.
+ */
+const DELAY_EXPLANATIONS: Record<string, string> = {
+  insufficient_platform_balance:
+    "Waiting for funds to clear. This payout is queued and will be sent automatically — nothing is needed from you.",
+};
+
+/**
  * Render one payout request row.
  *
  * @param props - Payout response returned by the generated financials client.
@@ -157,6 +170,7 @@ function PayoutRow({ payout }: PayoutRowProps) {
   const completedLabel = payout.completed_at
     ? new Date(payout.completed_at).toLocaleDateString()
     : "Not completed";
+  const delayExplanation = DELAY_EXPLANATIONS[payout.delay_reason ?? ""];
 
   return (
     <article className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:p-5">
@@ -171,6 +185,11 @@ function PayoutRow({ payout }: PayoutRowProps) {
         <p className="mt-1 text-sm text-foreground-muted">
           {payout.provider_ref ?? "Pending transfer"}
         </p>
+        {delayExplanation ? (
+          <p className="mt-2 text-sm text-foreground-muted">
+            {delayExplanation}
+          </p>
+        ) : null}
       </div>
       <div className="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.05em] md:justify-end">
         <span className="rounded-md border border-border-default bg-surface-2 px-2 py-1 text-foreground-muted">

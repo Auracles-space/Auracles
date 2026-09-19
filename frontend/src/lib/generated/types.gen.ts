@@ -4890,6 +4890,7 @@ export type PayoutResponse = {
     amount: string;
     commission_deducted: string;
     completed_at: (string | null);
+    delay_reason?: (string | null);
     currency: string;
     id: string;
     initiated_at: string;

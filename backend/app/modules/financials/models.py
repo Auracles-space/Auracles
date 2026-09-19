@@ -421,6 +421,11 @@ class Payout(Base):
     awaiting_otp: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # Why a payout is still waiting, when it is waiting on something the
+    # beneficiary cannot influence — currently only a platform balance too
+    # low to fund it. Cleared once the transfer is accepted, so it never
+    # describes a state the payout has already left.
+    delay_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     initiated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

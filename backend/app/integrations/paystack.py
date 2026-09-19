@@ -21,8 +21,46 @@ PAYSTACK_API_BASE_URL = "https://api.paystack.co"
 PAYSTACK_TIMEOUT_SECONDS = 15.0
 
 
+# Paystack refuses a transfer it cannot fund with a 400 whose message names
+# the balance. There is no machine-readable code for it, so the message is
+# what there is to match on; the phrasing has been stable, and a miss only
+# costs the clearer explanation, never correctness.
+_INSUFFICIENT_BALANCE_MARKERS = ("balance is not enough", "insufficient balance")
+
+
 class PaystackProviderError(RuntimeError):
-    """Raised when Paystack configuration, requests, or signatures are invalid."""
+    """Raised when Paystack configuration, requests, or signatures are invalid.
+
+    Carries the provider's own message and HTTP status where there was one,
+    because callers have to tell a refusal they can retry into success from
+    one they cannot. A transfer refused for want of balance succeeds once the
+    balance recovers; a transfer refused for a bad recipient never will, and
+    retrying it hourly forever helps nobody.
+
+    Attributes:
+        message: Paystack's explanation, or None when the failure happened
+            before or outside a response body (transport errors, config).
+        status_code: HTTP status of the refusal, when there was a response.
+    """
+
+    def __init__(
+        self,
+        detail: str,
+        *,
+        message: str | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.message = message
+        self.status_code = status_code
+
+    @property
+    def insufficient_balance(self) -> bool:
+        """Whether Paystack refused this because the balance could not fund it."""
+        if self.message is None:
+            return False
+        lowered = self.message.lower()
+        return any(marker in lowered for marker in _INSUFFICIENT_BALANCE_MARKERS)
 
 
 @dataclass(frozen=True)
@@ -89,6 +127,24 @@ class PaystackTransfer:
     transfer_code: str | None = None
 
 
+def _response_message(response: httpx.Response) -> str | None:
+    """Return Paystack's own explanation from a refusal body, if it gave one.
+
+    Refusals arrive as JSON with a `message`, but an error body is exactly
+    where a proxy or an outage is most likely to return something else, so a
+    body that will not parse yields None rather than raising a second error
+    on top of the first.
+    """
+    try:
+        payload = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    message = payload.get("message")
+    return message if isinstance(message, str) else None
+
+
 def _require_secret_key(settings: Settings) -> str:
     """Return the configured Paystack API key or raise a provider error."""
     if settings.paystack_secret_key is None:
@@ -133,7 +189,9 @@ async def _post_json(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise PaystackProviderError(
-                f"Paystack returned {response.status_code}."
+                f"Paystack returned {response.status_code}.",
+                message=_response_message(response),
+                status_code=response.status_code,
             ) from exc
         payload = response.json()
         if not isinstance(payload, dict) or payload.get("status") is not True:
@@ -189,7 +247,9 @@ async def _get_json(
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise PaystackProviderError(
-                f"Paystack returned {response.status_code}."
+                f"Paystack returned {response.status_code}.",
+                message=_response_message(response),
+                status_code=response.status_code,
             ) from exc
         payload = response.json()
         if not isinstance(payload, dict) or payload.get("status") is not True:

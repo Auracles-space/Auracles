@@ -26,6 +26,7 @@ from app.core.security import (
     hash_password,
     hash_payout_provider_account_id,
 )
+from app.integrations.paystack import PaystackProviderError
 from app.modules.auth.models import User, UserRole
 from app.modules.financials.models import Payout, PayoutAccount
 from app.shared.models.audit_log import AuditLog
@@ -170,9 +171,7 @@ def create_pending_payout(*, provider: str, provider_account_id: str) -> UUID:
         payout_account = PayoutAccount(
             user_id=contributor.id,
             provider=provider,
-            provider_account_id=encrypt_payout_provider_account_id(
-                provider_account_id
-            ),
+            provider_account_id=encrypt_payout_provider_account_id(provider_account_id),
             provider_account_lookup_hash=hash_payout_provider_account_id(
                 provider_account_id
             ),
@@ -343,3 +342,100 @@ def test_a_payout_paystack_sends_straight_away_raises_no_otp_alert(
 
     assert payout_task_context["notifications"] == []
     assert _load_payout(payout_id).awaiting_otp is False
+
+
+def test_a_payout_the_balance_cannot_fund_says_so_and_stays_pending(
+    migrated_database: None,
+    payout_task_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shortfall leaves the payout waiting with a reason, not silently stuck.
+
+    The hourly sweeper already retries a pending payout until it goes
+    through, so the money is never lost — but the beneficiary saw `pending`
+    for days with their balance locked and nothing to explain it. The reason
+    is what turns an unexplained wait into a visible one.
+    """
+
+    async def refuse_for_balance(**_: Any) -> None:
+        """Refuse the transfer the way Paystack refuses an unfunded one."""
+        raise PaystackProviderError(
+            "Paystack returned 400.",
+            message="Your balance is not enough to fulfil this request",
+            status_code=400,
+        )
+
+    monkeypatch.setattr(payouts.paystack, "initiate_transfer", refuse_for_balance)
+    payout_id = create_pending_payout(
+        provider="paystack", provider_account_id="RCP_balance"
+    )
+
+    result = payouts.process_payout.apply(args=[str(payout_id)]).get()
+
+    payout = _load_payout(payout_id)
+    assert payout.status == "pending"
+    assert payout.delay_reason == "insufficient_platform_balance"
+    assert payout.provider_ref is None
+    assert result["status"] == "deferred"
+    # Admins are told, because only they can act on a platform shortfall.
+    assert payout_task_context["notifications"]
+
+
+def test_an_unrelated_refusal_still_fails_loudly(
+    migrated_database: None,
+    payout_task_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal retrying cannot fix must not be dressed up as a funding wait.
+
+    Deferring it would leave a broken payout retrying hourly forever while
+    telling the beneficiary to wait for money that was never the problem.
+    """
+
+    async def refuse_outright(**_: Any) -> None:
+        """Refuse for a cause no retry will clear."""
+        raise PaystackProviderError(
+            "Paystack returned 400.",
+            message="Recipient specified does not exist",
+            status_code=400,
+        )
+
+    monkeypatch.setattr(payouts.paystack, "initiate_transfer", refuse_outright)
+    payout_id = create_pending_payout(
+        provider="paystack", provider_account_id="RCP_broken"
+    )
+
+    with pytest.raises(PaystackProviderError):
+        payouts.process_payout.apply(args=[str(payout_id)]).get()
+
+    payout = _load_payout(payout_id)
+    assert payout.delay_reason is None
+
+
+def test_a_retry_that_succeeds_drops_the_waiting_reason(
+    migrated_database: None,
+    payout_task_context: dict[str, Any],
+) -> None:
+    """Once the transfer is accepted the payout no longer explains a wait.
+
+    The sweeper retries a deferred payout hourly, so the run that finally
+    succeeds is the one that has to clear the reason — otherwise a paid
+    contributor is still told the platform balance is short.
+    """
+    payout_id = create_pending_payout(
+        provider="paystack", provider_account_id="RCP_recovered"
+    )
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    with sessionmaker(sync_engine)() as session:
+        waiting = session.get(Payout, payout_id)
+        assert waiting is not None
+        waiting.delay_reason = "insufficient_platform_balance"
+        session.commit()
+    sync_engine.dispose()
+
+    payouts.process_payout.apply(args=[str(payout_id)]).get()
+
+    payout = _load_payout(payout_id)
+    assert payout.status == "processing"
+    assert payout.delay_reason is None

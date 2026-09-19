@@ -130,6 +130,15 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.financials_beat.check_platform_balance_floor_task",
         "schedule": 3600.0,
     },
+    # The floor check above asks whether money held for others is still
+    # there. This asks whether what beneficiaries have already requested can
+    # actually be sent: an underfunded payout retries quietly until money
+    # settles, so without this nobody learns the platform is short until a
+    # contributor asks why they have not been paid.
+    "check-pending-payout-coverage-hourly": {
+        "task": "app.workers.tasks.financials_beat.check_pending_payout_coverage_task",
+        "schedule": 3600.0,
+    },
     # A payout whose Celery dispatch failed sits pending forever with the
     # money already claimed against the Contributor's balance; the sweep
     # re-enqueues it (the processing worker is idempotent).
