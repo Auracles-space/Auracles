@@ -13446,6 +13446,40 @@ components:
       - payout_account
       title: PayoutAccountOnboardResponse
       type: object
+    PayoutAccountResolveRequest:
+      additionalProperties: false
+      description: Request body for checking a NUBAN against the bank before saving it.
+      properties:
+        account_number:
+          maxLength: 10
+          minLength: 10
+          title: Account Number
+          type: string
+        bank_code:
+          maxLength: 10
+          minLength: 1
+          title: Bank Code
+          type: string
+      required:
+      - account_number
+      - bank_code
+      title: PayoutAccountResolveRequest
+      type: object
+    PayoutAccountResolveResponse:
+      description: 'The name the bank holds for a NUBAN, shown back for confirmation.
+
+
+        Carries the name alone. The lookup registers nothing, so there is no
+
+        account id to return and nothing to clean up if the name is wrong.'
+      properties:
+        account_name:
+          title: Account Name
+          type: string
+      required:
+      - account_name
+      title: PayoutAccountResolveResponse
+      type: object
     PayoutAccountResponse:
       description: Safe Contributor payout-account metadata.
       properties:
@@ -23501,6 +23535,37 @@ paths:
       summary: Onboard Payout Account
       tags:
       - Financials
+  /v1/financials/payout-accounts/resolve:
+    post:
+      description: Return the name the bank holds for an account number so it can be
+        confirmed before it becomes a payout destination. A mistyped number usually
+        belongs to somebody else rather than being invalid, so this is the only point
+        at which the mistake is visible. Registers nothing. Rate limited per caller.
+      operationId: resolve_payout_account_name_v1_financials_payout_accounts_resolve_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutAccountResolveRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountResolveResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Check a bank account before registering it
+      tags:
+      - Financials
   /v1/financials/payout-accounts/{payout_account_id}:
     delete:
       description: Soft-delete an owned payout account after 2FA confirmation.
@@ -26433,6 +26498,46 @@ paths:
       security:
       - HTTPBearer: []
       summary: Replace an organization payout account
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/financials/payout-accounts/resolve:
+    post:
+      description: Return the name the bank holds for an account number so an owner
+        can confirm it before it becomes the organization's payout destination. A mistyped
+        number usually belongs to somebody else rather than being invalid, so this is
+        the only point at which the mistake is visible. Registers nothing. Rate limited
+        per caller. Owner only.
+      operationId: resolve_org_payout_account_name_v1_orgs__org_id__financials_payout_accounts_resolve_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutAccountResolveRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountResolveResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Check a bank account before registering it
       tags:
       - Organizations
   /v1/orgs/{org_id}/financials/payouts:

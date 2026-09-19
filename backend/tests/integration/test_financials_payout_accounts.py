@@ -76,6 +76,10 @@ class FakeRedis:
         """Record a TTL for a key."""
         self.ttls[key] = seconds
 
+    async def ttl(self, key: str) -> int:
+        """Return a recorded TTL, or -1 when the key carries none."""
+        return self.ttls.get(key, -1)
+
     async def delete(self, *keys: str) -> int:
         """Delete stored values and counters."""
         removed = 0
@@ -911,3 +915,90 @@ async def test_bank_account_is_refused_beyond_the_sharing_cap(
     assert response.status_code == 422
     assert stored is None
     assert audit is not None
+
+
+async def test_resolving_a_bank_account_names_it_without_registering_it(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A NUBAN can be checked against the bank before anything is saved.
+
+    A mistyped account number is usually still a real account belonging to
+    somebody else, so it resolves happily and there is nothing later to catch
+    it. Naming the holder first is the only point at which the person entering
+    it can tell. Nothing is registered until they confirm.
+    """
+
+    async def _fake_resolve(*, account_number: str, bank_code: str) -> str:
+        del account_number, bank_code
+        return "ADA LOVELACE"
+
+    monkeypatch.setattr(
+        financials_service.paystack, "resolve_account_name", _fake_resolve
+    )
+    contributor_id, _ = await create_user_with_roles(
+        "resolve-contributor@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/resolve",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={"account_number": "0123456789", "bank_code": "044"},
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.scalar(select(PayoutAccount))
+
+    assert response.status_code == 200
+    assert response.json() == {"account_name": "ADA LOVELACE"}
+    # Checking a number must not create a payout destination, or a typo would
+    # register the stranger's account it resolved to.
+    assert stored is None
+    assert payout_account_context["calls"]["paystack_recipients"] == []
+
+
+async def test_bank_account_lookups_are_rate_limited(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller cannot walk the account-number space harvesting names.
+
+    The lookup turns an account number into a real person's name, which that
+    bank's customers never agreed to publish. Correcting one typo takes a
+    handful of tries; anything past the ceiling is enumeration.
+    """
+
+    async def _fake_resolve(*, account_number: str, bank_code: str) -> str:
+        del account_number, bank_code
+        return "ADA LOVELACE"
+
+    monkeypatch.setattr(
+        financials_service.paystack, "resolve_account_name", _fake_resolve
+    )
+    contributor_id, _ = await create_user_with_roles(
+        "enumerator@auracles.space",
+        ["contributor"],
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    statuses = []
+    for attempt in range(
+        financials_service.PAYOUT_ACCOUNT_RESOLVE_RATE_LIMITER.limit + 1
+    ):
+        response = await client.post(
+            "/v1/financials/payout-accounts/resolve",
+            headers=headers,
+            json={
+                "account_number": f"{attempt:010d}",
+                "bank_code": "044",
+            },
+        )
+        statuses.append(response.status_code)
+
+    assert statuses[-1] == 429
+    assert set(statuses[:-1]) == {200}

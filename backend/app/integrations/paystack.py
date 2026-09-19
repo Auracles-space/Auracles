@@ -429,6 +429,46 @@ async def create_transfer_recipient(
     )
 
 
+async def resolve_account_name(
+    *,
+    account_number: str,
+    bank_code: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> str:
+    """Return the name the bank holds for a NUBAN, registering nothing.
+
+    A mistyped account number is rarely invalid — it usually belongs to
+    somebody else — so the only moment anyone can catch it is before the
+    account becomes a payout destination. Unlike `create_transfer_recipient`,
+    this leaves nothing behind at the provider, so it is safe to call while
+    the number is still being typed and corrected.
+
+    Args:
+        account_number: NUBAN account number to look up.
+        bank_code: Paystack bank code, from `list_banks`.
+        settings: Settings override, defaulting to the app settings.
+        client: HTTP client override, primarily for tests.
+
+    Returns:
+        The account holder's name as the bank reports it.
+
+    Raises:
+        PaystackProviderError: If the account could not be resolved, or the
+            response carried no account name.
+    """
+    data = await _get_json(
+        "/bank/resolve",
+        {"account_number": account_number, "bank_code": bank_code},
+        settings=settings,
+        client=client,
+    )
+    account_name = data.get("account_name") if isinstance(data, dict) else None
+    if not isinstance(account_name, str) or not account_name:
+        raise PaystackProviderError("Paystack resolve response missing account name.")
+    return account_name
+
+
 async def list_banks(
     *,
     country: str,

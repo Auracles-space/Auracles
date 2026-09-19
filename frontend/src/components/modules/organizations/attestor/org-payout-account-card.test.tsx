@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   listOrgPayoutAccounts,
   replaceOrgPayoutAccount,
+  resolveOrgPayoutAccountName,
 } from "@/lib/generated/sdk.gen";
 
 import { OrgPayoutAccountCard } from "./org-payout-account-card";
@@ -16,6 +17,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   })),
   listOrgPayoutAccounts: vi.fn(),
   replaceOrgPayoutAccount: vi.fn(),
+  resolveOrgPayoutAccountName: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/form-client", async (importOriginal) => ({
@@ -72,18 +74,28 @@ describe("OrgPayoutAccountCard", () => {
       error: undefined,
       response: { ok: true },
     } as never);
+
+    vi.mocked(resolveOrgPayoutAccountName).mockResolvedValue({
+      data: { account_name: "ATTESTOR ORG LLC" },
+      error: undefined,
+      response: { ok: true },
+    } as never);
     const onChange = vi.fn();
 
     render(<OrgPayoutAccountCard orgId="org-1" isOwner onChange={onChange} />);
-    fireEvent.click(await screen.findByRole("button", { name: /replace/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /replace this account/i }),
+    );
     fireEvent.change(await screen.findByLabelText(/bank/i), {
       target: { value: "044" },
     });
     fireEvent.change(screen.getByLabelText(/account number/i), {
       target: { value: "9876543210" },
     });
+    // The holder is named and accepted before the swap is sent.
+    fireEvent.click(screen.getByRole("button", { name: /check account/i }));
     fireEvent.click(
-      screen.getByRole("button", { name: /replace bank account/i }),
+      await screen.findByRole("button", { name: /replace bank account/i }),
     );
 
     await waitFor(() =>

@@ -1,9 +1,10 @@
 """Financials API routes."""
 
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -12,6 +13,8 @@ from app.core.dependencies import (
     require_role,
     require_step_up_after,
 )
+from app.core.rate_limit import RedisCounter
+from app.core.redis import get_redis
 from app.modules.auth.models import User
 from app.modules.collections import service as collections_service
 from app.modules.financials import service
@@ -26,6 +29,8 @@ from app.modules.financials.schemas import (
     PayoutAccountDeleteResponse,
     PayoutAccountOnboardRequest,
     PayoutAccountOnboardResponse,
+    PayoutAccountResolveRequest,
+    PayoutAccountResolveResponse,
     PayoutAccountsResponse,
     PayoutBanksResponse,
     PayoutRequest,
@@ -43,6 +48,7 @@ OperatorUser = Annotated[User, Depends(require_role("operator"))]
 # Query-token auth is reserved for browser-navigated redirect downloads.
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
 KycVerifiedUser = Annotated[User, Depends(require_kyc_verified)]
+RedisConnection = Annotated[Redis, Depends(get_redis)]
 
 
 @router.post(
@@ -221,6 +227,32 @@ async def list_payout_banks(
 ) -> PayoutBanksResponse:
     """List banks available for Contributor payout onboarding."""
     return await service.list_payout_banks()
+
+
+@router.post(
+    "/payout-accounts/resolve",
+    response_model=PayoutAccountResolveResponse,
+    summary="Check a bank account before registering it",
+    description=(
+        "Return the name the bank holds for an account number so it can be "
+        "confirmed before it becomes a payout destination. A mistyped number "
+        "usually belongs to somebody else rather than being invalid, so this "
+        "is the only point at which the mistake is visible. Registers "
+        "nothing. Rate limited per caller."
+    ),
+)
+async def resolve_payout_account_name(
+    payload: PayoutAccountResolveRequest,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    redis: RedisConnection,
+) -> PayoutAccountResolveResponse:
+    """Name the holder of a bank account without registering it."""
+    return await service.resolve_payout_account_name(
+        redis=cast(RedisCounter, redis),
+        actor_id=contributor.id,
+        payload=payload,
+    )
 
 
 @router.get("/payout-accounts", response_model=PayoutAccountsResponse)

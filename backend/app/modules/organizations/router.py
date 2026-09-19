@@ -34,6 +34,8 @@ from app.modules.financials.schemas import (
     OrgPayoutHistoryResponse,
     OrgPurchasesResponse,
     PayoutAccountOnboardResponse,
+    PayoutAccountResolveRequest,
+    PayoutAccountResolveResponse,
     PayoutAccountsResponse,
     PayoutRequest,
     PayoutResponse,
@@ -2123,6 +2125,33 @@ async def delete_org_payment_method(
         payment_method_id=payment_method_id,
     )
     return OrgPaymentMethodDeleteResponse(**response.model_dump())
+
+
+@router.post(
+    "/{org_id}/financials/payout-accounts/resolve",
+    response_model=PayoutAccountResolveResponse,
+    summary="Check a bank account before registering it",
+    description=(
+        "Return the name the bank holds for an account number so an owner can "
+        "confirm it before it becomes the organization's payout destination. "
+        "A mistyped number usually belongs to somebody else rather than being "
+        "invalid, so this is the only point at which the mistake is visible. "
+        "Registers nothing. Rate limited per caller. Owner only."
+    ),
+)
+async def resolve_org_payout_account_name(
+    org_id: UUID,
+    payload: PayoutAccountResolveRequest,
+    context: VerifiedOrgOwner,
+    redis: RedisClient,
+) -> PayoutAccountResolveResponse:
+    """Name the holder of a bank account without registering it."""
+    del org_id
+    return await financials_service.resolve_payout_account_name(
+        redis=cast(RedisCounter, redis),
+        actor_id=context.user.id,
+        payload=payload,
+    )
 
 
 @router.get(

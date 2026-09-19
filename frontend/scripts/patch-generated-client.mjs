@@ -175,6 +175,10 @@ const compatibilityAliases = {
   onboardOrgPayoutAccount: "onboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPost",
   listOrgPayoutAccounts:
     "listOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGet",
+  resolveOrgPayoutAccountName:
+    "resolveOrgPayoutAccountNameV1OrgsOrgIdFinancialsPayoutAccountsResolvePost",
+  resolvePayoutAccountName:
+    "resolvePayoutAccountNameV1FinancialsPayoutAccountsResolvePost",
   replaceOrgPayoutAccount:
     "replaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePost",
   requestOrgPayout: "requestOrgPayoutV1OrgsOrgIdFinancialsPayoutsPost",

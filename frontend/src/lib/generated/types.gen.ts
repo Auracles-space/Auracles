@@ -4746,6 +4746,24 @@ export type PayoutAccountOnboardResponse = {
 };
 
 /**
+ * Request body for checking a NUBAN against the bank before saving it.
+ */
+export type PayoutAccountResolveRequest = {
+    account_number: string;
+    bank_code: string;
+};
+
+/**
+ * The name the bank holds for a NUBAN, shown back for confirmation.
+ *
+ * Carries the name alone. The lookup registers nothing, so there is no
+ * account id to return and nothing to clean up if the name is wrong.
+ */
+export type PayoutAccountResolveResponse = {
+    account_name: string;
+};
+
+/**
  * Safe Contributor payout-account metadata.
  */
 export type PayoutAccountResponse = {
@@ -7933,6 +7951,14 @@ export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostResponse = 
 
 export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostError = (HTTPValidationError);
 
+export type ResolvePayoutAccountNameV1FinancialsPayoutAccountsResolvePostData = {
+    body: PayoutAccountResolveRequest;
+};
+
+export type ResolvePayoutAccountNameV1FinancialsPayoutAccountsResolvePostResponse = (PayoutAccountResolveResponse);
+
+export type ResolvePayoutAccountNameV1FinancialsPayoutAccountsResolvePostError = (HTTPValidationError);
+
 export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteData = {
     body: PayoutAccountDeleteRequest;
     path: {
@@ -8804,6 +8830,17 @@ export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAcco
 export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostResponse = (PayoutAccountOnboardResponse);
 
 export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostError = (HTTPValidationError);
+
+export type ResolveOrgPayoutAccountNameV1OrgsOrgIdFinancialsPayoutAccountsResolvePostData = {
+    body: PayoutAccountResolveRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type ResolveOrgPayoutAccountNameV1OrgsOrgIdFinancialsPayoutAccountsResolvePostResponse = (PayoutAccountResolveResponse);
+
+export type ResolveOrgPayoutAccountNameV1OrgsOrgIdFinancialsPayoutAccountsResolvePostError = (HTTPValidationError);
 
 export type ListOrgPayoutsV1OrgsOrgIdFinancialsPayoutsGetData = {
     path: {

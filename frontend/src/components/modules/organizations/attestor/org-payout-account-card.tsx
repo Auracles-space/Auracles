@@ -21,13 +21,14 @@ import { useCallback, useEffect, useState } from "react";
 import {
   listOrgPayoutAccounts,
   replaceOrgPayoutAccount,
+  resolveOrgPayoutAccountName,
 } from "@/lib/generated/sdk.gen";
 import type { PayoutAccountResponse } from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
 import {
-  PaystackBankFields,
-  paystackDetailsComplete,
-} from "@/components/modules/financials/paystack-bank-fields";
+  ConfirmBankAccount,
+  type BankDetails,
+} from "@/components/modules/financials/confirm-bank-account";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -57,9 +58,6 @@ export function OrgPayoutAccountCard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [replacing, setReplacing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
 
   const load = useCallback(async () => {
     configureBrowserClient();
@@ -82,31 +80,50 @@ export function OrgPayoutAccountCard({
 
   const account = accounts[0];
 
-  const handleReplace = useCallback(async () => {
-    if (!account) return;
-    setSubmitting(true);
-    setError(null);
-    configureBrowserClient();
-    const result = await replaceOrgPayoutAccount({
-      headers: getAccessTokenHeaders(),
-      path: { org_id: orgId, payout_account_id: account.id },
-      body: {
-        account_number: accountNumber,
-        bank_code: bankCode,
-        provider: "paystack" as const,
-      },
-    });
-    setSubmitting(false);
-    if (result.error || !result.data) {
-      setError(describeGeneratedError(result.error));
-      return;
-    }
-    setReplacing(false);
-    setAccountNumber("");
-    setBankCode("");
-    await load();
-    onChange();
-  }, [account, accountNumber, bankCode, load, onChange, orgId]);
+  /** Look up the replacement's account holder, registering nothing. */
+  const resolveAccount = useCallback(
+    async (details: BankDetails) => {
+      configureBrowserClient();
+      const result = await resolveOrgPayoutAccountName({
+        headers: getAccessTokenHeaders(),
+        path: { org_id: orgId },
+        body: {
+          account_number: details.accountNumber,
+          bank_code: details.bankCode,
+        },
+      });
+      if (result.error || !result.data) {
+        return { error: describeGeneratedError(result.error) };
+      }
+      return { name: result.data.account_name };
+    },
+    [orgId],
+  );
+
+  /** Swap the org's destination once the new holder has been accepted. */
+  const handleReplace = useCallback(
+    async (details: BankDetails) => {
+      if (!account) return { error: "No payout account to replace." };
+      configureBrowserClient();
+      const result = await replaceOrgPayoutAccount({
+        headers: getAccessTokenHeaders(),
+        path: { org_id: orgId, payout_account_id: account.id },
+        body: {
+          account_number: details.accountNumber,
+          bank_code: details.bankCode,
+          provider: "paystack" as const,
+        },
+      });
+      if (result.error || !result.data) {
+        return { error: describeGeneratedError(result.error) };
+      }
+      setReplacing(false);
+      await load();
+      onChange();
+      return null;
+    },
+    [account, load, onChange, orgId],
+  );
 
   if (loading) {
     return (
@@ -162,30 +179,18 @@ export function OrgPayoutAccountCard({
               current account is retired as soon as the new one is confirmed
               with the bank, so your organization is never left without one.
             </p>
-            <PaystackBankFields
-              accountNumber={accountNumber}
-              bankCode={bankCode}
-              disabled={submitting}
+            <ConfirmBankAccount
+              confirmLabel="Replace bank account"
               idPrefix="org-replace-payout"
-              onAccountNumberChange={setAccountNumber}
-              onBankCodeChange={setBankCode}
+              onConfirm={handleReplace}
+              resolve={resolveAccount}
             />
-            <div className="flex flex-wrap gap-3">
+            <div>
               <Button
-                type="button"
-                onClick={handleReplace}
-                disabled={
-                  submitting || !paystackDetailsComplete(bankCode, accountNumber)
-                }
-                loading={submitting}
-              >
-                Replace bank account
-              </Button>
-              <Button
+                disabled={false}
+                onClick={() => setReplacing(false)}
                 type="button"
                 variant="secondary"
-                onClick={() => setReplacing(false)}
-                disabled={submitting}
               >
                 Cancel
               </Button>

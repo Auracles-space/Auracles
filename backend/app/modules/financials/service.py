@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.currency import platform_currency
+from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import (
     decrypt_payout_provider_account_id,
     encrypt_payout_provider_account_id,
@@ -58,6 +59,8 @@ from app.modules.financials.schemas import (
     PayoutAccountDeleteResponse,
     PayoutAccountOnboardRequest,
     PayoutAccountOnboardResponse,
+    PayoutAccountResolveRequest,
+    PayoutAccountResolveResponse,
     PayoutAccountResponse,
     PayoutAccountsResponse,
     PayoutBank,
@@ -97,6 +100,11 @@ PAYOUT_CLAIM_STATUSES = {"pending", "processing", "completed"}
 # look. Set above the honest ceiling — a person, their contributor org, and
 # their attestor org is three — so only a funnel meets it.
 MAX_PAYOUT_DESTINATION_OWNERS = 3
+# Resolving turns an account number into a person's name, so the ceiling is
+# set for someone correcting one typo, not for walking the number space.
+PAYOUT_ACCOUNT_RESOLVE_RATE_LIMITER = RateLimiter(
+    namespace="payout_account_resolve", limit=15, window=3600
+)
 # Earning classes for payout-balance derivation. Marketplace earnings clear
 # after the refund window at the marketplace commission rate; attestation
 # earnings clear immediately at the attestation commission rate (Module 6a).
@@ -438,6 +446,55 @@ async def _has_active_payout_account(db: AsyncSession, user_id: UUID) -> bool:
         .limit(1)
     )
     return existing_id is not None
+
+
+async def resolve_payout_account_name(
+    *,
+    redis: RedisCounter,
+    actor_id: UUID,
+    payload: PayoutAccountResolveRequest,
+) -> PayoutAccountResolveResponse:
+    """Return the account holder's name for a NUBAN, registering nothing.
+
+    Rate limited per caller because the lookup turns an account number into a
+    person's name. Legitimate use is a handful of tries while typing one
+    account; anything beyond that is walking the number space to harvest
+    names, which the bank's own customers never consented to.
+
+    Args:
+        redis: Redis connection backing the rate-limit counter.
+        actor_id: Caller the limit is counted against.
+        payload: The account number and bank code to look up.
+
+    Returns:
+        The name the bank holds for the account.
+
+    Raises:
+        HTTPException(422): Paystack could not resolve the account.
+        HTTPException(429): The caller exceeded the lookup limit.
+    """
+    await PAYOUT_ACCOUNT_RESOLVE_RATE_LIMITER.check(redis, str(actor_id))
+    try:
+        account_name = await paystack.resolve_account_name(
+            account_number=payload.account_number,
+            bank_code=payload.bank_code,
+        )
+    except PaystackProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="resolve_payout_account_name",
+            user_id=actor_id,
+        ).info("payout_account_resolve_failed")
+        # 422 rather than 502: the common cause by far is a number that does
+        # not exist at that bank, which is the caller's to correct.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "That account number could not be found at the bank you "
+                "selected. Check both and try again."
+            ),
+        ) from exc
+    return PayoutAccountResolveResponse(account_name=account_name)
 
 
 async def _count_payout_destination_owners(

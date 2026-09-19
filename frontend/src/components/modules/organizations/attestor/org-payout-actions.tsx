@@ -14,16 +14,20 @@
  */
 import { useState } from "react";
 
-import { onboardOrgPayoutAccount, requestOrgPayout } from "@/lib/generated/sdk.gen";
+import {
+  onboardOrgPayoutAccount,
+  requestOrgPayout,
+  resolveOrgPayoutAccountName,
+} from "@/lib/generated/sdk.gen";
 import type {
   OrgAttestorApplicationResponse,
   OrgEarningsResponse,
 } from "@/lib/generated/types.gen";
 import { Button } from "@/components/ui/button";
 import {
-  PaystackBankFields,
-  paystackDetailsComplete,
-} from "@/components/modules/financials/paystack-bank-fields";
+  ConfirmBankAccount,
+  type BankDetails,
+} from "@/components/modules/financials/confirm-bank-account";
 import { payoutProviderForCountry } from "@/lib/marketplace/currency";
 import { formatMoney } from "@/lib/marketplace/format";
 import { ownerStatusKey, StatusPill } from "@/components/ui/status-pill";
@@ -61,8 +65,6 @@ export function OrgPayoutActions({
   onRefresh,
 }: OrgPayoutActionsProps) {
   const [isActionLoading, setIsActionLoading] = useState(false);
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
 
   // Mirrors the backend routing. On an NGN deployment Stripe Connect cannot pay
   // out at all, so bank details are collected here instead of redirecting.
@@ -73,6 +75,43 @@ export function OrgPayoutActions({
   // feedback and read as a refusal.
   const [payoutNotice, setPayoutNotice] = useState<string | null>(null);
 
+  /** Look up the account holder's name, registering nothing. */
+  const resolveAccount = async (details: BankDetails) => {
+    configureBrowserClient();
+    const result = await resolveOrgPayoutAccountName({
+      headers: getAccessTokenHeaders(),
+      path: { org_id: orgId },
+      body: {
+        account_number: details.accountNumber,
+        bank_code: details.bankCode,
+      },
+    });
+    if (result.error || !result.data) {
+      return { error: describeGeneratedError(result.error) };
+    }
+    return { name: result.data.account_name };
+  };
+
+  /** Register the bank account whose holder has just been accepted. */
+  const connectPaystackAccount = async (details: BankDetails) => {
+    configureBrowserClient();
+    const res = await onboardOrgPayoutAccount({
+      headers: getAccessTokenHeaders(),
+      path: { org_id: orgId },
+      body: {
+        account_number: details.accountNumber,
+        bank_code: details.bankCode,
+        provider: "paystack" as const,
+      },
+    });
+    if (!res.data) {
+      return { error: describeGeneratedError(res.error) };
+    }
+    await onRefresh();
+    return null;
+  };
+
+  /** Send an org owner to Stripe's hosted onboarding. */
   const handleSetupPayoutAccount = async () => {
     setIsActionLoading(true);
     setPayoutError(null);
@@ -81,25 +120,17 @@ export function OrgPayoutActions({
       const res = await onboardOrgPayoutAccount({
         headers: getAccessTokenHeaders(),
         path: { org_id: orgId },
-        body: isPaystackRail
-          ? {
-              account_number: accountNumber,
-              bank_code: bankCode,
-              provider: "paystack" as const,
-            }
-          : {
-              provider: "stripe" as const,
-              refresh_url: window.location.href,
-              return_url: window.location.href,
-            },
+        body: {
+          provider: "stripe" as const,
+          refresh_url: window.location.href,
+          return_url: window.location.href,
+        },
       });
       if (res.data?.onboarding_url) {
         window.location.href = res.data.onboarding_url;
         return;
       }
       if (res.data) {
-        // Paystack registers the account outright — there is no redirect, so
-        // refresh in place to pick up the now-linked payout account.
         await onRefresh();
         return;
       }
@@ -178,27 +209,20 @@ export function OrgPayoutActions({
             You need to configure a payout account to receive earnings.
           </p>
           {isPaystackRail ? (
-            <div className="mb-4">
-              <PaystackBankFields
-                accountNumber={accountNumber}
-                bankCode={bankCode}
-                disabled={isActionLoading}
-                idPrefix="org-financials-payout"
-                onAccountNumberChange={setAccountNumber}
-                onBankCodeChange={setBankCode}
-              />
-            </div>
-          ) : null}
-          <Button
-            onClick={handleSetupPayoutAccount}
-            disabled={
-              isActionLoading ||
-              (isPaystackRail &&
-                !paystackDetailsComplete(bankCode, accountNumber))
-            }
-          >
-            Setup Payout Account
-          </Button>
+            <ConfirmBankAccount
+              confirmLabel="Yes, use this account"
+              idPrefix="org-financials-payout"
+              onConfirm={connectPaystackAccount}
+              resolve={resolveAccount}
+            />
+          ) : (
+            <Button
+              onClick={handleSetupPayoutAccount}
+              disabled={isActionLoading}
+            >
+              Setup Payout Account
+            </Button>
+          )}
         </div>
       ) : (
         <OrgPayoutRequestControls

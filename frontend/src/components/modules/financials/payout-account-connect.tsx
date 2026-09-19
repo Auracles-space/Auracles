@@ -6,10 +6,11 @@
  * Two rails, chosen by the account's country. Stripe Connect runs hosted
  * onboarding, so Auracles never sees a bank detail — the contributor is
  * redirected and Stripe collects everything. Paystack has no hosted flow, so
- * the NUBAN account number and bank code are collected here and registered as
- * a transfer recipient; Paystack resolving them against the bank is what
- * verifies the account, and the confirmed name is shown back so a mistyped
- * account number is caught before any money is addressed to it.
+ * the NUBAN account number and bank code are collected here. They are checked
+ * against the bank and the account holder's name shown back for acceptance
+ * before anything is registered — a mistyped account number is usually a real
+ * stranger's account rather than an invalid one, so the name is the only
+ * signal that the digits are wrong.
  *
  * Maps to: FR-FIN-* (Contributor payout onboarding).
  */
@@ -23,20 +24,18 @@ import {
 } from "@/lib/auth/form-client";
 import {
   listPayoutAccounts,
-  listPayoutBanks,
   onboardPayoutAccount,
+  resolvePayoutAccountName,
 } from "@/lib/generated/sdk.gen";
-import type {
-  PayoutAccountResponse,
-  PayoutBank,
-} from "@/lib/generated/types.gen";
+import type { PayoutAccountResponse } from "@/lib/generated/types.gen";
+import {
+  ConfirmBankAccount,
+  type BankDetails,
+} from "@/components/modules/financials/confirm-bank-account";
 import { Select } from "@/components/ui/select";
 import { PAYOUT_COUNTRIES } from "@/lib/marketplace/countries";
 import { payoutProviderForCountry } from "@/lib/marketplace/currency";
 import { formatLabel } from "@/lib/marketplace/format";
-
-/** NUBAN account numbers are always exactly ten digits. */
-const NUBAN_LENGTH = 10;
 
 /**
  * Render payout onboarding and current payout account metadata.
@@ -49,9 +48,6 @@ export function PayoutAccountConnect() {
   // Country the payout account is registered in. Decides the rail, so it also
   // decides which fields below are asked for.
   const [country, setCountry] = useState("US");
-  const [banks, setBanks] = useState<PayoutBank[]>([]);
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
   const [confirmedName, setConfirmedName] = useState<string | null>(null);
 
   // Mirrors the backend's routing rather than checking the country alone: on
@@ -77,70 +73,72 @@ export function PayoutAccountConnect() {
     void loadAccounts();
   }, []);
 
-  // Bank codes change and new institutions appear, so the list is read from
-  // the provider on demand rather than shipped in the bundle.
-  useEffect(() => {
-    if (!isPaystackRail) {
-      return;
+  /** Look up the account holder without registering anything. */
+  const resolveAccount = useCallback(async (details: BankDetails) => {
+    configureBrowserClient();
+    const result = await resolvePayoutAccountName({
+      body: {
+        account_number: details.accountNumber,
+        bank_code: details.bankCode,
+      },
+      headers: getAccessTokenHeaders(),
+    });
+    if (result.error || !result.data) {
+      return { error: describeGeneratedError(result.error) };
     }
-    async function loadBanks() {
+    return { name: result.data.account_name };
+  }, []);
+
+  /** Register the bank account whose holder has just been accepted. */
+  const connectPaystack = useCallback(
+    async (details: BankDetails) => {
       configureBrowserClient();
-      const result = await listPayoutBanks({ headers: getAccessTokenHeaders() });
+      const result = await onboardPayoutAccount({
+        body: {
+          account_number: details.accountNumber,
+          bank_code: details.bankCode,
+          country,
+          provider: "paystack" as const,
+        },
+        headers: getAccessTokenHeaders(),
+      });
       if (!result.response.ok || !result.data) {
-        setError(describeGeneratedError(result.error));
-        return;
+        return { error: describeGeneratedError(result.error) };
       }
-      setBanks(result.data.banks);
-    }
+      setConfirmedName(result.data.account_name ?? null);
+      setAccounts((current) => [result.data.payout_account, ...current]);
+      return null;
+    },
+    [country],
+  );
 
-    void loadBanks();
-  }, [isPaystackRail]);
-
-  const handleConnect = useCallback(async () => {
+  /** Send the Contributor to Stripe's hosted onboarding. */
+  const connectStripe = useCallback(async () => {
     setError(null);
     setConfirmedName(null);
     setSubmitting(true);
     configureBrowserClient();
     const origin = window.location.origin;
-    const body = isPaystackRail
-      ? {
-          account_number: accountNumber,
-          bank_code: bankCode,
-          country,
-          provider: "paystack" as const,
-        }
-      : {
-          country,
-          provider: "stripe" as const,
-          refresh_url: `${origin}/settings/payout-accounts?refresh=1`,
-          return_url: `${origin}/settings/payout-accounts?connected=1`,
-        };
     const result = await onboardPayoutAccount({
-      body,
+      body: {
+        country,
+        provider: "stripe" as const,
+        refresh_url: `${origin}/settings/payout-accounts?refresh=1`,
+        return_url: `${origin}/settings/payout-accounts?connected=1`,
+      },
       headers: getAccessTokenHeaders(),
     });
     setSubmitting(false);
-
     if (!result.response.ok || !result.data) {
       setError(describeGeneratedError(result.error));
       return;
     }
-
     if (result.data.onboarding_url) {
       window.location.assign(result.data.onboarding_url);
       return;
     }
-
-    // Paystack settles here: nothing to redirect to, so the new account and
-    // the bank-confirmed name are rendered in place.
-    setConfirmedName(result.data.account_name ?? null);
     setAccounts((current) => [result.data.payout_account, ...current]);
-    setAccountNumber("");
-  }, [accountNumber, bankCode, country, isPaystackRail]);
-
-  const canSubmit = isPaystackRail
-    ? bankCode !== "" && accountNumber.length === NUBAN_LENGTH
-    : true;
+  }, [country]);
 
   if (loading) {
     return <p className="text-sm text-foreground-muted">Loading payout accounts.</p>;
@@ -216,70 +214,27 @@ export function PayoutAccountConnect() {
             </p>
           </div>
 
-          {isPaystackRail ? (
-            <>
-              <div>
-                <label
-                  htmlFor="payout-bank"
-                  className="mb-1 block text-sm font-semibold text-foreground"
-                >
-                  Bank
-                </label>
-                <Select
-                  id="payout-bank"
-                  value={bankCode}
-                  onChange={(event) => setBankCode(event.target.value)}
-                >
-                  <option value="">Select a bank</option>
-                  {banks.map((bank) => (
-                    <option key={bank.code} value={bank.code}>
-                      {bank.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <label
-                  htmlFor="payout-account-number"
-                  className="mb-1 block text-sm font-semibold text-foreground"
-                >
-                  Account number
-                </label>
-                <input
-                  className="flex min-h-12 w-full rounded-xl border border-border-default bg-surface-1 px-3 text-sm text-foreground outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent"
-                  id="payout-account-number"
-                  inputMode="numeric"
-                  maxLength={NUBAN_LENGTH}
-                  onChange={(event) =>
-                    setAccountNumber(event.target.value.replace(/\D/g, ""))
-                  }
-                  pattern="\d{10}"
-                  placeholder="0123456789"
-                  value={accountNumber}
-                />
-                <p className="mt-1 text-xs text-foreground-muted">
-                  Your {NUBAN_LENGTH}-digit NUBAN account number. We confirm the
-                  account name with your bank before any payout is sent.
-                </p>
-              </div>
-            </>
-          ) : null}
         </div>
 
-        <button
-          className="mt-5 inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={submitting || !canSubmit}
-          onClick={handleConnect}
-          type="button"
-        >
-          {isPaystackRail
-            ? submitting
-              ? "Connecting"
-              : "Connect bank account"
-            : submitting
-              ? "Opening Stripe"
-              : "Connect Stripe"}
-        </button>
+        {isPaystackRail ? (
+          <div className="mt-5">
+            <ConfirmBankAccount
+              confirmLabel="Yes, connect this account"
+              idPrefix="payout"
+              onConfirm={connectPaystack}
+              resolve={resolveAccount}
+            />
+          </div>
+        ) : (
+          <button
+            className="mt-5 inline-flex min-h-12 items-center justify-center rounded-xl bg-foreground px-4 text-sm font-semibold text-background shadow-sm outline-none transition-all hover:bg-foreground/90 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={submitting}
+            onClick={connectStripe}
+            type="button"
+          >
+            {submitting ? "Opening Stripe" : "Connect Stripe"}
+          </button>
+        )}
       </div>
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
