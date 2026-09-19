@@ -8,6 +8,7 @@ snapshot aggregates that back dashboard trend charts and exports.
 import csv
 import io
 import json
+from collections import defaultdict
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -24,6 +25,7 @@ from sqlalchemy.orm import selectinload
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.currency import platform_currency
+from app.core.security import decrypt_payout_provider_account_id
 from app.integrations import s3
 from app.modules.admin.models import AnalyticsDailySnapshot
 from app.modules.attestation.models import (
@@ -40,8 +42,13 @@ from app.modules.financials.models import (
     FinancialEvent,
     Payout,
     PayoutAccount,
+    PayoutDestinationAllowance,
     PlatformConfig,
     Transaction,
+)
+from app.modules.financials.service import (
+    MAX_PAYOUT_DESTINATION_OWNERS,
+    _masked_provider_ref,
 )
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import (
@@ -3661,4 +3668,184 @@ async def list_admin_audit_logs(
         "total": total or 0,
         "page": page,
         "page_size": page_size,
+    }
+
+
+async def list_shared_payout_destinations(
+    db: AsyncSession,
+) -> dict[str, Any]:
+    """List bank accounts that more than one owner is paid into.
+
+    Sharing a destination is allowed and usually innocent, so this is a review
+    queue rather than a list of offences. It exists because the alternative —
+    refusing the second owner, as the platform used to — threw the signal away
+    entirely along with the sole traders it wrongly blocked.
+
+    Args:
+        db: Async SQLAlchemy session.
+
+    Returns:
+        Destinations with at least two live owners, most shared first, each
+        naming the parties behind it and the ceiling currently applying.
+    """
+    accounts = (
+        (
+            await db.execute(
+                select(PayoutAccount).where(PayoutAccount.deleted_at.is_(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    grouped: dict[tuple[str, str], list[PayoutAccount]] = defaultdict(list)
+    for account in accounts:
+        grouped[(account.provider, account.provider_account_lookup_hash)].append(
+            account
+        )
+    shared = {
+        key: rows
+        for key, rows in grouped.items()
+        if len({(row.user_id, row.org_id) for row in rows}) > 1
+    }
+    if not shared:
+        return {"destinations": []}
+
+    user_ids = {row.user_id for rows in shared.values() for row in rows if row.user_id}
+    org_ids = {row.org_id for rows in shared.values() for row in rows if row.org_id}
+    user_names: dict[UUID, str] = {}
+    if user_ids:
+        user_names = {
+            row.id: row.display_name
+            for row in await db.execute(
+                select(User.id, User.display_name).where(User.id.in_(user_ids))
+            )
+        }
+    org_names: dict[UUID, str] = {}
+    if org_ids:
+        org_names = {
+            row.id: row.name
+            for row in await db.execute(
+                select(Organization.id, Organization.name).where(
+                    Organization.id.in_(org_ids)
+                )
+            )
+        }
+
+    allowances = {
+        (row.provider, row.provider_account_lookup_hash): row.max_owners
+        for row in (await db.execute(select(PayoutDestinationAllowance))).scalars()
+    }
+
+    destinations: list[dict[str, Any]] = []
+    for (provider, lookup_hash), rows in shared.items():
+        owners: list[dict[str, Any]] = []
+        for owner_key in {(row.user_id, row.org_id) for row in rows}:
+            user_id, org_id = owner_key
+            if user_id is not None:
+                owners.append(
+                    {
+                        "kind": "user",
+                        "id": user_id,
+                        "name": user_names.get(user_id, "Unknown"),
+                    }
+                )
+            elif org_id is not None:
+                owners.append(
+                    {
+                        "kind": "organization",
+                        "id": org_id,
+                        "name": org_names.get(org_id, "Unknown"),
+                    }
+                )
+        destinations.append(
+            {
+                "provider": provider,
+                "lookup_hash": lookup_hash,
+                "provider_account_ref": _masked_provider_ref(
+                    decrypt_payout_provider_account_id(rows[0].provider_account_id)
+                ),
+                "owner_count": len(owners),
+                "max_owners": allowances.get(
+                    (provider, lookup_hash), MAX_PAYOUT_DESTINATION_OWNERS
+                ),
+                "owners": sorted(owners, key=lambda owner: owner["name"]),
+            }
+        )
+
+    destinations.sort(key=lambda destination: destination["owner_count"], reverse=True)
+    return {"destinations": destinations}
+
+
+async def set_payout_destination_allowance(
+    db: AsyncSession,
+    *,
+    admin: User,
+    payload: Any,
+) -> dict[str, Any]:
+    """Record an admin decision to let one bank account back more owners.
+
+    Args:
+        db: Async SQLAlchemy session.
+        admin: The admin granting the exception, recorded on the row.
+        payload: The destination, the new ceiling, and why it was granted.
+
+    Returns:
+        The allowance now standing for that destination.
+    """
+    # Read before the rollback below: rolling back expires `admin`, and the
+    # refresh that a later attribute access would trigger cannot run here.
+    admin_id = admin.id
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        allowance = await db.scalar(
+            select(PayoutDestinationAllowance)
+            .where(
+                PayoutDestinationAllowance.provider == payload.provider,
+                PayoutDestinationAllowance.provider_account_lookup_hash
+                == payload.lookup_hash,
+            )
+            .with_for_update()
+        )
+        if allowance is None:
+            allowance = PayoutDestinationAllowance(
+                provider=payload.provider,
+                provider_account_lookup_hash=payload.lookup_hash,
+                max_owners=payload.max_owners,
+                note=payload.note,
+                approved_by=admin_id,
+            )
+            db.add(allowance)
+        else:
+            allowance.max_owners = payload.max_owners
+            allowance.note = payload.note
+            allowance.approved_by = admin_id
+        await db.flush()
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="payout_destination_allowance_set",
+            target_type="payout_destination_allowance",
+            target_id=allowance.id,
+            metadata={
+                "provider": payload.provider,
+                "max_owners": payload.max_owners,
+                # Never the hash: it identifies a payout address, and the audit
+                # log is read far more widely than this table.
+                "note": payload.note,
+            },
+        )
+
+    logger.bind(
+        module="admin",
+        action="set_payout_destination_allowance",
+        user_id=admin_id,
+    ).info("payout_destination_allowance_set", max_owners=payload.max_owners)
+    return {
+        "provider": payload.provider,
+        "lookup_hash": payload.lookup_hash,
+        "max_owners": payload.max_owners,
+        "note": payload.note,
     }

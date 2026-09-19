@@ -27,7 +27,12 @@ from app.integrations.paystack import PaystackProviderError
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.financials.models import (
+    Payout,
+    PayoutAccount,
+    PayoutDestinationAllowance,
+    Transaction,
+)
 from app.modules.financials.service import MAX_PAYOUT_DESTINATION_OWNERS
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
@@ -149,6 +154,7 @@ async def payout_account_context(
         await session.execute(delete(AuditLog))
         await session.execute(delete(License))
         await session.execute(delete(Payout))
+        await session.execute(delete(PayoutDestinationAllowance))
         await session.execute(delete(PayoutAccount))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
@@ -1002,3 +1008,52 @@ async def test_bank_account_lookups_are_rate_limited(
 
     assert statuses[-1] == 429
     assert set(statuses[:-1]) == {200}
+
+
+async def test_an_admin_allowance_lets_a_destination_past_the_cap(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """An admin decision raises the ceiling for one bank account.
+
+    The cap asks a human to look; it is not a verdict. A group of related
+    entities paying into one treasury account is legitimate, so there has to
+    be a way to say yes, or they are permanently stuck.
+    """
+    await seed_shared_paystack_destination(MAX_PAYOUT_DESTINATION_OWNERS)
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                PayoutDestinationAllowance(
+                    provider="paystack",
+                    provider_account_lookup_hash=hash_payout_provider_account_id(
+                        "RCP_test_9876"
+                    ),
+                    max_owners=MAX_PAYOUT_DESTINATION_OWNERS + 1,
+                    note="Related trading entities, one treasury account.",
+                )
+            )
+    joiner_id, _ = await create_user_with_roles(
+        "allowed-joiner@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(joiner_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.scalar(
+            select(PayoutAccount).where(PayoutAccount.user_id == joiner_id)
+        )
+
+    assert response.status_code == 200
+    assert stored is not None

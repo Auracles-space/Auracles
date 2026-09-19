@@ -173,6 +173,10 @@ const compatibilityAliases = {
   signOrgNda: "signNdaV1OrgsOrgIdNdaSignPost",
   getOrgAttestorEarnings: "getOrgEarningsV1OrgsOrgIdFinancialsEarningsGet",
   onboardOrgPayoutAccount: "onboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPost",
+  listSharedPayoutDestinations:
+    "listSharedPayoutDestinationsV1AdminPayoutDestinationsSharedGet",
+  setPayoutDestinationAllowance:
+    "setPayoutDestinationAllowanceV1AdminPayoutDestinationsAllowancePost",
   listOrgPayoutAccounts:
     "listOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGet",
   resolveOrgPayoutAccountName:

@@ -3018,6 +3018,56 @@ components:
       - page_size
       title: AdminOrgsResponse
       type: object
+    AdminPayoutDestinationAllowanceRequest:
+      additionalProperties: false
+      description: Raise how many owners one bank account may be paid into.
+      properties:
+        lookup_hash:
+          maxLength: 64
+          minLength: 64
+          title: Lookup Hash
+          type: string
+        max_owners:
+          maximum: 50.0
+          minimum: 1.0
+          title: Max Owners
+          type: integer
+        note:
+          default: ''
+          maxLength: 1000
+          title: Note
+          type: string
+        provider:
+          title: Provider
+          type: string
+      required:
+      - provider
+      - lookup_hash
+      - max_owners
+      title: AdminPayoutDestinationAllowanceRequest
+      type: object
+    AdminPayoutDestinationAllowanceResponse:
+      description: The allowance now standing for one bank account.
+      properties:
+        lookup_hash:
+          title: Lookup Hash
+          type: string
+        max_owners:
+          title: Max Owners
+          type: integer
+        note:
+          title: Note
+          type: string
+        provider:
+          title: Provider
+          type: string
+      required:
+      - provider
+      - lookup_hash
+      - max_owners
+      - note
+      title: AdminPayoutDestinationAllowanceResponse
+      type: object
     AdminPayoutDirectoryResponse:
       description: Paginated payout directory for admin financial oversight.
       properties:
@@ -3224,6 +3274,76 @@ components:
       - role
       - approved
       title: AdminRoleAssignmentResponse
+      type: object
+    AdminSharedPayoutDestination:
+      description: "A bank account that more than one owner is paid into.\n\nSharing is\
+        \ legitimate on its own \u2014 a sole trader's personal payout account\nand their\
+        \ company's are routinely the same account \u2014 so this is a review\nqueue,\
+        \ not a list of offences. `provider_account_ref` is masked: it is a\npayout address,\
+        \ and the listing exists to be recognised, not to be paid to."
+      properties:
+        lookup_hash:
+          title: Lookup Hash
+          type: string
+        max_owners:
+          title: Max Owners
+          type: integer
+        owner_count:
+          title: Owner Count
+          type: integer
+        owners:
+          items:
+            $ref: '#/components/schemas/AdminSharedPayoutDestinationOwner'
+          title: Owners
+          type: array
+        provider:
+          title: Provider
+          type: string
+        provider_account_ref:
+          title: Provider Account Ref
+          type: string
+      required:
+      - provider
+      - lookup_hash
+      - provider_account_ref
+      - owner_count
+      - max_owners
+      - owners
+      title: AdminSharedPayoutDestination
+      type: object
+    AdminSharedPayoutDestinationOwner:
+      description: One party collecting through a shared bank account.
+      properties:
+        id:
+          format: uuid
+          title: Id
+          type: string
+        kind:
+          enum:
+          - user
+          - organization
+          title: Kind
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - kind
+      - id
+      - name
+      title: AdminSharedPayoutDestinationOwner
+      type: object
+    AdminSharedPayoutDestinationsResponse:
+      description: Bank accounts backing more than one owner, most shared first.
+      properties:
+        destinations:
+          items:
+            $ref: '#/components/schemas/AdminSharedPayoutDestination'
+          title: Destinations
+          type: array
+      required:
+      - destinations
+      title: AdminSharedPayoutDestinationsResponse
       type: object
     AdminStartTrialRequest:
       description: Admin selection of the calibration fixture for a trial.
@@ -18990,6 +19110,56 @@ paths:
       summary: Suspend an organization (platform admin)
       tags:
       - Admin Organizations
+  /v1/admin/payout-destinations/allowance:
+    post:
+      description: Raise how many owners one bank account may be paid into. The automatic
+        ceiling refuses further registrations and asks for a human to look; this records
+        that one did and said yes. Admin only.
+      operationId: set_payout_destination_allowance_v1_admin_payout_destinations_allowance_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPayoutDestinationAllowanceRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayoutDestinationAllowanceResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Allow a bank account to back more owners
+      tags:
+      - Admin
+  /v1/admin/payout-destinations/shared:
+    get:
+      description: "Bank accounts backing several payout accounts at once, naming the\
+        \ parties behind each. Sharing one is legitimate on its own \u2014 a sole trader's\
+        \ personal payout account and their company's are routinely the same account\
+        \ \u2014 so this is a review queue rather than a list of offences. Provider\
+        \ references are masked."
+      operationId: list_shared_payout_destinations_v1_admin_payout_destinations_shared_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSharedPayoutDestinationsResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: List bank accounts paid to more than one owner
+      tags:
+      - Admin
   /v1/admin/payouts:
     get:
       description: Return a paginated, read-only payout directory with status, provider,

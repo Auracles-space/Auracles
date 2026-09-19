@@ -44,12 +44,15 @@ from app.modules.admin.schemas import (
     AdminLicenseGrantRequest,
     AdminLicenseGrantResponse,
     AdminModerationQueueResponse,
+    AdminPayoutDestinationAllowanceRequest,
+    AdminPayoutDestinationAllowanceResponse,
     AdminPayoutDirectoryResponse,
     AdminRarityBlockOverrideRequest,
     AdminReputationRecomputeRequest,
     AdminReputationRecomputeResponse,
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
+    AdminSharedPayoutDestinationsResponse,
     AdminSuspendedFrameworksResponse,
     AdminTransactionDetailResponse,
     AdminTransactionDirectoryResponse,
@@ -1199,3 +1202,49 @@ async def list_admin_audit_logs(
         page_size=page_size,
     )
     return AdminAuditLogsResponse.model_validate(logs)
+
+
+@router.get(
+    "/payout-destinations/shared",
+    response_model=AdminSharedPayoutDestinationsResponse,
+    summary="List bank accounts paid to more than one owner",
+    description=(
+        "Bank accounts backing several payout accounts at once, naming the "
+        "parties behind each. Sharing one is legitimate on its own — a sole "
+        "trader's personal payout account and their company's are routinely "
+        "the same account — so this is a review queue rather than a list of "
+        "offences. Provider references are masked."
+    ),
+)
+async def list_shared_payout_destinations(
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminSharedPayoutDestinationsResponse:
+    """Return bank accounts that more than one owner is paid into."""
+    del admin
+    destinations = await service.list_shared_payout_destinations(db=db)
+    return AdminSharedPayoutDestinationsResponse.model_validate(destinations)
+
+
+@router.post(
+    "/payout-destinations/allowance",
+    response_model=AdminPayoutDestinationAllowanceResponse,
+    summary="Allow a bank account to back more owners",
+    description=(
+        "Raise how many owners one bank account may be paid into. The "
+        "automatic ceiling refuses further registrations and asks for a human "
+        "to look; this records that one did and said yes. Admin only."
+    ),
+)
+async def set_payout_destination_allowance(
+    payload: AdminPayoutDestinationAllowanceRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminPayoutDestinationAllowanceResponse:
+    """Record an admin decision to let one bank account back more owners."""
+    allowance = await service.set_payout_destination_allowance(
+        db=db,
+        admin=admin,
+        payload=payload,
+    )
+    return AdminPayoutDestinationAllowanceResponse.model_validate(allowance)

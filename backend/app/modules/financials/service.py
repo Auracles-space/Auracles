@@ -38,6 +38,7 @@ from app.modules.financials.models import (
     FinancialEvent,
     Payout,
     PayoutAccount,
+    PayoutDestinationAllowance,
     PlatformConfig,
     Transaction,
 )
@@ -553,7 +554,15 @@ async def _guard_payout_destination_sharing(
         provider=provider,
         lookup_hash=lookup_hash,
     )
-    if owner_count < MAX_PAYOUT_DESTINATION_OWNERS:
+    # An admin who has looked at this destination and accepted it sets its own
+    # ceiling; the default only applies where nobody has.
+    allowed = await db.scalar(
+        select(PayoutDestinationAllowance.max_owners).where(
+            PayoutDestinationAllowance.provider == provider,
+            PayoutDestinationAllowance.provider_account_lookup_hash == lookup_hash,
+        )
+    )
+    if owner_count < (allowed or MAX_PAYOUT_DESTINATION_OWNERS):
         return owner_count
 
     if db.in_transaction():

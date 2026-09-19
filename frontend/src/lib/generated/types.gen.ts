@@ -1079,6 +1079,26 @@ export type AdminOrgVerificationResponse = {
 };
 
 /**
+ * Raise how many owners one bank account may be paid into.
+ */
+export type AdminPayoutDestinationAllowanceRequest = {
+    lookup_hash: string;
+    max_owners: number;
+    note?: string;
+    provider: string;
+};
+
+/**
+ * The allowance now standing for one bank account.
+ */
+export type AdminPayoutDestinationAllowanceResponse = {
+    lookup_hash: string;
+    max_owners: number;
+    note: string;
+    provider: string;
+};
+
+/**
  * Paginated payout directory for admin financial oversight.
  */
 export type AdminPayoutDirectoryResponse = {
@@ -1161,6 +1181,41 @@ export type AdminRoleAssignmentResponse = {
     approved: boolean;
     role: string;
     user_id: string;
+};
+
+/**
+ * A bank account that more than one owner is paid into.
+ *
+ * Sharing is legitimate on its own — a sole trader's personal payout account
+ * and their company's are routinely the same account — so this is a review
+ * queue, not a list of offences. `provider_account_ref` is masked: it is a
+ * payout address, and the listing exists to be recognised, not to be paid to.
+ */
+export type AdminSharedPayoutDestination = {
+    lookup_hash: string;
+    max_owners: number;
+    owner_count: number;
+    owners: Array<AdminSharedPayoutDestinationOwner>;
+    provider: string;
+    provider_account_ref: string;
+};
+
+/**
+ * One party collecting through a shared bank account.
+ */
+export type AdminSharedPayoutDestinationOwner = {
+    id: string;
+    kind: 'user' | 'organization';
+    name: string;
+};
+
+export type kind = 'user' | 'organization';
+
+/**
+ * Bank accounts backing more than one owner, most shared first.
+ */
+export type AdminSharedPayoutDestinationsResponse = {
+    destinations: Array<AdminSharedPayoutDestination>;
 };
 
 /**
@@ -6681,6 +6736,18 @@ export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostData = {
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
 
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
+
+export type SetPayoutDestinationAllowanceV1AdminPayoutDestinationsAllowancePostData = {
+    body: AdminPayoutDestinationAllowanceRequest;
+};
+
+export type SetPayoutDestinationAllowanceV1AdminPayoutDestinationsAllowancePostResponse = (AdminPayoutDestinationAllowanceResponse);
+
+export type SetPayoutDestinationAllowanceV1AdminPayoutDestinationsAllowancePostError = (HTTPValidationError);
+
+export type ListSharedPayoutDestinationsV1AdminPayoutDestinationsSharedGetResponse = (AdminSharedPayoutDestinationsResponse);
+
+export type ListSharedPayoutDestinationsV1AdminPayoutDestinationsSharedGetError = unknown;
 
 export type ListAdminPayoutsV1AdminPayoutsGetData = {
     query?: {

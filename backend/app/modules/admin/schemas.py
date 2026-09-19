@@ -763,3 +763,57 @@ class AdminAuditLogsResponse(BaseModel):
     total: int
     page: int = Field(ge=1)
     page_size: int = Field(ge=1, le=100)
+
+
+class AdminSharedPayoutDestinationOwner(BaseModel):
+    """One party collecting through a shared bank account."""
+
+    kind: Literal["user", "organization"]
+    id: UUID
+    name: str
+
+
+class AdminSharedPayoutDestination(BaseModel):
+    """A bank account that more than one owner is paid into.
+
+    Sharing is legitimate on its own — a sole trader's personal payout account
+    and their company's are routinely the same account — so this is a review
+    queue, not a list of offences. `provider_account_ref` is masked: it is a
+    payout address, and the listing exists to be recognised, not to be paid to.
+    """
+
+    provider: str
+    # Identifies the destination for an allowance without revealing it. The
+    # hash is keyed, so it cannot be reversed into an account number.
+    lookup_hash: str
+    provider_account_ref: str
+    owner_count: int
+    max_owners: int
+    owners: list[AdminSharedPayoutDestinationOwner]
+
+
+class AdminSharedPayoutDestinationsResponse(BaseModel):
+    """Bank accounts backing more than one owner, most shared first."""
+
+    destinations: list[AdminSharedPayoutDestination]
+
+
+class AdminPayoutDestinationAllowanceRequest(BaseModel):
+    """Raise how many owners one bank account may be paid into."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    lookup_hash: str = Field(min_length=64, max_length=64)
+    max_owners: int = Field(ge=1, le=50)
+    # Recorded so the next reviewer can see why the exception was granted.
+    note: str = Field(default="", max_length=1000)
+
+
+class AdminPayoutDestinationAllowanceResponse(BaseModel):
+    """The allowance now standing for one bank account."""
+
+    provider: str
+    lookup_hash: str
+    max_owners: int
+    note: str
