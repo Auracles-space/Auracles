@@ -184,6 +184,25 @@ class PayoutAccountOnboardRequest(BaseModel):
         return self
 
 
+class PayoutAccountResolveRequest(BaseModel):
+    """Request body for checking a NUBAN against the bank before saving it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    account_number: str = Field(min_length=10, max_length=10)
+    bank_code: str = Field(min_length=1, max_length=10)
+
+
+class PayoutAccountResolveResponse(BaseModel):
+    """The name the bank holds for a NUBAN, shown back for confirmation.
+
+    Carries the name alone. The lookup registers nothing, so there is no
+    account id to return and nothing to clean up if the name is wrong.
+    """
+
+    account_name: str
+
+
 class PayoutBank(BaseModel):
     """A bank a Contributor payout account can be held at."""
 

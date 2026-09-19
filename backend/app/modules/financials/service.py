@@ -10,13 +10,14 @@ from cryptography.fernet import InvalidToken
 from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
-from sqlalchemy import ColumnElement, exists, func, or_, select, text
+from sqlalchemy import ColumnElement, exists, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.currency import platform_currency
+from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import (
     decrypt_payout_provider_account_id,
     encrypt_payout_provider_account_id,
@@ -37,6 +38,7 @@ from app.modules.financials.models import (
     FinancialEvent,
     Payout,
     PayoutAccount,
+    PayoutDestinationAllowance,
     PlatformConfig,
     Transaction,
 )
@@ -58,6 +60,8 @@ from app.modules.financials.schemas import (
     PayoutAccountDeleteResponse,
     PayoutAccountOnboardRequest,
     PayoutAccountOnboardResponse,
+    PayoutAccountResolveRequest,
+    PayoutAccountResolveResponse,
     PayoutAccountResponse,
     PayoutAccountsResponse,
     PayoutBank,
@@ -93,6 +97,15 @@ from app.workers.tasks.payouts import process_payout
 
 INVOICE_URL_TTL_SECONDS = 900
 PAYOUT_CLAIM_STATUSES = {"pending", "processing", "completed"}
+# How many owners may collect through one bank account before an admin has to
+# look. Set above the honest ceiling — a person, their contributor org, and
+# their attestor org is three — so only a funnel meets it.
+MAX_PAYOUT_DESTINATION_OWNERS = 3
+# Resolving turns an account number into a person's name, so the ceiling is
+# set for someone correcting one typo, not for walking the number space.
+PAYOUT_ACCOUNT_RESOLVE_RATE_LIMITER = RateLimiter(
+    namespace="payout_account_resolve", limit=15, window=3600
+)
 # Earning classes for payout-balance derivation. Marketplace earnings clear
 # after the refund window at the marketplace commission rate; attestation
 # earnings clear immediately at the attestation commission rate (Module 6a).
@@ -434,6 +447,179 @@ async def _has_active_payout_account(db: AsyncSession, user_id: UUID) -> bool:
         .limit(1)
     )
     return existing_id is not None
+
+
+async def resolve_payout_account_name(
+    *,
+    redis: RedisCounter,
+    actor_id: UUID,
+    payload: PayoutAccountResolveRequest,
+) -> PayoutAccountResolveResponse:
+    """Return the account holder's name for a NUBAN, registering nothing.
+
+    Rate limited per caller because the lookup turns an account number into a
+    person's name. Legitimate use is a handful of tries while typing one
+    account; anything beyond that is walking the number space to harvest
+    names, which the bank's own customers never consented to.
+
+    Args:
+        redis: Redis connection backing the rate-limit counter.
+        actor_id: Caller the limit is counted against.
+        payload: The account number and bank code to look up.
+
+    Returns:
+        The name the bank holds for the account.
+
+    Raises:
+        HTTPException(422): Paystack could not resolve the account.
+        HTTPException(429): The caller exceeded the lookup limit.
+    """
+    await PAYOUT_ACCOUNT_RESOLVE_RATE_LIMITER.check(redis, str(actor_id))
+    try:
+        account_name = await paystack.resolve_account_name(
+            account_number=payload.account_number,
+            bank_code=payload.bank_code,
+        )
+    except PaystackProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="resolve_payout_account_name",
+            user_id=actor_id,
+        ).info("payout_account_resolve_failed")
+        # 422 rather than 502: the common cause by far is a number that does
+        # not exist at that bank, which is the caller's to correct.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "That account number could not be found at the bank you "
+                "selected. Check both and try again."
+            ),
+        ) from exc
+    return PayoutAccountResolveResponse(account_name=account_name)
+
+
+async def _count_payout_destination_owners(
+    db: AsyncSession,
+    *,
+    provider: str,
+    lookup_hash: str,
+) -> int:
+    """Count the live owners already collecting through one bank account."""
+    rows = await db.execute(
+        select(PayoutAccount.user_id, PayoutAccount.org_id).where(
+            PayoutAccount.provider == provider,
+            PayoutAccount.provider_account_lookup_hash == lookup_hash,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    return len({(user_id, org_id) for user_id, org_id in rows})
+
+
+async def _guard_payout_destination_sharing(
+    db: AsyncSession,
+    *,
+    provider: str,
+    lookup_hash: str,
+    actor_id: UUID,
+    owner_ref: dict[str, str],
+) -> int:
+    """Refuse a bank account that already collects for too many owners.
+
+    Sharing itself is legitimate and common: a sole trader's own payout
+    account and their organization's are routinely the same NUBAN. What the cap
+    catches is one account collecting for many separate identities, which is
+    the shape of a payout funnel rather than a sole trader, and it sits well
+    above the honest cases so they never meet it.
+
+    The count is read outside the insert transaction, so two simultaneous
+    registrations can both pass it. That is deliberate: the cap exists to
+    trigger a human look, not to guard money, and both registrations are
+    recorded either way.
+
+    Args:
+        db: Async session; must not hold an open transaction on refusal.
+        provider: Payment provider the destination belongs to.
+        lookup_hash: Keyed hash of the provider account id.
+        actor_id: User the refusal is audited against.
+        owner_ref: Owner identifiers to carry into the audit metadata.
+
+    Returns:
+        How many owners already hold this destination, this one excluded.
+
+    Raises:
+        HTTPException(422): If admitting another owner would pass the cap.
+    """
+    owner_count = await _count_payout_destination_owners(
+        db,
+        provider=provider,
+        lookup_hash=lookup_hash,
+    )
+    # An admin who has looked at this destination and accepted it sets its own
+    # ceiling; the default only applies where nobody has.
+    allowed = await db.scalar(
+        select(PayoutDestinationAllowance.max_owners).where(
+            PayoutDestinationAllowance.provider == provider,
+            PayoutDestinationAllowance.provider_account_lookup_hash == lookup_hash,
+        )
+    )
+    if owner_count < (allowed or MAX_PAYOUT_DESTINATION_OWNERS):
+        return owner_count
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="payout_account_share_refused",
+            target_type="payout_account",
+            target_id=None,
+            metadata={
+                "provider": provider,
+                "owner_count": owner_count,
+                **owner_ref,
+            },
+        )
+    logger.bind(
+        module="financials",
+        action="onboard_payout_account",
+        user_id=actor_id,
+    ).warning("payout_account_share_refused", provider=provider)
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=(
+            "This bank account already receives payouts for several accounts. "
+            "Contact support to use it here as well."
+        ),
+    )
+
+
+async def _audit_shared_payout_destination(
+    db: AsyncSession,
+    *,
+    actor_id: UUID,
+    payout_account: PayoutAccount,
+    owner_count: int,
+) -> None:
+    """Record that a bank account now collects for more than one owner.
+
+    Written inside the registering transaction so the record cannot outlive a
+    rolled-back account. Admin review reads this rather than the payout table,
+    which is why the owner count travels with it.
+    """
+    await write_audit(
+        db=db,
+        actor_id=actor_id,
+        action="payout_account_shared",
+        target_type="payout_account",
+        target_id=payout_account.id,
+        metadata={
+            "provider": payout_account.provider,
+            "owner_count": owner_count,
+            "user_id": str(payout_account.user_id) if payout_account.user_id else None,
+            "org_id": str(payout_account.org_id) if payout_account.org_id else None,
+        },
+    )
 
 
 async def create_payment_method_setup(
@@ -2745,6 +2931,17 @@ async def _onboard_paystack_org_payout_account(
             detail="Payout provider is unavailable.",
         ) from exc
 
+    # Only after the provider call: the recipient code is what identifies the
+    # bank account, and the same NUBAN always resolves to the same code.
+    lookup_hash = hash_payout_provider_account_id(recipient.recipient_code)
+    shared_with = await _guard_payout_destination_sharing(
+        db,
+        provider="paystack",
+        lookup_hash=lookup_hash,
+        actor_id=actor_id,
+        owner_ref={"org_id": str(org_id)},
+    )
+
     if db.in_transaction():
         await db.rollback()
     try:
@@ -2755,9 +2952,7 @@ async def _onboard_paystack_org_payout_account(
                 provider_account_id=encrypt_payout_provider_account_id(
                     recipient.recipient_code
                 ),
-                provider_account_lookup_hash=hash_payout_provider_account_id(
-                    recipient.recipient_code
-                ),
+                provider_account_lookup_hash=lookup_hash,
                 account_type="nuban",
                 is_default=not await _has_active_org_payout_account(db, org_id),
                 verified_at=datetime.now(UTC),
@@ -2780,6 +2975,13 @@ async def _onboard_paystack_org_payout_account(
                     "bank_code": payload.bank_code,
                 },
             )
+            if shared_with:
+                await _audit_shared_payout_destination(
+                    db,
+                    actor_id=actor_id,
+                    payout_account=payout_account,
+                    owner_count=shared_with + 1,
+                )
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -2970,6 +3172,212 @@ async def onboard_org_payout_account(
         provider=payload.provider,
         onboarding_url=onboarding_url,
         payout_account=_payout_account_response(payout_account),
+    )
+
+
+async def replace_org_payout_account(
+    db: AsyncSession,
+    *,
+    org: Organization,
+    actor: User,
+    payout_account_id: UUID,
+    payload: OrgPayoutAccountOnboardRequest,
+) -> PayoutAccountOnboardResponse:
+    """Swap an organization's payout destination for a newly registered one.
+
+    Registering and retiring happen together rather than as a delete followed
+    by an add. An approved attestor application points at a specific payout
+    account, and the approval gate reads that column: removing the account on
+    its own would leave the organization approved but unpayable, with a
+    checklist still reporting a linked account. Anything pointing at the old
+    account is moved to the new one inside the same transaction.
+
+    Stripe Connect is refused deliberately. The bank details behind a Connect
+    account live at Stripe, so replacing them is done there — minting a second
+    Connect account here would leave the organization with an unverified
+    destination and no way back to the verified one.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org: Organization that owns the account being replaced.
+        actor: Owner performing the replacement, for the audit row.
+        payout_account_id: The destination to retire.
+        payload: Bank details for the replacement destination.
+
+    Returns:
+        The newly registered payout account and its bank-confirmed name.
+
+    Raises:
+        HTTPException(404): The account is not this organization's, or is gone.
+        HTTPException(409): A payout is already in flight for this org.
+        HTTPException(422): The rail cannot replace an account in place.
+        HTTPException(502): Paystack rejected the account or was unreachable.
+    """
+    org_id = org.id
+    actor_id = actor.id
+    log = logger.bind(
+        module="financials",
+        action="replace_org_payout_account",
+        org_id=org_id,
+        user_id=actor_id,
+    )
+
+    existing = await db.scalar(
+        select(PayoutAccount).where(
+            PayoutAccount.id == payout_account_id,
+            PayoutAccount.org_id == org_id,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payout account not found.",
+        )
+    if existing.provider != "paystack":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Change the bank details for this account with Stripe instead. "
+                "Stripe holds them, so they cannot be replaced here."
+            ),
+        )
+
+    # Money already addressed to the old account must land before it is
+    # retired; replacing mid-transfer would leave a payout referencing a
+    # destination the organization can no longer see.
+    in_flight = await db.scalar(
+        select(Payout.id)
+        .where(
+            Payout.org_id == org_id,
+            Payout.status.in_(("pending", "processing")),
+        )
+        .limit(1)
+    )
+    if in_flight is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A payout is still in progress. Replace this account once it "
+                "has completed."
+            ),
+        )
+
+    if payload.provider != "paystack":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="This organization settles through Paystack.",
+        )
+    # Narrowed by the request validator, which rejects a Paystack payload
+    # missing either field before it can reach the provider.
+    assert payload.account_number is not None
+    assert payload.bank_code is not None
+
+    try:
+        recipient = await paystack.create_transfer_recipient(
+            name=org.name,
+            account_number=payload.account_number,
+            bank_code=payload.bank_code,
+            currency=platform_currency(),
+        )
+    except PaystackProviderError as exc:
+        log.error("payout_account_provider_failed: {error}", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payout provider is unavailable.",
+        ) from exc
+
+    lookup_hash = hash_payout_provider_account_id(recipient.recipient_code)
+    shared_with = await _guard_payout_destination_sharing(
+        db,
+        provider="paystack",
+        lookup_hash=lookup_hash,
+        actor_id=actor_id,
+        owner_ref={"org_id": str(org_id)},
+    )
+
+    if db.in_transaction():
+        await db.rollback()
+    try:
+        async with db.begin():
+            retired = await db.scalar(
+                select(PayoutAccount)
+                .where(
+                    PayoutAccount.id == payout_account_id,
+                    PayoutAccount.org_id == org_id,
+                    PayoutAccount.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if retired is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Payout account not found.",
+                )
+            retired.deleted_at = datetime.now(UTC)
+            retired.is_default = False
+
+            payout_account = PayoutAccount(
+                org_id=org_id,
+                provider="paystack",
+                provider_account_id=encrypt_payout_provider_account_id(
+                    recipient.recipient_code
+                ),
+                provider_account_lookup_hash=lookup_hash,
+                account_type="nuban",
+                is_default=True,
+                # Paystack resolved the account against the bank to create the
+                # recipient, so there is nothing further to confirm.
+                verified_at=datetime.now(UTC),
+            )
+            db.add(payout_account)
+            await db.flush()
+
+            await db.execute(
+                update(OrgAttestorApplication)
+                .where(
+                    OrgAttestorApplication.org_id == org_id,
+                    OrgAttestorApplication.payout_account_id == payout_account_id,
+                )
+                .values(payout_account_id=payout_account.id)
+            )
+
+            await write_audit(
+                db=db,
+                actor_id=actor_id,
+                action="payout_account_replaced",
+                target_type="payout_account",
+                target_id=payout_account.id,
+                metadata={
+                    "provider": "paystack",
+                    "org_id": str(org_id),
+                    "replaced_payout_account_id": str(payout_account_id),
+                    "provider_account_ref": _masked_provider_ref(
+                        recipient.recipient_code
+                    ),
+                    "bank_code": payload.bank_code,
+                },
+            )
+            if shared_with:
+                await _audit_shared_payout_destination(
+                    db,
+                    actor_id=actor_id,
+                    payout_account=payout_account,
+                    owner_count=shared_with + 1,
+                )
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payout account already exists.",
+        ) from exc
+
+    log.info("payout_account_replaced", provider="paystack")
+    return PayoutAccountOnboardResponse(
+        provider="paystack",
+        onboarding_url=None,
+        payout_account=_payout_account_response(payout_account),
+        account_name=recipient.account_name,
     )
 
 
@@ -3546,6 +3954,18 @@ async def _onboard_paystack_payout_account(
             detail="Payout provider is unavailable.",
         ) from exc
 
+    # Only after the provider call, because Paystack's recipient code is what
+    # identifies the bank account: the same NUBAN always resolves to the same
+    # code, and nothing before this point reveals which account was entered.
+    lookup_hash = hash_payout_provider_account_id(recipient.recipient_code)
+    shared_with = await _guard_payout_destination_sharing(
+        db,
+        provider="paystack",
+        lookup_hash=lookup_hash,
+        actor_id=contributor_id,
+        owner_ref={"user_id": str(contributor_id)},
+    )
+
     if db.in_transaction():
         await db.rollback()
     try:
@@ -3556,9 +3976,7 @@ async def _onboard_paystack_payout_account(
                 provider_account_id=encrypt_payout_provider_account_id(
                     recipient.recipient_code
                 ),
-                provider_account_lookup_hash=hash_payout_provider_account_id(
-                    recipient.recipient_code
-                ),
+                provider_account_lookup_hash=lookup_hash,
                 account_type="nuban",
                 is_default=not await _has_active_payout_account(db, contributor_id),
                 # Paystack resolved the account against the bank to create the
@@ -3585,6 +4003,13 @@ async def _onboard_paystack_payout_account(
                     "bank_code": payload.bank_code,
                 },
             )
+            if shared_with:
+                await _audit_shared_payout_destination(
+                    db,
+                    actor_id=contributor_id,
+                    payout_account=payout_account,
+                    owner_count=shared_with + 1,
+                )
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -3782,6 +4207,43 @@ async def list_payout_accounts(
                 select(PayoutAccount)
                 .where(
                     PayoutAccount.user_id == contributor.id,
+                    PayoutAccount.deleted_at.is_(None),
+                )
+                .order_by(PayoutAccount.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return PayoutAccountsResponse(
+        payout_accounts=[
+            _payout_account_response(payout_account)
+            for payout_account in payout_accounts
+        ]
+    )
+
+
+async def list_org_payout_accounts(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+) -> PayoutAccountsResponse:
+    """List the organization's active payout destinations.
+
+    Args:
+        db: Async SQLAlchemy session.
+        org_id: Organization whose destinations are read.
+
+    Returns:
+        The org's non-deleted payout accounts, newest first, with provider
+        references masked.
+    """
+    payout_accounts = (
+        (
+            await db.execute(
+                select(PayoutAccount)
+                .where(
+                    PayoutAccount.org_id == org_id,
                     PayoutAccount.deleted_at.is_(None),
                 )
                 .order_by(PayoutAccount.created_at.desc())

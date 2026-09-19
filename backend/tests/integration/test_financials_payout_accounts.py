@@ -27,7 +27,13 @@ from app.integrations.paystack import PaystackProviderError
 from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
-from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.financials.models import (
+    Payout,
+    PayoutAccount,
+    PayoutDestinationAllowance,
+    Transaction,
+)
+from app.modules.financials.service import MAX_PAYOUT_DESTINATION_OWNERS
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
 from tests.conftest import open_step_up_window
@@ -74,6 +80,10 @@ class FakeRedis:
     async def expire(self, key: str, seconds: int) -> None:
         """Record a TTL for a key."""
         self.ttls[key] = seconds
+
+    async def ttl(self, key: str) -> int:
+        """Return a recorded TTL, or -1 when the key carries none."""
+        return self.ttls.get(key, -1)
 
     async def delete(self, *keys: str) -> int:
         """Delete stored values and counters."""
@@ -144,6 +154,7 @@ async def payout_account_context(
         await session.execute(delete(AuditLog))
         await session.execute(delete(License))
         await session.execute(delete(Payout))
+        await session.execute(delete(PayoutDestinationAllowance))
         await session.execute(delete(PayoutAccount))
         await session.execute(delete(Transaction))
         await session.execute(delete(Framework))
@@ -695,3 +706,354 @@ async def test_paystack_onboarding_reuses_an_existing_account(
     assert first.json()["payout_account"]["id"] == second.json()["payout_account"]["id"]
     assert len(accounts) == 1
     assert len(payout_account_context["calls"]["paystack_recipients"]) == 1
+
+
+async def test_one_bank_account_backs_two_owners(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """The same bank account may be registered by more than one owner.
+
+    A sole trader's personal payout account and their organization's are
+    routinely the same NUBAN, and Paystack returns the same recipient code for
+    it, so a platform-wide uniqueness rule locks the second owner out for good.
+    Registering under two owners exercises the same insert path an
+    individual-versus-organization pair takes.
+    """
+    first_id, _ = await create_user_with_roles(
+        "shared-first@auracles.space",
+        ["contributor"],
+    )
+    second_id, _ = await create_user_with_roles(
+        "shared-second@auracles.space",
+        ["contributor"],
+    )
+    payload = {
+        "provider": "paystack",
+        "country": "NG",
+        "account_number": "0123456789",
+        "bank_code": "044",
+    }
+
+    first = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(first_id, ["contributor"]),
+        json=payload,
+    )
+    second = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(second_id, ["contributor"]),
+        json=payload,
+    )
+
+    async with async_session_factory() as session:
+        owners = set(
+            await session.scalars(
+                select(PayoutAccount.user_id).where(PayoutAccount.deleted_at.is_(None))
+            )
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert owners == {first_id, second_id}
+
+
+async def test_payout_account_can_be_registered_again_after_removal(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Removing a payout account frees the bank account to be added again.
+
+    Mistyping a NUBAN that resolves to a real stranger's account is recoverable
+    only by removing the account and re-entering it, so a soft-deleted row must
+    not keep occupying the account's lookup hash.
+    """
+    contributor_id, _ = await create_user_with_roles(
+        "re-add-payout@auracles.space",
+        ["contributor"],
+    )
+    payload = {
+        "provider": "paystack",
+        "country": "NG",
+        "account_number": "0123456789",
+        "bank_code": "044",
+    }
+    first = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=payload,
+    )
+    await open_step_up_window(payout_account_context["redis"], contributor_id)
+    removed = await client.request(
+        "DELETE",
+        f"/v1/financials/payout-accounts/{first.json()['payout_account']['id']}",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    re_added = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=payload,
+    )
+
+    async with async_session_factory() as session:
+        active = (
+            await session.scalars(
+                select(PayoutAccount).where(
+                    PayoutAccount.user_id == contributor_id,
+                    PayoutAccount.deleted_at.is_(None),
+                )
+            )
+        ).all()
+
+    assert removed.status_code == 200
+    assert re_added.status_code == 200
+    assert len(active) == 1
+    assert active[0].id != UUID(first.json()["payout_account"]["id"])
+
+
+async def seed_shared_paystack_destination(count: int) -> list[UUID]:
+    """Register `count` separate owners against the fixture's recipient code."""
+    owner_ids: list[UUID] = []
+    for index in range(count):
+        owner_id, _ = await create_user_with_roles(
+            f"sharer-{index}@auracles.space",
+            ["contributor"],
+        )
+        owner_ids.append(owner_id)
+        async with async_session_factory() as session:
+            async with session.begin():
+                session.add(
+                    PayoutAccount(
+                        user_id=owner_id,
+                        provider="paystack",
+                        provider_account_id=encrypt_payout_provider_account_id(
+                            "RCP_test_9876"
+                        ),
+                        provider_account_lookup_hash=(
+                            hash_payout_provider_account_id("RCP_test_9876")
+                        ),
+                        account_type="nuban",
+                        is_default=True,
+                        verified_at=datetime.now(UTC),
+                    )
+                )
+    return owner_ids
+
+
+async def test_sharing_a_bank_account_is_recorded_for_review(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Registering a bank account another owner already holds is audited.
+
+    Sharing is allowed, but one bank account collecting for several identities
+    is the signal that distinguishes a sole trader from a payout funnel, so it
+    is recorded rather than discarded.
+    """
+    await seed_shared_paystack_destination(1)
+    joiner_id, _ = await create_user_with_roles(
+        "joiner@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(joiner_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "payout_account_shared")
+        )
+
+    assert response.status_code == 200
+    assert audit is not None
+    assert audit.metadata_["owner_count"] == 2
+    assert audit.metadata_["provider"] == "paystack"
+
+
+async def test_bank_account_is_refused_beyond_the_sharing_cap(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """A bank account may back only so many owners before an admin must look.
+
+    A single account collecting payouts for many separate identities is the
+    shape of a payout funnel rather than a sole trader, so the cap stops it
+    where the honest cases sit comfortably below.
+    """
+    await seed_shared_paystack_destination(MAX_PAYOUT_DESTINATION_OWNERS)
+    joiner_id, _ = await create_user_with_roles(
+        "over-cap@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(joiner_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.scalar(
+            select(PayoutAccount).where(PayoutAccount.user_id == joiner_id)
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "payout_account_share_refused")
+        )
+
+    assert response.status_code == 422
+    assert stored is None
+    assert audit is not None
+
+
+async def test_resolving_a_bank_account_names_it_without_registering_it(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A NUBAN can be checked against the bank before anything is saved.
+
+    A mistyped account number is usually still a real account belonging to
+    somebody else, so it resolves happily and there is nothing later to catch
+    it. Naming the holder first is the only point at which the person entering
+    it can tell. Nothing is registered until they confirm.
+    """
+
+    async def _fake_resolve(*, account_number: str, bank_code: str) -> str:
+        del account_number, bank_code
+        return "ADA LOVELACE"
+
+    monkeypatch.setattr(
+        financials_service.paystack, "resolve_account_name", _fake_resolve
+    )
+    contributor_id, _ = await create_user_with_roles(
+        "resolve-contributor@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/resolve",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json={"account_number": "0123456789", "bank_code": "044"},
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.scalar(select(PayoutAccount))
+
+    assert response.status_code == 200
+    assert response.json() == {"account_name": "ADA LOVELACE"}
+    # Checking a number must not create a payout destination, or a typo would
+    # register the stranger's account it resolved to.
+    assert stored is None
+    assert payout_account_context["calls"]["paystack_recipients"] == []
+
+
+async def test_bank_account_lookups_are_rate_limited(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller cannot walk the account-number space harvesting names.
+
+    The lookup turns an account number into a real person's name, which that
+    bank's customers never agreed to publish. Correcting one typo takes a
+    handful of tries; anything past the ceiling is enumeration.
+    """
+
+    async def _fake_resolve(*, account_number: str, bank_code: str) -> str:
+        del account_number, bank_code
+        return "ADA LOVELACE"
+
+    monkeypatch.setattr(
+        financials_service.paystack, "resolve_account_name", _fake_resolve
+    )
+    contributor_id, _ = await create_user_with_roles(
+        "enumerator@auracles.space",
+        ["contributor"],
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+
+    statuses = []
+    for attempt in range(
+        financials_service.PAYOUT_ACCOUNT_RESOLVE_RATE_LIMITER.limit + 1
+    ):
+        response = await client.post(
+            "/v1/financials/payout-accounts/resolve",
+            headers=headers,
+            json={
+                "account_number": f"{attempt:010d}",
+                "bank_code": "044",
+            },
+        )
+        statuses.append(response.status_code)
+
+    assert statuses[-1] == 429
+    assert set(statuses[:-1]) == {200}
+
+
+async def test_an_admin_allowance_lets_a_destination_past_the_cap(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """An admin decision raises the ceiling for one bank account.
+
+    The cap asks a human to look; it is not a verdict. A group of related
+    entities paying into one treasury account is legitimate, so there has to
+    be a way to say yes, or they are permanently stuck.
+    """
+    await seed_shared_paystack_destination(MAX_PAYOUT_DESTINATION_OWNERS)
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                PayoutDestinationAllowance(
+                    provider="paystack",
+                    provider_account_lookup_hash=hash_payout_provider_account_id(
+                        "RCP_test_9876"
+                    ),
+                    max_owners=MAX_PAYOUT_DESTINATION_OWNERS + 1,
+                    note="Related trading entities, one treasury account.",
+                )
+            )
+    joiner_id, _ = await create_user_with_roles(
+        "allowed-joiner@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(joiner_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.scalar(
+            select(PayoutAccount).where(PayoutAccount.user_id == joiner_id)
+        )
+
+    assert response.status_code == 200
+    assert stored is not None

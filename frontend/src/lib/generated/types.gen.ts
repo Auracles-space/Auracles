@@ -1079,6 +1079,26 @@ export type AdminOrgVerificationResponse = {
 };
 
 /**
+ * Raise how many owners one bank account may be paid into.
+ */
+export type AdminPayoutDestinationAllowanceRequest = {
+    lookup_hash: string;
+    max_owners: number;
+    note?: string;
+    provider: string;
+};
+
+/**
+ * The allowance now standing for one bank account.
+ */
+export type AdminPayoutDestinationAllowanceResponse = {
+    lookup_hash: string;
+    max_owners: number;
+    note: string;
+    provider: string;
+};
+
+/**
  * Paginated payout directory for admin financial oversight.
  */
 export type AdminPayoutDirectoryResponse = {
@@ -1161,6 +1181,41 @@ export type AdminRoleAssignmentResponse = {
     approved: boolean;
     role: string;
     user_id: string;
+};
+
+/**
+ * A bank account that more than one owner is paid into.
+ *
+ * Sharing is legitimate on its own — a sole trader's personal payout account
+ * and their company's are routinely the same account — so this is a review
+ * queue, not a list of offences. `provider_account_ref` is masked: it is a
+ * payout address, and the listing exists to be recognised, not to be paid to.
+ */
+export type AdminSharedPayoutDestination = {
+    lookup_hash: string;
+    max_owners: number;
+    owner_count: number;
+    owners: Array<AdminSharedPayoutDestinationOwner>;
+    provider: string;
+    provider_account_ref: string;
+};
+
+/**
+ * One party collecting through a shared bank account.
+ */
+export type AdminSharedPayoutDestinationOwner = {
+    id: string;
+    kind: 'user' | 'organization';
+    name: string;
+};
+
+export type kind = 'user' | 'organization';
+
+/**
+ * Bank accounts backing more than one owner, most shared first.
+ */
+export type AdminSharedPayoutDestinationsResponse = {
+    destinations: Array<AdminSharedPayoutDestination>;
 };
 
 /**
@@ -4746,6 +4801,24 @@ export type PayoutAccountOnboardResponse = {
 };
 
 /**
+ * Request body for checking a NUBAN against the bank before saving it.
+ */
+export type PayoutAccountResolveRequest = {
+    account_number: string;
+    bank_code: string;
+};
+
+/**
+ * The name the bank holds for a NUBAN, shown back for confirmation.
+ *
+ * Carries the name alone. The lookup registers nothing, so there is no
+ * account id to return and nothing to clean up if the name is wrong.
+ */
+export type PayoutAccountResolveResponse = {
+    account_name: string;
+};
+
+/**
  * Safe Contributor payout-account metadata.
  */
 export type PayoutAccountResponse = {
@@ -6664,6 +6737,18 @@ export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostResponse = (void);
 
 export type AdminSuspendOrgV1AdminOrgsOrgIdSuspendPostError = (HTTPValidationError);
 
+export type SetPayoutDestinationAllowanceV1AdminPayoutDestinationsAllowancePostData = {
+    body: AdminPayoutDestinationAllowanceRequest;
+};
+
+export type SetPayoutDestinationAllowanceV1AdminPayoutDestinationsAllowancePostResponse = (AdminPayoutDestinationAllowanceResponse);
+
+export type SetPayoutDestinationAllowanceV1AdminPayoutDestinationsAllowancePostError = (HTTPValidationError);
+
+export type ListSharedPayoutDestinationsV1AdminPayoutDestinationsSharedGetResponse = (AdminSharedPayoutDestinationsResponse);
+
+export type ListSharedPayoutDestinationsV1AdminPayoutDestinationsSharedGetError = unknown;
+
 export type ListAdminPayoutsV1AdminPayoutsGetData = {
     query?: {
         /**
@@ -7933,6 +8018,14 @@ export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostResponse = 
 
 export type OnboardPayoutAccountV1FinancialsPayoutAccountsOnboardPostError = (HTTPValidationError);
 
+export type ResolvePayoutAccountNameV1FinancialsPayoutAccountsResolvePostData = {
+    body: PayoutAccountResolveRequest;
+};
+
+export type ResolvePayoutAccountNameV1FinancialsPayoutAccountsResolvePostResponse = (PayoutAccountResolveResponse);
+
+export type ResolvePayoutAccountNameV1FinancialsPayoutAccountsResolvePostError = (HTTPValidationError);
+
 export type DeletePayoutAccountV1FinancialsPayoutAccountsPayoutAccountIdDeleteData = {
     body: PayoutAccountDeleteRequest;
     path: {
@@ -8772,6 +8865,16 @@ export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMeth
 
 export type DeleteOrgPaymentMethodV1OrgsOrgIdFinancialsPaymentMethodsPaymentMethodIdDeleteError = (HTTPValidationError);
 
+export type ListOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGetData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type ListOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGetResponse = (PayoutAccountsResponse);
+
+export type ListOrgPayoutAccountsV1OrgsOrgIdFinancialsPayoutAccountsGetError = (HTTPValidationError);
+
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData = {
     body: OrgPayoutAccountOnboardRequest;
     path: {
@@ -8782,6 +8885,29 @@ export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostData =
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostResponse = (PayoutAccountOnboardResponse);
 
 export type OnboardOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPostError = (HTTPValidationError);
+
+export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostData = {
+    body: OrgPayoutAccountOnboardRequest;
+    path: {
+        org_id: string;
+        payout_account_id: string;
+    };
+};
+
+export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostResponse = (PayoutAccountOnboardResponse);
+
+export type ReplaceOrgPayoutAccountV1OrgsOrgIdFinancialsPayoutAccountsPayoutAccountIdReplacePostError = (HTTPValidationError);
+
+export type ResolveOrgPayoutAccountNameV1OrgsOrgIdFinancialsPayoutAccountsResolvePostData = {
+    body: PayoutAccountResolveRequest;
+    path: {
+        org_id: string;
+    };
+};
+
+export type ResolveOrgPayoutAccountNameV1OrgsOrgIdFinancialsPayoutAccountsResolvePostResponse = (PayoutAccountResolveResponse);
+
+export type ResolveOrgPayoutAccountNameV1OrgsOrgIdFinancialsPayoutAccountsResolvePostError = (HTTPValidationError);
 
 export type ListOrgPayoutsV1OrgsOrgIdFinancialsPayoutsGetData = {
     path: {

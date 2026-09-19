@@ -18,6 +18,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -227,10 +228,28 @@ class PayoutAccount(CreatedAtMixin, Base):
 
     __tablename__ = "payout_accounts"
     __table_args__ = (
-        UniqueConstraint(
+        # Uniqueness is per owner, not per platform: one bank account may back
+        # a person and their organizations at once, which is the ordinary sole
+        # trader case and the only shape Paystack can express, since it returns
+        # the same recipient code for a repeated account number. Partial on
+        # deleted_at so removing an account releases the bank account for
+        # re-registration. Two indexes because the XOR leaves the other owner
+        # column NULL, and NULLs never collide in a unique index.
+        Index(
+            "uq_payout_accounts_user_lookup",
             "provider",
             "provider_account_lookup_hash",
-            name="uq_payout_accounts_provider_account_lookup",
+            "user_id",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL AND deleted_at IS NULL"),
+        ),
+        Index(
+            "uq_payout_accounts_org_lookup",
+            "provider",
+            "provider_account_lookup_hash",
+            "org_id",
+            unique=True,
+            postgresql_where=text("org_id IS NOT NULL AND deleted_at IS NULL"),
         ),
         CheckConstraint(
             "(user_id IS NULL) != (org_id IS NULL)",
@@ -279,6 +298,54 @@ class PayoutAccount(CreatedAtMixin, Base):
     )
 
     payouts: Mapped[list[Payout]] = relationship(back_populates="payout_account")
+
+
+class PayoutDestinationAllowance(CreatedAtMixin, Base):
+    """An admin decision to let one bank account back more owners than usual.
+
+    Sharing a payout destination is capped so that a single account collecting
+    for many separate identities surfaces for review rather than accumulating
+    silently. The cap is a prompt, not a verdict: a group of related trading
+    entities paying into one treasury account is legitimate and would
+    otherwise be stuck permanently. This records that a human looked and said
+    yes, and how far.
+
+    Keyed by the same provider/lookup-hash pair that identifies a destination
+    everywhere else, so an allowance survives the accounts that reference it
+    being replaced.
+    """
+
+    __tablename__ = "payout_destination_allowances"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_account_lookup_hash",
+            name="uq_payout_destination_allowances_destination",
+        ),
+        CheckConstraint(
+            "max_owners > 0",
+            name="ck_payout_destination_allowances_max_owners_positive",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    )
+    provider: Mapped[str] = mapped_column(PAYMENT_PROVIDER_ENUM, nullable=False)
+    provider_account_lookup_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    max_owners: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Why the exception was granted, for whoever reviews it next.
+    note: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    approved_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+    )
 
 
 class Payout(Base):

@@ -790,3 +790,125 @@ async def test_onboard_org_paystack_payout_account_requires_bank_details(
     )
 
     assert response.status_code == 422
+
+
+async def test_org_admin_can_see_the_payout_account_earnings_go_to(
+    client: AsyncClient,
+    clean_state: None,
+    override_redis: FakeRedis,
+) -> None:
+    """An organization can read back the payout destination it registered.
+
+    Registering one was write-only, so an owner who mistyped an account number
+    had nothing to check it against: no screen anywhere named the bank account
+    their earnings were addressed to.
+    """
+    del clean_state, override_redis
+    org_id, owner_id, _secret = await _attestor_org(country="NG")
+    account_id = await _org_payout_account(org_id)
+
+    response = await client.get(
+        f"/v1/orgs/{org_id}/financials/payout-accounts",
+        headers=_auth(owner_id),
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert [account["id"] for account in body["payout_accounts"]] == [str(account_id)]
+    # The provider reference is masked: enough to recognise the account, not
+    # enough to address money to it.
+    assert body["payout_accounts"][0]["provider_account_ref"].startswith("****")
+    assert body["payout_accounts"][0]["verified_at"] is not None
+
+
+async def _org_paystack_account(org_id: UUID, recipient_code: str) -> UUID:
+    """Create a verified org-owned Paystack payout account. Return its id."""
+    async with async_session_factory() as session:
+        async with session.begin():
+            account = PayoutAccount(
+                org_id=org_id,
+                provider="paystack",
+                provider_account_id=encrypt_payout_provider_account_id(recipient_code),
+                provider_account_lookup_hash=hash_payout_provider_account_id(
+                    recipient_code
+                ),
+                account_type="nuban",
+                is_default=True,
+                verified_at=datetime.now(UTC),
+            )
+            session.add(account)
+            await session.flush()
+            return account.id
+
+
+async def test_replacing_an_org_payout_account_moves_the_application_with_it(
+    client: AsyncClient,
+    clean_state: None,
+    monkeypatch: pytest.MonkeyPatch,
+    override_redis: FakeRedis,
+) -> None:
+    """Replacing a bank account never leaves the org without a destination.
+
+    Removal and registration happen together so an approved organization
+    cannot end up with an application pointing at an account that no longer
+    exists, which would let it stay approved while being unpayable.
+    """
+    del clean_state
+
+    async def _fake_recipient(
+        *, name: str, account_number: str, bank_code: str, currency: str
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            recipient_code="RCP_org_replacement", account_name="ATTESTOR ORG LLC"
+        )
+
+    monkeypatch.setattr(
+        financials_service.paystack, "create_transfer_recipient", _fake_recipient
+    )
+    org_id, owner_id, _secret = await _attestor_org(country="NG")
+    old_account_id = await _org_paystack_account(org_id, "RCP_org_original")
+    async with async_session_factory() as session:
+        async with session.begin():
+            application = await session.scalar(
+                select(OrgAttestorApplication).where(
+                    OrgAttestorApplication.org_id == org_id
+                )
+            )
+            assert application is not None
+            application.payout_account_id = old_account_id
+    await open_step_up_window(override_redis, owner_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org_id}/financials/payout-accounts/{old_account_id}/replace",
+        headers=_auth(owner_id),
+        json={
+            "provider": "paystack",
+            "account_number": "9876543210",
+            "bank_code": "058",
+        },
+    )
+
+    async with async_session_factory() as session:
+        old_account = await session.get(PayoutAccount, old_account_id)
+        new_account = await session.scalar(
+            select(PayoutAccount).where(
+                PayoutAccount.org_id == org_id,
+                PayoutAccount.deleted_at.is_(None),
+            )
+        )
+        application = await session.scalar(
+            select(OrgAttestorApplication).where(
+                OrgAttestorApplication.org_id == org_id
+            )
+        )
+
+    assert response.status_code == 200
+    assert old_account is not None
+    assert old_account.deleted_at is not None
+    assert new_account is not None
+    assert new_account.id != old_account_id
+    assert new_account.verified_at is not None
+    # The gate reads payout_account_id, so it has to follow the replacement or
+    # the org stays approved against an account that is gone.
+    assert application is not None
+    assert application.payout_account_id == new_account.id

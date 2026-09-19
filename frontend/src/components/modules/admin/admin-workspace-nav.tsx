@@ -95,7 +95,8 @@ export const adminGroups: AdminNavGroup[] = [
       {
         href: "/admin/payouts",
         label: "Payouts",
-        summary: "Monitor Contributor and Organization payouts and failed transfers.",
+        summary:
+          "Monitor payouts and failed transfers, and review bank accounts shared by several owners.",
       },
       {
         href: "/admin/treasury",

@@ -3018,6 +3018,56 @@ components:
       - page_size
       title: AdminOrgsResponse
       type: object
+    AdminPayoutDestinationAllowanceRequest:
+      additionalProperties: false
+      description: Raise how many owners one bank account may be paid into.
+      properties:
+        lookup_hash:
+          maxLength: 64
+          minLength: 64
+          title: Lookup Hash
+          type: string
+        max_owners:
+          maximum: 50.0
+          minimum: 1.0
+          title: Max Owners
+          type: integer
+        note:
+          default: ''
+          maxLength: 1000
+          title: Note
+          type: string
+        provider:
+          title: Provider
+          type: string
+      required:
+      - provider
+      - lookup_hash
+      - max_owners
+      title: AdminPayoutDestinationAllowanceRequest
+      type: object
+    AdminPayoutDestinationAllowanceResponse:
+      description: The allowance now standing for one bank account.
+      properties:
+        lookup_hash:
+          title: Lookup Hash
+          type: string
+        max_owners:
+          title: Max Owners
+          type: integer
+        note:
+          title: Note
+          type: string
+        provider:
+          title: Provider
+          type: string
+      required:
+      - provider
+      - lookup_hash
+      - max_owners
+      - note
+      title: AdminPayoutDestinationAllowanceResponse
+      type: object
     AdminPayoutDirectoryResponse:
       description: Paginated payout directory for admin financial oversight.
       properties:
@@ -3224,6 +3274,76 @@ components:
       - role
       - approved
       title: AdminRoleAssignmentResponse
+      type: object
+    AdminSharedPayoutDestination:
+      description: "A bank account that more than one owner is paid into.\n\nSharing is\
+        \ legitimate on its own \u2014 a sole trader's personal payout account\nand their\
+        \ company's are routinely the same account \u2014 so this is a review\nqueue,\
+        \ not a list of offences. `provider_account_ref` is masked: it is a\npayout address,\
+        \ and the listing exists to be recognised, not to be paid to."
+      properties:
+        lookup_hash:
+          title: Lookup Hash
+          type: string
+        max_owners:
+          title: Max Owners
+          type: integer
+        owner_count:
+          title: Owner Count
+          type: integer
+        owners:
+          items:
+            $ref: '#/components/schemas/AdminSharedPayoutDestinationOwner'
+          title: Owners
+          type: array
+        provider:
+          title: Provider
+          type: string
+        provider_account_ref:
+          title: Provider Account Ref
+          type: string
+      required:
+      - provider
+      - lookup_hash
+      - provider_account_ref
+      - owner_count
+      - max_owners
+      - owners
+      title: AdminSharedPayoutDestination
+      type: object
+    AdminSharedPayoutDestinationOwner:
+      description: One party collecting through a shared bank account.
+      properties:
+        id:
+          format: uuid
+          title: Id
+          type: string
+        kind:
+          enum:
+          - user
+          - organization
+          title: Kind
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - kind
+      - id
+      - name
+      title: AdminSharedPayoutDestinationOwner
+      type: object
+    AdminSharedPayoutDestinationsResponse:
+      description: Bank accounts backing more than one owner, most shared first.
+      properties:
+        destinations:
+          items:
+            $ref: '#/components/schemas/AdminSharedPayoutDestination'
+          title: Destinations
+          type: array
+      required:
+      - destinations
+      title: AdminSharedPayoutDestinationsResponse
       type: object
     AdminStartTrialRequest:
       description: Admin selection of the calibration fixture for a trial.
@@ -13446,6 +13566,40 @@ components:
       - payout_account
       title: PayoutAccountOnboardResponse
       type: object
+    PayoutAccountResolveRequest:
+      additionalProperties: false
+      description: Request body for checking a NUBAN against the bank before saving it.
+      properties:
+        account_number:
+          maxLength: 10
+          minLength: 10
+          title: Account Number
+          type: string
+        bank_code:
+          maxLength: 10
+          minLength: 1
+          title: Bank Code
+          type: string
+      required:
+      - account_number
+      - bank_code
+      title: PayoutAccountResolveRequest
+      type: object
+    PayoutAccountResolveResponse:
+      description: 'The name the bank holds for a NUBAN, shown back for confirmation.
+
+
+        Carries the name alone. The lookup registers nothing, so there is no
+
+        account id to return and nothing to clean up if the name is wrong.'
+      properties:
+        account_name:
+          title: Account Name
+          type: string
+      required:
+      - account_name
+      title: PayoutAccountResolveResponse
+      type: object
     PayoutAccountResponse:
       description: Safe Contributor payout-account metadata.
       properties:
@@ -18956,6 +19110,56 @@ paths:
       summary: Suspend an organization (platform admin)
       tags:
       - Admin Organizations
+  /v1/admin/payout-destinations/allowance:
+    post:
+      description: Raise how many owners one bank account may be paid into. The automatic
+        ceiling refuses further registrations and asks for a human to look; this records
+        that one did and said yes. Admin only.
+      operationId: set_payout_destination_allowance_v1_admin_payout_destinations_allowance_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPayoutDestinationAllowanceRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPayoutDestinationAllowanceResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Allow a bank account to back more owners
+      tags:
+      - Admin
+  /v1/admin/payout-destinations/shared:
+    get:
+      description: "Bank accounts backing several payout accounts at once, naming the\
+        \ parties behind each. Sharing one is legitimate on its own \u2014 a sole trader's\
+        \ personal payout account and their company's are routinely the same account\
+        \ \u2014 so this is a review queue rather than a list of offences. Provider\
+        \ references are masked."
+      operationId: list_shared_payout_destinations_v1_admin_payout_destinations_shared_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSharedPayoutDestinationsResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: List bank accounts paid to more than one owner
+      tags:
+      - Admin
   /v1/admin/payouts:
     get:
       description: Return a paginated, read-only payout directory with status, provider,
@@ -23501,6 +23705,37 @@ paths:
       summary: Onboard Payout Account
       tags:
       - Financials
+  /v1/financials/payout-accounts/resolve:
+    post:
+      description: Return the name the bank holds for an account number so it can be
+        confirmed before it becomes a payout destination. A mistyped number usually
+        belongs to somebody else rather than being invalid, so this is the only point
+        at which the mistake is visible. Registers nothing. Rate limited per caller.
+      operationId: resolve_payout_account_name_v1_financials_payout_accounts_resolve_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutAccountResolveRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountResolveResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Check a bank account before registering it
+      tags:
+      - Financials
   /v1/financials/payout-accounts/{payout_account_id}:
     delete:
       description: Soft-delete an owned payout account after 2FA confirmation.
@@ -26320,6 +26555,37 @@ paths:
       tags:
       - Organizations
   /v1/orgs/{org_id}/financials/payout-accounts:
+    get:
+      description: Return the organization's active payout destinations, with provider
+        references masked. Lets an owner confirm which bank account earnings are
+        addressed to. Owner/admin only.
+      operationId: list_org_payout_accounts_v1_orgs__org_id__financials_payout_accounts_get
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountsResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: List organization payout accounts
+      tags:
+      - Organizations
     post:
       description: Create a provider-held payout destination owned by the organization.
         Provider routing follows the org's registered country. Requires an open
@@ -26355,6 +26621,93 @@ paths:
       security:
       - HTTPBearer: []
       summary: Onboard an organization payout account
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/financials/payout-accounts/{payout_account_id}/replace:
+    post:
+      description: Register a new payout destination and retire the named one in
+        a single action, moving anything linked to it across. Removal is not offered
+        on its own, because an approved attestor application points at a specific
+        account, so retiring it alone would leave the organization approved but
+        unpayable. Requires an open step-up 2FA window. Owner only.
+      operationId: replace_org_payout_account_v1_orgs__org_id__financials_payout_accounts__payout_account_id__replace_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      - in: path
+        name: payout_account_id
+        required: true
+        schema:
+          format: uuid
+          title: Payout Account Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgPayoutAccountOnboardRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountOnboardResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Replace an organization payout account
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/financials/payout-accounts/resolve:
+    post:
+      description: Return the name the bank holds for an account number so an owner
+        can confirm it before it becomes the organization's payout destination. A mistyped
+        number usually belongs to somebody else rather than being invalid, so this is
+        the only point at which the mistake is visible. Registers nothing. Rate limited
+        per caller. Owner only.
+      operationId: resolve_org_payout_account_name_v1_orgs__org_id__financials_payout_accounts_resolve_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayoutAccountResolveRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayoutAccountResolveResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Check a bank account before registering it
       tags:
       - Organizations
   /v1/orgs/{org_id}/financials/payouts:

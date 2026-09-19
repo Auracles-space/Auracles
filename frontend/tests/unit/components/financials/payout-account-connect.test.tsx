@@ -6,6 +6,7 @@ import {
   listPayoutAccounts,
   listPayoutBanks,
   onboardPayoutAccount,
+  resolvePayoutAccountName,
 } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -18,6 +19,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   listPayoutAccounts: vi.fn(),
   listPayoutBanks: vi.fn(),
   onboardPayoutAccount: vi.fn(),
+  resolvePayoutAccountName: vi.fn(),
 }));
 
 const originalLocation = window.location;
@@ -27,6 +29,13 @@ describe("PayoutAccountConnect", () => {
     vi.mocked(listPayoutAccounts).mockReset();
     vi.mocked(listPayoutBanks).mockReset();
     vi.mocked(onboardPayoutAccount).mockReset();
+    vi.mocked(resolvePayoutAccountName).mockReset();
+    vi.mocked(resolvePayoutAccountName).mockResolvedValue({
+      data: { account_name: "ADA LOVELACE" },
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    } as never);
     vi.mocked(listPayoutBanks).mockResolvedValue({
       data: {
         banks: [
@@ -202,7 +211,11 @@ describe("PayoutAccountConnect", () => {
     fireEvent.change(screen.getByLabelText(/Account number/i), {
       target: { value: "0123456789" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Connect bank account/i }));
+    // The holder is named and accepted before anything is registered.
+    fireEvent.click(screen.getByRole("button", { name: /Check account/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Yes, connect this account/i }),
+    );
 
     await waitFor(() => {
       expect(onboardPayoutAccount).toHaveBeenCalledWith(
