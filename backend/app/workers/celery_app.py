@@ -46,6 +46,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.organizations_beat",
             "app.workers.tasks.partner_webhooks",
             "app.workers.tasks.payouts",
+            "app.workers.tasks.transfer_reconcile",
             "app.workers.tasks.platform_withdrawals",
             "app.workers.tasks.provider_fee_backfill",
             "app.workers.tasks.processing.blend",

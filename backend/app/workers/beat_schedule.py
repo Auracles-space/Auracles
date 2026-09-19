@@ -137,6 +137,16 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
         "task": "app.workers.tasks.financials_beat.requeue_stranded_payouts_task",
         "schedule": 3600.0,
     },
+    # A transfer Paystack holds for a one-time code produces no webhook, and
+    # neither does Paystack abandoning it about an hour later. The payout would
+    # sit at "processing" forever, which blocks the beneficiary from requesting
+    # again and keeps the amount claimed against their balance — so an
+    # unanswered code locks them out of earnings that were never sent. Runs
+    # every fifteen minutes so a released beneficiary does not wait an hour.
+    "reconcile-held-transfers-quarter-hourly": {
+        "task": "app.workers.tasks.transfer_reconcile.reconcile_held_transfers",
+        "schedule": 900.0,
+    },
     # Webhook rows exist for replay dedupe and short-term forensics; the
     # durable money record lives in audit_logs and the ledger, so rows past
     # retention only grow the table.

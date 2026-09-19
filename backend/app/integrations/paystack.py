@@ -693,6 +693,47 @@ async def initiate_transfer(
     )
 
 
+async def verify_transfer(
+    *,
+    reference: str,
+    settings: Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, Any]:
+    """Return Paystack's current record of a transfer we initiated.
+
+    Needed because two of a transfer's outcomes arrive without a webhook: one
+    held for a one-time code sits at ``otp`` silently, and Paystack abandons
+    it about an hour later just as silently. Asking is the only way to learn
+    either happened.
+
+    The whole transfer object is returned rather than just its status, because
+    a transfer that turns out to have succeeded carries the fee Paystack
+    charged, and settling it without that would understate what the transfer
+    cost.
+
+    Args:
+        reference: The reference we sent when initiating the transfer.
+        settings: Settings override, defaulting to the app settings.
+        client: HTTP client override, primarily for tests.
+
+    Returns:
+        The transfer object, whose ``status`` is e.g. ``otp``, ``abandoned``
+        or ``success``.
+
+    Raises:
+        PaystackProviderError: If the transfer is unknown or carries no status.
+    """
+    data = await _get_json(
+        f"/transfer/verify/{reference}",
+        {},
+        settings=settings,
+        client=client,
+    )
+    if not isinstance(data, dict) or not isinstance(data.get("status"), str):
+        raise PaystackProviderError("Paystack transfer verify response has no status.")
+    return data
+
+
 def verify_webhook(
     payload: bytes,
     signature_header: str | None,
