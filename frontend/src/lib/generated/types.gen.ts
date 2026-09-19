@@ -2354,6 +2354,16 @@ export type CredentialEvidenceUploadSessionResponse = {
 };
 
 /**
+ * Scan state of one Credential evidence upload session.
+ * Returned when the browser confirms an upload and while it polls for the verdict, so the owner sees why the file cannot be saved yet.
+ */
+export type CredentialEvidenceUploadStatusResponse = {
+    id: string;
+    s3_key: string;
+    scan_status: string;
+};
+
+/**
  * Credential details returned to the owner.
  */
 export type CredentialResponse = {
@@ -7618,6 +7628,28 @@ export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUpload
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
+
+export type GetCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdGetData = {
+    path: {
+        credential_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type GetCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdGetResponse = (CredentialEvidenceUploadStatusResponse);
+
+export type GetCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdGetError = (HTTPValidationError);
+
+export type ConfirmCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdConfirmPostData = {
+    path: {
+        credential_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type ConfirmCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdConfirmPostResponse = (CredentialEvidenceUploadStatusResponse);
+
+export type ConfirmCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdConfirmPostError = (HTTPValidationError);
 
 export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetData = {
     query?: {

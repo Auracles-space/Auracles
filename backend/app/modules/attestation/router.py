@@ -70,6 +70,7 @@ from app.modules.attestation.schemas import (
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
     CredentialEvidenceUploadSessionResponse,
+    CredentialEvidenceUploadStatusResponse,
     CredentialResponse,
     CredentialsResponse,
     CredentialUpdateRequest,
@@ -1181,6 +1182,55 @@ async def create_credential_evidence_upload_session(
         user=user,
         credential_id=credential_id,
         payload=payload,
+    )
+
+
+@router.post(
+    "/credentials/{credential_id}/uploads/{upload_session_id}/confirm",
+    response_model=CredentialEvidenceUploadStatusResponse,
+    summary="Confirm one credential evidence upload",
+    description=(
+        "Tell the API an evidence file finished uploading to storage, which "
+        "starts its virus scan. Called by the owner's browser; safe to call "
+        "more than once."
+    ),
+)
+async def confirm_credential_evidence_upload(
+    credential_id: UUID,
+    upload_session_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadStatusResponse:
+    """Queue the virus scan for one uploaded credential evidence file."""
+    return await credential_service.confirm_evidence_upload(
+        db=db,
+        user=user,
+        credential_id=credential_id,
+        upload_session_id=upload_session_id,
+    )
+
+
+@router.get(
+    "/credentials/{credential_id}/uploads/{upload_session_id}",
+    response_model=CredentialEvidenceUploadStatusResponse,
+    summary="Credential evidence upload scan state",
+    description=(
+        "Return one evidence upload's scan state so the owner's browser can "
+        "wait for the verdict before saving the credential."
+    ),
+)
+async def get_credential_evidence_upload(
+    credential_id: UUID,
+    upload_session_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadStatusResponse:
+    """Return the scan state of one credential evidence upload."""
+    return await credential_service.get_evidence_upload_status(
+        db=db,
+        user=user,
+        credential_id=credential_id,
+        upload_session_id=upload_session_id,
     )
 
 

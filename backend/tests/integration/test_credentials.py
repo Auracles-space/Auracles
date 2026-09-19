@@ -332,3 +332,155 @@ async def test_credential_evidence_upload_session_controls_attached_keys(
     assert upload_session.consumed_at is not None
     assert stored is not None
     assert stored.evidence_file_keys == [evidence_key]
+
+
+async def test_confirming_credential_evidence_scans_it_before_it_is_attached(
+    client: AsyncClient,
+    migrated_database: None,
+    credential_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirming an evidence upload scans it, so the first save is accepted.
+
+    Storage takes the file straight from the browser, so the scan only starts
+    when the browser says the upload landed. Without that the scan began inside
+    the save that then refused the evidence it was scanning for.
+    """
+    del migrated_database, credential_context
+    dispatched_scans: list[str] = []
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, object]:
+        """Return deterministic S3 POST data without contacting AWS."""
+        del max_size, expires_in
+        return {"url": f"https://s3.local/{bucket}", "fields": {"key": key}}
+
+    class FakeScanTask:
+        """Capture queued Credential evidence scan tasks without running Celery."""
+
+        @staticmethod
+        def delay(upload_session_id: str) -> None:
+            dispatched_scans.append(upload_session_id)
+
+    monkeypatch.setattr(s3.storage, "presigned_post", fake_presigned_post)
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: True)
+    monkeypatch.setattr(credential_service, "scan_attestation_upload", FakeScanTask)
+
+    owner_id = await create_user("credential-confirm@auracles.space", ["operator"])
+    owner_headers = auth_headers(owner_id, ["operator"])
+    created = await client.post(
+        "/v1/credentials",
+        headers=owner_headers,
+        json=credential_payload(),
+    )
+    credential_id = created.json()["id"]
+
+    upload = await client.post(
+        f"/v1/credentials/{credential_id}/uploads",
+        headers=owner_headers,
+        json={
+            "file_name": "licence.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 1200,
+        },
+    )
+    upload_session_id = upload.json()["id"]
+    evidence_key = upload.json()["s3_key"]
+
+    confirm = await client.post(
+        f"/v1/credentials/{credential_id}/uploads/{upload_session_id}/confirm",
+        headers=owner_headers,
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            upload_session = await session.scalar(
+                select(AttestationUploadSession).where(
+                    AttestationUploadSession.s3_key == evidence_key
+                )
+            )
+            assert upload_session is not None
+            upload_session.scan_status = "clean"
+
+    polled = await client.get(
+        f"/v1/credentials/{credential_id}/uploads/{upload_session_id}",
+        headers=owner_headers,
+    )
+    attached = await client.patch(
+        f"/v1/credentials/{credential_id}",
+        headers=owner_headers,
+        json={"evidence_file_keys": [evidence_key]},
+    )
+
+    assert confirm.status_code == 200, confirm.text
+    assert confirm.json()["scan_status"] == "pending_scan"
+    assert dispatched_scans == [upload_session_id]
+    assert polled.status_code == 200, polled.text
+    assert polled.json()["scan_status"] == "clean"
+    # Attaching lands first time: no "still scanning" refusal.
+    assert attached.status_code == 200, attached.text
+    assert attached.json()["evidence_file_keys"] == [evidence_key]
+
+
+async def test_confirming_credential_evidence_that_never_arrived_is_refused(
+    client: AsyncClient,
+    migrated_database: None,
+    credential_context: FakeRedis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirming before the file reaches storage is refused, and scans nothing."""
+    del migrated_database, credential_context
+    dispatched_scans: list[str] = []
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, object]:
+        """Return deterministic S3 POST data without contacting AWS."""
+        del max_size, expires_in
+        return {"url": f"https://s3.local/{bucket}", "fields": {"key": key}}
+
+    class FakeScanTask:
+        """Capture queued Credential evidence scan tasks without running Celery."""
+
+        @staticmethod
+        def delay(upload_session_id: str) -> None:
+            dispatched_scans.append(upload_session_id)
+
+    monkeypatch.setattr(s3.storage, "presigned_post", fake_presigned_post)
+    monkeypatch.setattr(s3.storage, "object_exists", lambda bucket, key: False)
+    monkeypatch.setattr(credential_service, "scan_attestation_upload", FakeScanTask)
+
+    owner_id = await create_user("credential-missing@auracles.space", ["operator"])
+    owner_headers = auth_headers(owner_id, ["operator"])
+    created = await client.post(
+        "/v1/credentials",
+        headers=owner_headers,
+        json=credential_payload(),
+    )
+    credential_id = created.json()["id"]
+    upload = await client.post(
+        f"/v1/credentials/{credential_id}/uploads",
+        headers=owner_headers,
+        json={
+            "file_name": "missing.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 1200,
+        },
+    )
+
+    confirm = await client.post(
+        f"/v1/credentials/{credential_id}/uploads/{upload.json()['id']}/confirm",
+        headers=owner_headers,
+    )
+
+    assert confirm.status_code == 422, confirm.text
+    assert dispatched_scans == []

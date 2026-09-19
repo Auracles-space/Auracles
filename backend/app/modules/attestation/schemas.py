@@ -147,6 +147,18 @@ class CredentialEvidenceUploadSessionResponse(BaseModel):
     scan_status: str
 
 
+class CredentialEvidenceUploadStatusResponse(BaseModel):
+    """Scan state of one Credential evidence upload session.
+
+    Returned when the browser confirms an upload and while it polls for the
+    verdict, so the owner sees why the file cannot be saved yet.
+    """
+
+    id: UUID
+    s3_key: str
+    scan_status: str
+
+
 class CredentialEvidenceDownloadResponse(BaseModel):
     """Presigned GET URL for one Credential evidence file."""
 

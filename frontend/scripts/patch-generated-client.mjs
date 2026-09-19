@@ -30,6 +30,10 @@ const compatibilityAliases = {
   getAttestationEvidenceUpload:
     "getAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGet",
   createCredential: "createCredentialV1CredentialsPost",
+  confirmCredentialEvidenceUpload:
+    "confirmCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdConfirmPost",
+  getCredentialEvidenceUpload:
+    "getCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdGet",
   createDispute: "createDisputeV1ProjectsProjectIdDisputesPost",
   listDisputes: "listDisputesV1ProjectsProjectIdDisputesGet",
   createCollection: "createCollectionV1CollectionsPost",
