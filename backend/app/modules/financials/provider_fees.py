@@ -91,9 +91,11 @@ async def record_provider_fee(
 def paystack_transfer_fee_minor(transfer: dict[str, Any]) -> int | None:
     """Return the fee Paystack charged on a transfer, in kobo, if reported.
 
-    Paystack reports it as ``fee_charged`` on transfer objects. Treasury open
-    item A: confirm against a live test-mode ``transfer.success`` payload; the
-    balance-gap warning surfaces any fee this misses.
+    Paystack reports it as ``fee_charged`` on transfer objects, in kobo and as
+    an integer: confirmed 2026-09-19 against a test-mode transfer, which
+    returned 10000 for a 315,000 NGN payout — 50 NGN Paystack plus 50 NGN
+    stamp duty, reported as one total rather than the ``fees_breakdown`` split.
+    The balance-gap warning surfaces any fee this misses.
     """
     fee = transfer.get("fee_charged")
     return fee if isinstance(fee, int) and fee > 0 else None

@@ -34,6 +34,10 @@ from app.modules.financials.models import Payout, PlatformWithdrawal
 from app.modules.financials.platform_withdrawals import (
     apply_withdrawal_transfer_outcome,
 )
+from app.modules.financials.provider_fees import (
+    paystack_transfer_fee_minor,
+    record_provider_fee,
+)
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
 
@@ -112,6 +116,7 @@ async def _reconcile_held_transfers() -> dict[str, int]:
             payout_id=payout_id,
             outcome=outcome,
             transfer_status=transfer_status,
+            transfer=transfer,
         ):
             reconciled += 1
             log.info("held_transfer_reconciled", outcome=outcome)
@@ -195,6 +200,7 @@ async def _settle_payout(
     payout_id: UUID,
     outcome: str,
     transfer_status: str,
+    transfer: dict[str, Any],
 ) -> bool:
     """Record the provider's verdict on one held payout.
 
@@ -202,6 +208,7 @@ async def _settle_payout(
         payout_id: Payout to settle.
         outcome: ``completed`` or ``failed``.
         transfer_status: The provider status that decided it, for the ledger.
+        transfer: The verified transfer, which carries the fee Paystack kept.
 
     Returns:
         Whether the payout was changed; False if another worker got there
@@ -217,6 +224,24 @@ async def _settle_payout(
             payout.awaiting_otp = False
             if outcome == "completed":
                 payout.completed_at = datetime.now(UTC)
+                # The platform absorbs the transfer fee, so a payout completed
+                # here has to cost what one completed by the webhook costs.
+                # Origin is "backfill" because this fee was found by asking,
+                # not by an event the provider delivered. The unique
+                # constraint makes a late webhook a no-op rather than a
+                # double charge.
+                fee_minor = paystack_transfer_fee_minor(transfer)
+                if fee_minor is not None and payout.provider_ref:
+                    await record_provider_fee(
+                        db,
+                        provider="paystack",
+                        source_type="payout",
+                        source_id=payout.id,
+                        amount_minor=fee_minor,
+                        currency=payout.currency,
+                        provider_ref=payout.provider_ref,
+                        origin="backfill",
+                    )
 
             await record_financial_event(
                 db,
