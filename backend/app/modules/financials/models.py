@@ -227,10 +227,28 @@ class PayoutAccount(CreatedAtMixin, Base):
 
     __tablename__ = "payout_accounts"
     __table_args__ = (
-        UniqueConstraint(
+        # Uniqueness is per owner, not per platform: one bank account may back
+        # a person and their organizations at once, which is the ordinary sole
+        # trader case and the only shape Paystack can express, since it returns
+        # the same recipient code for a repeated account number. Partial on
+        # deleted_at so removing an account releases the bank account for
+        # re-registration. Two indexes because the XOR leaves the other owner
+        # column NULL, and NULLs never collide in a unique index.
+        Index(
+            "uq_payout_accounts_user_lookup",
             "provider",
             "provider_account_lookup_hash",
-            name="uq_payout_accounts_provider_account_lookup",
+            "user_id",
+            unique=True,
+            postgresql_where=text("user_id IS NOT NULL AND deleted_at IS NULL"),
+        ),
+        Index(
+            "uq_payout_accounts_org_lookup",
+            "provider",
+            "provider_account_lookup_hash",
+            "org_id",
+            unique=True,
+            postgresql_where=text("org_id IS NOT NULL AND deleted_at IS NULL"),
         ),
         CheckConstraint(
             "(user_id IS NULL) != (org_id IS NULL)",

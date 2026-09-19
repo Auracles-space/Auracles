@@ -695,3 +695,109 @@ async def test_paystack_onboarding_reuses_an_existing_account(
     assert first.json()["payout_account"]["id"] == second.json()["payout_account"]["id"]
     assert len(accounts) == 1
     assert len(payout_account_context["calls"]["paystack_recipients"]) == 1
+
+
+async def test_one_bank_account_backs_two_owners(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """The same bank account may be registered by more than one owner.
+
+    A sole trader's personal payout account and their organization's are
+    routinely the same NUBAN, and Paystack returns the same recipient code for
+    it, so a platform-wide uniqueness rule locks the second owner out for good.
+    Registering under two owners exercises the same insert path an
+    individual-versus-organization pair takes.
+    """
+    first_id, _ = await create_user_with_roles(
+        "shared-first@auracles.space",
+        ["contributor"],
+    )
+    second_id, _ = await create_user_with_roles(
+        "shared-second@auracles.space",
+        ["contributor"],
+    )
+    payload = {
+        "provider": "paystack",
+        "country": "NG",
+        "account_number": "0123456789",
+        "bank_code": "044",
+    }
+
+    first = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(first_id, ["contributor"]),
+        json=payload,
+    )
+    second = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(second_id, ["contributor"]),
+        json=payload,
+    )
+
+    async with async_session_factory() as session:
+        owners = set(
+            await session.scalars(
+                select(PayoutAccount.user_id).where(PayoutAccount.deleted_at.is_(None))
+            )
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert owners == {first_id, second_id}
+
+
+async def test_payout_account_can_be_registered_again_after_removal(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Removing a payout account frees the bank account to be added again.
+
+    Mistyping a NUBAN that resolves to a real stranger's account is recoverable
+    only by removing the account and re-entering it, so a soft-deleted row must
+    not keep occupying the account's lookup hash.
+    """
+    contributor_id, _ = await create_user_with_roles(
+        "re-add-payout@auracles.space",
+        ["contributor"],
+    )
+    payload = {
+        "provider": "paystack",
+        "country": "NG",
+        "account_number": "0123456789",
+        "bank_code": "044",
+    }
+    first = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=payload,
+    )
+    await open_step_up_window(payout_account_context["redis"], contributor_id)
+    removed = await client.request(
+        "DELETE",
+        f"/v1/financials/payout-accounts/{first.json()['payout_account']['id']}",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    re_added = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=payload,
+    )
+
+    async with async_session_factory() as session:
+        active = (
+            await session.scalars(
+                select(PayoutAccount).where(
+                    PayoutAccount.user_id == contributor_id,
+                    PayoutAccount.deleted_at.is_(None),
+                )
+            )
+        ).all()
+
+    assert removed.status_code == 200
+    assert re_added.status_code == 200
+    assert len(active) == 1
+    assert active[0].id != UUID(first.json()["payout_account"]["id"])
