@@ -25,6 +25,7 @@ from app.modules.attestation.schemas import (
     CredentialCreateRequest,
     CredentialEvidenceUploadCreateRequest,
     CredentialEvidenceUploadSessionResponse,
+    CredentialEvidenceUploadStatusResponse,
     CredentialUpdateRequest,
 )
 from app.modules.auth.models import User
@@ -32,6 +33,10 @@ from app.workers.tasks.attestation_upload_scan import scan_attestation_upload
 from app.workers.tasks.project_notifications import dispatch_project_notification
 
 CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS = 300
+# The presigned POST is short-lived, but the session must outlive the form
+# being filled around it: an owner who attaches a file and then finishes the
+# credential half an hour later would otherwise save against a dead key.
+CREDENTIAL_EVIDENCE_SESSION_TTL_SECONDS = 24 * 60 * 60
 CREDENTIAL_EVIDENCE_MAX_BYTES = 10 * 1024 * 1024
 
 _SUBMITTABLE_STATUSES = {"unverified", "rejected"}
@@ -272,7 +277,7 @@ async def create_evidence_upload_session(
         await db.rollback()
 
     now = datetime.now(UTC)
-    expires_at = now + timedelta(seconds=CREDENTIAL_EVIDENCE_UPLOAD_TTL_SECONDS)
+    expires_at = now + timedelta(seconds=CREDENTIAL_EVIDENCE_SESSION_TTL_SECONDS)
     key = (
         f"credentials/{credential_id}/{user_id}/{uuid4()}-"
         f"{_safe_file_name(payload.file_name)}"
@@ -312,6 +317,152 @@ async def create_evidence_upload_session(
         fields={str(key_): str(value) for key_, value in post["fields"].items()},
         expires_at=expires_at,
         size_limit=CREDENTIAL_EVIDENCE_MAX_BYTES,
+        scan_status=upload_session.scan_status,
+    )
+
+
+async def _load_own_credential_upload_session(
+    *,
+    db: AsyncSession,
+    credential_id: UUID,
+    user_id: UUID,
+    upload_session_id: UUID,
+    now: datetime,
+    lock: bool,
+) -> AttestationUploadSession:
+    """Load one unconsumed Credential evidence session owned by this user.
+
+    Args:
+        db: Async session for DB operations.
+        credential_id: Credential the evidence belongs to.
+        user_id: Owner who created the upload session.
+        upload_session_id: Session to load.
+        now: Current time, used to reject expired sessions.
+        lock: Whether to lock the row for update.
+
+    Returns:
+        The upload session.
+
+    Raises:
+        HTTPException(404): If no such live session belongs to this owner.
+    """
+    statement = select(AttestationUploadSession).where(
+        AttestationUploadSession.id == upload_session_id,
+        AttestationUploadSession.credential_id == credential_id,
+        AttestationUploadSession.user_id == user_id,
+        AttestationUploadSession.purpose == "credential_evidence",
+        AttestationUploadSession.consumed_at.is_(None),
+        AttestationUploadSession.expires_at > now,
+    )
+    if lock:
+        statement = statement.with_for_update()
+    upload_session = await db.scalar(statement)
+    if upload_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evidence upload not found.",
+        )
+    return upload_session
+
+
+async def confirm_evidence_upload(
+    db: AsyncSession,
+    user: User,
+    credential_id: UUID,
+    upload_session_id: UUID,
+) -> CredentialEvidenceUploadStatusResponse:
+    """Start the virus scan for evidence the browser has finished uploading.
+
+    Storage accepts the file directly from the browser, so the API only learns
+    the upload happened when the browser says so. Scanning starts here rather
+    than when the key is attached, where it refused the very file it had just
+    started scanning.
+
+    Args:
+        db: Async session for DB operations.
+        user: The credential's owner, confirming their own upload.
+        credential_id: Credential the evidence belongs to.
+        upload_session_id: Upload session to scan.
+
+    Returns:
+        The session's scan state after the scan is queued.
+
+    Raises:
+        HTTPException(404): If the session is not this owner's live upload.
+        HTTPException(422): If no file reached storage under the session's key.
+    """
+    user_id = user.id
+    if db.in_transaction():
+        await db.rollback()
+
+    now = datetime.now(UTC)
+    settings = get_settings()
+    async with db.begin():
+        await _load_owned_credential_for_update(
+            db=db,
+            user_id=user_id,
+            credential_id=credential_id,
+        )
+        upload_session = await _load_own_credential_upload_session(
+            db=db,
+            credential_id=credential_id,
+            user_id=user_id,
+            upload_session_id=upload_session_id,
+            now=now,
+            lock=True,
+        )
+        scan_status = upload_session.scan_status
+        s3_key = upload_session.s3_key
+        # A scan already ran (or is running): confirming twice is harmless.
+        needs_scan = scan_status == "pending_scan"
+        if needs_scan and not s3.storage.object_exists(
+            settings.s3_artifacts_bucket, s3_key
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Upload the evidence file before confirming it.",
+            )
+
+    if needs_scan:
+        scan_attestation_upload.delay(str(upload_session_id))
+    return CredentialEvidenceUploadStatusResponse(
+        id=upload_session_id,
+        s3_key=s3_key,
+        scan_status=scan_status,
+    )
+
+
+async def get_evidence_upload_status(
+    db: AsyncSession,
+    user: User,
+    credential_id: UUID,
+    upload_session_id: UUID,
+) -> CredentialEvidenceUploadStatusResponse:
+    """Return one evidence upload's scan state while the browser waits on it.
+
+    Args:
+        db: Async session for DB operations.
+        user: The credential's owner.
+        credential_id: Credential the evidence belongs to.
+        upload_session_id: Upload session to report on.
+
+    Returns:
+        The session's current scan state.
+
+    Raises:
+        HTTPException(404): If the session is not this owner's live upload.
+    """
+    upload_session = await _load_own_credential_upload_session(
+        db=db,
+        credential_id=credential_id,
+        user_id=user.id,
+        upload_session_id=upload_session_id,
+        now=datetime.now(UTC),
+        lock=False,
+    )
+    return CredentialEvidenceUploadStatusResponse(
+        id=upload_session.id,
+        s3_key=upload_session.s3_key,
         scan_status=upload_session.scan_status,
     )
 

@@ -1732,6 +1732,16 @@ export type AttestationEvidenceUploadSessionResponse = {
 };
 
 /**
+ * Scan state of one report evidence upload session.
+ * Returned when the browser confirms an upload and while it polls for the scan verdict, so the reviewer sees why Submit is still held.
+ */
+export type AttestationEvidenceUploadStatusResponse = {
+    id: string;
+    s3_key: string;
+    scan_status: string;
+};
+
+/**
  * Optional request body for funding an owner-approved Attestation fee.
  */
 export type AttestationFundingRequest = {
@@ -1801,6 +1811,27 @@ export type AttestationRatingResponse = {
     id: string;
     rated_by: string;
     stars: number;
+};
+
+/**
+ * Autosaved report fields for an attestation still under review.
+ */
+export type AttestationReportDraftRequest = {
+    conditions?: string;
+    outcome?: ('approved' | 'conditional' | 'rejected' | null);
+    scope?: string;
+    summary?: string;
+};
+
+/**
+ * The reviewer's saved report draft, or empty fields when none exists.
+ */
+export type AttestationReportDraftResponse = {
+    conditions: string;
+    outcome: (string | null);
+    scope: string;
+    summary: string;
+    updated_at: (string | null);
 };
 
 /**
@@ -2320,6 +2351,16 @@ export type CredentialEvidenceUploadSessionResponse = {
     scan_status: string;
     size_limit: number;
     url: string;
+};
+
+/**
+ * Scan state of one Credential evidence upload session.
+ * Returned when the browser confirms an upload and while it polls for the verdict, so the owner sees why the file cannot be saved yet.
+ */
+export type CredentialEvidenceUploadStatusResponse = {
+    id: string;
+    s3_key: string;
+    scan_status: string;
 };
 
 /**
@@ -7198,6 +7239,27 @@ export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostResp
 
 export type StartAttestationReviewV1AttestationsAttestationIdStartReviewPostError = (HTTPValidationError);
 
+export type GetAttestationReportDraftV1AttestationsAttestationIdReportDraftGetData = {
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type GetAttestationReportDraftV1AttestationsAttestationIdReportDraftGetResponse = (AttestationReportDraftResponse);
+
+export type GetAttestationReportDraftV1AttestationsAttestationIdReportDraftGetError = (HTTPValidationError);
+
+export type SaveAttestationReportDraftV1AttestationsAttestationIdReportDraftPutData = {
+    body: AttestationReportDraftRequest;
+    path: {
+        attestation_id: string;
+    };
+};
+
+export type SaveAttestationReportDraftV1AttestationsAttestationIdReportDraftPutResponse = (AttestationReportDraftResponse);
+
+export type SaveAttestationReportDraftV1AttestationsAttestationIdReportDraftPutError = (HTTPValidationError);
+
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostData = {
     body: AttestationEvidenceUploadCreateRequest;
     path: {
@@ -7208,6 +7270,28 @@ export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestatio
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostResponse = (AttestationEvidenceUploadSessionResponse);
 
 export type CreateAttestationReportEvidenceUploadSessionV1AttestationsAttestationIdUploadsPostError = (HTTPValidationError);
+
+export type GetAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGetData = {
+    path: {
+        attestation_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type GetAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGetResponse = (AttestationEvidenceUploadStatusResponse);
+
+export type GetAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdGetError = (HTTPValidationError);
+
+export type ConfirmAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdConfirmPostData = {
+    path: {
+        attestation_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type ConfirmAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdConfirmPostResponse = (AttestationEvidenceUploadStatusResponse);
+
+export type ConfirmAttestationReportEvidenceUploadV1AttestationsAttestationIdUploadsUploadSessionIdConfirmPostError = (HTTPValidationError);
 
 export type ListPublicAttestorDirectoryV1AttestorOrgsGetData = {
     query?: {
@@ -7544,6 +7628,28 @@ export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUpload
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostResponse = (CredentialEvidenceUploadSessionResponse);
 
 export type CreateCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPostError = (HTTPValidationError);
+
+export type GetCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdGetData = {
+    path: {
+        credential_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type GetCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdGetResponse = (CredentialEvidenceUploadStatusResponse);
+
+export type GetCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdGetError = (HTTPValidationError);
+
+export type ConfirmCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdConfirmPostData = {
+    path: {
+        credential_id: string;
+        upload_session_id: string;
+    };
+};
+
+export type ConfirmCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdConfirmPostResponse = (CredentialEvidenceUploadStatusResponse);
+
+export type ConfirmCredentialEvidenceUploadV1CredentialsCredentialIdUploadsUploadSessionIdConfirmPostError = (HTTPValidationError);
 
 export type GetDeveloperSalesAnalyticsV1DeveloperAnalyticsSalesGetData = {
     query?: {

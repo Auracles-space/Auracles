@@ -35,6 +35,7 @@ from app.modules.attestation.models import (
     AttestationClarification,
     AttestationDispute,
     AttestationOffer,
+    AttestationReportDraft,
     AttestationRubricDimension,
     AttestationRubricScore,
     AttestationUploadSession,
@@ -1027,6 +1028,267 @@ async def test_assigned_attestor_uploads_evidence_and_submits_report(
     ]
     assert notification_calls[0]["user_id"] == str(requestor_id)
     assert notification_calls[0]["payload"]["outcome"] == "approved"
+
+
+async def test_confirming_an_evidence_upload_scans_it_before_submission(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirming an evidence upload scans it, so the first report submit lands.
+
+    The browser tells the API once the file reaches storage, which starts the
+    scan. Without that signal the scan only began inside submission, which then
+    refused the very report it had just started scanning for.
+    """
+    del migrated_database, matching_context
+    notification_calls: list[dict[str, Any]] = []
+    requestor_id = await create_user("confirm-requestor@auracles.space", ["operator"])
+    org_id, attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="confirm",
+    )
+    attestation_id, transaction_id = await create_pending_attestation_fee(requestor_id)
+    dispatched_scans: list[str] = []
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, Any]:
+        """Return a deterministic presigned POST payload for the confirm test."""
+        del bucket, max_size, expires_in
+        return {
+            "url": "https://uploads.example.test",
+            "fields": {"key": key, "Content-Type": mime_type},
+        }
+
+    class FakeRenderTask:
+        """Swallow queued report rendering tasks without running Celery."""
+
+        @staticmethod
+        def delay(attestation_id: str) -> None:
+            del attestation_id
+
+    class FakeScanTask:
+        """Capture queued evidence scan tasks without running Celery."""
+
+        @staticmethod
+        def delay(upload_session_id: str) -> None:
+            dispatched_scans.append(upload_session_id)
+
+    monkeypatch.setattr(
+        report_service.s3.storage,
+        "presigned_post",
+        fake_presigned_post,
+    )
+    monkeypatch.setattr(
+        report_service.s3.storage,
+        "object_exists",
+        lambda bucket, key: True,
+    )
+    monkeypatch.setattr(report_service, "render_attestation_report_pdf", FakeRenderTask)
+    monkeypatch.setattr(report_service, "scan_attestation_upload", FakeScanTask)
+    monkeypatch.setattr(
+        notifications,
+        "dispatch_project_notification",
+        FakeNotificationTask(notification_calls),
+    )
+    report_summary = " ".join(["reviewed"] * 80)
+
+    current_time = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = await session.get(Attestation, attestation_id)
+            transaction = await session.get(Transaction, transaction_id)
+            assert attestation is not None
+            assert transaction is not None
+            attestation.status = "in_review"
+            attestation.attestor_org_id = org_id
+            attestation.reviewing_member_id = member_id
+            attestation.accepted_at = current_time
+            attestation.review_type = "quality"
+            attestation.review_started_at = current_time
+            attestation.completion_due_at = current_time + timedelta(days=7)
+            transaction.status = "completed"
+            transaction.payee_id = None
+            session.add(
+                AttestationOffer(
+                    attestation_id=attestation_id,
+                    org_id=org_id,
+                    cohort_index=0,
+                    status="accepted",
+                    offered_at=current_time - timedelta(hours=2),
+                    responded_at=current_time - timedelta(hours=1),
+                    expires_at=current_time + timedelta(hours=47),
+                )
+            )
+    await seed_quality_rubric_scores(attestation_id)
+
+    upload_response = await client.post(
+        f"/v1/attestations/{attestation_id}/uploads",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "file_name": "site-visit.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 4096,
+        },
+    )
+    upload_session_id = upload_response.json()["id"]
+    evidence_key = upload_response.json()["s3_key"]
+
+    # The reviewer's autosaved draft is cleared once the report is in.
+    draft_response = await client.put(
+        f"/v1/attestations/{attestation_id}/report/draft",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": report_summary,
+            "scope": "Credential, process, and sample evidence review.",
+            "conditions": "",
+        },
+    )
+    assert draft_response.status_code == 200, draft_response.text
+
+    confirm_response = await client.post(
+        f"/v1/attestations/{attestation_id}/uploads/{upload_session_id}/confirm",
+        headers=auth_headers(attestor_id, ["attestor"]),
+    )
+
+    # The worker finishes the scan while the attestor is still writing.
+    async with async_session_factory() as session:
+        async with session.begin():
+            upload_session = await session.scalar(
+                select(AttestationUploadSession).where(
+                    AttestationUploadSession.s3_key == evidence_key
+                )
+            )
+            assert upload_session is not None
+            upload_session.scan_status = "clean"
+
+    status_response = await client.get(
+        f"/v1/attestations/{attestation_id}/uploads/{upload_session_id}",
+        headers=auth_headers(attestor_id, ["attestor"]),
+    )
+    report_response = await client.post(
+        f"/v1/attestations/{attestation_id}/report",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": report_summary,
+            "scope": "Credential, process, and sample evidence review.",
+            "evidence_references": {"file_keys": [evidence_key]},
+        },
+    )
+
+    async with async_session_factory() as session:
+        remaining_drafts = await session.scalar(
+            select(func.count())
+            .select_from(AttestationReportDraft)
+            .where(AttestationReportDraft.attestation_id == attestation_id)
+        )
+
+    assert confirm_response.status_code == 200, confirm_response.text
+    assert confirm_response.json()["scan_status"] == "pending_scan"
+    assert dispatched_scans == [upload_session_id]
+    assert status_response.status_code == 200, status_response.text
+    assert status_response.json()["scan_status"] == "clean"
+    # The report lands on the first attempt: no "still scanning" refusal.
+    assert report_response.status_code == 200, report_response.text
+    assert report_response.json()["status"] == "report_submitted"
+    assert remaining_drafts == 0
+
+
+async def test_confirming_an_evidence_upload_that_never_arrived_is_refused(
+    client: AsyncClient,
+    migrated_database: None,
+    matching_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Confirming before the file reaches storage is refused, and scans nothing.
+
+    The browser confirms after its own upload succeeds, so a confirmation with
+    no object behind it means the upload failed; queueing a scan for a missing
+    key would only fail in the worker.
+    """
+    del migrated_database, matching_context
+    requestor_id = await create_user("no-object-requestor@auracles.space", ["operator"])
+    org_id, attestor_id, member_id = await create_org_attestor(
+        specializations=["healthcare"],
+        jurisdictions=["US"],
+        slug_prefix="no-object",
+    )
+    attestation_id, _transaction_id = await create_pending_attestation_fee(requestor_id)
+    dispatched_scans: list[str] = []
+
+    def fake_presigned_post(
+        bucket: str,
+        key: str,
+        mime_type: str,
+        max_size: int,
+        expires_in: int,
+    ) -> dict[str, Any]:
+        """Return a deterministic presigned POST payload for the refusal test."""
+        del bucket, max_size, expires_in
+        return {
+            "url": "https://uploads.example.test",
+            "fields": {"key": key, "Content-Type": mime_type},
+        }
+
+    class FakeScanTask:
+        """Capture queued evidence scan tasks without running Celery."""
+
+        @staticmethod
+        def delay(upload_session_id: str) -> None:
+            dispatched_scans.append(upload_session_id)
+
+    monkeypatch.setattr(
+        report_service.s3.storage,
+        "presigned_post",
+        fake_presigned_post,
+    )
+    monkeypatch.setattr(
+        report_service.s3.storage,
+        "object_exists",
+        lambda bucket, key: False,
+    )
+    monkeypatch.setattr(report_service, "scan_attestation_upload", FakeScanTask)
+
+    current_time = datetime.now(UTC)
+    async with async_session_factory() as session:
+        async with session.begin():
+            attestation = await session.get(Attestation, attestation_id)
+            assert attestation is not None
+            attestation.status = "in_review"
+            attestation.attestor_org_id = org_id
+            attestation.reviewing_member_id = member_id
+            attestation.accepted_at = current_time
+            attestation.review_type = "quality"
+            attestation.review_started_at = current_time
+            attestation.completion_due_at = current_time + timedelta(days=7)
+
+    upload_response = await client.post(
+        f"/v1/attestations/{attestation_id}/uploads",
+        headers=auth_headers(attestor_id, ["attestor"]),
+        json={
+            "file_name": "missing.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 4096,
+        },
+    )
+    upload_session_id = upload_response.json()["id"]
+
+    confirm_response = await client.post(
+        f"/v1/attestations/{attestation_id}/uploads/{upload_session_id}/confirm",
+        headers=auth_headers(attestor_id, ["attestor"]),
+    )
+
+    assert confirm_response.status_code == 422, confirm_response.text
+    assert dispatched_scans == []
 
 
 async def test_unassigned_attestor_cannot_submit_report(

@@ -8,8 +8,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createAttestationEvidenceUpload,
+  getAttestationReportDraft,
   listRubricScores,
+  saveAttestationReportDraft,
   submitAttestationReport,
 } from "@/lib/generated/sdk.gen";
 import { RUBRIC_SAVED_EVENT } from "@/lib/attestation/workspace-events";
@@ -30,9 +31,37 @@ vi.mock("@/lib/auth/form-client", async (importActual) => ({
 }));
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
-  createAttestationEvidenceUpload: vi.fn(),
+  getAttestationReportDraft: vi.fn(),
   listRubricScores: vi.fn(),
+  saveAttestationReportDraft: vi.fn(),
   submitAttestationReport: vi.fn(),
+}));
+
+// The uploader owns the upload-confirm-scan handshake and is covered by its
+// own tests; here it stands in as a switch so the panel's gating is testable.
+vi.mock("./report-evidence-uploader", () => ({
+  ReportEvidenceUploader: ({
+    onChange,
+  }: {
+    onChange: (selection: { fileKeys: string[]; settled: boolean }) => void;
+  }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => onChange({ fileKeys: [], settled: false })}
+      >
+        stub-scanning
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onChange({ fileKeys: ["attestations/att-1/evidence/report.pdf"], settled: true })
+        }
+      >
+        stub-clean
+      </button>
+    </div>
+  ),
 }));
 
 const ok = <T,>(data: T) => ({
@@ -62,6 +91,25 @@ describe("ReportPanel", () => {
     // Default: rubric comments already clear the 150-word report minimum, so
     // the field-level minimum tests stay focused on their own assertions.
     vi.mocked(listRubricScores).mockResolvedValue(rubricWithWords(200) as never);
+    // Default: nothing written yet, so the form starts empty.
+    vi.mocked(getAttestationReportDraft).mockResolvedValue(
+      ok({
+        outcome: null,
+        summary: "",
+        scope: "",
+        conditions: "",
+        updated_at: null,
+      }) as never,
+    );
+    vi.mocked(saveAttestationReportDraft).mockResolvedValue(
+      ok({
+        outcome: null,
+        summary: "",
+        scope: "",
+        conditions: "",
+        updated_at: "2026-09-18T10:00:00Z",
+      }) as never,
+    );
   });
 
   const validSummary = "This review summary is long enough for submission.";
@@ -243,56 +291,20 @@ describe("ReportPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("submits uploaded evidence as file_keys", async () => {
-    vi.mocked(createAttestationEvidenceUpload).mockResolvedValue(
-      ok({
-        id: "upload-session-1",
-        s3_key: "attestations/att-1/evidence/member-1/report.pdf",
-        url: "https://uploads.example.test",
-        fields: { key: "attestations/att-1/evidence/member-1/report.pdf" },
-        expires_at: "2026-07-17T12:00:00Z",
-        size_limit: 26214400,
-        scan_status: "pending_scan",
-      }) as never,
-    );
+  it("submits evidence the uploader reported clean as file_keys", async () => {
     vi.mocked(submitAttestationReport).mockResolvedValue(
       ok({ id: "att-1", status: "report_submitted" }) as never,
     );
 
-    const { container } = render(
-      <ReportPanel
-        attestationId="att-1"
-        canWrite
-        orgId="org-1"
-      />,
-    );
+    render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
 
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "approved" },
     });
-    fireEvent.change(
-      screen.getByPlaceholderText(
-        /This framework demonstrates excellent compliance with/i,
-      ),
-      {
-        target: { value: "This review summary is long enough for submission." },
-      },
-    );
-    fireEvent.change(
-      screen.getByPlaceholderText(/Review covered version 2\.1 of the framework/i),
-      {
-        target: { value: "Reviewed the framework artifacts and supporting notes." },
-      },
-    );
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+    fireEvent.change(scopeInput(), { target: { value: validScope } });
+    fireEvent.click(screen.getByRole("button", { name: "stub-clean" }));
 
-    const file = new File(["evidence"], "report.pdf", {
-      type: "application/pdf",
-    });
-    const fileInput = container.querySelector('input[type="file"]');
-    expect(fileInput).not.toBeNull();
-    fireEvent.change(fileInput as HTMLInputElement, {
-      target: { files: [file] },
-    });
     const submit = screen.getByRole("button", { name: /Submit Report/i });
     await waitFor(() => expect(submit).toBeEnabled());
     fireEvent.click(submit);
@@ -303,7 +315,7 @@ describe("ReportPanel", () => {
           path: { attestation_id: "att-1" },
           body: expect.objectContaining({
             evidence_references: {
-              file_keys: ["attestations/att-1/evidence/member-1/report.pdf"],
+              file_keys: ["attestations/att-1/evidence/report.pdf"],
             },
           }),
         }),
@@ -313,5 +325,97 @@ describe("ReportPanel", () => {
     await waitFor(() =>
       expect(push).toHaveBeenCalledWith("/dashboard/organizations/org-1/attestor/queue"),
     );
+  });
+
+  it("holds submission while an evidence file is still being checked", async () => {
+    // Submitting mid-scan was the bug: the backend refused the report and the
+    // retry re-uploaded the file, so it could never succeed.
+    render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "approved" },
+    });
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+    fireEvent.change(scopeInput(), { target: { value: validScope } });
+    const submit = screen.getByRole("button", { name: /Submit Report/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "stub-scanning" }));
+
+    await waitFor(() => expect(submit).toBeDisabled());
+    expect(
+      screen.getByText(/Waiting for the evidence check to finish/i),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "stub-clean" }));
+    await waitFor(() => expect(submit).toBeEnabled());
+  });
+
+  it("restores the saved draft so a refresh does not lose the report", async () => {
+    // The report fields used to live only in this component's state, so any
+    // refresh sent the reviewer back to a blank form.
+    vi.mocked(getAttestationReportDraft).mockResolvedValue(
+      ok({
+        outcome: "conditional",
+        summary: "Controls are sound apart from access review cadence.",
+        scope: "Reviewed policy set v2.1.",
+        conditions: "Quarterly access reviews must be evidenced.",
+        updated_at: "2026-09-18T09:30:00Z",
+      }) as never,
+    );
+
+    render(<ReportPanel attestationId="att-1" canWrite orgId="org-1" />);
+
+    await waitFor(() =>
+      expect(summaryInput()).toHaveValue(
+        "Controls are sound apart from access review cadence.",
+      ),
+    );
+    expect(scopeInput()).toHaveValue("Reviewed policy set v2.1.");
+    expect(screen.getByRole("combobox")).toHaveValue("conditional");
+    expect(
+      screen.getByPlaceholderText(/must be met for full approval/i),
+    ).toHaveValue("Quarterly access reviews must be evidenced.");
+  });
+
+  it("saves the report as it is written", async () => {
+    render(
+      <ReportPanel
+        attestationId="att-1"
+        canWrite
+        orgId="org-1"
+        draftSaveDelayMs={1}
+      />,
+    );
+    await waitFor(() => expect(getAttestationReportDraft).toHaveBeenCalled());
+
+    fireEvent.change(summaryInput(), { target: { value: validSummary } });
+
+    await waitFor(() =>
+      expect(saveAttestationReportDraft).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: { attestation_id: "att-1" },
+          body: expect.objectContaining({ summary: validSummary }),
+        }),
+      ),
+    );
+    expect(await screen.findByText(/draft saved/i)).toBeInTheDocument();
+  });
+
+  it("does not touch the draft once the report is locked", async () => {
+    render(
+      <ReportPanel
+        attestationId="att-1"
+        canWrite
+        orgId="org-1"
+        status="report_submitted"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByText(/Your report is with the requestor/i)).toBeInTheDocument(),
+    );
+    expect(getAttestationReportDraft).not.toHaveBeenCalled();
+    expect(saveAttestationReportDraft).not.toHaveBeenCalled();
   });
 });

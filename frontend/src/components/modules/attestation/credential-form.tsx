@@ -20,7 +20,11 @@ import {
   describeGeneratedError,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import { createCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPost } from "@/lib/generated/sdk.gen";
+import {
+  confirmCredentialEvidenceUpload,
+  createCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPost,
+  getCredentialEvidenceUpload,
+} from "@/lib/generated/sdk.gen";
 import type {
   CredentialCreateRequest,
   CredentialResponse,
@@ -85,7 +89,19 @@ type CredentialFormProps = {
   mode: "create" | "edit";
   /** Optional cancel handler to collapse the form or discard edits. */
   onCancel?: () => void;
+  /** Gap between virus-scan checks; shortened in tests. */
+  scanPollIntervalMs?: number;
 };
+
+// A clean verdict normally lands in seconds. Waiting past this points at a
+// stuck worker rather than a slow scan.
+const SCAN_TIMEOUT_MS = 3 * 60 * 1000;
+const DEFAULT_SCAN_POLL_INTERVAL_MS = 3000;
+
+/** Wait, resolving after the given delay. */
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /** Coerce a blank string to null for optional payload fields. */
 function blankToNull(value: string): string | null {
@@ -112,6 +128,7 @@ export function CredentialForm({
   submitting,
   mode,
   onCancel,
+  scanPollIntervalMs = DEFAULT_SCAN_POLL_INTERVAL_MS,
 }: CredentialFormProps) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [issuer, setIssuer] = useState(initial?.issuer ?? "");
@@ -136,6 +153,9 @@ export function CredentialForm({
     initial?.evidence_file_keys ?? [],
   );
   const [uploading, setUploading] = useState(false);
+  // Storage takes the file straight from the browser, so the scan only starts
+  // once we confirm the upload. A file joins the saved set once it is clean.
+  const [checking, setChecking] = useState(false);
   const [evidenceError, setEvidenceError] = useState<string | null>(null);
 
   const showEvidence = mode === "edit" && initial !== undefined;
@@ -203,10 +223,69 @@ export function CredentialForm({
       return;
     }
 
+    setUploading(false);
+    setChecking(true);
+    try {
+      const scanStatus = await scanUploadedEvidence(initial.id, session.id);
+      if (scanStatus !== "clean") {
+        setEvidenceError(
+          scanStatus === "timed_out"
+            ? "This file is taking too long to check. Try uploading it again."
+            : "This file did not pass the virus check and was not attached.",
+        );
+        return;
+      }
+    } catch {
+      setEvidenceError("This file could not be checked. Try uploading it again.");
+      return;
+    } finally {
+      setChecking(false);
+    }
+
     setEvidenceKeys((current) =>
       current.includes(session.s3_key) ? current : [...current, session.s3_key],
     );
-    setUploading(false);
+  }
+
+  /**
+   * Start the virus scan for an uploaded file and wait for its verdict.
+   *
+   * @param credentialId - Credential the evidence belongs to.
+   * @param uploadSessionId - Upload session to scan.
+   * @returns The scan verdict, or "timed_out" if none arrived in time.
+   */
+  async function scanUploadedEvidence(
+    credentialId: string,
+    uploadSessionId: string,
+  ): Promise<string> {
+    const confirmed = await confirmCredentialEvidenceUpload({
+      headers: getAccessTokenHeaders(),
+      path: { credential_id: credentialId, upload_session_id: uploadSessionId },
+    });
+    if (confirmed.error) {
+      throw new Error("Evidence could not be checked.");
+    }
+
+    const giveUpAt = Date.now() + SCAN_TIMEOUT_MS;
+    let scanStatus = confirmed.data?.scan_status ?? "pending_scan";
+    while (scanStatus === "pending_scan") {
+      if (Date.now() > giveUpAt) {
+        return "timed_out";
+      }
+      await wait(scanPollIntervalMs);
+      const polled = await getCredentialEvidenceUpload({
+        headers: getAccessTokenHeaders(),
+        path: {
+          credential_id: credentialId,
+          upload_session_id: uploadSessionId,
+        },
+      });
+      if (polled.error || !polled.data) {
+        throw new Error("Evidence could not be checked.");
+      }
+      scanStatus = polled.data.scan_status;
+    }
+    return scanStatus;
   }
 
   /** Drop one pending/existing evidence key from the set to be saved. */
@@ -223,7 +302,10 @@ export function CredentialForm({
     title.trim() !== "" &&
     issuer.trim() !== "" &&
     issuedDate.trim() !== "" &&
-    !submitting;
+    !submitting &&
+    // Saving mid-check would attach a key the backend has not cleared yet.
+    !uploading &&
+    !checking;
 
   /** Normalise field state and hand off to the parent submit handler. */
   async function handleSubmit() {
@@ -353,7 +435,7 @@ export function CredentialForm({
                 accept={EVIDENCE_ACCEPT}
                 aria-label="Upload evidence"
                 className="min-h-12 rounded-xl border border-border-default bg-background px-4 py-3 text-sm font-medium text-foreground outline-none transition-colors file:mr-4 file:rounded-lg file:border-0 file:bg-foreground file:px-4 file:py-2 file:text-sm file:font-semibold file:text-background focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={uploading || submitting}
+                disabled={uploading || checking || submitting}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   // Reset so re-selecting the same file re-fires change.
@@ -365,9 +447,11 @@ export function CredentialForm({
                 type="file"
               />
             </label>
-            {uploading ? (
+            {uploading || checking ? (
               <p className="text-xs font-medium text-foreground-muted">
-                Uploading evidence…
+                {uploading
+                  ? "Uploading evidence…"
+                  : "Checking this file for viruses…"}
               </p>
             ) : null}
             <p className="text-xs text-foreground-muted">
@@ -391,7 +475,7 @@ export function CredentialForm({
                     <button
                       aria-label={`Remove ${keyDisplayName(key)}`}
                       className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border-default bg-surface-1 px-3 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={uploading || submitting}
+                      disabled={uploading || checking || submitting}
                       onClick={() => removeEvidenceKey(key)}
                       type="button"
                     >

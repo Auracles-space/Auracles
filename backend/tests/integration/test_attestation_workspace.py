@@ -25,6 +25,7 @@ from app.modules.attestation.models import (
     AttestationClarification,
     AttestationDispute,
     AttestationOffer,
+    AttestationReportDraft,
     AttestationRubricDimension,
     AttestationRubricMethodology,
     AttestationRubricScore,
@@ -50,6 +51,7 @@ async def _reset_state() -> None:
             await session.execute(delete(AttestationClarification))
             await session.execute(delete(AttestationAnnotation))
             await session.execute(delete(AttestationRubricScore))
+            await session.execute(delete(AttestationReportDraft))
             await session.execute(delete(AttestationArtifactAccess))
             await session.execute(delete(AttestationUploadSession))
             await session.execute(delete(AttestationDispute))
@@ -561,3 +563,147 @@ async def test_annotation_endpoints_crud_round_trip(
         headers=headers,
     )
     assert deleted.status_code == 204
+
+
+async def test_report_draft_survives_a_reload(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """A saved report draft comes back on the next load of the workspace.
+
+    Reviewers write long reports across sittings; before this the fields lived
+    only in the browser, so a refresh threw the work away.
+    """
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+    start = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+    assert start.status_code == 200
+
+    saved = await client.put(
+        f"/v1/attestations/{attestation.id}/report/draft",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+        json={
+            "outcome": "conditional",
+            "summary": "Controls are sound apart from access review cadence.",
+            "scope": "Reviewed policy set v2.1 and three months of evidence.",
+            "conditions": "Quarterly access reviews must be evidenced.",
+        },
+    )
+    reloaded = await client.get(
+        f"/v1/attestations/{attestation.id}/report/draft",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert reloaded.status_code == 200, reloaded.text
+    body = reloaded.json()
+    assert body["outcome"] == "conditional"
+    assert body["summary"] == "Controls are sound apart from access review cadence."
+    assert body["scope"] == "Reviewed policy set v2.1 and three months of evidence."
+    assert body["conditions"] == "Quarterly access reviews must be evidenced."
+    assert body["updated_at"] is not None
+
+
+async def test_report_draft_is_empty_before_anything_is_written(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """An untouched report reads back as an empty draft, not an error."""
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+    start = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+    assert start.status_code == 200
+
+    response = await client.get(
+        f"/v1/attestations/{attestation.id}/report/draft",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "outcome": None,
+        "summary": "",
+        "scope": "",
+        "conditions": "",
+        "updated_at": None,
+    }
+
+
+async def test_saving_a_report_draft_twice_keeps_one_row(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """Autosave overwrites the reviewer's draft rather than stacking copies."""
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+    start = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+    assert start.status_code == 200
+
+    for summary in ("First pass.", "Second pass, fuller."):
+        saved = await client.put(
+            f"/v1/attestations/{attestation.id}/report/draft",
+            headers=_auth_headers(attestor.id, ["attestor"]),
+            json={
+                "outcome": "approved",
+                "summary": summary,
+                "scope": "Same scope throughout.",
+                "conditions": "",
+            },
+        )
+        assert saved.status_code == 200, saved.text
+
+    reloaded = await client.get(
+        f"/v1/attestations/{attestation.id}/report/draft",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+    async with async_session_factory() as session:
+        rows = await session.scalar(
+            select(func.count())
+            .select_from(AttestationReportDraft)
+            .where(AttestationReportDraft.attestation_id == attestation.id)
+        )
+
+    assert reloaded.json()["summary"] == "Second pass, fuller."
+    assert rows == 1
+
+
+async def test_report_draft_is_hidden_from_other_attestors(
+    client: AsyncClient,
+    clean_state,
+) -> None:
+    """One reviewer's unfinished report is not readable by another attestor."""
+    del clean_state
+    attestor, attestation = await _accepted_attestation()
+    outsider = await _make_user("attestor", "outsider")
+    start = await client.post(
+        f"/v1/attestations/{attestation.id}/start-review",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+    )
+    assert start.status_code == 200
+    saved = await client.put(
+        f"/v1/attestations/{attestation.id}/report/draft",
+        headers=_auth_headers(attestor.id, ["attestor"]),
+        json={
+            "outcome": "approved",
+            "summary": "Private working notes.",
+            "scope": "Scope.",
+            "conditions": "",
+        },
+    )
+    assert saved.status_code == 200
+
+    response = await client.get(
+        f"/v1/attestations/{attestation.id}/report/draft",
+        headers=_auth_headers(outsider.id, ["attestor"]),
+    )
+
+    assert response.status_code == 404

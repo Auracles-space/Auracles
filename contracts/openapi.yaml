@@ -4785,6 +4785,89 @@ components:
       - scan_status
       title: AttestationEvidenceUploadSessionResponse
       type: object
+    AttestationReportDraftRequest:
+      additionalProperties: false
+      description: Autosaved report fields for an attestation still under review.
+      properties:
+        conditions:
+          default: ''
+          maxLength: 10000
+          title: Conditions
+          type: string
+        outcome:
+          anyOf:
+          - enum:
+            - approved
+            - conditional
+            - rejected
+            type: string
+          - type: 'null'
+          title: Outcome
+        scope:
+          default: ''
+          maxLength: 10000
+          title: Scope
+          type: string
+        summary:
+          default: ''
+          maxLength: 10000
+          title: Summary
+          type: string
+      title: AttestationReportDraftRequest
+      type: object
+    AttestationReportDraftResponse:
+      description: The reviewer's saved report draft, or empty fields when none exists.
+      properties:
+        conditions:
+          title: Conditions
+          type: string
+        outcome:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Outcome
+        scope:
+          title: Scope
+          type: string
+        summary:
+          title: Summary
+          type: string
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated At
+      required:
+      - outcome
+      - summary
+      - scope
+      - conditions
+      - updated_at
+      title: AttestationReportDraftResponse
+      type: object
+    AttestationEvidenceUploadStatusResponse:
+      description: 'Scan state of one report evidence upload session.
+
+        Returned when the browser confirms an upload and while it polls for the
+        scan verdict, so the reviewer sees why Submit is still held.'
+      properties:
+        id:
+          format: uuid
+          title: Id
+          type: string
+        s3_key:
+          title: S3 Key
+          type: string
+        scan_status:
+          title: Scan Status
+          type: string
+      required:
+      - id
+      - s3_key
+      - scan_status
+      title: AttestationEvidenceUploadStatusResponse
+      type: object
     AttestationFundingRequest:
       additionalProperties: false
       description: Optional request body for funding an owner-approved Attestation
@@ -6323,6 +6406,28 @@ components:
       - size_limit
       - scan_status
       title: CredentialEvidenceUploadSessionResponse
+      type: object
+    CredentialEvidenceUploadStatusResponse:
+      description: 'Scan state of one Credential evidence upload session.
+
+        Returned when the browser confirms an upload and while it polls for the
+        verdict, so the owner sees why the file cannot be saved yet.'
+      properties:
+        id:
+          format: uuid
+          title: Id
+          type: string
+        s3_key:
+          title: S3 Key
+          type: string
+        scan_status:
+          title: Scan Status
+          type: string
+      required:
+      - id
+      - s3_key
+      - scan_status
+      title: CredentialEvidenceUploadStatusResponse
       type: object
     CredentialResponse:
       description: Credential details returned to the owner.
@@ -20856,6 +20961,74 @@ paths:
       summary: Open the review workspace
       tags:
       - Attestation
+  /v1/attestations/{attestation_id}/report/draft:
+    get:
+      description: Return the reviewing member's own saved report draft, or empty
+        fields when nothing has been written yet.
+      operationId: get_attestation_report_draft_v1_attestations__attestation_id__report_draft_get
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationReportDraftResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Load the report draft
+      tags:
+      - Attestation
+    put:
+      description: Save the reviewing member's unfinished report as they write it,
+        so a reload does not lose the work. Private to the member; cleared once the
+        report is submitted.
+      operationId: save_attestation_report_draft_v1_attestations__attestation_id__report_draft_put
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttestationReportDraftRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationReportDraftResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Save the report draft
+      tags:
+      - Attestation
   /v1/attestations/{attestation_id}/uploads:
     post:
       description: Create a presigned POST upload session for report evidence.
@@ -20890,6 +21063,83 @@ paths:
       security:
       - HTTPBearer: []
       summary: Create Attestation Report Evidence Upload Session
+      tags:
+      - Attestation
+  /v1/attestations/{attestation_id}/uploads/{upload_session_id}:
+    get:
+      description: Return one evidence upload's scan state so the reviewing member's
+        browser can wait for the verdict before submitting the report.
+      operationId: get_attestation_report_evidence_upload_v1_attestations__attestation_id__uploads__upload_session_id__get
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      - in: path
+        name: upload_session_id
+        required: true
+        schema:
+          format: uuid
+          title: Upload Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationEvidenceUploadStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Report evidence upload scan state
+      tags:
+      - Attestation
+  /v1/attestations/{attestation_id}/uploads/{upload_session_id}/confirm:
+    post:
+      description: Tell the API an evidence file finished uploading to storage, which
+        starts its virus scan. Called by the reviewing member's browser; safe to call
+        more than once.
+      operationId: confirm_attestation_report_evidence_upload_v1_attestations__attestation_id__uploads__upload_session_id__confirm_post
+      parameters:
+      - in: path
+        name: attestation_id
+        required: true
+        schema:
+          format: uuid
+          title: Attestation Id
+          type: string
+      - in: path
+        name: upload_session_id
+        required: true
+        schema:
+          format: uuid
+          title: Upload Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttestationEvidenceUploadStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Confirm one report evidence upload
       tags:
       - Attestation
   /v1/attestor-orgs:
@@ -22019,6 +22269,83 @@ paths:
       security:
       - HTTPBearer: []
       summary: Create Credential Evidence Upload Session
+      tags:
+      - Attestation
+  /v1/credentials/{credential_id}/uploads/{upload_session_id}:
+    get:
+      description: Return one evidence upload's scan state so the owner's browser
+        can wait for the verdict before saving the credential.
+      operationId: get_credential_evidence_upload_v1_credentials__credential_id__uploads__upload_session_id__get
+      parameters:
+      - in: path
+        name: credential_id
+        required: true
+        schema:
+          format: uuid
+          title: Credential Id
+          type: string
+      - in: path
+        name: upload_session_id
+        required: true
+        schema:
+          format: uuid
+          title: Upload Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceUploadStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Credential evidence upload scan state
+      tags:
+      - Attestation
+  /v1/credentials/{credential_id}/uploads/{upload_session_id}/confirm:
+    post:
+      description: Tell the API an evidence file finished uploading to storage, which
+        starts its virus scan. Called by the owner's browser; safe to call more than
+        once.
+      operationId: confirm_credential_evidence_upload_v1_credentials__credential_id__uploads__upload_session_id__confirm_post
+      parameters:
+      - in: path
+        name: credential_id
+        required: true
+        schema:
+          format: uuid
+          title: Credential Id
+          type: string
+      - in: path
+        name: upload_session_id
+        required: true
+        schema:
+          format: uuid
+          title: Upload Session Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CredentialEvidenceUploadStatusResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Confirm one credential evidence upload
       tags:
       - Attestation
   /v1/developer/analytics/sales:

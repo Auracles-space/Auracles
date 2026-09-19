@@ -2,6 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CredentialForm } from "@/components/modules/attestation/credential-form";
+import {
+  confirmCredentialEvidenceUpload,
+  createCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPost as createUploadSession,
+  getCredentialEvidenceUpload,
+} from "@/lib/generated/sdk.gen";
 import type { CredentialResponse } from "@/lib/generated/types.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -13,6 +18,8 @@ vi.mock("@/lib/auth/form-client", () => ({
 vi.mock("@/lib/generated/sdk.gen", () => ({
   createCredentialEvidenceUploadSessionV1CredentialsCredentialIdUploadsPost:
     vi.fn(),
+  confirmCredentialEvidenceUpload: vi.fn(),
+  getCredentialEvidenceUpload: vi.fn(),
 }));
 
 const existing: CredentialResponse = {
@@ -118,5 +125,125 @@ describe("CredentialForm evidence uploader", () => {
         screen.getByText("Evidence files must be 10 MB or smaller."),
       ).toBeInTheDocument();
     });
+  });
+
+  it("confirms the upload and attaches the file only once it scans clean", async () => {
+    // Nothing used to tell the API the file had landed, so the scan only began
+    // inside the save that then refused the evidence it was scanning.
+    const ok = <T,>(data: T) => ({
+      data,
+      error: undefined,
+      request: new Request("http://test.local"),
+      response: new Response(null, { status: 200 }),
+    });
+    vi.mocked(createUploadSession).mockResolvedValue(
+      ok({
+        id: "session-1",
+        s3_key: "credentials/c1/licence.pdf",
+        url: "https://uploads.example.test",
+        fields: { key: "credentials/c1/licence.pdf" },
+        expires_at: "2026-09-19T12:00:00Z",
+        size_limit: 10485760,
+        scan_status: "pending_scan",
+      }) as never,
+    );
+    vi.mocked(confirmCredentialEvidenceUpload).mockResolvedValue(
+      ok({
+        id: "session-1",
+        s3_key: "credentials/c1/licence.pdf",
+        scan_status: "pending_scan",
+      }) as never,
+    );
+    vi.mocked(getCredentialEvidenceUpload).mockResolvedValue(
+      ok({
+        id: "session-1",
+        s3_key: "credentials/c1/licence.pdf",
+        scan_status: "clean",
+      }) as never,
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+
+    render(
+      <CredentialForm
+        initial={existing}
+        mode="edit"
+        onSubmit={vi.fn()}
+        scanPollIntervalMs={1}
+        submitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Upload evidence"), {
+      target: {
+        files: [new File(["x"], "licence.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("licence.pdf")).toBeInTheDocument(),
+    );
+    expect(confirmCredentialEvidenceUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { credential_id: existing.id, upload_session_id: "session-1" },
+      }),
+    );
+  });
+
+  it("refuses to attach a file that fails its virus check", async () => {
+    const ok = <T,>(data: T) => ({
+      data,
+      error: undefined,
+      request: new Request("http://test.local"),
+      response: new Response(null, { status: 200 }),
+    });
+    vi.mocked(createUploadSession).mockResolvedValue(
+      ok({
+        id: "session-2",
+        s3_key: "credentials/c1/bad.pdf",
+        url: "https://uploads.example.test",
+        fields: { key: "credentials/c1/bad.pdf" },
+        expires_at: "2026-09-19T12:00:00Z",
+        size_limit: 10485760,
+        scan_status: "pending_scan",
+      }) as never,
+    );
+    vi.mocked(confirmCredentialEvidenceUpload).mockResolvedValue(
+      ok({
+        id: "session-2",
+        s3_key: "credentials/c1/bad.pdf",
+        scan_status: "pending_scan",
+      }) as never,
+    );
+    vi.mocked(getCredentialEvidenceUpload).mockResolvedValue(
+      ok({
+        id: "session-2",
+        s3_key: "credentials/c1/bad.pdf",
+        scan_status: "infected",
+      }) as never,
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+
+    render(
+      <CredentialForm
+        initial={existing}
+        mode="edit"
+        onSubmit={vi.fn()}
+        scanPollIntervalMs={1}
+        submitting={false}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Upload evidence"), {
+      target: {
+        files: [new File(["x"], "bad.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/did not pass the virus check/i),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("bad.pdf")).toBeNull();
   });
 });

@@ -48,11 +48,14 @@ from app.modules.attestation.schemas import (
     AttestationEvidenceFilesResponse,
     AttestationEvidenceUploadCreateRequest,
     AttestationEvidenceUploadSessionResponse,
+    AttestationEvidenceUploadStatusResponse,
     AttestationFundingRequest,
     AttestationFundingResponse,
     AttestationPackageResponse,
     AttestationRatingCreate,
     AttestationRatingResponse,
+    AttestationReportDraftRequest,
+    AttestationReportDraftResponse,
     AttestationReportSubmitRequest,
     AttestationRequestCreateRequest,
     AttestationRequestResponse,
@@ -67,6 +70,7 @@ from app.modules.attestation.schemas import (
     CredentialEvidenceDownloadResponse,
     CredentialEvidenceUploadCreateRequest,
     CredentialEvidenceUploadSessionResponse,
+    CredentialEvidenceUploadStatusResponse,
     CredentialResponse,
     CredentialsResponse,
     CredentialUpdateRequest,
@@ -693,6 +697,102 @@ async def create_attestation_report_evidence_upload_session(
 
 
 @router.post(
+    "/attestations/{attestation_id}/uploads/{upload_session_id}/confirm",
+    response_model=AttestationEvidenceUploadStatusResponse,
+    summary="Confirm one report evidence upload",
+    description=(
+        "Tell the API an evidence file finished uploading to storage, which "
+        "starts its virus scan. Called by the reviewing member's browser; "
+        "safe to call more than once."
+    ),
+)
+async def confirm_attestation_report_evidence_upload(
+    attestation_id: UUID,
+    upload_session_id: UUID,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationEvidenceUploadStatusResponse:
+    """Queue the virus scan for one uploaded report evidence file."""
+    return await report_service.confirm_report_evidence_upload(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        upload_session_id=upload_session_id,
+    )
+
+
+@router.get(
+    "/attestations/{attestation_id}/uploads/{upload_session_id}",
+    response_model=AttestationEvidenceUploadStatusResponse,
+    summary="Report evidence upload scan state",
+    description=(
+        "Return one evidence upload's scan state so the reviewing member's "
+        "browser can wait for the verdict before submitting the report."
+    ),
+)
+async def get_attestation_report_evidence_upload(
+    attestation_id: UUID,
+    upload_session_id: UUID,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationEvidenceUploadStatusResponse:
+    """Return the scan state of one report evidence upload."""
+    return await report_service.get_report_evidence_upload_status(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        upload_session_id=upload_session_id,
+    )
+
+
+@router.put(
+    "/attestations/{attestation_id}/report/draft",
+    response_model=AttestationReportDraftResponse,
+    summary="Save the report draft",
+    description=(
+        "Save the reviewing member's unfinished report as they write it, so a "
+        "reload does not lose the work. Private to the member; cleared once "
+        "the report is submitted."
+    ),
+)
+async def save_attestation_report_draft(
+    attestation_id: UUID,
+    payload: AttestationReportDraftRequest,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationReportDraftResponse:
+    """Save the reviewing member's unfinished report."""
+    return await report_service.save_report_draft(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+        payload=payload,
+    )
+
+
+@router.get(
+    "/attestations/{attestation_id}/report/draft",
+    response_model=AttestationReportDraftResponse,
+    summary="Load the report draft",
+    description=(
+        "Return the reviewing member's own saved report draft, or empty "
+        "fields when nothing has been written yet."
+    ),
+)
+async def get_attestation_report_draft(
+    attestation_id: UUID,
+    attestor: CurrentUser,
+    db: DatabaseSession,
+) -> AttestationReportDraftResponse:
+    """Return the reviewing member's saved report draft."""
+    return await report_service.get_report_draft(
+        db=db,
+        attestor=attestor,
+        attestation_id=attestation_id,
+    )
+
+
+@router.post(
     "/attestations/{attestation_id}/report",
     response_model=AttestationRequestResponse,
 )
@@ -1082,6 +1182,55 @@ async def create_credential_evidence_upload_session(
         user=user,
         credential_id=credential_id,
         payload=payload,
+    )
+
+
+@router.post(
+    "/credentials/{credential_id}/uploads/{upload_session_id}/confirm",
+    response_model=CredentialEvidenceUploadStatusResponse,
+    summary="Confirm one credential evidence upload",
+    description=(
+        "Tell the API an evidence file finished uploading to storage, which "
+        "starts its virus scan. Called by the owner's browser; safe to call "
+        "more than once."
+    ),
+)
+async def confirm_credential_evidence_upload(
+    credential_id: UUID,
+    upload_session_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadStatusResponse:
+    """Queue the virus scan for one uploaded credential evidence file."""
+    return await credential_service.confirm_evidence_upload(
+        db=db,
+        user=user,
+        credential_id=credential_id,
+        upload_session_id=upload_session_id,
+    )
+
+
+@router.get(
+    "/credentials/{credential_id}/uploads/{upload_session_id}",
+    response_model=CredentialEvidenceUploadStatusResponse,
+    summary="Credential evidence upload scan state",
+    description=(
+        "Return one evidence upload's scan state so the owner's browser can "
+        "wait for the verdict before saving the credential."
+    ),
+)
+async def get_credential_evidence_upload(
+    credential_id: UUID,
+    upload_session_id: UUID,
+    user: CurrentUser,
+    db: DatabaseSession,
+) -> CredentialEvidenceUploadStatusResponse:
+    """Return the scan state of one credential evidence upload."""
+    return await credential_service.get_evidence_upload_status(
+        db=db,
+        user=user,
+        credential_id=credential_id,
+        upload_session_id=upload_session_id,
     )
 
 

@@ -147,6 +147,18 @@ class CredentialEvidenceUploadSessionResponse(BaseModel):
     scan_status: str
 
 
+class CredentialEvidenceUploadStatusResponse(BaseModel):
+    """Scan state of one Credential evidence upload session.
+
+    Returned when the browser confirms an upload and while it polls for the
+    verdict, so the owner sees why the file cannot be saved yet.
+    """
+
+    id: UUID
+    s3_key: str
+    scan_status: str
+
+
 class CredentialEvidenceDownloadResponse(BaseModel):
     """Presigned GET URL for one Credential evidence file."""
 
@@ -173,6 +185,18 @@ class AttestationEvidenceUploadSessionResponse(BaseModel):
     scan_status: str
 
 
+class AttestationEvidenceUploadStatusResponse(BaseModel):
+    """Scan state of one report evidence upload session.
+
+    Returned when the browser confirms an upload and while it polls for the
+    scan verdict, so the reviewer sees why Submit is still held.
+    """
+
+    id: UUID
+    s3_key: str
+    scan_status: str
+
+
 class AttestationReportSubmitRequest(BaseModel):
     """Structured report fields submitted by the assigned Attestor."""
 
@@ -184,6 +208,25 @@ class AttestationReportSubmitRequest(BaseModel):
     scope: str = Field(min_length=1, max_length=10000)
     conditions: str | None = Field(default=None, max_length=10000)
     evidence_references: dict[str, Any] = Field(default_factory=dict)
+
+
+class AttestationReportDraftRequest(BaseModel):
+    """Autosaved report fields for an attestation still under review."""
+
+    outcome: Literal["approved", "conditional", "rejected"] | None = None
+    summary: str = Field(default="", max_length=10000)
+    scope: str = Field(default="", max_length=10000)
+    conditions: str = Field(default="", max_length=10000)
+
+
+class AttestationReportDraftResponse(BaseModel):
+    """The reviewer's saved report draft, or empty fields when none exists."""
+
+    outcome: str | None
+    summary: str
+    scope: str
+    conditions: str
+    updated_at: datetime | None
 
 
 class RubricScoreUpsertRequest(BaseModel):
