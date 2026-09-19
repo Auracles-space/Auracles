@@ -93,6 +93,10 @@ from app.workers.tasks.payouts import process_payout
 
 INVOICE_URL_TTL_SECONDS = 900
 PAYOUT_CLAIM_STATUSES = {"pending", "processing", "completed"}
+# How many owners may collect through one bank account before an admin has to
+# look. Set above the honest ceiling — a person, their contributor org, and
+# their attestor org is three — so only a funnel meets it.
+MAX_PAYOUT_DESTINATION_OWNERS = 3
 # Earning classes for payout-balance derivation. Marketplace earnings clear
 # after the refund window at the marketplace commission rate; attestation
 # earnings clear immediately at the attestation commission rate (Module 6a).
@@ -434,6 +438,122 @@ async def _has_active_payout_account(db: AsyncSession, user_id: UUID) -> bool:
         .limit(1)
     )
     return existing_id is not None
+
+
+async def _count_payout_destination_owners(
+    db: AsyncSession,
+    *,
+    provider: str,
+    lookup_hash: str,
+) -> int:
+    """Count the live owners already collecting through one bank account."""
+    rows = await db.execute(
+        select(PayoutAccount.user_id, PayoutAccount.org_id).where(
+            PayoutAccount.provider == provider,
+            PayoutAccount.provider_account_lookup_hash == lookup_hash,
+            PayoutAccount.deleted_at.is_(None),
+        )
+    )
+    return len({(user_id, org_id) for user_id, org_id in rows})
+
+
+async def _guard_payout_destination_sharing(
+    db: AsyncSession,
+    *,
+    provider: str,
+    lookup_hash: str,
+    actor_id: UUID,
+    owner_ref: dict[str, str],
+) -> int:
+    """Refuse a bank account that already collects for too many owners.
+
+    Sharing itself is legitimate and common: a sole trader's own payout
+    account and their organization's are routinely the same NUBAN. What the cap
+    catches is one account collecting for many separate identities, which is
+    the shape of a payout funnel rather than a sole trader, and it sits well
+    above the honest cases so they never meet it.
+
+    The count is read outside the insert transaction, so two simultaneous
+    registrations can both pass it. That is deliberate: the cap exists to
+    trigger a human look, not to guard money, and both registrations are
+    recorded either way.
+
+    Args:
+        db: Async session; must not hold an open transaction on refusal.
+        provider: Payment provider the destination belongs to.
+        lookup_hash: Keyed hash of the provider account id.
+        actor_id: User the refusal is audited against.
+        owner_ref: Owner identifiers to carry into the audit metadata.
+
+    Returns:
+        How many owners already hold this destination, this one excluded.
+
+    Raises:
+        HTTPException(422): If admitting another owner would pass the cap.
+    """
+    owner_count = await _count_payout_destination_owners(
+        db,
+        provider=provider,
+        lookup_hash=lookup_hash,
+    )
+    if owner_count < MAX_PAYOUT_DESTINATION_OWNERS:
+        return owner_count
+
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="payout_account_share_refused",
+            target_type="payout_account",
+            target_id=None,
+            metadata={
+                "provider": provider,
+                "owner_count": owner_count,
+                **owner_ref,
+            },
+        )
+    logger.bind(
+        module="financials",
+        action="onboard_payout_account",
+        user_id=actor_id,
+    ).warning("payout_account_share_refused", provider=provider)
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=(
+            "This bank account already receives payouts for several accounts. "
+            "Contact support to use it here as well."
+        ),
+    )
+
+
+async def _audit_shared_payout_destination(
+    db: AsyncSession,
+    *,
+    actor_id: UUID,
+    payout_account: PayoutAccount,
+    owner_count: int,
+) -> None:
+    """Record that a bank account now collects for more than one owner.
+
+    Written inside the registering transaction so the record cannot outlive a
+    rolled-back account. Admin review reads this rather than the payout table,
+    which is why the owner count travels with it.
+    """
+    await write_audit(
+        db=db,
+        actor_id=actor_id,
+        action="payout_account_shared",
+        target_type="payout_account",
+        target_id=payout_account.id,
+        metadata={
+            "provider": payout_account.provider,
+            "owner_count": owner_count,
+            "user_id": str(payout_account.user_id) if payout_account.user_id else None,
+            "org_id": str(payout_account.org_id) if payout_account.org_id else None,
+        },
+    )
 
 
 async def create_payment_method_setup(
@@ -2745,6 +2865,17 @@ async def _onboard_paystack_org_payout_account(
             detail="Payout provider is unavailable.",
         ) from exc
 
+    # Only after the provider call: the recipient code is what identifies the
+    # bank account, and the same NUBAN always resolves to the same code.
+    lookup_hash = hash_payout_provider_account_id(recipient.recipient_code)
+    shared_with = await _guard_payout_destination_sharing(
+        db,
+        provider="paystack",
+        lookup_hash=lookup_hash,
+        actor_id=actor_id,
+        owner_ref={"org_id": str(org_id)},
+    )
+
     if db.in_transaction():
         await db.rollback()
     try:
@@ -2755,9 +2886,7 @@ async def _onboard_paystack_org_payout_account(
                 provider_account_id=encrypt_payout_provider_account_id(
                     recipient.recipient_code
                 ),
-                provider_account_lookup_hash=hash_payout_provider_account_id(
-                    recipient.recipient_code
-                ),
+                provider_account_lookup_hash=lookup_hash,
                 account_type="nuban",
                 is_default=not await _has_active_org_payout_account(db, org_id),
                 verified_at=datetime.now(UTC),
@@ -2780,6 +2909,13 @@ async def _onboard_paystack_org_payout_account(
                     "bank_code": payload.bank_code,
                 },
             )
+            if shared_with:
+                await _audit_shared_payout_destination(
+                    db,
+                    actor_id=actor_id,
+                    payout_account=payout_account,
+                    owner_count=shared_with + 1,
+                )
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
@@ -3546,6 +3682,18 @@ async def _onboard_paystack_payout_account(
             detail="Payout provider is unavailable.",
         ) from exc
 
+    # Only after the provider call, because Paystack's recipient code is what
+    # identifies the bank account: the same NUBAN always resolves to the same
+    # code, and nothing before this point reveals which account was entered.
+    lookup_hash = hash_payout_provider_account_id(recipient.recipient_code)
+    shared_with = await _guard_payout_destination_sharing(
+        db,
+        provider="paystack",
+        lookup_hash=lookup_hash,
+        actor_id=contributor_id,
+        owner_ref={"user_id": str(contributor_id)},
+    )
+
     if db.in_transaction():
         await db.rollback()
     try:
@@ -3556,9 +3704,7 @@ async def _onboard_paystack_payout_account(
                 provider_account_id=encrypt_payout_provider_account_id(
                     recipient.recipient_code
                 ),
-                provider_account_lookup_hash=hash_payout_provider_account_id(
-                    recipient.recipient_code
-                ),
+                provider_account_lookup_hash=lookup_hash,
                 account_type="nuban",
                 is_default=not await _has_active_payout_account(db, contributor_id),
                 # Paystack resolved the account against the bank to create the
@@ -3585,6 +3731,13 @@ async def _onboard_paystack_payout_account(
                     "bank_code": payload.bank_code,
                 },
             )
+            if shared_with:
+                await _audit_shared_payout_destination(
+                    db,
+                    actor_id=contributor_id,
+                    payout_account=payout_account,
+                    owner_count=shared_with + 1,
+                )
     except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(

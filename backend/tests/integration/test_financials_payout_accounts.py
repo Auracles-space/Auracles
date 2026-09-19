@@ -28,6 +28,7 @@ from app.main import app
 from app.modules.auth.models import User, UserRole
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Payout, PayoutAccount, Transaction
+from app.modules.financials.service import MAX_PAYOUT_DESTINATION_OWNERS
 from app.modules.frameworks.models import Framework, License
 from app.shared.models.audit_log import AuditLog
 from tests.conftest import open_step_up_window
@@ -801,3 +802,112 @@ async def test_payout_account_can_be_registered_again_after_removal(
     assert re_added.status_code == 200
     assert len(active) == 1
     assert active[0].id != UUID(first.json()["payout_account"]["id"])
+
+
+async def seed_shared_paystack_destination(count: int) -> list[UUID]:
+    """Register `count` separate owners against the fixture's recipient code."""
+    owner_ids: list[UUID] = []
+    for index in range(count):
+        owner_id, _ = await create_user_with_roles(
+            f"sharer-{index}@auracles.space",
+            ["contributor"],
+        )
+        owner_ids.append(owner_id)
+        async with async_session_factory() as session:
+            async with session.begin():
+                session.add(
+                    PayoutAccount(
+                        user_id=owner_id,
+                        provider="paystack",
+                        provider_account_id=encrypt_payout_provider_account_id(
+                            "RCP_test_9876"
+                        ),
+                        provider_account_lookup_hash=(
+                            hash_payout_provider_account_id("RCP_test_9876")
+                        ),
+                        account_type="nuban",
+                        is_default=True,
+                        verified_at=datetime.now(UTC),
+                    )
+                )
+    return owner_ids
+
+
+async def test_sharing_a_bank_account_is_recorded_for_review(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """Registering a bank account another owner already holds is audited.
+
+    Sharing is allowed, but one bank account collecting for several identities
+    is the signal that distinguishes a sole trader from a payout funnel, so it
+    is recorded rather than discarded.
+    """
+    await seed_shared_paystack_destination(1)
+    joiner_id, _ = await create_user_with_roles(
+        "joiner@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(joiner_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "payout_account_shared")
+        )
+
+    assert response.status_code == 200
+    assert audit is not None
+    assert audit.metadata_["owner_count"] == 2
+    assert audit.metadata_["provider"] == "paystack"
+
+
+async def test_bank_account_is_refused_beyond_the_sharing_cap(
+    client: AsyncClient,
+    migrated_database: None,
+    payout_account_context: dict[str, Any],
+) -> None:
+    """A bank account may back only so many owners before an admin must look.
+
+    A single account collecting payouts for many separate identities is the
+    shape of a payout funnel rather than a sole trader, so the cap stops it
+    where the honest cases sit comfortably below.
+    """
+    await seed_shared_paystack_destination(MAX_PAYOUT_DESTINATION_OWNERS)
+    joiner_id, _ = await create_user_with_roles(
+        "over-cap@auracles.space",
+        ["contributor"],
+    )
+
+    response = await client.post(
+        "/v1/financials/payout-accounts/onboard",
+        headers=auth_headers(joiner_id, ["contributor"]),
+        json={
+            "provider": "paystack",
+            "country": "NG",
+            "account_number": "0123456789",
+            "bank_code": "044",
+        },
+    )
+
+    async with async_session_factory() as session:
+        stored = await session.scalar(
+            select(PayoutAccount).where(PayoutAccount.user_id == joiner_id)
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "payout_account_share_refused")
+        )
+
+    assert response.status_code == 422
+    assert stored is None
+    assert audit is not None
