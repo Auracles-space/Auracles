@@ -421,3 +421,36 @@ async def test_an_unrelated_refusal_is_not_read_as_a_funding_problem() -> None:
         )
 
     assert caught.value.insufficient_balance is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_refusal_reads_out_its_provider_message_when_logged() -> None:
+    """The provider's wording reaches the logs, not just the status code.
+
+    Every caller logs `str(exc)`. If that says only "Paystack returned 400."
+    then a refusal we failed to classify leaves nothing to classify it by,
+    and the next person debugging it is where we were before the message was
+    kept at all.
+    """
+    respx.post("https://api.paystack.co/transfer").mock(
+        return_value=httpx.Response(
+            400,
+            json={
+                "status": False,
+                "message": "Your balance is not enough to fulfil this request",
+            },
+        )
+    )
+
+    with pytest.raises(PaystackProviderError) as caught:
+        await initiate_transfer(
+            amount=Decimal("1.00"),
+            currency="NGN",
+            recipient="RCP_test",
+            reason="Auracles payout",
+            reference="payout-log-test",
+            settings=PAYSTACK_SETTINGS,
+        )
+
+    assert "balance is not enough" in str(caught.value)
