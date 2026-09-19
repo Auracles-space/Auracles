@@ -11,7 +11,7 @@ OTP locks a contributor out of their own earnings permanently.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -106,7 +106,11 @@ def reconcile_context(
 
 
 def create_held_payout(
-    *, awaiting_otp: bool = True, status: str = "processing"
+    *,
+    awaiting_otp: bool = True,
+    status: str = "processing",
+    provider: str = "paystack",
+    age: timedelta | None = None,
 ) -> UUID:
     """Create a Paystack payout sitting in the held-for-OTP state."""
     settings = get_settings()
@@ -131,7 +135,7 @@ def create_held_payout(
         )
         account = PayoutAccount(
             user_id=contributor.id,
-            provider="paystack",
+            provider=provider,
             provider_account_id=encrypt_payout_provider_account_id("RCP_held"),
             provider_account_lookup_hash=hash_payout_provider_account_id("RCP_held"),
             account_type="nuban",
@@ -150,6 +154,7 @@ def create_held_payout(
             status=status,
             provider_ref=f"payout-{uuid4()}",
             awaiting_otp=awaiting_otp,
+            initiated_at=datetime.now(UTC) - (age or timedelta(0)),
         )
         session.add(payout)
         session.commit()
@@ -358,3 +363,60 @@ def test_abandoned_platform_withdrawal_is_settled_too(
     assert status == "failed"
     assert awaiting is False
     assert result["reconciled"] == 1
+
+
+def test_a_processing_payout_whose_webhook_never_came_is_settled(
+    migrated_database: None,
+    reconcile_context: dict[str, Any],
+) -> None:
+    """A transfer left at `processing` by a lost webhook is asked about.
+
+    Only OTP-held transfers were checked, but the OTP case is one way a
+    webhook fails to arrive, not the only one: a dropped delivery, a refused
+    signature or an outage at our end strands the payout identically, and the
+    beneficiary is blocked from requesting again the whole time.
+    """
+    reconcile_context["status"] = "success"
+    payout_id = create_held_payout(awaiting_otp=False, age=timedelta(hours=2))
+
+    result = transfer_reconcile.reconcile_held_transfers.apply().get()
+
+    payout = _load_payout(payout_id)
+    assert payout.status == "completed"
+    assert result["reconciled"] == 1
+
+
+def test_a_transfer_still_within_its_settling_window_is_left_alone(
+    migrated_database: None,
+    reconcile_context: dict[str, Any],
+) -> None:
+    """A payout created moments ago is not second-guessed.
+
+    Most transfers settle in seconds and their webhook follows immediately.
+    Verifying every one of them would spend a provider call per payout to
+    re-decide money that is about to settle itself.
+    """
+    create_held_payout(awaiting_otp=False)
+
+    result = transfer_reconcile.reconcile_held_transfers.apply().get()
+
+    assert reconcile_context["verified"] == []
+    assert result["checked"] == 0
+
+
+def test_a_stripe_payout_is_never_asked_about_at_paystack(
+    migrated_database: None,
+    reconcile_context: dict[str, Any],
+) -> None:
+    """Only Paystack payouts are verified against Paystack.
+
+    A Stripe transfer id means nothing to Paystack, so asking would fail on
+    every run — and if it somehow answered, the answer would be about
+    somebody else's transfer.
+    """
+    create_held_payout(awaiting_otp=False, provider="stripe", age=timedelta(hours=2))
+
+    result = transfer_reconcile.reconcile_held_transfers.apply().get()
+
+    assert reconcile_context["verified"] == []
+    assert result["checked"] == 0

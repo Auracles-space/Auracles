@@ -1,28 +1,33 @@
-"""Reconcile Paystack transfers that are held for a one-time code.
+"""Reconcile Paystack transfers the provider never reported back on.
 
-A transfer waiting on an OTP produces no webhook, and Paystack abandons it
-about an hour later — also without a webhook. Nothing else in the system ever
-revisits the payout, so its row stays at ``processing`` indefinitely.
+A payout stays at ``processing`` until a webhook says otherwise. When that
+webhook never arrives, nothing else in the system revisits the row and it
+stays there indefinitely.
 
 That is not cosmetic. While a payout sits at ``processing`` the beneficiary is
 refused another payout as one already in flight, and the amount stays counted
-against their available balance. A single unanswered code therefore locks a
-contributor out of their own earnings for money that will never be sent. This
-task closes that gap by asking the provider what actually happened.
+against their available balance. A missing webhook therefore locks a
+contributor out of their own earnings, often for money that was never sent.
+This task closes that gap by asking the provider what actually happened.
 
-It is deliberately not limited to the OTP case in spirit: any transfer the
-provider ends without telling us would strand the same way, and asking is the
-only remedy.
+Two ways the webhook goes missing, handled the same way because the remedy is
+the same. A transfer held for a one-time code produces no webhook, and
+Paystack abandons it about an hour later — also without a webhook. And any
+transfer's webhook can simply fail to arrive: a dropped delivery, a refused
+signature, an outage at our end. The first is checked immediately; the second
+only after a settling window, since most transfers settle in seconds and
+verifying them all would spend a provider call per payout to re-decide money
+that is about to settle itself.
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
@@ -30,7 +35,7 @@ from app.integrations import paystack
 from app.integrations.paystack import PaystackProviderError
 from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.financials.ledger import record_financial_event
-from app.modules.financials.models import Payout, PlatformWithdrawal
+from app.modules.financials.models import Payout, PayoutAccount, PlatformWithdrawal
 from app.modules.financials.platform_withdrawals import (
     apply_withdrawal_transfer_outcome,
 )
@@ -47,6 +52,11 @@ from app.workers.celery_app import app
 DEAD_TRANSFER_STATUSES = {"abandoned", "failed", "reversed"}
 # Status meaning the money did leave, and we simply never saw the webhook.
 SETTLED_TRANSFER_STATUS = "success"
+# How long a transfer is given to settle and have its webhook arrive before
+# this task asks the provider directly. Paystack transfers normally settle in
+# seconds, so an hour is generous; the point of waiting at all is to avoid
+# spending a provider call on every payout that is about to settle itself.
+SETTLING_WINDOW = timedelta(hours=1)
 
 
 def _outcome_for(transfer_status: str) -> str | None:
@@ -71,13 +81,29 @@ async def _reconcile_held_transfers() -> dict[str, int]:
     checked = 0
     reconciled = 0
 
+    settling_cutoff = datetime.now(UTC) - SETTLING_WINDOW
     async with async_session_factory() as db:
         held = (
             (
                 await db.execute(
-                    select(Payout).where(
-                        Payout.awaiting_otp.is_(True),
+                    select(Payout)
+                    .join(PayoutAccount, PayoutAccount.id == Payout.payout_account_id)
+                    .where(
+                        PayoutAccount.provider == "paystack",
                         Payout.status.in_(("pending", "processing")),
+                        or_(
+                            Payout.awaiting_otp.is_(True),
+                            # A transfer the provider accepted but never
+                            # reported on. The OTP hold is one way a webhook
+                            # fails to arrive; a dropped delivery, a refused
+                            # signature or an outage here strand the payout
+                            # identically, and asking is the same remedy.
+                            and_(
+                                Payout.status == "processing",
+                                Payout.provider_ref.is_not(None),
+                                Payout.initiated_at < settling_cutoff,
+                            ),
+                        ),
                     )
                 )
             )
@@ -217,7 +243,12 @@ async def _settle_payout(
     async with async_session_factory() as db:
         async with db.begin():
             payout = await db.get(Payout, payout_id, with_for_update=True)
-            if payout is None or not payout.awaiting_otp:
+            # Guard against settling twice, which is what the row lock is
+            # for: a webhook arriving mid-run, or another worker on the same
+            # payout, leaves it already terminal. Asking about the status
+            # rather than the OTP flag keeps this true for a payout that was
+            # never held for a code.
+            if payout is None or payout.status not in ("pending", "processing"):
                 return False
             previous_status = payout.status
             payout.status = outcome
