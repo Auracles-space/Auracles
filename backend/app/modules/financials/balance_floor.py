@@ -30,7 +30,7 @@ from app.integrations import paystack
 from app.integrations.amounts import MoneyAmountError, to_minor_units
 from app.integrations.paystack import PaystackProviderError
 from app.modules.admin.notifications import notify_admins_review_pending
-from app.modules.financials.models import Escrow, Transaction
+from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 
 
 class BalanceFloorResult(TypedDict):
@@ -138,5 +138,112 @@ async def check_platform_balance_floor(db: AsyncSession) -> BalanceFloorResult:
                 "release."
             ),
             link="/admin/money",
+        )
+    return result
+
+
+def _payout_alert_target_id(currency: str) -> UUID:
+    """Return a stable per-currency UUID so repeat alerts dedupe."""
+    return uuid5(NAMESPACE_URL, f"auracles:pending-payout-coverage:{currency}")
+
+
+async def check_pending_payout_coverage(db: AsyncSession) -> BalanceFloorResult:
+    """Alert when the balance cannot cover the payouts already queued.
+
+    Distinct from the escrow floor above, which asks whether money the
+    platform holds for others is still there. This asks a nearer question:
+    whether what beneficiaries have already asked for can actually be sent.
+    A payout the balance cannot fund is retried hourly and goes out once
+    money settles, so nothing is lost — but the beneficiary waits with their
+    earnings locked, and without this nobody finds out before they complain.
+
+    Only Paystack payouts are counted, because only they draw on the balance
+    this check reads; Stripe transfers are funded from the Connect balance.
+
+    Args:
+        db: Async session; the check only reads.
+
+    Returns:
+        Counts of currencies checked and alerts raised.
+    """
+    queued_rows = (
+        await db.execute(
+            select(
+                Payout.currency,
+                func.coalesce(func.sum(Payout.net_amount), 0),
+            )
+            .join(PayoutAccount, PayoutAccount.id == Payout.payout_account_id)
+            .where(
+                Payout.status == "pending",
+                PayoutAccount.provider == "paystack",
+            )
+            .group_by(Payout.currency)
+        )
+    ).all()
+
+    result: BalanceFloorResult = {"currencies_checked": 0, "alerts": 0}
+    if not queued_rows:
+        return result
+
+    try:
+        balances = await paystack.fetch_balance()
+    except PaystackProviderError as exc:
+        logger.bind(
+            module="financials",
+            action="check_pending_payout_coverage",
+        ).error("balance_lookup_failed", error=str(exc))
+        return result
+
+    for currency, queued_total in queued_rows:
+        result["currencies_checked"] += 1
+        queued = Decimal(queued_total or "0")
+        try:
+            queued_minor = to_minor_units(queued, currency)
+        except MoneyAmountError:
+            logger.bind(
+                module="financials",
+                action="check_pending_payout_coverage",
+                currency=currency,
+            ).warning("queued_payouts_unverifiable_currency")
+            continue
+        available_minor = balances.get(currency.upper(), 0)
+        if available_minor >= queued_minor:
+            continue
+
+        result["alerts"] += 1
+        # WARNING, not CRITICAL: unlike the escrow floor nothing is missing,
+        # the money simply has not arrived yet. It still needs a person.
+        logger.bind(
+            module="financials",
+            action="check_pending_payout_coverage",
+            currency=currency,
+        ).warning(
+            "queued_payouts_exceed_available_balance",
+            queued_minor=queued_minor,
+            available_minor=available_minor,
+        )
+        await write_audit(
+            db=db,
+            actor_id=None,
+            action="queued_payouts_exceed_available_balance",
+            target_type="platform_balance",
+            target_id=_payout_alert_target_id(currency),
+            metadata={
+                "currency": currency,
+                "queued_minor": str(queued_minor),
+                "available_minor": str(available_minor),
+            },
+        )
+        notify_admins_review_pending(
+            domain="platform_balance",
+            target_id=_payout_alert_target_id(currency),
+            body=(
+                f"Payouts already requested in {currency} total more than the "
+                f"Paystack balance can send ({queued_minor} minor units "
+                f"queued against {available_minor} available). They stay "
+                "queued and go out as money settles; until then those "
+                "beneficiaries are waiting with their earnings locked."
+            ),
+            link="/admin/payouts",
         )
     return result

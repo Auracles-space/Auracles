@@ -160,6 +160,7 @@ def _payout_response(payout: Payout) -> PayoutResponse:
         provider_ref=(
             _masked_provider_ref(payout.provider_ref) if payout.provider_ref else None
         ),
+        delay_reason=payout.delay_reason,
         initiated_at=payout.initiated_at,
         completed_at=payout.completed_at,
     )

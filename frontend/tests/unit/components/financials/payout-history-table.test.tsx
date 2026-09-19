@@ -135,4 +135,40 @@ describe("PayoutHistoryTable", () => {
     expect(submit).toBeEnabled();
     expect(screen.queryByLabelText("Authenticator code")).not.toBeInTheDocument();
   });
+
+  it("explains a payout the platform balance cannot yet fund", async () => {
+    // A payout short of balance retries hourly until it goes through, so the
+    // money is never lost — but without this the beneficiary sees only
+    // "pending" for days while their earnings stay locked, with nothing to
+    // distinguish it from a payout that is merely slow.
+    vi.mocked(listPayouts).mockResolvedValue({
+      data: {
+        payouts: [
+          {
+            amount: "315000.00",
+            commission_deducted: "0.00",
+            completed_at: null,
+            currency: "NGN",
+            delay_reason: "insufficient_platform_balance",
+            id: "00000000-0000-4000-8000-000000000031",
+            initiated_at: "2026-09-19T00:00:00Z",
+            net_amount: "315000.00",
+            payout_account_id: account.id,
+            provider_ref: null,
+            status: "pending",
+          },
+        ],
+      },
+      error: undefined,
+      request: new Request("http://testserver"),
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<PayoutHistoryTable />);
+
+    expect(
+      await screen.findByText(/waiting for funds to clear/i),
+    ).toBeInTheDocument();
+  });
+
 });

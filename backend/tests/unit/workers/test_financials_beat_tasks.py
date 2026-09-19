@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from celery.schedules import crontab
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
@@ -214,7 +215,10 @@ def test_reconciliation_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.reconcile_pending_refunds_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def _seed_held_paystack_escrow(amount: Decimal) -> UUID:
@@ -439,7 +443,10 @@ def test_stranded_payout_sweeper_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.requeue_stranded_payouts_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def _seed_refund_intent(
@@ -524,9 +531,7 @@ def test_refund_intent_sweep_flags_untracked_provider_refunds(
     session_factory = sessionmaker(bind=sync_engine)
     with session_factory() as session:
         audit = session.execute(
-            select(AuditLog).where(
-                AuditLog.action == "untracked_refund_detected"
-            )
+            select(AuditLog).where(AuditLog.action == "untracked_refund_detected")
         ).scalar_one_or_none()
         flagged = session.execute(
             select(FinancialEvent).where(
@@ -611,7 +616,10 @@ def test_refund_intent_sweep_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.reconcile_refund_intents_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def _seed_webhook_event(*, received_at: datetime) -> UUID:
@@ -646,9 +654,7 @@ def test_webhook_event_pruning_removes_only_aged_rows(
     the table. The durable money record lives in audit_logs and the ledger.
     """
     del migrated_database, reconciliation_context
-    old_id = _seed_webhook_event(
-        received_at=datetime.now(UTC) - timedelta(days=120)
-    )
+    old_id = _seed_webhook_event(received_at=datetime.now(UTC) - timedelta(days=120))
     fresh_id = _seed_webhook_event(received_at=datetime.now(UTC) - timedelta(days=5))
 
     result = financials_beat.prune_webhook_events_task.apply().get()
@@ -673,7 +679,10 @@ def test_webhook_event_pruning_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.prune_webhook_events_task"
     )
-    assert entry["schedule"] == 86400.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
 
 
 def test_balance_floor_is_registered_on_the_beat_schedule() -> None:
@@ -683,4 +692,131 @@ def test_balance_floor_is_registered_on_the_beat_schedule() -> None:
     assert entry["task"] == (
         "app.workers.tasks.financials_beat.check_platform_balance_floor_task"
     )
-    assert entry["schedule"] == 3600.0
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1
+
+
+def _seed_pending_payout(amount: Decimal, currency: str = "NGN") -> UUID:
+    """Create a pending Paystack payout and return its id."""
+    settings = get_settings()
+    sync_engine = create_engine(settings.sync_database_url, pool_pre_ping=True)
+    session_factory = sessionmaker(bind=sync_engine)
+    with session_factory() as session:
+        contributor = User(
+            email=f"coverage-{uuid4()}@auracles.space",
+            password_hash=hash_password("CorrectHorse9"),
+            display_name="Waiting Contributor",
+            email_verified=True,
+            kyc_status="verified",
+        )
+        session.add(contributor)
+        session.flush()
+        session.add(
+            UserRole(
+                user_id=contributor.id,
+                role="contributor",
+                approved_at=datetime.now(UTC),
+            )
+        )
+        account = PayoutAccount(
+            user_id=contributor.id,
+            provider="paystack",
+            provider_account_id=encrypt_payout_provider_account_id("RCP_wait"),
+            provider_account_lookup_hash=hash_payout_provider_account_id("RCP_wait"),
+            account_type="nuban",
+            is_default=True,
+            verified_at=datetime.now(UTC),
+        )
+        session.add(account)
+        session.flush()
+        payout = Payout(
+            contributor_id=contributor.id,
+            payout_account_id=account.id,
+            amount=amount,
+            currency=currency,
+            commission_deducted=Decimal("0.00"),
+            net_amount=amount,
+            status="pending",
+        )
+        session.add(payout)
+        session.commit()
+        payout_id: UUID = payout.id
+    sync_engine.dispose()
+    return payout_id
+
+
+def test_admins_are_told_when_queued_payouts_outgrow_the_balance(
+    migrated_database: None,
+    reconciliation_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A balance that cannot cover what is already queued must page an admin.
+
+    A payout the balance cannot fund retries hourly and eventually succeeds,
+    so nothing breaks — but a beneficiary waits with their earnings locked
+    and nobody would otherwise know the platform is short until they ask.
+    """
+    del migrated_database, reconciliation_context
+    # Queued 900,000 NGN against 855,400 available: the shape of a real
+    # shortfall, where most of the money is there and the rest is clearing.
+    _seed_pending_payout(Decimal("900000.00"))
+    alerts: list[dict[str, Any]] = []
+
+    async def fake_fetch_balance() -> dict[str, int]:
+        """Report a balance short of what is queued (minor units)."""
+        return {"NGN": 85540000}
+
+    monkeypatch.setattr(paystack, "fetch_balance", fake_fetch_balance)
+    monkeypatch.setattr(
+        balance_floor,
+        "notify_admins_review_pending",
+        lambda **kwargs: alerts.append(kwargs),
+    )
+
+    result = financials_beat.check_pending_payout_coverage_task.apply().get()
+
+    assert result == {"currencies_checked": 1, "alerts": 1}
+    assert len(alerts) == 1
+    assert "NGN" in alerts[0]["body"]
+
+
+def test_no_alert_when_the_balance_covers_everything_queued(
+    migrated_database: None,
+    reconciliation_context: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A balance that covers the queue is silent, so alerts stay meaningful."""
+    del migrated_database, reconciliation_context
+    _seed_pending_payout(Decimal("1000.00"))
+    alerts: list[dict[str, Any]] = []
+
+    async def fake_fetch_balance() -> dict[str, int]:
+        """Report a balance comfortably above the queued total."""
+        return {"NGN": 90000000}
+
+    monkeypatch.setattr(paystack, "fetch_balance", fake_fetch_balance)
+    monkeypatch.setattr(
+        balance_floor,
+        "notify_admins_review_pending",
+        lambda **kwargs: alerts.append(kwargs),
+    )
+
+    result = financials_beat.check_pending_payout_coverage_task.apply().get()
+
+    assert result == {"currencies_checked": 1, "alerts": 0}
+    assert alerts == []
+
+
+def test_payout_coverage_is_registered_on_the_beat_schedule() -> None:
+    """Unscheduled, the check would never run and the shortfall stay silent."""
+    entry = BEAT_SCHEDULE["check-pending-payout-coverage-hourly"]
+
+    assert entry["task"] == (
+        "app.workers.tasks.financials_beat.check_pending_payout_coverage_task"
+    )
+    assert isinstance(entry["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(entry["schedule"].minute) == 1

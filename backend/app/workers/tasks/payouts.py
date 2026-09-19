@@ -9,6 +9,7 @@ to the other.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -19,6 +20,7 @@ from app.core.audit import write_audit
 from app.core.database import async_session_factory
 from app.core.security import decrypt_payout_provider_account_id
 from app.integrations import paystack, stripe
+from app.integrations.paystack import PaystackProviderError
 from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.financials.models import Payout, PayoutAccount
 from app.modules.financials.transfer_holds import (
@@ -27,6 +29,64 @@ from app.modules.financials.transfer_holds import (
 )
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
+
+# Reason stamped on a payout the platform balance cannot yet fund. Narrow on
+# purpose: it names a condition the beneficiary can neither cause nor fix,
+# which is the only kind of wait worth explaining to them.
+INSUFFICIENT_BALANCE_REASON = "insufficient_platform_balance"
+
+
+async def _defer_payout(
+    *, payout_id: UUID, amount: Decimal, currency: str
+) -> dict[str, str]:
+    """Leave a payout pending with the reason it could not be sent yet.
+
+    The payout keeps its `pending` status so the hourly sweeper retries it;
+    only the reason is added. Admins are alerted because a platform shortfall
+    is theirs to resolve, and the beneficiary can do nothing about it.
+
+    Args:
+        payout_id: Payout that could not be funded.
+        amount: Net amount that was attempted, for the alert.
+        currency: Currency of that amount.
+
+    Returns:
+        The task result, reporting the payout as deferred.
+    """
+    log = logger.bind(
+        module="financials", action="defer_payout", payout_id=str(payout_id)
+    )
+    async with async_session_factory() as db:
+        async with db.begin():
+            payout = await db.get(Payout, payout_id, with_for_update=True)
+            if payout is None:
+                raise ValueError("Payout not found.")
+            already_known = payout.delay_reason == INSUFFICIENT_BALANCE_REASON
+            payout.delay_reason = INSUFFICIENT_BALANCE_REASON
+
+    # WARNING, not ERROR: nothing is broken and the retry will clear it, but
+    # money owed to a user is not moving and somebody should know.
+    log.warning("payout_deferred_for_platform_balance")
+    # Alert once per payout, not once per hourly retry, or a shortfall
+    # lasting a weekend would page admins forty times about one payout.
+    if not already_known:
+        notify_admins_review_pending(
+            domain="payout",
+            target_id=payout_id,
+            body=(
+                f"A payout of {amount} {currency} cannot be sent yet because "
+                "the platform balance does not cover it. It stays queued and "
+                "goes out automatically once the balance recovers, but the "
+                "beneficiary is waiting and their earnings stay locked until "
+                "it does."
+            ),
+            link="/admin/payouts",
+        )
+    return {
+        "payout_id": str(payout_id),
+        "provider_ref": "",
+        "status": "deferred",
+    }
 
 
 async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
@@ -91,13 +151,27 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
             # payout row on. Paystack's numeric id is not known until after the
             # call, so it cannot serve either purpose.
             reference = f"payout-{payout.id}"
-            paystack_transfer = await paystack.initiate_transfer(
-                amount=payout.net_amount,
-                currency=payout.currency,
-                recipient=destination_account_id,
-                reason="Auracles payout",
-                reference=reference,
-            )
+            try:
+                paystack_transfer = await paystack.initiate_transfer(
+                    amount=payout.net_amount,
+                    currency=payout.currency,
+                    recipient=destination_account_id,
+                    reason="Auracles payout",
+                    reference=reference,
+                )
+            except PaystackProviderError as exc:
+                if not exc.insufficient_balance:
+                    raise
+                # The platform balance cannot cover this yet. Leaving the
+                # payout at `pending` is deliberate: the hourly sweeper
+                # retries it, and it goes through untouched once money
+                # settles. What was missing is the reason, without which the
+                # beneficiary sees only an unexplained wait.
+                return await _defer_payout(
+                    payout_id=parsed_payout_id,
+                    amount=payout.net_amount,
+                    currency=payout.currency,
+                )
             provider_ref = reference
             audit_ref = paystack_transfer.transfer_code or reference
             held_for_otp = paystack_transfer.status == PAYSTACK_OTP_STATUS
@@ -124,6 +198,10 @@ async def _process_payout_transfer(payout_id: str) -> dict[str, str]:
             payout.status = "processing"
             payout.provider_ref = provider_ref
             payout.awaiting_otp = held_for_otp
+            # The wait is over, so its reason must not outlive it: a retry
+            # that succeeds after a shortfall would otherwise keep telling
+            # the beneficiary the balance is short.
+            payout.delay_reason = None
             await write_audit(
                 db=db,
                 actor_id=payout.contributor_id,

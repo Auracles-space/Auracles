@@ -15,6 +15,7 @@ from sqlalchemy import delete
 from app.core.database import async_session_factory
 from app.modules.financials.balance_floor import (
     BalanceFloorResult,
+    check_pending_payout_coverage,
     check_platform_balance_floor,
 )
 from app.modules.financials.payout_sweeper import (
@@ -85,6 +86,31 @@ def check_platform_balance_floor_task(self: Any) -> BalanceFloorResult:
     )
     log.info("task_started")
     result = run_async(_check_platform_balance_floor())
+    log.info("task_completed", result=result)
+    return result
+
+
+async def _check_pending_payout_coverage() -> BalanceFloorResult:
+    """Run the queued-payout coverage check inside one database transaction."""
+    async with async_session_factory() as db:
+        async with db.begin():
+            return await check_pending_payout_coverage(db)
+
+
+@app.task(bind=True)  # type: ignore[untyped-decorator]
+def check_pending_payout_coverage_task(self: Any) -> BalanceFloorResult:
+    """Celery wrapper for the hourly queued-payout coverage check.
+
+    Read-only and idempotent: alerts dedupe per currency at the notification
+    layer, so a shortfall lasting a weekend pages once, not every hour.
+    """
+    log = logger.bind(
+        module="financials",
+        action="check_pending_payout_coverage",
+        task_id=self.request.id,
+    )
+    log.info("task_started")
+    result = run_async(_check_pending_payout_coverage())
     log.info("task_completed", result=result)
     return result
 

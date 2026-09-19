@@ -207,7 +207,10 @@ def test_expire_unpaid_fees_task_is_registered_in_beat_schedule() -> None:
     assert schedule["task"] == (
         "app.workers.tasks.attestation_beat.expire_unpaid_attestation_fees"
     )
-    assert schedule["schedule"] == 3600.0
+    assert isinstance(schedule["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(schedule["schedule"].minute) == 1
 
 
 async def test_expire_unpaid_fees_closes_abandoned_requests(
@@ -264,7 +267,10 @@ def test_expire_owner_consent_task_is_registered_in_beat_schedule() -> None:
     assert schedule["task"] == (
         "app.workers.tasks.attestation_beat.expire_owner_consent"
     )
-    assert schedule["schedule"] == 3600.0
+    assert isinstance(schedule["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(schedule["schedule"].minute) == 1
 
 
 def test_coi_resign_reminder_task_is_registered_in_beat_schedule() -> None:
@@ -284,7 +290,10 @@ def test_clarification_expiry_task_is_registered_in_beat_schedule() -> None:
     assert schedule["task"] == (
         "app.workers.tasks.attestation_beat.expire_attestation_clarifications"
     )
-    assert schedule["schedule"] == 3600.0
+    assert isinstance(schedule["schedule"], crontab)
+    # Hourly, but anchored to the clock: a plain interval restarts its
+    # countdown whenever beat is replaced, which on Spot can starve it.
+    assert len(schedule["schedule"].minute) == 1
 
 
 async def test_expire_attestation_offers_runs_cleanly_and_is_idempotent(

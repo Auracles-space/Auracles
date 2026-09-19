@@ -13723,6 +13723,11 @@ components:
             type: string
           - type: 'null'
           title: Completed At
+        delay_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Delay Reason
         currency:
           title: Currency
           type: string
