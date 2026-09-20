@@ -34,6 +34,7 @@ import {
 } from "@/lib/marketplace/taxonomy";
 import { filtersFromExploreSearchParams } from "@/lib/marketplace/saved-search-filters";
 import { getVerifiedSessionHintFromCookies } from "@/lib/auth/server-session";
+import { canUseSavedSearches } from "@/lib/marketplace/saved-search-access";
 
 type ExplorePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -179,7 +180,10 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
 
   // Saving a search persists per-user state, so only offer it to authenticated
   // viewers. Backend RBAC stays authoritative on the write itself.
-  const isAuthenticated = (await getVerifiedSessionHintFromCookies()) !== null;
+  // Saved searches are operator-only server-side, so offering the form to any
+  // signed-in user meant a contributor could fill it in and be bounced by a 403.
+  const sessionHint = await getVerifiedSessionHintFromCookies();
+  const showSavedSearches = canUseSavedSearches(sessionHint?.roles ?? []);
 
   const { catalog, unavailable } = await loadExploreCatalog(query);
 
@@ -210,7 +214,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
                 <SortMenu active={filterActive} current={query.sort ?? "newest"} />
               </div>
             </div>
-            {isAuthenticated ? (
+            {showSavedSearches ? (
               <div className="mb-6">
                 <ExploreSaveSearchAction filters={savedSearchFilters} />
               </div>

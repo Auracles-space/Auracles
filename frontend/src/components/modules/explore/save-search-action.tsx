@@ -4,10 +4,13 @@
  * Explore saved-search action.
  *
  * Lets authenticated Operators persist the current Explore filter state without
- * turning the catalog itself into a client-rendered page.
+ * turning the catalog itself into a client-rendered page, and re-run what they
+ * saved. The list lives here rather than behind a nav item of its own: saving
+ * happens on Explore, so managing what you saved belongs next to it.
  */
 import { BookmarkIcon } from "@radix-ui/react-icons";
-import { useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   configureBrowserClient,
@@ -15,9 +18,15 @@ import {
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
 import { isNonEmpty } from "@/lib/forms/validators";
-import { createSavedSearch } from "@/lib/generated/sdk.gen";
-import type { ExploreSearchFilters } from "@/lib/generated/types.gen";
-import { filtersFromExploreSearchParams } from "@/lib/marketplace/saved-search-filters";
+import { createSavedSearch, listSavedSearches } from "@/lib/generated/sdk.gen";
+import type {
+  ExploreSearchFilters,
+  SavedSearchResponse,
+} from "@/lib/generated/types.gen";
+import {
+  filtersFromExploreSearchParams,
+  savedSearchFiltersToHref,
+} from "@/lib/marketplace/saved-search-filters";
 
 export { filtersFromExploreSearchParams };
 
@@ -37,7 +46,21 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
   const [message, setMessage] = useState<string | null>(null);
   const [status, setStatus] = useState<"error" | "success" | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [saved, setSaved] = useState<SavedSearchResponse[]>([]);
   const canSubmit = isNonEmpty(name);
+
+  /** Load the operator's saved searches; a failure just leaves the list empty. */
+  const loadSaved = useCallback(async (): Promise<void> => {
+    configureBrowserClient();
+    const result = await listSavedSearches({ headers: getAccessTokenHeaders() });
+    // Deliberately silent: the list is secondary to the save form above it, and
+    // an error banner here would read as a failure of the thing being saved.
+    setSaved(result.response.ok ? (result.data?.saved_searches ?? []) : []);
+  }, []);
+
+  useEffect(() => {
+    void loadSaved();
+  }, [loadSaved]);
 
   async function submitSavedSearch(
     event: React.FormEvent<HTMLFormElement>,
@@ -73,6 +96,9 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
 
     setStatus("success");
     setMessage(`Saved as ${result.data?.name ?? trimmedName}.`);
+    setName("");
+    // Show what was just saved in the list below without a page reload.
+    await loadSaved();
   }
 
   return (
@@ -129,6 +155,40 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
         >
           {message}
         </p>
+      ) : null}
+      {saved.length > 0 ? (
+        <div className="mt-5 border-t border-border-default pt-5">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
+              Your saved searches
+            </h3>
+            <Link
+              className="text-xs font-semibold text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+              href="/settings/saved-searches"
+            >
+              Manage saved searches
+            </Link>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {saved.map((savedSearch) => (
+              <li key={savedSearch.id}>
+                <Link
+                  className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-border-default bg-surface-2 px-4 py-2 text-sm text-foreground outline-none transition-colors hover:bg-surface-1 focus-visible:ring-2 focus-visible:ring-accent"
+                  href={savedSearchFiltersToHref(savedSearch.filters)}
+                >
+                  <span className="min-w-0 truncate font-medium">
+                    {savedSearch.name}
+                  </span>
+                  {savedSearch.alert_enabled ? (
+                    <span className="shrink-0 rounded-badge border border-success/30 bg-success/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.05em] text-success">
+                      Alerts on
+                    </span>
+                  ) : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </form>
   );

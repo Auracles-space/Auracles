@@ -5,7 +5,7 @@ import {
   ExploreSaveSearchAction,
   filtersFromExploreSearchParams,
 } from "@/components/modules/explore/save-search-action";
-import { createSavedSearch } from "@/lib/generated/sdk.gen";
+import { createSavedSearch, listSavedSearches } from "@/lib/generated/sdk.gen";
 
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
@@ -15,11 +15,18 @@ vi.mock("@/lib/auth/form-client", () => ({
 
 vi.mock("@/lib/generated/sdk.gen", () => ({
   createSavedSearch: vi.fn(),
+  listSavedSearches: vi.fn(),
 }));
 
 describe("ExploreSaveSearchAction", () => {
   beforeEach(() => {
     vi.mocked(createSavedSearch).mockReset();
+    vi.mocked(listSavedSearches).mockReset();
+    vi.mocked(listSavedSearches).mockResolvedValue({
+      data: { saved_searches: [] },
+      error: undefined,
+      response: { ok: true } as Response,
+    } as never);
   });
 
   it("builds saved-search filters from the current Explore query string", () => {
@@ -101,5 +108,51 @@ describe("ExploreSaveSearchAction", () => {
       });
     });
     expect(await screen.findByText(/saved as risk watch/i)).toBeInTheDocument();
+  });
+
+  it("lists the operator's saved searches so they can be re-run", async () => {
+    // Saved searches had no home but a nav item of their own; the list now
+    // sits with the button that creates it.
+    vi.mocked(listSavedSearches).mockResolvedValue({
+      data: {
+        saved_searches: [
+          {
+            alert_enabled: true,
+            filters: { q: "risk", sector: "healthcare" },
+            id: "search-1",
+            name: "Healthcare risk",
+          },
+        ],
+      },
+      error: undefined,
+      response: { ok: true } as Response,
+    } as never);
+
+    render(
+      <ExploreSaveSearchAction
+        filters={{ category: "playbook", q: "risk", sort: "newest" }}
+      />,
+    );
+
+    const link = await screen.findByRole("link", { name: /healthcare risk/i });
+    expect(link).toHaveAttribute("href", "/explore?q=risk&sector=healthcare");
+  });
+
+  it("offers a way to manage saved searches once any exist", async () => {
+    vi.mocked(listSavedSearches).mockResolvedValue({
+      data: {
+        saved_searches: [
+          { alert_enabled: false, filters: {}, id: "s1", name: "Everything" },
+        ],
+      },
+      error: undefined,
+      response: { ok: true } as Response,
+    } as never);
+
+    render(<ExploreSaveSearchAction filters={{ sort: "newest" }} />);
+
+    expect(
+      await screen.findByRole("link", { name: /manage saved searches/i }),
+    ).toHaveAttribute("href", "/settings/saved-searches");
   });
 });

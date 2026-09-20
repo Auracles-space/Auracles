@@ -31,21 +31,17 @@ describe("visibleNavLinks", () => {
     expect(visible.some((link) => link.href === "/projects")).toBe(true);
   });
 
-  it("hides saved searches from non-operators", () => {
-    // Saved searches calls an operator-only API; showing the link to admins
-    // or other roles bounces them into the onboarding redirect on the 403.
-    expect(visibleNavLinks(appLinks, ["admin"]).some(
-      (link) => link.href === "/settings/saved-searches",
-    )).toBe(false);
-    expect(visibleNavLinks(appLinks, ["contributor"]).some(
-      (link) => link.href === "/settings/saved-searches",
-    )).toBe(false);
-  });
-
-  it("shows saved searches to operators", () => {
-    expect(visibleNavLinks(appLinks, ["operator"]).some(
-      (link) => link.href === "/settings/saved-searches",
-    )).toBe(true);
+  it("keeps saved searches out of the nav for every role", () => {
+    // Saved searches are created on Explore and listed there beside the button
+    // that creates them; the settings page stays reachable from that list and
+    // from Settings, so it no longer earns a nav slot of its own.
+    for (const roles of [["operator"], ["contributor"], ["admin"]]) {
+      expect(
+        visibleNavLinks(appLinks, roles).some(
+          (link) => link.href === "/settings/saved-searches",
+        ),
+      ).toBe(false);
+    }
   });
 
   it("shows the Developer link for developer users", () => {
@@ -82,7 +78,6 @@ describe("visibleNavLinks order", () => {
       "Projects",
       "Attestations",
       "Organizations",
-      "Saved Searches",
       "Find Attestors",
       "Settings",
     ]);
