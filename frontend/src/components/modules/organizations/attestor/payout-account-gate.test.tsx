@@ -245,4 +245,41 @@ describe("PayoutAccountGate", () => {
     expect(await screen.findByText("Payout provider is unavailable.")).toBeInTheDocument();
     expect(screen.queryByText("An unexpected error occurred.")).not.toBeInTheDocument();
   });
+
+  it("manages a linked Stripe account without sending bank details", async () => {
+    // Wiring the click straight to the handler hands it the mouse event,
+    // which is truthy and would be read as bank details — sending a Paystack
+    // body with an undefined account number from the Stripe branch.
+    vi.mocked(onboardOrgPayoutAccount).mockResolvedValue({
+      data: {
+        onboarding_url: "https://connect.stripe.com/setup/xyz",
+        payout_account: { id: "acct-uuid-2" },
+        provider: "stripe",
+      },
+      error: undefined,
+    } as never);
+    vi.mocked(updateOrgAttestorApplication).mockResolvedValue({
+      data: {},
+      error: undefined,
+    } as never);
+    vi.stubGlobal("location", { href: "http://localhost/", assign: vi.fn() });
+
+    render(
+      <PayoutAccountGate
+        application={
+          { payout_account_id: "acct-uuid-2", status: "draft" } as never
+        }
+        onChange={vi.fn()}
+        orgId="org-1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /manage on stripe/i }));
+
+    await waitFor(() => expect(onboardOrgPayoutAccount).toHaveBeenCalled());
+    expect(onboardOrgPayoutAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ provider: "stripe" }),
+      }),
+    );
+  });
 });

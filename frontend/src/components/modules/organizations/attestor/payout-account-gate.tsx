@@ -175,7 +175,11 @@ export function PayoutAccountGate({
           <Button
             type="button"
             variant="secondary"
-            onClick={handleSetup}
+            // Called with no argument on purpose: passing the handler
+            // directly hands it the click event, which is truthy and would
+            // be read as bank details, sending a Paystack body from the
+            // Stripe branch.
+            onClick={() => void handleSetup()}
             disabled={loading}
             loading={loading}
           >
