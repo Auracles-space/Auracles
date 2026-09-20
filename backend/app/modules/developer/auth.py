@@ -140,7 +140,7 @@ async def _notify_rate_limit_threshold_once(
             f"{api_key.name} has used {count}/{api_key.rate_limit_per_min} "
             "requests in the current minute."
         ),
-        link="/developer/api-keys",
+        link="/dashboard/developer",
         payload={
             "api_key_id": str(api_key.id),
             "key_prefix": api_key.key_prefix,

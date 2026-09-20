@@ -23,9 +23,14 @@ def _attestation_link(attestation_id: UUID) -> str:
     return f"/attestations/{attestation_id}"
 
 
-def _attestor_onboarding_link() -> str:
-    """Return the dashboard route for Attestor onboarding prerequisites."""
-    return "/attestor/onboarding"
+def _attestor_onboarding_link(org_id: UUID) -> str:
+    """Return the org's Attestor tab, where the undertakings are signed.
+
+    Conflict-of-interest and confidentiality are steps of the org attestor
+    application, not a personal surface: the standalone `/attestor/onboarding`
+    page was replaced by this tab and the old link 404ed.
+    """
+    return f"/dashboard/organizations/{org_id}/attestor"
 
 
 def _workspace_link(org_id: UUID, attestation_id: UUID) -> str:
@@ -526,7 +531,7 @@ def notify_org_attestor_warning(
                 "trigger a review."
             ),
             payload={"reason": reason, "org_id": str(org_id)},
-            link=_attestor_onboarding_link(),
+            link=_attestor_onboarding_link(org_id),
             dedupe_key=f"org_attestor_warning_issued:{org_id}:{recipient_id}:{reason}",
         )
     except Exception as exc:
@@ -605,8 +610,14 @@ def notify_withdrawn(
     )
 
 
-def notify_coi_expiring(user_id: UUID, *, expires_at: datetime) -> bool:
+def notify_coi_expiring(user_id: UUID, *, org_id: UUID, expires_at: datetime) -> bool:
     """Notify an Attestor that their CoI declaration expires within 30 days.
+
+    Args:
+        user_id: An owner or admin of the attestor organization.
+        org_id: The organization whose declaration is expiring; the reminder
+            links to its Attestor tab, where the undertakings are re-signed.
+        expires_at: When the declaration expires.
 
     Returns:
         True if the reminder was enqueued; False if dispatch failed. The caller
@@ -622,7 +633,7 @@ def notify_coi_expiring(user_id: UUID, *, expires_at: datetime) -> bool:
                 "to keep receiving attestation requests."
             ),
             payload={"expires_at": expires_at.isoformat()},
-            link=_attestor_onboarding_link(),
+            link=_attestor_onboarding_link(org_id),
             dedupe_key=f"attestor_coi_expiring:{user_id}:{expires_at.isoformat()}",
         )
     except Exception as exc:
@@ -635,8 +646,14 @@ def notify_coi_expiring(user_id: UUID, *, expires_at: datetime) -> bool:
     return True
 
 
-def notify_coi_lapsed(user_id: UUID, *, expires_at: datetime) -> bool:
+def notify_coi_lapsed(user_id: UUID, *, org_id: UUID, expires_at: datetime) -> bool:
     """Notify an Attestor that their CoI declaration has lapsed.
+
+    Args:
+        user_id: An owner or admin of the attestor organization.
+        org_id: The organization whose declaration is expiring; the reminder
+            links to its Attestor tab, where the undertakings are re-signed.
+        expires_at: When the declaration expires.
 
     Returns:
         True if the reminder was enqueued; False if dispatch failed. The caller
@@ -652,7 +669,7 @@ def notify_coi_lapsed(user_id: UUID, *, expires_at: datetime) -> bool:
                 "to resume receiving attestation requests."
             ),
             payload={"expires_at": expires_at.isoformat()},
-            link=_attestor_onboarding_link(),
+            link=_attestor_onboarding_link(org_id),
             dedupe_key=f"attestor_coi_lapsed:{user_id}:{expires_at.isoformat()}",
         )
     except Exception as exc:

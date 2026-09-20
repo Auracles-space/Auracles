@@ -773,6 +773,7 @@ async def send_coi_resign_reminders(
             dispatched = all(
                 attestation_notifications.notify_coi_lapsed(
                     recipient,
+                    org_id=profile.org_id,
                     expires_at=expires_at,
                 )
                 for recipient in recipients
@@ -781,6 +782,7 @@ async def send_coi_resign_reminders(
             dispatched = all(
                 attestation_notifications.notify_coi_expiring(
                     recipient,
+                    org_id=profile.org_id,
                     expires_at=expires_at,
                 )
                 for recipient in recipients

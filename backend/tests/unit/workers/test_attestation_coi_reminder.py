@@ -85,10 +85,14 @@ async def db_session(clean_state) -> AsyncIterator:
         yield session
 
 
-async def _attestor_with_expiry(expires_at: datetime, signed_at: datetime) -> UUID:
-    """Create an attestor org with a specific CoI expiry cycle; return owner id.
+async def _attestor_with_expiry(
+    expires_at: datetime, signed_at: datetime
+) -> tuple[UUID, UUID]:
+    """Create an attestor org with a specific CoI expiry cycle.
 
-    The owner is the reminder recipient (org owner/admin fanout).
+    Returns:
+        The owner id (the reminder recipient, via org owner/admin fanout) and
+        the org id the reminder must link to.
     """
     async with async_session_factory() as session:
         async with session.begin():
@@ -124,20 +128,22 @@ async def _attestor_with_expiry(expires_at: datetime, signed_at: datetime) -> UU
                     coi_expires_at=expires_at,
                 )
             )
-            return user.id
+            return user.id, org.id
 
 
 @pytest.fixture(autouse=True)
-def _stub_notifications(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, UUID]]:
+def _stub_notifications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[tuple[str, UUID, UUID]]:
     """Capture reminder notifications instead of dispatching real fanout."""
-    sent: list[tuple[str, UUID]] = []
+    sent: list[tuple[str, UUID, UUID]] = []
 
-    def _expiring(user_id: UUID, *, expires_at: datetime) -> bool:
-        sent.append(("expiring", user_id))
+    def _expiring(user_id: UUID, *, org_id: UUID, expires_at: datetime) -> bool:
+        sent.append(("expiring", user_id, org_id))
         return True
 
-    def _lapsed(user_id: UUID, *, expires_at: datetime) -> bool:
-        sent.append(("lapsed", user_id))
+    def _lapsed(user_id: UUID, *, org_id: UUID, expires_at: datetime) -> bool:
+        sent.append(("lapsed", user_id, org_id))
         return True
 
     monkeypatch.setattr(
@@ -152,7 +158,7 @@ def _stub_notifications(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, UUID
 async def test_reminder_within_30_days(db_session, _stub_notifications) -> None:
     """An active attestor inside the 30-day window gets one expiring reminder."""
     now = datetime.now(UTC)
-    user_id = await _attestor_with_expiry(
+    user_id, org_id = await _attestor_with_expiry(
         now + timedelta(days=10),
         now - timedelta(days=355),
     )
@@ -160,7 +166,7 @@ async def test_reminder_within_30_days(db_session, _stub_notifications) -> None:
     count = await matching_service.send_coi_resign_reminders(db_session, now=now)
 
     assert count == 1
-    assert ("expiring", user_id) in _stub_notifications
+    assert ("expiring", user_id, org_id) in _stub_notifications
     reminder_sent_at = await db_session.scalar(_reminder_query(user_id))
     assert reminder_sent_at is not None
 
@@ -168,7 +174,7 @@ async def test_reminder_within_30_days(db_session, _stub_notifications) -> None:
 async def test_reminder_lapsed(db_session, _stub_notifications) -> None:
     """An expired CoI declaration gets the lapsed reminder variant."""
     now = datetime.now(UTC)
-    user_id = await _attestor_with_expiry(
+    user_id, org_id = await _attestor_with_expiry(
         now - timedelta(days=2),
         now - timedelta(days=367),
     )
@@ -176,7 +182,7 @@ async def test_reminder_lapsed(db_session, _stub_notifications) -> None:
     count = await matching_service.send_coi_resign_reminders(db_session, now=now)
 
     assert count == 1
-    assert ("lapsed", user_id) in _stub_notifications
+    assert ("lapsed", user_id, org_id) in _stub_notifications
 
 
 async def test_reminder_idempotent_same_cycle(db_session, _stub_notifications) -> None:
@@ -207,14 +213,14 @@ async def test_failed_dispatch_does_not_mark_reminded(
     reminded and skipping them until their next signing cycle.
     """
     now = datetime.now(UTC)
-    user_id = await _attestor_with_expiry(
+    user_id, _org_id = await _attestor_with_expiry(
         now + timedelta(days=10),
         now - timedelta(days=355),
     )
     monkeypatch.setattr(
         matching_service.attestation_notifications,
         "notify_coi_expiring",
-        lambda user_id, *, expires_at: False,
+        lambda user_id, *, org_id, expires_at: False,
     )
 
     count = await matching_service.send_coi_resign_reminders(db_session, now=now)

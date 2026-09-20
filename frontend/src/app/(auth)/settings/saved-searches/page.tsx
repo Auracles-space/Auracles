@@ -3,10 +3,15 @@
  *
  * Hosts Operator controls for saved Explore searches and alert preferences.
  */
+import { Suspense } from "react";
+
 import { SavedSearchesPanel } from "@/components/modules/settings/saved-searches-panel";
 
 /**
  * Render Operator saved-search settings.
+ *
+ * Suspense satisfies `useSearchParams` in the panel, which reads the
+ * `highlight` an alert link carries.
  */
 export default function SavedSearchesSettingsPage() {
   return (
@@ -23,7 +28,9 @@ export default function SavedSearchesSettingsPage() {
             Manage reusable Explore filters and marketplace alert delivery.
           </p>
         </header>
-        <SavedSearchesPanel />
+        <Suspense fallback={null}>
+          <SavedSearchesPanel />
+        </Suspense>
       </div>
     </main>
   );

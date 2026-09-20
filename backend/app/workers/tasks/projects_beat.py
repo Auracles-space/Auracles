@@ -445,7 +445,7 @@ async def _escalate_disputes() -> int:
                 title="Project dispute needs review",
                 body="A project dispute has escalated to admin review.",
                 payload={"dispute_id": dispute_id},
-                link="/admin/projects/disputes",
+                link="/admin/disputes",
                 dedupe_key=f"dispute_escalated:{dispute_id}:{user_id}",
             )
     return escalated_count

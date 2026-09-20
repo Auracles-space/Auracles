@@ -5,10 +5,15 @@
  *
  * Lists owned Explore saved searches and provides client-side controls for
  * rename, alert toggle, deletion, and opening the current filter snapshot.
+ *
+ * A saved-search alert links here with `?highlight=<id>`, since there is no
+ * per-search page: the named row is outlined and scrolled to so the recipient
+ * sees which search matched rather than hunting through their list.
  */
 import { BellIcon, TrashIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import {
   configureBrowserClient,
@@ -71,6 +76,19 @@ export function SavedSearchesPanel() {
   const [pending, setPending] = useState<PendingAction>(null);
   const [savedSearches, setSavedSearches] = useState<SavedSearchResponse[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
+  const highlightedId = useSearchParams().get("highlight");
+  const highlightedRef = useRef<HTMLElement | null>(null);
+
+  // Scroll once the row exists. A search that was deleted, or a link opened by
+  // someone who does not own it, simply leaves nothing to scroll to. The
+  // feature-check is not belt-and-braces: jsdom has no scrollIntoView, and an
+  // unguarded call throws out of the effect and unmounts the whole panel.
+  useEffect(() => {
+    const element = highlightedRef.current;
+    if (typeof element?.scrollIntoView === "function") {
+      element.scrollIntoView({ block: "center" });
+    }
+  }, [highlightedId, savedSearches]);
 
   useEffect(() => {
     let mounted = true;
@@ -213,11 +231,19 @@ export function SavedSearchesPanel() {
               currentName.trim() !== "" &&
               currentName.trim() !== savedSearch.name.trim();
 
+            const isHighlighted = savedSearch.id === highlightedId;
+
             return (
               <article
+                aria-current={isHighlighted ? "true" : undefined}
                 aria-label={savedSearch.name}
-                className="group rounded-2xl border border-border-default bg-surface-1 p-6 shadow-bento transition-all duration-300 hover:border-accent/30 hover:shadow-card"
+                className={`group rounded-2xl border bg-surface-1 p-6 shadow-bento transition-all duration-300 hover:shadow-card ${
+                  isHighlighted
+                    ? "border-accent ring-1 ring-accent"
+                    : "border-border-default hover:border-accent/30"
+                }`}
                 key={savedSearch.id}
+                ref={isHighlighted ? highlightedRef : undefined}
               >
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                   {/* Left Column - Input and Filter summary */}

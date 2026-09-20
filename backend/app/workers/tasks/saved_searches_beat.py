@@ -38,6 +38,16 @@ def _framework_link(framework_id: UUID) -> str:
     return f"/explore/{framework_id}"
 
 
+def _saved_search_link(saved_search_id: UUID) -> str:
+    """Return the settings link that opens on one saved search.
+
+    There is no per-search detail page, so the link addresses the list and
+    names the search in the query string; the panel highlights that row. It
+    used to address `/settings/saved-searches/{id}`, which 404ed.
+    """
+    return f"/settings/saved-searches?highlight={saved_search_id}"
+
+
 def _cursor_predicate(saved_search: SavedSearch) -> Any:
     """Return the published_at/id cursor predicate for one saved search."""
     if (
@@ -145,7 +155,7 @@ async def _send_saved_search_alert(
             notification_type="saved_search_alert",
             title=f"{len(matches)} new saved-search match{title_suffix}",
             body=f"New Frameworks match your saved search: {saved_search.name}.",
-            link=f"/settings/saved-searches/{saved_search.id}",
+            link=_saved_search_link(saved_search.id),
             payload={
                 "saved_search_id": str(saved_search.id),
                 "matches": match_payload,
@@ -157,7 +167,7 @@ async def _send_saved_search_alert(
             email=user.email,
             saved_search_name=saved_search.name,
             matches=match_payload,
-            link=f"/settings/saved-searches/{saved_search.id}",
+            link=_saved_search_link(saved_search.id),
         )
     for framework in matches:
         db.add(

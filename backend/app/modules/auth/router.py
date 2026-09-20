@@ -250,11 +250,14 @@ def _role_landing_path(roles: list[str]) -> str:
     Sending users to a role landing (rather than the public home) means they
     arrive inside the authenticated shell, which restores the in-memory access
     token from the refresh cookie — so the header reflects the session.
+
+    There is deliberately no attestor branch: attestors work through their
+    organization's Attestor tab, so the frontend has no `/attestor` page and
+    they fall through to `/settings/identity` like any other roleless user.
+    This copy sent them to `/attestor/assignments`, which 404ed.
     """
     if "admin" in roles:
         return "/admin"
-    if "attestor" in roles:
-        return "/attestor/assignments"
     if "operator" in roles:
         return "/explore"
     if "contributor" in roles:
