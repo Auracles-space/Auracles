@@ -26,7 +26,6 @@ export const appLinks: AppNavigationLink[] = [
   { href: "/attestations", label: "Attestations", roles: ["contributor", "operator"] },
   { href: "/dashboard/financials", label: "Financials", roles: ["contributor"] },
   { href: "/dashboard/organizations", label: "Organizations", roles: null },
-  { href: "/dashboard/collections", label: "Collections", roles: ["contributor"] },
   { href: "/attestors", label: "Find Attestors", roles: null },
   {
     href: "/dashboard/developer",

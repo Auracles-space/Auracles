@@ -31,6 +31,18 @@ describe("visibleNavLinks", () => {
     expect(visible.some((link) => link.href === "/projects")).toBe(true);
   });
 
+  it("keeps collections out of the nav for every role", () => {
+    // A Collection is a bundle of Frameworks, so the builder is a tab of the
+    // Frameworks workspace; /dashboard/collections redirects to that tab.
+    for (const roles of [["contributor"], ["operator"], ["admin"]]) {
+      expect(
+        visibleNavLinks(appLinks, roles).some(
+          (link) => link.href === "/dashboard/collections",
+        ),
+      ).toBe(false);
+    }
+  });
+
   it("keeps saved searches out of the nav for every role", () => {
     // Saved searches are created on Explore and listed there beside the button
     // that creates them; the settings page stays reachable from that list and
@@ -64,7 +76,6 @@ describe("visibleNavLinks order", () => {
       "Attestations",
       "Financials",
       "Organizations",
-      "Collections",
       "Find Attestors",
       "Developer",
       "Settings",
