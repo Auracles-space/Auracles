@@ -89,7 +89,7 @@ def generate_annual_org_earnings_summary(
                 title=f"Your {year} earnings summary is ready",
                 body=f"Your organization's {year} attestation earnings "
                 "summary is ready.",
-                link="/orgs",
+                link=f"/dashboard/organizations/{org_id}/financials",
                 dedupe_key=f"attestation_annual_summary:org:{org_id}:{year}",
             )
     except Exception as exc:

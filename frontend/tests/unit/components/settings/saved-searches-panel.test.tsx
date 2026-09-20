@@ -8,6 +8,15 @@ import {
   updateSavedSearch,
 } from "@/lib/generated/sdk.gen";
 
+// The panel reads `?highlight=<id>` from a saved-search alert link, so every
+// render needs search params. Held in a box so a test can set them before
+// rendering without re-mocking the module.
+const searchParams = { value: new URLSearchParams() };
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => searchParams.value,
+}));
+
 vi.mock("@/lib/auth/form-client", () => ({
   configureBrowserClient: vi.fn(),
   describeGeneratedError: () => "The request could not be completed.",
@@ -37,11 +46,19 @@ const savedSearch = {
   user_id: "operator-1",
 };
 
+const otherSavedSearch = {
+  ...savedSearch,
+  filters: { category: "playbook", q: "iso", sort: "newest" },
+  id: "search-2",
+  name: "ISO 27001 controls",
+};
+
 describe("SavedSearchesPanel", () => {
   beforeEach(() => {
     vi.mocked(deleteSavedSearch).mockReset();
     vi.mocked(listSavedSearches).mockReset();
     vi.mocked(updateSavedSearch).mockReset();
+    searchParams.value = new URLSearchParams();
   });
 
   it("loads saved searches and can toggle alerts", async () => {
@@ -122,5 +139,50 @@ describe("SavedSearchesPanel", () => {
         path: { saved_search_id: "search-1" },
       });
     });
+  });
+  it("marks the saved search an alert link named", async () => {
+    searchParams.value = new URLSearchParams("highlight=search-2");
+    vi.mocked(listSavedSearches).mockResolvedValue({
+      data: { saved_searches: [savedSearch, otherSavedSearch] },
+      error: undefined,
+      response: { ok: true } as Response,
+    } as never);
+
+    render(<SavedSearchesPanel />);
+
+    const named = await screen.findByLabelText("ISO 27001 controls");
+    expect(named).toHaveAttribute("aria-current", "true");
+    expect(screen.getByLabelText("Risk playbooks")).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("marks nothing when the named saved search no longer exists", async () => {
+    searchParams.value = new URLSearchParams("highlight=deleted-search");
+    vi.mocked(listSavedSearches).mockResolvedValue({
+      data: { saved_searches: [savedSearch] },
+      error: undefined,
+      response: { ok: true } as Response,
+    } as never);
+
+    render(<SavedSearchesPanel />);
+
+    expect(await screen.findByLabelText("Risk playbooks")).not.toHaveAttribute(
+      "aria-current",
+    );
+  });
+
+  it("marks nothing when the panel is opened without an alert link", async () => {
+    vi.mocked(listSavedSearches).mockResolvedValue({
+      data: { saved_searches: [savedSearch] },
+      error: undefined,
+      response: { ok: true } as Response,
+    } as never);
+
+    render(<SavedSearchesPanel />);
+
+    expect(await screen.findByLabelText("Risk playbooks")).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 });

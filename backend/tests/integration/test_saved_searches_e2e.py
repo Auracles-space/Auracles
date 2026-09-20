@@ -415,7 +415,7 @@ async def test_saved_search_alert_flow_sends_digest_and_in_app_once(
     assert saved_search_e2e_context["digest_task"].calls == [
         {
             "email": "saved-e2e-operator@auracles.space",
-            "link": f"/settings/saved-searches/{saved.json()['id']}",
+            "link": f"/settings/saved-searches?highlight={saved.json()['id']}",
             "matches": [
                 {
                     "framework_id": framework_id,

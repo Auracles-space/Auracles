@@ -390,7 +390,7 @@ def test_summary_generation_is_idempotent_for_key_and_notification(
     email_task = annual_summary_context["email_task"]
     assert isinstance(email_task, FakeNotificationEmailTask)
     assert len(email_task.calls) == 1
-    assert email_task.calls[0]["link"] == "/orgs"
+    assert email_task.calls[0]["link"] == f"/dashboard/organizations/{org}/financials"
 
     with session_factory() as session:
         notifications = session.query(Notification).filter(
