@@ -31,6 +31,16 @@ describe("visibleNavLinks", () => {
     expect(visible.some((link) => link.href === "/projects")).toBe(true);
   });
 
+  it("keeps the attestor directory out of the nav for every role", () => {
+    // Requestors reach it from the attestation workspace, where they are
+    // choosing a verifier. It was shown to every role, attestors included.
+    for (const roles of [["contributor"], ["operator"], ["attestor"], ["admin"]]) {
+      expect(
+        visibleNavLinks(appLinks, roles).some((link) => link.href === "/attestors"),
+      ).toBe(false);
+    }
+  });
+
   it("keeps collections out of the nav for every role", () => {
     // A Collection is a bundle of Frameworks, so the builder is a tab of the
     // Frameworks workspace; /dashboard/collections redirects to that tab.
@@ -76,7 +86,6 @@ describe("visibleNavLinks order", () => {
       "Attestations",
       "Financials",
       "Organizations",
-      "Find Attestors",
       "Developer",
       "Settings",
     ]);
@@ -89,7 +98,6 @@ describe("visibleNavLinks order", () => {
       "Projects",
       "Attestations",
       "Organizations",
-      "Find Attestors",
       "Settings",
     ]);
   });

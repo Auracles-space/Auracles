@@ -502,3 +502,17 @@ describe("RequestorPanel prefilled target", () => {
     });
   });
 });
+
+describe("RequestorPanel attestor directory", () => {
+  it("offers the attestor directory where a request is made", async () => {
+    // "Find Attestors" was a nav item shown to every role, including attestors
+    // themselves. The people who want it are requestors, at the moment they
+    // are choosing who should verify their work.
+    render(<RequestorPanel />);
+
+    const link = await screen.findByRole("link", {
+      name: /browse the attestor directory/i,
+    });
+    expect(link).toHaveAttribute("href", "/attestors");
+  });
+});
