@@ -9,8 +9,14 @@
  * with that framework pinned, so the owner-consent path for a framework the
  * requestor does not own is reachable at all.
  *
+ * The attestor directory is linked from here rather than from the global nav:
+ * requestors are the people who need it, and they need it while choosing who
+ * should verify their work. The `/attestors` page itself is public and
+ * unchanged, so its SEO entry point survives.
+ *
  * Maps to: docs/superpowers/specs/2026-09-14-attestation-request-to-report-design.md §2.
  */
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -236,6 +242,19 @@ export function RequestorPanel() {
         summary="Request independent verification, inspect reports, accept outcomes, or dispute within the open window."
       />
       <ErrorMessage message={error} />
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm leading-6 text-foreground-muted">
+          Not sure who should verify this? Every organization authorized to
+          attest is listed with its sectors and jurisdictions.
+        </p>
+        <Link
+          className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-5 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+          href="/attestors"
+        >
+          Browse the attestor directory
+        </Link>
+      </div>
 
       <AttestationRequestForm
         defaultOpen={Boolean(target) || attestations.length === 0}
