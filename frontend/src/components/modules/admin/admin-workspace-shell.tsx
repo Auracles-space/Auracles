@@ -14,13 +14,7 @@ import {
   configureBrowserClient,
   getAccessTokenHeaders,
 } from "@/lib/auth/form-client";
-import {
-  adminListOrgsV1AdminOrgsGet,
-  listAdminAttestationDisputes,
-  listAdminAttestations,
-  listAdminProjectDisputes,
-  listOrgAttestorApplicationsForAdmin,
-} from "@/lib/generated/sdk.gen";
+import { loadAdminReviewCounts } from "@/components/modules/admin/admin-review-counts";
 import {
   NEEDS_ADMIN_CHANGED_EVENT,
   ORG_VERIFICATION_CHANGED_EVENT,
@@ -46,76 +40,16 @@ type AdminWorkspaceShellProps = {
  */
 export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
   const pathname = usePathname() ?? "";
-  const [needsAdminCount, setNeedsAdminCount] = useState(0);
-  const [attestorCount, setAttestorCount] = useState(0);
-  const [disputeCount, setDisputeCount] = useState(0);
-  const [pendingOrgCount, setPendingOrgCount] = useState(0);
+  const [badgeCounts, setBadgeCounts] = useState<Record<string, number>>({});
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   const refreshCounts = useCallback(() => {
-    async function loadNeedsAdminCount() {
-      configureBrowserClient();
-      // The count is a badge, not the page. A failed request leaves it at zero
-      // rather than rejecting: this shell wraps every admin route, so an
-      // uncaught rejection here lands on screens unrelated to attestations.
-      let result;
-      try {
-        result = await listAdminAttestations({
-          headers: getAccessTokenHeaders(),
-          query: { status: "needs_admin" },
-        });
-      } catch {
-        return;
-      }
-      if (result.response.ok && result.data) {
-        setNeedsAdminCount(result.data.attestations.length);
-      }
-    }
-    async function loadTrustCounts() {
-      configureBrowserClient();
-      const headers = getAccessTokenHeaders();
-      try {
-        const [applications, attestationDisputes, projectDisputes] = await Promise.all([
-          listOrgAttestorApplicationsForAdmin({ headers, query: { status: "submitted" } }),
-          listAdminAttestationDisputes({ headers, query: { status: "active" } }),
-          listAdminProjectDisputes({ headers }),
-        ]);
-        if (applications.response.ok && applications.data) {
-          setAttestorCount(applications.data.applications.length);
-        }
-        const open =
-          (attestationDisputes.response.ok && attestationDisputes.data
-            ? attestationDisputes.data.disputes.length
-            : 0) +
-          (projectDisputes.response.ok && projectDisputes.data
-            ? projectDisputes.data.disputes.filter((dispute: { status: string }) => dispute.status !== "resolved")
-                .length
-            : 0);
-        setDisputeCount(open);
-      } catch {
-        return;
-      }
-    }
-    async function loadPendingOrgCount() {
-      configureBrowserClient();
-      // One row is enough: the badge reads the total, and a failure leaves it
-      // at zero for the same reason as the needs-admin count above.
-      try {
-        const result = await adminListOrgsV1AdminOrgsGet({
-          headers: getAccessTokenHeaders(),
-          query: { kyb_status: "pending", page: 1, page_size: 1 },
-        });
-        if (result.response.ok && result.data) {
-          setPendingOrgCount(result.data.total);
-        }
-      } catch {
-        return;
-      }
-    }
-    void loadNeedsAdminCount();
-    void loadTrustCounts();
-    void loadPendingOrgCount();
+    // Counts are badges, not pages: a failure leaves the badge at zero rather
+    // than rejecting, because this shell wraps every admin route and an
+    // uncaught rejection would land on a screen unrelated to the failed queue.
+    configureBrowserClient();
+    void loadAdminReviewCounts(getAccessTokenHeaders()).then(setBadgeCounts);
   }, []);
 
   useEffect(() => {
@@ -135,13 +69,6 @@ export function AdminWorkspaceShell({ children }: AdminWorkspaceShellProps) {
       window.removeEventListener(ORG_VERIFICATION_CHANGED_EVENT, onOrgVerificationChanged);
     };
   }, [refreshCounts]);
-
-  const badgeCounts: Record<string, number> = {
-    "/admin/attestations": needsAdminCount,
-    "/admin/attestors": attestorCount,
-    "/admin/disputes": disputeCount,
-    "/admin/organizations": pendingOrgCount,
-  };
 
   const attentionTotal = Object.values(badgeCounts).reduce((sum, count) => sum + count, 0);
   const currentLabel = currentAdminPageLabel(pathname);
