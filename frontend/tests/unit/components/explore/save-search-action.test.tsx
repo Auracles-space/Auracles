@@ -134,8 +134,52 @@ describe("ExploreSaveSearchAction", () => {
       />,
     );
 
-    const link = await screen.findByRole("link", { name: /healthcare risk/i });
+    const toggle = await screen.findByRole("button", {
+      name: /saved searches \(1\)/i,
+    });
+    fireEvent.click(toggle);
+
+    const link = screen.getByRole("link", { name: /healthcare risk/i });
     expect(link).toHaveAttribute("href", "/explore?q=risk&sector=healthcare");
+  });
+
+  it("keeps the list closed until asked, so it cannot push the catalog down", async () => {
+    // An operator with a dozen saved searches had a dozen rows above the
+    // results before this was a disclosure.
+    vi.mocked(listSavedSearches).mockResolvedValue({
+      data: {
+        saved_searches: Array.from({ length: 12 }, (_, index) => ({
+          alert_enabled: false,
+          filters: { q: `query-${index}` },
+          id: `search-${index}`,
+          name: `Saved ${index}`,
+        })),
+      },
+      error: undefined,
+      response: { ok: true } as Response,
+    } as never);
+
+    render(<ExploreSaveSearchAction filters={{ sort: "newest" }} />);
+
+    const toggle = await screen.findByRole("button", {
+      name: /saved searches \(12\)/i,
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "Saved 0" })).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "Saved 0" })).toBeInTheDocument();
+  });
+
+  it("shows no toggle when nothing has been saved yet", async () => {
+    render(<ExploreSaveSearchAction filters={{ sort: "newest" }} />);
+
+    await screen.findByRole("button", { name: /save search/i });
+    expect(
+      screen.queryByRole("button", { name: /saved searches/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers a way to manage saved searches once any exist", async () => {
@@ -151,8 +195,12 @@ describe("ExploreSaveSearchAction", () => {
 
     render(<ExploreSaveSearchAction filters={{ sort: "newest" }} />);
 
+    fireEvent.click(
+      await screen.findByRole("button", { name: /saved searches \(1\)/i }),
+    );
+
     expect(
-      await screen.findByRole("link", { name: /manage saved searches/i }),
+      screen.getByRole("link", { name: /manage saved searches/i }),
     ).toHaveAttribute("href", "/settings/saved-searches");
   });
 });

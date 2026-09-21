@@ -8,7 +8,7 @@
  * saved. The list lives here rather than behind a nav item of its own: saving
  * happens on Explore, so managing what you saved belongs next to it.
  */
-import { BookmarkIcon } from "@radix-ui/react-icons";
+import { BookmarkIcon, ChevronDownIcon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -47,6 +47,10 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
   const [status, setStatus] = useState<"error" | "success" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState<SavedSearchResponse[]>([]);
+  // Closed by default. This sits above the catalog, so an operator with a
+  // dozen saved searches would otherwise push the frameworks off the screen
+  // they came to Explore to read.
+  const [listOpen, setListOpen] = useState(false);
   const canSubmit = isNonEmpty(name);
 
   /** Load the operator's saved searches; a failure just leaves the list empty. */
@@ -157,10 +161,27 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
         </p>
       ) : null}
       {saved.length > 0 ? (
-        <div className="mt-5 border-t border-border-default pt-5">
+        <div className="mt-5 border-t border-border-default pt-4">
+          <button
+            aria-controls="explore-saved-search-list"
+            aria-expanded={listOpen}
+            className="inline-flex min-h-12 w-full items-center justify-between gap-3 rounded-xl px-1 text-sm font-semibold text-foreground outline-none transition-colors hover:text-accent focus-visible:ring-2 focus-visible:ring-accent sm:w-auto"
+            onClick={() => setListOpen((open) => !open)}
+            type="button"
+          >
+            <span>Saved searches ({saved.length})</span>
+            <ChevronDownIcon
+              aria-hidden="true"
+              className={`h-4 w-4 transition-transform ${listOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+        </div>
+      ) : null}
+      {saved.length > 0 && listOpen ? (
+        <div className="mt-3" id="explore-saved-search-list">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-              Your saved searches
+              Run one again
             </h3>
             <Link
               className="text-xs font-semibold text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
@@ -169,7 +190,8 @@ export function ExploreSaveSearchAction({ filters }: ExploreSaveSearchActionProp
               Manage saved searches
             </Link>
           </div>
-          <ul className="flex flex-col gap-2">
+          {/* Capped and scrollable: the count is unbounded, the space is not. */}
+          <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">
             {saved.map((savedSearch) => (
               <li key={savedSearch.id}>
                 <Link
