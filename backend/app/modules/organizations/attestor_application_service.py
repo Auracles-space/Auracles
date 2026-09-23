@@ -1530,6 +1530,97 @@ async def admin_reject(
     return application
 
 
+async def withdraw_capability(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    actor_id: UUID,
+) -> None:
+    """Stand the org Attestor capability down at its owner's request.
+
+    The attestor half of the owner-initiated wind-down. Work in flight is
+    released exactly as a revocation releases it — open offers go to the next
+    eligible org and undelivered reviews to admins
+    (``matching_service.release_revoked_org_work``). Refusing while work is
+    open would rebuild the dead end this exists to remove: the org could never
+    withdraw, never close, and its sole owner could never delete their
+    account. No money moves either way; the fee is credited at escrow release.
+
+    Writes `withdrawn` rather than `revoked` so the audit trail separates the
+    owner's choice from an admin's enforcement, and so the org may re-apply
+    without an appeal.
+
+    The caller enforces owner role and step-up.
+
+    Args:
+        org_id: Organization standing the capability down.
+        actor_id: Owner making the change, for the audit row.
+
+    Raises:
+        HTTPException(404): No attestor capability exists for the org.
+        HTTPException(409): The capability is already inactive.
+    """
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        capability = await db.scalar(
+            select(OrgCapability)
+            .where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.capability == "attestor",
+            )
+            .with_for_update()
+        )
+        if capability is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Org attestor capability not found.",
+            )
+        if capability.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The attestor capability is not active.",
+            )
+        capability.status = "withdrawn"
+        # No reason text: an admin's reason explains an action taken against
+        # the org, which is not what this is.
+        capability.status_reason = None
+
+        profile = await db.scalar(
+            select(OrgAttestorProfile)
+            .where(OrgAttestorProfile.org_id == org_id)
+            .with_for_update()
+        )
+        if profile is not None:
+            profile.active = False
+
+        await db.flush()
+        withdrawn_work = await matching_service.release_revoked_org_work(
+            db, org_id=org_id
+        )
+
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_attestor_capability_withdrawn",
+            target_type="organization",
+            target_id=org_id,
+            metadata={"status": "withdrawn"},
+        )
+
+    # Notify before the role sync, which runs its own transactions and would
+    # expire the attestations and offers these notices read.
+    await matching_service.notify_revoked_org_work(db, withdrawn_work)
+    await _sync_org_member_roles(db, org_id)
+    logger.bind(
+        module="organizations",
+        action="org_attestor_withdrawn",
+        user_id=str(actor_id),
+        org_id=str(org_id),
+    ).info("org_attestor_capability_withdrawn")
+
+
 async def admin_set_capability_status(
     db: AsyncSession,
     *,

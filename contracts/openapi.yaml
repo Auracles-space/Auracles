@@ -26286,6 +26286,37 @@ paths:
       summary: Create a tax-document upload session
       tags:
       - Organizations
+  /v1/orgs/{org_id}/attestor-capability/withdraw:
+    post:
+      description: "Stand the organization's attestor capability down as its owner,\
+        \ so the organization can be closed. Open offers are withdrawn and re-offered\
+        \ to the next eligible organization, and undelivered reviews go to admins to\
+        \ reassign \u2014 the same release a revocation performs, and no money moves.\
+        \ The organization may re-apply later. Refused with 409 when the capability\
+        \ is not active. Org owner only, step-up required."
+      operationId: withdraw_attestor_capability_v1_orgs__org_id__attestor_capability_withdraw_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Withdraw attestor capability
+      tags:
+      - Organizations
   /v1/orgs/{org_id}/attestor-trial:
     get:
       description: Return the nominated member's active calibration trial, including
@@ -26384,6 +26415,36 @@ paths:
       security:
       - HTTPBearer: []
       summary: Activate contributor capability
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/contributor-capability/withdraw:
+    post:
+      description: "Stand the organization's contributor capability down as its owner,\
+        \ so the organization can be closed. The capability becomes `withdrawn`, its\
+        \ frameworks leave Explore, and members lose the derived contributor role. Re-activating\
+        \ restores it \u2014 this is not a revocation and needs no admin. Refused with\
+        \ 409 when the capability is not active. Org owner only, step-up required."
+      operationId: withdraw_contributor_capability_v1_orgs__org_id__contributor_capability_withdraw_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Withdraw contributor capability
       tags:
       - Organizations
   /v1/orgs/{org_id}/deliveries:
@@ -28758,6 +28819,37 @@ paths:
       security:
       - HTTPBearer: []
       summary: Activate operator capability
+      tags:
+      - Organizations
+  /v1/orgs/{org_id}/operator-capability/withdraw:
+    post:
+      description: "Stand the organization's operator capability down as its owner,\
+        \ so the organization can be closed. The capability becomes `withdrawn` and\
+        \ members lose the derived operator role; licences already bought are untouched.\
+        \ Re-activating restores it \u2014 this is not a revocation and needs no admin.\
+        \ Refused with 409 when the capability is not active. Org owner only, step-up\
+        \ required."
+      operationId: withdraw_operator_capability_v1_orgs__org_id__operator_capability_withdraw_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Withdraw operator capability
       tags:
       - Organizations
   /v1/orgs/{org_id}/projects:

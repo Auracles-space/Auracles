@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi import HTTPException
 from sqlalchemy import create_engine, delete, func, select, update
 
 from app.core.database import Base, async_session_factory, engine
@@ -336,3 +337,73 @@ async def test_admin_status_changes_only_operator_derived_roles(
     operator_roles = await _operator_roles(member.id)
     assert len(operator_roles) == 1
     assert operator_roles[0].source == "self"
+
+
+async def test_owner_withdraws_operator_capability(
+    migrated_database: None,
+    operator_capability_state: None,
+) -> None:
+    """An owner can stand the operator capability down themselves.
+
+    The operator half of the wind-down that lets an owner close their own
+    organization. Unlike contributor and attestor there is no profile row to
+    deactivate, so the capability status and the derived roles are the whole
+    of it.
+    """
+    owner = await _create_user("op-withdraw-owner")
+    member = await _create_user("op-withdraw-member")
+    organization = await _create_org_with_member(owner, member)
+
+    async with async_session_factory() as session:
+        await operator_service.activate_operator_capability(
+            session, org_id=organization.id, actor_id=owner.id
+        )
+    assert await _operator_roles(member.id) != []
+
+    async with async_session_factory() as session:
+        await operator_service.withdraw_operator_capability(
+            session, org_id=organization.id, actor_id=owner.id
+        )
+
+    async with async_session_factory() as session:
+        capability = await session.scalar(
+            select(OrgCapability).where(
+                OrgCapability.org_id == organization.id,
+                OrgCapability.capability == "operator",
+            )
+        )
+
+    assert capability is not None
+    assert capability.status == "withdrawn"
+    assert await _operator_roles(member.id) == []
+
+
+async def test_withdraw_operator_capability_refuses_when_not_active(
+    migrated_database: None,
+    operator_capability_state: None,
+) -> None:
+    """Withdrawing twice is a 409, not a silent no-op.
+
+    A second call means the caller believes the capability is still live, so
+    saying so beats pretending the first one had not happened.
+    """
+    owner = await _create_user("op-twice-owner")
+    member = await _create_user("op-twice-member")
+    organization = await _create_org_with_member(owner, member)
+
+    async with async_session_factory() as session:
+        await operator_service.activate_operator_capability(
+            session, org_id=organization.id, actor_id=owner.id
+        )
+    async with async_session_factory() as session:
+        await operator_service.withdraw_operator_capability(
+            session, org_id=organization.id, actor_id=owner.id
+        )
+
+    with pytest.raises(HTTPException) as excinfo:
+        async with async_session_factory() as session:
+            await operator_service.withdraw_operator_capability(
+                session, org_id=organization.id, actor_id=owner.id
+            )
+
+    assert excinfo.value.status_code == 409

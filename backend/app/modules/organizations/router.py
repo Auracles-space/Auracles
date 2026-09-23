@@ -513,8 +513,10 @@ async def confirm_org_logo_upload(
         "Soft-close an organization: it is hidden and its data retained; an "
         "administrator can reopen it. Refused with 409 while any capability is "
         "active or a payment, escrow, or payout is still pending. The optional "
-        "body carries a reason shown to members and admins. Org owner only."
+        "body carries a reason shown to members and admins. Org owner only, "
+        "step-up required."
     ),
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
 )
 async def deactivate_organization(
     org_id: UUID,
@@ -526,6 +528,63 @@ async def deactivate_organization(
     del org_id
     await service.deactivate_organization(
         db=db, context=context, reason=payload.reason if payload else None
+    )
+
+
+@router.post(
+    "/{org_id}/attestor-capability/withdraw",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Withdraw attestor capability",
+    description=(
+        "Stand the organization's attestor capability down as its owner, so "
+        "the organization can be closed. Open offers are withdrawn and "
+        "re-offered to the next eligible organization, and undelivered "
+        "reviews go to admins to reassign \u2014 the same release a revocation "
+        "performs, and no money moves. The organization may re-apply later. "
+        "Refused with 409 when the capability is not active. Org owner only, "
+        "step-up required."
+    ),
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
+)
+async def withdraw_attestor_capability(
+    org_id: UUID,
+    context: OrgOwner,
+    db: DatabaseSession,
+) -> None:
+    """Stand the org Attestor capability down as its owner."""
+    del org_id
+    await attestor_application_service.withdraw_capability(
+        db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+    )
+
+
+@router.post(
+    "/{org_id}/operator-capability/withdraw",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Withdraw operator capability",
+    description=(
+        "Stand the organization's operator capability down as its owner, so "
+        "the organization can be closed. The capability becomes `withdrawn` "
+        "and members lose the derived operator role; licences already bought "
+        "are untouched. Re-activating restores it \u2014 this is not a revocation "
+        "and needs no admin. Refused with 409 when the capability is not "
+        "active. Org owner only, step-up required."
+    ),
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
+)
+async def withdraw_operator_capability(
+    org_id: UUID,
+    context: OrgOwner,
+    db: DatabaseSession,
+) -> None:
+    """Stand the org Operator capability down as its owner."""
+    del org_id
+    await operator_service.withdraw_operator_capability(
+        db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
     )
 
 
@@ -575,6 +634,34 @@ async def activate_contributor_capability(
         actor_id=context.user.id,
     )
     return OrgCapabilityResponse.model_validate(capability)
+
+
+@router.post(
+    "/{org_id}/contributor-capability/withdraw",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Withdraw contributor capability",
+    description=(
+        "Stand the organization's contributor capability down as its owner, "
+        "so the organization can be closed. The capability becomes "
+        "`withdrawn`, its frameworks leave Explore, and members lose the "
+        "derived contributor role. Re-activating restores it — this is not a "
+        "revocation and needs no admin. Refused with 409 when the capability "
+        "is not active. Org owner only, step-up required."
+    ),
+    dependencies=[Depends(require_step_up_after(require_org_role("owner")))],
+)
+async def withdraw_contributor_capability(
+    org_id: UUID,
+    context: OrgOwner,
+    db: DatabaseSession,
+) -> None:
+    """Stand the org Contributor capability down as its owner."""
+    del org_id
+    await contributor_service.withdraw_contributor_capability(
+        db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+    )
 
 
 @router.post(

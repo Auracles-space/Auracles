@@ -30,7 +30,7 @@ from app.modules.organizations.models import (
 )
 from app.modules.organizations.router import ORG_CREATE_LIMIT
 from app.shared.models.audit_log import AuditLog
-from tests.conftest import open_step_up_window, verify_org_kyb
+from tests.conftest import grant_step_up, open_step_up_window, verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.support.db_cleanup import clear_identity_state_async
 
@@ -355,13 +355,15 @@ async def test_my_orgs_grants_team_member_true(
 
 
 async def test_list_my_orgs_excludes_deactivated(
-    client: AsyncClient, migrated_database: None, clean_orgs: None
+    client: AsyncClient, migrated_database: None, clean_orgs: FakeRedis
 ) -> None:
     """GET /v1/orgs/mine omits organizations that have been deactivated."""
-    del migrated_database, clean_orgs
+    del migrated_database
     user_id = await create_user("org-mine-deact")
     token = create_access_token(user_id, [])
     org = await create_org(client, token, "gone")
+    # Closing is step-up gated, like the other destructive owner actions.
+    await grant_step_up(clean_orgs, user_id)
     deleted = await client.delete(f"/v1/orgs/{org['id']}", headers=auth(token))
     assert deleted.status_code == 204
 
@@ -460,12 +462,15 @@ async def test_suspended_org_denial_is_audited(
 
 
 async def test_deactivate_blocked_while_capability_active(
-    client: AsyncClient, migrated_database: None, clean_orgs: None
+    client: AsyncClient, migrated_database: None, clean_orgs: FakeRedis
 ) -> None:
     """DELETE /v1/orgs/{org_id} returns 409 while any capability is active."""
-    del migrated_database, clean_orgs
+    del migrated_database
     owner_id = await create_user("org-deact")
     token = create_access_token(owner_id, [])
+    # Step-up is a route dependency, so without it the 409 under test is never
+    # reached — the request stops at 403 first.
+    await grant_step_up(clean_orgs, owner_id)
     org = await create_org(client, token, "deact")
     async with async_session_factory() as session:
         async with session.begin():
@@ -483,13 +488,14 @@ async def test_deactivate_blocked_while_capability_active(
 
 
 async def test_deactivate_owner_only(
-    client: AsyncClient, migrated_database: None, clean_orgs: None
+    client: AsyncClient, migrated_database: None, clean_orgs: FakeRedis
 ) -> None:
     """DELETE /v1/orgs/{org_id} requires the owner role; admin gets 403."""
-    del migrated_database, clean_orgs
+    del migrated_database
     owner_id = await create_user("org-deact-owner")
     admin_id = await create_user("org-deact-admin")
     owner_token = create_access_token(owner_id, [])
+    await grant_step_up(clean_orgs, owner_id)
     org = await create_org(client, owner_token, "downer")
     async with async_session_factory() as session:
         async with session.begin():

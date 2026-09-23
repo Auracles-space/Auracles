@@ -20,7 +20,7 @@ from app.modules.organizations.models import (
     OrgCapability,
     OrgContributorProfile,
 )
-from tests.conftest import verify_org_kyb
+from tests.conftest import grant_step_up, verify_org_kyb
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_org_admin_endpoints import (
     create_platform_admin,
@@ -230,3 +230,175 @@ async def test_admin_contributor_capability_status_routes(
     assert capability.status == "revoked"
     assert profile is not None
     assert profile.active is False
+
+
+async def test_owner_withdraws_contributor_capability(
+    client: AsyncClient,
+    # `clean_orgs` installs a FakeRedis of its own, so it has to resolve first
+    # or it replaces the fake the step-up window below was written to — the
+    # request then reads an empty store and answers `step_up_required`.
+    clean_orgs: None,
+    override_redis: FakeRedis,
+    migrated_database: None,
+) -> None:
+    """An owner stands the capability down and members lose the derived role.
+
+    Without this an owner could never close their organization: the close
+    refuses while a capability is active, and only an admin could change one.
+    """
+    del clean_orgs, migrated_database
+    owner_id = await create_user("owner")
+    member_id = await create_user("member")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "withdraw-org")
+    await add_member(str(org["id"]), member_id, "admin")
+    await verify_org_kyb(org["id"])
+    await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/activate",
+        headers=auth(owner_token),
+    )
+
+    await grant_step_up(override_redis, owner_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/withdraw",
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 204
+    async with async_session_factory() as session:
+        capability = await session.scalar(
+            select(OrgCapability).where(
+                OrgCapability.org_id == UUID(org["id"]),
+                OrgCapability.capability == "contributor",
+            )
+        )
+        member_role = await session.scalar(
+            select(UserRole).where(
+                UserRole.user_id == member_id,
+                UserRole.role == "contributor",
+                UserRole.source == "derived",
+            )
+        )
+    assert capability is not None
+    assert capability.status == "withdrawn"
+    assert member_role is None
+
+
+async def test_withdraw_contributor_capability_requires_owner_and_step_up(
+    client: AsyncClient,
+    clean_orgs: None,
+    override_redis: FakeRedis,
+    migrated_database: None,
+) -> None:
+    """Withdrawing is owner-only and refused without an open step-up window.
+
+    Standing a capability down takes an organization out of the marketplace,
+    so it is gated like the other destructive owner actions in this router.
+    """
+    del clean_orgs, migrated_database
+    owner_id = await create_user("owner")
+    member_id = await create_user("member")
+    owner_token = create_access_token(owner_id, [])
+    member_token = create_access_token(member_id, [])
+    org = await create_org(client, owner_token, "withdraw-guard-org")
+    await add_member(str(org["id"]), member_id, "admin")
+    await verify_org_kyb(org["id"])
+    await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/activate",
+        headers=auth(owner_token),
+    )
+
+    unauthenticated = await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/withdraw"
+    )
+    # An org admin can activate the capability but must not be able to stand
+    # it down: leaving the marketplace is the owner's call.
+    forbidden = await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/withdraw",
+        headers=auth(member_token),
+    )
+    del override_redis
+    without_step_up = await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/withdraw",
+        headers=auth(owner_token),
+    )
+
+    assert unauthenticated.status_code == 401
+    assert forbidden.status_code == 403
+    assert without_step_up.status_code == 403
+
+
+async def test_withdraw_operator_capability_endpoint(
+    client: AsyncClient,
+    clean_orgs: None,
+    override_redis: FakeRedis,
+    migrated_database: None,
+) -> None:
+    """The operator capability stands down through its own owner endpoint.
+
+    Three capabilities, three endpoints: an org that wants to stop selling but
+    keep buying should not have to close to do it.
+    """
+    del clean_orgs, migrated_database
+    owner_id = await create_user("op-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "op-withdraw-org")
+    await verify_org_kyb(org["id"])
+    await client.post(
+        f"/v1/orgs/{org['id']}/operator-capability/activate",
+        headers=auth(owner_token),
+    )
+    await grant_step_up(override_redis, owner_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/operator-capability/withdraw",
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 204
+    async with async_session_factory() as session:
+        capability = await session.scalar(
+            select(OrgCapability).where(
+                OrgCapability.org_id == UUID(org["id"]),
+                OrgCapability.capability == "operator",
+            )
+        )
+    assert capability is not None
+    assert capability.status == "withdrawn"
+
+
+async def test_withdrawn_capability_reactivates_without_an_admin(
+    client: AsyncClient,
+    clean_orgs: None,
+    override_redis: FakeRedis,
+    migrated_database: None,
+) -> None:
+    """A withdrawn capability comes back through the existing self-activate.
+
+    This is the difference from `revoked`, which only an admin can undo. An
+    owner who stands down and changes their mind must not need a support
+    ticket to trade again.
+    """
+    del clean_orgs, migrated_database
+    owner_id = await create_user("reactivate-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "reactivate-org")
+    await verify_org_kyb(org["id"])
+    await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/activate",
+        headers=auth(owner_token),
+    )
+    await grant_step_up(override_redis, owner_id)
+    await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/withdraw",
+        headers=auth(owner_token),
+    )
+
+    reactivated = await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/activate",
+        headers=auth(owner_token),
+    )
+
+    assert reactivated.status_code == 200
+    assert reactivated.json()["status"] == "active"
