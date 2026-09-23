@@ -3,9 +3,12 @@
 /**
  * Organization danger zone — owner-only ownership transfer and close.
  *
- * Both actions are step-up gated on the API; this component collects the
+ * Every action here is step-up gated on the API; this component collects the
  * new owner and surfaces server errors through `describeGeneratedError`.
- * The close flow lives in `OrganizationClosePanel`.
+ * Winding capabilities down lives in `OrganizationCapabilityWindDown` and the
+ * close in `OrganizationClosePanel`, in that order: the close is refused while
+ * a capability is active, so the control that clears the blocker comes before
+ * the one that reports it.
  *
  * Maps to: docs/superpowers/specs/2026-09-14-organizations-end-to-end-design.md
  * §Decisions 4, §Slice A/B.
@@ -21,6 +24,7 @@ import { describeGeneratedError, getAccessTokenHeaders } from "@/lib/auth/form-c
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useOrganization } from "./organization-context";
+import { OrganizationCapabilityWindDown } from "./organization-capability-winddown";
 import { OrganizationClosePanel } from "./organization-close-panel";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -161,6 +165,8 @@ export function OrganizationDangerZone() {
           </Button>
         </form>
       </div>
+
+      <OrganizationCapabilityWindDown onChange={() => router.refresh()} />
 
       <OrganizationClosePanel />
     </div>
