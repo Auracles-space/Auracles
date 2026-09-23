@@ -58,6 +58,10 @@ ORG_CAPABILITY_STATUS_ENUM = ENUM(
     "active",
     "suspended",
     "revoked",
+    # An owner standing the capability down themselves, so they can close the
+    # organization. Distinct from `revoked`, which an admin applies, bars
+    # re-application, and tells the owner to appeal.
+    "withdrawn",
     name="org_capability_status_enum",
     create_type=False,
 )

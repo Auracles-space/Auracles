@@ -145,6 +145,90 @@ async def activate_contributor_capability(
     return capability
 
 
+async def withdraw_contributor_capability(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    actor_id: UUID,
+) -> None:
+    """Stand the org Contributor capability down at its owner's request.
+
+    Closing an organization refuses while any capability is active, and every
+    status change was admin-only, so an owner had no route out that did not go
+    through support — and account deletion is blocked behind the close. This
+    is the owner's half of that wind-down.
+
+    Writes `withdrawn` rather than `revoked`: revoked means an admin took the
+    capability away, bars re-application, and tells the owner to appeal. An
+    owner who chooses to stop can re-activate through
+    `activate_contributor_capability`, which reinstates any non-active status.
+
+    The caller enforces owner/admin role and step-up; the money gate is the
+    close endpoint's, because money outlives any single capability.
+
+    Args:
+        org_id: Organization standing the capability down.
+        actor_id: Owner or org admin making the change, for the audit row.
+
+    Raises:
+        HTTPException(404): No contributor capability exists for the org.
+        HTTPException(409): The capability is already inactive.
+    """
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        capability = await db.scalar(
+            select(OrgCapability)
+            .where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.capability == "contributor",
+            )
+            .with_for_update()
+        )
+        if capability is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Org contributor capability not found.",
+            )
+        if capability.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The contributor capability is not active.",
+            )
+        capability.status = "withdrawn"
+        # No reason text: an admin's reason explains an action taken against
+        # the org, which is not what this is.
+        capability.status_reason = None
+
+        profile = await db.scalar(
+            select(OrgContributorProfile)
+            .where(OrgContributorProfile.org_id == org_id)
+            .with_for_update()
+        )
+        if profile is not None:
+            profile.active = False
+
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_contributor_capability_withdrawn",
+            target_type="organization",
+            target_id=org_id,
+            metadata={"status": "withdrawn"},
+        )
+
+    # Derived roles follow the capability, or a member keeps acting as a
+    # contributor for an organization that has stopped being one.
+    await _sync_org_member_roles(db, org_id)
+    logger.bind(
+        module="organizations",
+        action="org_contributor_withdrawn",
+        user_id=str(actor_id),
+        org_id=str(org_id),
+    ).info("org_contributor_capability_withdrawn")
+
+
 async def admin_set_contributor_capability_status(
     db: AsyncSession,
     *,
