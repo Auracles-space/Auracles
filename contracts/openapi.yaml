@@ -3356,6 +3356,17 @@ components:
       - framework_id
       title: AdminStartTrialRequest
       type: object
+    AdminStuckPayoutCountResponse:
+      description: Count of payouts that have outlived both automated recovery sweeps.
+      properties:
+        count:
+          minimum: 0
+          title: Count
+          type: integer
+      required:
+      - count
+      title: AdminStuckPayoutCountResponse
+      type: object
     AdminSuspendedFrameworkItem:
       description: One suspended Framework awaiting possible reinstatement.
       properties:
@@ -19308,6 +19319,25 @@ paths:
       security:
       - HTTPBearer: []
       summary: Resolve Project Dispute
+      tags:
+      - Admin
+  /v1/admin/payouts/stuck-count:
+    get:
+      description: 'Return how many payouts have been pending or processing for over
+        a day, having escaped both the stranded-payout sweeper and the transfer reconciler.
+        Terminal states are excluded: a failed payout never resolves, so counting it
+        would leave the nav badge permanently lit.'
+      operationId: count_stuck_payouts_v1_admin_payouts_stuck_count_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStuckPayoutCountResponse'
+          description: Successful Response
+      security:
+      - HTTPBearer: []
+      summary: Count payouts needing admin attention
       tags:
       - Admin
   /v1/admin/reputation/recompute:

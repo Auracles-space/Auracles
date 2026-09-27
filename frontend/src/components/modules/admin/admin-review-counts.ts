@@ -21,7 +21,7 @@ import {
   listAdminAttestationDisputes,
   listAdminAttestations,
   listAdminDeletionRequestsV1AdminGdprDeletionRequestsGet,
-  listAdminPayoutsV1AdminPayoutsGet,
+  countStuckPayoutsV1AdminPayoutsStuckCountGet,
   listAdminProjectDisputes,
   listCredentialReviewQueueV1AdminCredentialsGet,
   listDeveloperApplicationsForAdminV1AdminDeveloperApplicationsGet,
@@ -157,13 +157,14 @@ export const ADMIN_REVIEW_QUEUES: AdminReviewQueue[] = [
   {
     href: "/admin/payouts",
     load: async (headers) => {
-      // Failed transfers are what the payout notifications are about: an OTP
-      // hold, a stranded payout, a rejected transfer.
-      const result = await listAdminPayoutsV1AdminPayoutsGet({
+      // Not failed payouts: `failed` is terminal with no resolution step, so
+      // counting it left the badge permanently lit on one old failure — QA
+      // saw the number after reading the page and asked why it stayed.
+      // The server counts what is still stuck instead.
+      const result = await countStuckPayoutsV1AdminPayoutsStuckCountGet({
         headers,
-        query: { status: "failed", page: 1, page_size: 1 },
       });
-      return totalOf(result);
+      return result.response.ok && result.data ? result.data.count : 0;
     },
   },
 ];

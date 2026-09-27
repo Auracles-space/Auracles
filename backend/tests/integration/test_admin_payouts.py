@@ -8,7 +8,7 @@ admins may call it.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -88,6 +88,7 @@ async def _create_payout(
     provider: str,
     status: str,
     provider_ref: str | None,
+    initiated_at: datetime | None = None,
 ) -> UUID:
     """Create a contributor payout with its own payout account."""
     async with async_session_factory() as session:
@@ -111,6 +112,7 @@ async def _create_payout(
                 net_amount=Decimal("270.00"),
                 status=status,
                 provider_ref=provider_ref,
+                **({} if initiated_at is None else {"initiated_at": initiated_at}),
             )
             session.add(payout)
             await session.flush()
@@ -210,3 +212,89 @@ async def test_non_admin_cannot_list_payouts(
     )
 
     assert response.status_code == 403
+
+
+async def test_stuck_payout_count_ignores_fresh_and_terminal_payouts(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_payout_context: None,
+) -> None:
+    """The count is work still waiting, not a history of what went wrong.
+
+    Two sweepers already handle the normal cases: the stranded sweeper
+    re-enqueues `pending` after 15 minutes and the reconciler resolves
+    `processing` after an hour. Anything still unresolved a day later has
+    escaped both and needs a person.
+
+    `failed` and `completed` are excluded deliberately. They are terminal with
+    no resolution step, so counting them gives a badge that never clears —
+    which is exactly what QA found on the payouts nav item.
+    """
+    del migrated_database, admin_payout_context
+    admin_id = await _create_user(role="admin")
+    contributor_id = await _create_user(role="contributor")
+    long_ago = datetime.now(UTC) - timedelta(days=2)
+
+    await _create_payout(
+        contributor_id=contributor_id,
+        provider="paystack",
+        status="pending",
+        provider_ref=None,
+        initiated_at=long_ago,
+    )
+    await _create_payout(
+        contributor_id=contributor_id,
+        provider="paystack",
+        status="processing",
+        provider_ref="trf_stuck",
+        initiated_at=long_ago,
+    )
+    # Recent: the sweepers have not had their chance yet.
+    await _create_payout(
+        contributor_id=contributor_id,
+        provider="paystack",
+        status="pending",
+        provider_ref=None,
+    )
+    # Terminal: visible on the page, but not outstanding work.
+    await _create_payout(
+        contributor_id=contributor_id,
+        provider="paystack",
+        status="failed",
+        provider_ref="trf_dead",
+        initiated_at=long_ago,
+    )
+    await _create_payout(
+        contributor_id=contributor_id,
+        provider="paystack",
+        status="completed",
+        provider_ref="trf_done",
+        initiated_at=long_ago,
+    )
+
+    response = await client.get(
+        "/v1/admin/payouts/stuck-count",
+        headers=_auth_headers(admin_id, roles=["admin"]),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"count": 2}
+
+
+async def test_stuck_payout_count_requires_admin(
+    client: AsyncClient,
+    migrated_database: None,
+    admin_payout_context: None,
+) -> None:
+    """The count is admin-only, like the directory it summarises."""
+    del migrated_database, admin_payout_context
+    contributor_id = await _create_user(role="contributor")
+
+    anonymous = await client.get("/v1/admin/payouts/stuck-count")
+    forbidden = await client.get(
+        "/v1/admin/payouts/stuck-count",
+        headers=_auth_headers(contributor_id, roles=["contributor"]),
+    )
+
+    assert anonymous.status_code == 401
+    assert forbidden.status_code == 403
