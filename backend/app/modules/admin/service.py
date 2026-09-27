@@ -1313,6 +1313,33 @@ async def _user_display_names(
     return {user_id: name for user_id, name in rows.all() if name}
 
 
+# A payout still unresolved this long has escaped both automated sweeps: the
+# stranded sweeper re-enqueues `pending` after 15 minutes, and the transfer
+# reconciler settles `processing` after an hour. What is left needs a person.
+STUCK_PAYOUT_AGE = timedelta(days=1)
+
+
+async def count_stuck_payouts(db: AsyncSession) -> int:
+    """Return how many payouts are stuck long enough to need an admin.
+
+    Deliberately excludes `failed` and `completed`. Both are terminal with no
+    resolution step, so counting them produces a badge that can never reach
+    zero — the flaw QA found on the payouts nav item, where a single old
+    failure showed forever.
+    """
+    cutoff = datetime.now(UTC) - STUCK_PAYOUT_AGE
+    return (
+        await db.scalar(
+            select(func.count())
+            .select_from(Payout)
+            .where(
+                Payout.status.in_(("pending", "processing")),
+                Payout.initiated_at < cutoff,
+            )
+        )
+    ) or 0
+
+
 async def list_admin_payouts(
     db: AsyncSession,
     *,

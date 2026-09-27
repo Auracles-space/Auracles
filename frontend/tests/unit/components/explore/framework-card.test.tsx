@@ -95,6 +95,47 @@ describe("FrameworkCard", () => {
 });
 
 describe("CollectionCard", () => {
+  it("makes View bundle a link, not decoration", () => {
+    // It shipped as a styled <span>: it read as the card's primary action and
+    // did nothing when clicked. QA found it on Explore.
+    render(<CollectionCard collection={collection} />);
+
+    expect(screen.getByRole("link", { name: /view bundle/i })).toHaveAttribute(
+      "href",
+      "/explore/collections/00000000-0000-4000-8000-000000000020",
+    );
+  });
+
+  it("says how many members the card is not showing", () => {
+    // Nothing caps collection size server-side, and the card lists three. A
+    // bundle of ten showed three rows with no sign the rest existed.
+    render(
+      <CollectionCard
+        collection={{
+          ...collection,
+          member_count: 10,
+          members: Array.from({ length: 10 }, (_, index) => ({
+            category: "playbook",
+            currency: "USD",
+            framework_id: `00000000-0000-4000-8000-0000000000${30 + index}`,
+            price: "100.00",
+            thumbnail_key: null,
+            title: `Bundled Framework ${index}`,
+            version: "1.0.0",
+          })),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("+7 more in this bundle")).toBeInTheDocument();
+  });
+
+  it("says nothing extra when every member is listed", () => {
+    render(<CollectionCard collection={collection} />);
+
+    expect(screen.queryByText(/more in this bundle/i)).not.toBeInTheDocument();
+  });
+
   it("renders collection savings and links to collection detail", () => {
     render(<CollectionCard collection={collection} />);
 

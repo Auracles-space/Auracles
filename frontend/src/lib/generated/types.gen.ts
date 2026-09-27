@@ -1226,6 +1226,13 @@ export type AdminStartTrialRequest = {
 };
 
 /**
+ * Count of payouts that have outlived both automated recovery sweeps.
+ */
+export type AdminStuckPayoutCountResponse = {
+    count: number;
+};
+
+/**
  * One suspended Framework awaiting possible reinstatement.
  */
 export type AdminSuspendedFrameworkItem = {
@@ -6790,6 +6797,10 @@ export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostData
 export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostResponse = (DisputeResponse);
 
 export type ResolveProjectDisputeV1AdminProjectsDisputesDisputeIdResolvePostError = (HTTPValidationError);
+
+export type CountStuckPayoutsV1AdminPayoutsStuckCountGetResponse = (AdminStuckPayoutCountResponse);
+
+export type CountStuckPayoutsV1AdminPayoutsStuckCountGetError = unknown;
 
 export type RecomputeReputationSubjectV1AdminReputationRecomputePostData = {
     body: AdminReputationRecomputeRequest;

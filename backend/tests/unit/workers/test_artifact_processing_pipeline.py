@@ -112,6 +112,7 @@ def processing_context(
 ) -> Iterator[dict[str, Any]]:
     """Reset marketplace rows and install pipeline test doubles."""
     from app.workers.tasks.processing import extract, ocr, redaction
+    from app.workers.tasks.processing import pii as pii_module
 
     fake_storage = FakePipelineStorage()
     settings = get_settings()
@@ -142,8 +143,20 @@ def processing_context(
     monkeypatch.setattr(extract.s3, "storage", fake_storage)
     monkeypatch.setattr(ocr.s3, "storage", fake_storage)
     monkeypatch.setattr(redaction.s3, "storage", fake_storage)
+
+    # Capture owner notifications instead of reaching Redis, email and the
+    # broker: the pipeline tells the contributor when an artifact is held.
+    notifications: list[dict[str, Any]] = []
+
+    def _capture(**kwargs: Any) -> None:
+        """Record a queued owner notification."""
+        notifications.append(kwargs)
+
+    monkeypatch.setattr(
+        pii_module.dispatch_project_notification, "delay", _capture, raising=False
+    )
     try:
-        yield {"storage": fake_storage}
+        yield {"storage": fake_storage, "notifications": notifications}
     finally:
         cleanup()
         asyncio.run(engine.dispose())
@@ -539,6 +552,13 @@ def test_process_artifact_flags_high_confidence_pii_for_review(
     from app.modules.frameworks.service import _artifact_to_response
 
     assert _artifact_to_response(artifact).pii_types_found == ["EMAIL_ADDRESS"]
+    # The contributor is the only person who can clear this, and nothing used
+    # to tell them: the framework stopped short of publishing in silence.
+    notices = processing_context["notifications"]
+    assert len(notices) == 1
+    assert notices[0]["notification_type"] == "artifact_pii_review_required"
+    assert notices[0]["link"] == f"/dashboard/frameworks/{artifact.framework_id}"
+    assert "EMAIL_ADDRESS" not in notices[0]["body"]
 
 
 def test_redact_artifact_creates_office_clean_copy_for_review(

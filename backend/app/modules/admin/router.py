@@ -53,6 +53,7 @@ from app.modules.admin.schemas import (
     AdminRoleAssignmentRequest,
     AdminRoleAssignmentResponse,
     AdminSharedPayoutDestinationsResponse,
+    AdminStuckPayoutCountResponse,
     AdminSuspendedFrameworksResponse,
     AdminTransactionDetailResponse,
     AdminTransactionDirectoryResponse,
@@ -340,6 +341,26 @@ async def list_admin_payouts(
         org_id=org_id,
     )
     return AdminPayoutDirectoryResponse.model_validate(payouts)
+
+
+@router.get(
+    "/payouts/stuck-count",
+    response_model=AdminStuckPayoutCountResponse,
+    summary="Count payouts needing admin attention",
+    description=(
+        "Return how many payouts have been pending or processing for over a "
+        "day, having escaped both the stranded-payout sweeper and the transfer "
+        "reconciler. Terminal states are excluded: a failed payout never "
+        "resolves, so counting it would leave the nav badge permanently lit."
+    ),
+)
+async def count_stuck_payouts(
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminStuckPayoutCountResponse:
+    """Return the count of payouts needing admin attention."""
+    del admin
+    return AdminStuckPayoutCountResponse(count=await service.count_stuck_payouts(db))
 
 
 @router.get(

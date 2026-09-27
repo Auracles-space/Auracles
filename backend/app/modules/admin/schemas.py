@@ -471,6 +471,12 @@ class AdminPayoutItem(BaseModel):
     completed_at: datetime | None
 
 
+class AdminStuckPayoutCountResponse(BaseModel):
+    """Count of payouts that have outlived both automated recovery sweeps."""
+
+    count: int = Field(ge=0)
+
+
 class AdminPayoutDirectoryResponse(BaseModel):
     """Paginated payout directory for admin financial oversight."""
 

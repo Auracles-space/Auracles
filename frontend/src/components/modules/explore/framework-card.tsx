@@ -253,12 +253,20 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
   );
 }
 
+/** How many bundle members a card lists before summarising the rest. */
+const MEMBERS_SHOWN = 3;
+
 /**
  * Render one public Collection catalog item.
  *
  * @param props - Public Collection summary.
  */
 export function CollectionCard({ collection }: CollectionCardProps) {
+  // `member_count` is the server's total; `members` may be a shorter preview,
+  // so the hidden count is taken from whichever is larger.
+  const hiddenMemberCount =
+    Math.max(collection.member_count, collection.members.length) - MEMBERS_SHOWN;
+
   return (
     <article className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-border-default bg-surface-1 p-6 shadow-bento transition-all duration-300 hover:-translate-y-0.5 hover:border-accent/40 hover:shadow-card">
       <div className="flex-1 flex flex-col">
@@ -320,9 +328,11 @@ export function CollectionCard({ collection }: CollectionCardProps) {
           </span>
         </div>
 
-        {/* Members list */}
+        {/* Members list. Nothing caps collection size server-side, so this
+            shows the first few and counts the rest rather than growing the
+            card without bound. */}
         <div className="grid gap-2">
-          {collection.members.slice(0, 3).map((member) => (
+          {collection.members.slice(0, MEMBERS_SHOWN).map((member) => (
             <div
               className="rounded-xl border border-border-default bg-surface-2 px-3 py-2 text-xs text-foreground-muted flex items-center justify-between"
               key={member.framework_id}
@@ -337,12 +347,23 @@ export function CollectionCard({ collection }: CollectionCardProps) {
           ))}
         </div>
 
+        {hiddenMemberCount > 0 ? (
+          <p className="text-xs font-medium text-foreground-subtle">
+            +{hiddenMemberCount} more in this bundle
+          </p>
+        ) : null}
+
         {/* Footer / Meta */}
         <div className="flex items-center justify-between border-t border-border-default pt-4">
           <span className="text-xs font-medium text-foreground-muted">
             Member value {formatMoney(collection.member_price_sum, collection.currency)}
           </span>
-          <span className="text-xs font-semibold text-accent">View bundle</span>
+          <Link
+            className="text-xs font-semibold text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent"
+            href={`/explore/collections/${collection.id}`}
+          >
+            View bundle
+          </Link>
         </div>
       </div>
     </article>
