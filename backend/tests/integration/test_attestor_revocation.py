@@ -21,7 +21,9 @@ from app.core.database import async_session_factory
 from app.modules.attestation import notifications
 from app.modules.attestation.models import Attestation, AttestationOffer
 from app.modules.organizations import attestor_application_service
+from app.modules.organizations import notifications as org_notifications
 from app.modules.organizations.models import OrgCapability
+from app.modules.organizations.schemas import OrgAttestorApplicationCreateRequest
 from app.shared.models.audit_log import AuditLog
 from tests.integration.test_attestation_matching import (  # noqa: F401
     FakeNotificationTask,
@@ -318,3 +320,42 @@ async def test_owner_withdrawal_moves_work_on_like_a_revocation(
     # admin revoking them, and so they may re-apply without an appeal.
     assert capability.status == "withdrawn"
     assert audit is not None
+
+
+async def test_a_withdrawn_org_may_apply_to_attest_again(
+    sent: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Standing down is not a revocation, so the door back is open.
+
+    `_CAPABILITY_REAPPLY_REFUSALS` bars a revoked or suspended org from
+    applying because only an admin can bring those back. An org that chose to
+    stop is a different case, and barring it would have made the wind-down a
+    one-way door — the trap this work exists to remove.
+    """
+    del sent
+    org_id, _reviewer_id, _member_id = await create_org_attestor(
+        specializations=["healthcare"], jurisdictions=["US"], slug_prefix="reapply"
+    )
+    async with async_session_factory() as session:
+        owner_id = (await org_notifications.org_owner_ids(session, org_id))[0]
+
+    async with async_session_factory() as session:
+        await attestor_application_service.withdraw_capability(
+            session, org_id=org_id, actor_id=owner_id
+        )
+
+    async with async_session_factory() as session:
+        application = await attestor_application_service.create_application(
+            session,
+            org_id=org_id,
+            actor_id=owner_id,
+            payload=OrgAttestorApplicationCreateRequest(
+                sectors=["private_equity"],
+                functions=["compliance"],
+                jurisdictions=["united_states"],
+                credentials_summary="Returning after standing down voluntarily.",
+                professional_references="References supplied on request.",
+            ),
+        )
+
+    assert application.status == "draft"

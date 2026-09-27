@@ -402,3 +402,63 @@ async def test_withdrawn_capability_reactivates_without_an_admin(
 
     assert reactivated.status_code == 200
     assert reactivated.json()["status"] == "active"
+
+
+@pytest.mark.parametrize("capability", ["operator", "attestor"])
+async def test_withdraw_capability_endpoints_share_one_guard(
+    capability: str,
+    client: AsyncClient,
+    clean_orgs: None,
+    override_redis: FakeRedis,
+    migrated_database: None,
+) -> None:
+    """Every wind-down endpoint is owner-only and step-up gated.
+
+    Contributor's guards are covered above; these pin the other two, so a
+    capability added later cannot ship the endpoint without the gate.
+    """
+    del clean_orgs, migrated_database
+    owner_id = await create_user(f"{capability}-guard-owner")
+    admin_id = await create_user(f"{capability}-guard-admin")
+    owner_token = create_access_token(owner_id, [])
+    admin_token = create_access_token(admin_id, [])
+    org = await create_org(client, owner_token, f"{capability}-guard-org")
+    await add_member(str(org["id"]), admin_id, "admin")
+    await verify_org_kyb(org["id"])
+    path = f"/v1/orgs/{org['id']}/{capability}-capability/withdraw"
+
+    unauthenticated = await client.post(path)
+    forbidden = await client.post(path, headers=auth(admin_token))
+    without_step_up = await client.post(path, headers=auth(owner_token))
+
+    assert unauthenticated.status_code == 401
+    assert forbidden.status_code == 403
+    assert without_step_up.status_code == 403
+    # Which of the pair depends on enrolment: an owner with no authenticator
+    # is told to set one up, an enrolled one to confirm. Both refuse.
+    assert without_step_up.json()["detail"]["error_code"] in (
+        "totp_setup_required",
+        "step_up_required",
+    )
+
+
+async def test_withdraw_refuses_a_capability_that_was_never_active(
+    client: AsyncClient,
+    clean_orgs: None,
+    override_redis: FakeRedis,
+    migrated_database: None,
+) -> None:
+    """A capability the org never held answers 404, not a silent success."""
+    del clean_orgs, migrated_database
+    owner_id = await create_user("never-active-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "never-active-org")
+    await verify_org_kyb(org["id"])
+    await grant_step_up(override_redis, owner_id)
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/contributor-capability/withdraw",
+        headers=auth(owner_token),
+    )
+
+    assert response.status_code == 404
