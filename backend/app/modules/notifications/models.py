@@ -111,6 +111,8 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "org_invitation_expired",
     "org_license_granted",
     "org_license_revoked",
+    # An artifact of theirs is held for PII review and only they can clear it.
+    "artifact_pii_review_required",
     "org_framework_suspended",
     "org_framework_published",
     "org_purchase_completed",

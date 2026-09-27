@@ -89,7 +89,14 @@ describe("AdminModerationPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Blocked Similarity Framework")).toBeInTheDocument();
     expect(screen.getByText("PII Framework")).toBeInTheDocument();
-    expect(screen.getByText("Contributor follow-up required")).toBeInTheDocument();
+    // The badge used to say only that follow-up was required, naming neither
+    // who was being waited on nor what they had to do.
+    expect(
+      screen.getByText(/Awaiting Bayo Contributor/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/accept or remove the redaction/),
+    ).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/queue type/i), {
       target: { value: "pii_review" },

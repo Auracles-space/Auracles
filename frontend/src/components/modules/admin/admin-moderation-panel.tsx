@@ -393,8 +393,18 @@ export function AdminModerationPanel() {
                   </Button>
                 )}
                 {contributorFollowUp ? (
+                  // The badge used to say follow-up was required and stop
+                  // there, naming neither who was waited on nor where they act
+                  // — so an admin saw a row with nothing to click and read it
+                  // as broken. Name the owner and link to their framework.
+                  // No link: a framework held here is not published, so
+                  // /explore/{id} would 404, and there is no admin framework
+                  // detail route to send them to instead. Naming the owner and
+                  // the action is what the row was missing.
                   <span className="inline-flex items-center rounded-badge border border-warning/35 bg-warning/10 px-2.5 py-1 text-[10px] font-bold text-warning uppercase tracking-wider">
-                    Contributor follow-up required
+                    Awaiting{" "}
+                    {item.organization_name ?? item.contributor_name ?? "the owner"}
+                    {isPii ? " — they accept or remove the redaction" : ""}
                   </span>
                 ) : null}
               </div>

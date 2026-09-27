@@ -42,6 +42,9 @@ CRITICAL_NOTIFICATION_TYPES: Final[set[str]] = {
     "dispute_resolved_release",
     "dispute_resolved_refund",
     "dispute_resolved_split",
+    # A PII hold is the only signal that a framework is stuck, and only its
+    # owner can clear it — muting this would strand the framework silently.
+    "artifact_pii_review_required",
 }
 NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "project_created": "project",
@@ -129,6 +132,7 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "org_license_revoked": "account",
     "org_framework_suspended": "account",
     "org_framework_published": "account",
+    "artifact_pii_review_required": "account",
     "org_purchase_completed": "financial",
     "org_purchase_failed": "financial",
     "org_payout_requested": "financial",

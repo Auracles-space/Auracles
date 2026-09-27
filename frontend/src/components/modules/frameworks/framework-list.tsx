@@ -13,6 +13,7 @@ import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { StatusPill } from "@/components/ui/status-pill";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ExclamationTriangleIcon,
   UploadIcon,
   ClockIcon,
   FileTextIcon,
@@ -30,6 +31,9 @@ import {
   type FrameworkSeller,
 } from "@/lib/frameworks/framework-api";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+
+/** Statuses where the framework has stopped and the owner has to act. */
+const BLOCKED_STATUSES = ["pipeline_failed", "suspended"];
 
 const SUPPORT_EMAIL = "support@auracles.space";
 
@@ -52,7 +56,9 @@ export function FrameworkList({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "published" | "pending" | "draft">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "published" | "pending" | "blocked" | "draft"
+  >("all");
 
   useEffect(() => {
     async function loadFrameworks() {
@@ -125,6 +131,13 @@ export function FrameworkList({
   const publishedCount = frameworks.filter(fw => fw.status === "published").length;
   const draftCount = frameworks.filter(fw => fw.status === "draft" || fw.status === "unpublished").length;
   const pendingCount = frameworks.filter(fw => ["submitted", "processing", "pipeline_passed"].includes(fw.status)).length;
+  // `pipeline_failed` and `suspended` belonged to none of the buckets, so a
+  // framework the pipeline stopped — a PII hold, most often — counted zero
+  // everywhere and disappeared under any filter. It is the one state that
+  // most needs the owner's attention.
+  const blockedCount = frameworks.filter(fw =>
+    BLOCKED_STATUSES.includes(fw.status),
+  ).length;
 
   // Filter frameworks list by search query and status grouping
   const filteredFrameworks = frameworks.filter((fw) => {
@@ -140,13 +153,33 @@ export function FrameworkList({
     if (statusFilter === "pending") {
       return matchesSearch && ["submitted", "processing", "pipeline_passed"].includes(fw.status);
     }
+    if (statusFilter === "blocked") {
+      return matchesSearch && BLOCKED_STATUSES.includes(fw.status);
+    }
     return matchesSearch;
   });
 
   return (
     <div className="space-y-8">
       {/* Bento Box Metrics Row */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div
+        className={`grid gap-4 ${blockedCount > 0 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}
+      >
+        {blockedCount > 0 ? (
+          <div className="rounded-2xl border border-warning/40 bg-warning/5 p-5 shadow-sm flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-warning/10">
+              <ExclamationTriangleIcon className="h-5 w-5 text-warning" />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-warning">
+                Needs attention
+              </p>
+              <p className="mt-1 font-heading text-2xl font-bold text-foreground leading-none">
+                {blockedCount}
+              </p>
+            </div>
+          </div>
+        ) : null}
         <div className="rounded-2xl border border-border-default bg-surface-1 p-5 shadow-sm hover:border-accent/30 transition-all flex items-center gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-2">
             <UploadIcon className="h-5 w-5 text-accent" />
@@ -204,7 +237,7 @@ export function FrameworkList({
 
         {/* Filter Buttons */}
         <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-surface-2 border border-border-default max-w-fit">
-          {(["all", "published", "pending", "draft"] as const).map((filter) => {
+          {(["all", "published", "pending", "blocked", "draft"] as const).map((filter) => {
             const isActive = statusFilter === filter;
             return (
               <button
@@ -216,7 +249,13 @@ export function FrameworkList({
                 key={filter}
                 onClick={() => setStatusFilter(filter)}
               >
-                {filter === "all" ? "All" : filter === "pending" ? "In Review" : filter}
+                {filter === "all"
+                  ? "All"
+                  : filter === "pending"
+                    ? "In Review"
+                    : filter === "blocked"
+                      ? "Needs attention"
+                      : filter}
               </button>
             );
           })}

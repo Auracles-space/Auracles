@@ -16,9 +16,12 @@ from sqlalchemy import delete
 
 from app.core.audit import write_audit
 from app.core.database import async_session_factory
+from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact, ArtifactPiiAudit
+from app.modules.organizations import notifications as org_notifications
 from app.workers.async_runner import run_async
 from app.workers.celery_app import app
+from app.workers.tasks.project_notifications import dispatch_project_notification
 
 PII_CONFIDENCE_THRESHOLD = 0.6
 
@@ -111,6 +114,49 @@ def select_blocking_findings(findings: list[PiiFinding]) -> list[PiiFinding]:
     ]
 
 
+async def _notify_owner_of_pii_hold(db: Any, artifact: Artifact) -> None:
+    """Tell whoever owns the framework that their artifact is held.
+
+    Only the owner can clear a PII hold — the admin queue shows the row but
+    offers nothing to click, because accepting the redaction is a contributor
+    action. Before this, nothing said so: the framework stopped short of
+    publishing, the owner's profile still counted it, and the artifact was
+    simply invisible. QA reported it as a missing framework with no button.
+
+    The detected entity types are deliberately not in the body. A notification
+    reaches email and would carry the sensitive categories out of the product;
+    the framework workspace names them in place.
+    """
+    framework = await db.get(Framework, artifact.framework_id)
+    if framework is None:
+        return
+    if framework.contributor_org_id is not None:
+        recipients = await org_notifications.org_owner_ids(
+            db, framework.contributor_org_id
+        )
+    elif framework.contributor_id is not None:
+        recipients = [framework.contributor_id]
+    else:
+        recipients = []
+    for recipient in recipients:
+        dispatch_project_notification.delay(
+            user_id=str(recipient),
+            notification_type="artifact_pii_review_required",
+            title="An upload needs your review before publishing",
+            body=(
+                f"{artifact.name} in {framework.title} contains information "
+                "that has to be removed or accepted before the framework can "
+                "be published. Open the framework to see what was found."
+            ),
+            link=f"/dashboard/frameworks/{framework.id}",
+            payload={
+                "framework_id": str(framework.id),
+                "artifact_id": str(artifact.id),
+            },
+            dedupe_key=f"artifact_pii_review:{artifact.id}",
+        )
+
+
 def _unique_entity_types(findings: list[PiiFinding]) -> list[str]:
     """Return sorted unique PII entity types for audit storage."""
     return sorted({finding.entity_type for finding in findings})
@@ -180,6 +226,10 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
                 },
             )
         await db.commit()
+        if blocking:
+            # After commit: the notification points at a framework whose held
+            # state must already be readable when the owner follows the link.
+            await _notify_owner_of_pii_hold(db, artifact)
 
     if review_needed:
         return {"artifact_id": artifact_id, "status": "flagged_pii"}

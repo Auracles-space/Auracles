@@ -129,6 +129,36 @@ describe("FrameworkList", () => {
     );
   });
 
+  it("counts a blocked framework so it is not invisible", async () => {
+    // `pipeline_failed` belonged to none of the three buckets, so a framework
+    // held for PII review counted zero everywhere and disappeared under any
+    // filter. QA published one and could not find it at all.
+    listFrameworks.mockResolvedValue([
+      {
+        id: "fw-blocked",
+        title: "Held For Review Kit",
+        status: "pipeline_failed",
+        category: "framework",
+        version: "1.0.0",
+        price: "120000.00",
+        currency: "NGN",
+      },
+    ]);
+
+    render(
+      <FrameworkList seller={{ kind: "user" }} basePath="/dashboard/frameworks" />,
+    );
+
+    await screen.findByText("Held For Review Kit");
+    // Both a metric tile and a filter now exist for it: the count says
+    // something is waiting, the filter is how you reach it.
+    expect(
+      screen.getByRole("button", { name: /needs attention/i }),
+    ).toBeInTheDocument();
+    const tileLabels = screen.getAllByText(/needs attention/i);
+    expect(tileLabels.length).toBeGreaterThan(1);
+  });
+
   it("renders framework status through the shared pill vocabulary", async () => {
     listFrameworks.mockResolvedValue([
       {
