@@ -21,6 +21,9 @@ from app.core.database import async_session_factory
 from app.modules.attestation import notifications
 from app.modules.attestation.models import Attestation, AttestationOffer
 from app.modules.organizations import attestor_application_service
+from app.modules.organizations import notifications as org_notifications
+from app.modules.organizations.models import OrgCapability
+from app.modules.organizations.schemas import OrgAttestorApplicationCreateRequest
 from app.shared.models.audit_log import AuditLog
 from tests.integration.test_attestation_matching import (  # noqa: F401
     FakeNotificationTask,
@@ -269,3 +272,90 @@ async def test_suspension_leaves_offers_and_reviews_untouched(
     assert review.status == "in_review"
     assert review.attestor_org_id == org_id
     assert sent["admins"] == []
+
+
+async def test_owner_withdrawal_moves_work_on_like_a_revocation(
+    sent: dict[str, list[dict[str, Any]]],
+) -> None:
+    """An owner standing the capability down releases its work too.
+
+    Blocking the stand-down while work is in flight would rebuild the dead end
+    this exists to remove: an org with a live review could never withdraw,
+    never close, and its sole owner could never delete their account. The
+    release path already moves the work on with no money moving, so the
+    owner's exit reuses it rather than refusing.
+    """
+    requestor_id = await create_user("owner-withdraw@auracles.space", ["operator"])
+    org_id, reviewer_id, member_id = await create_org_attestor(
+        specializations=["healthcare"], jurisdictions=["US"], slug_prefix="withdraw"
+    )
+    attestation_id = await _attestation(requestor_id, "in_review")
+    await _assign(attestation_id, org_id, member_id)
+
+    async with async_session_factory() as session:
+        await attestor_application_service.withdraw_capability(
+            session, org_id=org_id, actor_id=reviewer_id
+        )
+
+    attestation = await _load(attestation_id)
+    assert attestation.status == "needs_admin"
+    assert attestation.attestor_org_id is None
+    assert [notice["target_id"] for notice in sent["admins"]] == [attestation_id]
+
+    async with async_session_factory() as session:
+        capability = await session.scalar(
+            select(OrgCapability).where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.capability == "attestor",
+            )
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "org_attestor_capability_withdrawn",
+                AuditLog.target_id == org_id,
+            )
+        )
+    assert capability is not None
+    # `withdrawn`, so the audit trail distinguishes the owner's choice from an
+    # admin revoking them, and so they may re-apply without an appeal.
+    assert capability.status == "withdrawn"
+    assert audit is not None
+
+
+async def test_a_withdrawn_org_may_apply_to_attest_again(
+    sent: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Standing down is not a revocation, so the door back is open.
+
+    `_CAPABILITY_REAPPLY_REFUSALS` bars a revoked or suspended org from
+    applying because only an admin can bring those back. An org that chose to
+    stop is a different case, and barring it would have made the wind-down a
+    one-way door — the trap this work exists to remove.
+    """
+    del sent
+    org_id, _reviewer_id, _member_id = await create_org_attestor(
+        specializations=["healthcare"], jurisdictions=["US"], slug_prefix="reapply"
+    )
+    async with async_session_factory() as session:
+        owner_id = (await org_notifications.org_owner_ids(session, org_id))[0]
+
+    async with async_session_factory() as session:
+        await attestor_application_service.withdraw_capability(
+            session, org_id=org_id, actor_id=owner_id
+        )
+
+    async with async_session_factory() as session:
+        application = await attestor_application_service.create_application(
+            session,
+            org_id=org_id,
+            actor_id=owner_id,
+            payload=OrgAttestorApplicationCreateRequest(
+                sectors=["private_equity"],
+                functions=["compliance"],
+                jurisdictions=["united_states"],
+                credentials_summary="Returning after standing down voluntarily.",
+                professional_references="References supplied on request.",
+            ),
+        )
+
+    assert application.status == "draft"

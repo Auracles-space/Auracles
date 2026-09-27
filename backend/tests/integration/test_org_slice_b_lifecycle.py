@@ -25,7 +25,7 @@ from app.core.security import create_access_token
 from app.modules.financials.models import Escrow, Payout, PayoutAccount, Transaction
 from app.modules.organizations.models import Organization, OrgLegalProfile
 from app.shared.models.audit_log import AuditLog
-from tests.conftest import open_step_up_window
+from tests.conftest import grant_step_up, open_step_up_window
 from tests.integration.test_auth_sessions import FakeRedis
 from tests.integration.test_org_admin_endpoints import (
     RecordingDispatch,
@@ -97,7 +97,7 @@ async def test_unverified_owner_can_manage_people(
     Decision 2: an owner staffs the organization from day one; only the
     capabilities stay behind business verification.
     """
-    del migrated_database, clean_orgs
+    del migrated_database
     from app.workers.tasks import org_notifications
 
     monkeypatch.setattr(org_notifications.send_org_invitation, "delay", lambda *a: None)
@@ -151,7 +151,7 @@ async def test_update_profile_audits_field_names_and_notifies_the_owner(
     fields that changed, never their values, and the owner (who did not make
     the edit) is notified.
     """
-    del migrated_database, clean_orgs
+    del migrated_database
     recorder = record_owner_notifications(monkeypatch)
     owner_id = await create_user("edit-owner")
     actor_id = await create_user("edit-admin")
@@ -191,7 +191,7 @@ async def test_owner_editing_own_profile_is_not_notified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The acting owner is skipped: the audit row is written, no notification."""
-    del migrated_database, clean_orgs
+    del migrated_database
     recorder = record_owner_notifications(monkeypatch)
     owner_id = await create_user("self-edit-owner")
     token = create_access_token(owner_id, [])
@@ -217,7 +217,7 @@ async def test_update_profile_with_no_change_is_silent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A PATCH that changes nothing writes no audit row and sends nothing."""
-    del migrated_database, clean_orgs
+    del migrated_database
     recorder = record_owner_notifications(monkeypatch)
     owner_id = await create_user("noop-owner")
     actor_id = await create_user("noop-admin")
@@ -251,8 +251,9 @@ async def test_deactivate_blocked_while_money_is_pending(
     Closing an organization with money in motion would orphan the funds; the
     409 names the block so the owner knows what to settle first.
     """
-    del migrated_database, clean_money
+    del migrated_database
     owner_id = await create_user("money-owner")
+    await grant_step_up(clean_money, owner_id)
     token = create_access_token(owner_id, [])
     org = await create_org(client, token, "moneyorg")
     org_id = UUID(org["id"])
@@ -336,9 +337,10 @@ async def test_deactivate_records_actor_and_reason_and_notifies_every_member(
     data is retained, and who to contact — so a member who finds the org
     gone from their dashboard is not left guessing.
     """
-    del migrated_database, clean_orgs
+    del migrated_database
     recorder = record_owner_notifications(monkeypatch)
     owner_id = await create_user("close-owner")
+    await grant_step_up(clean_orgs, owner_id)
     member_id = await create_user("close-member")
     token = create_access_token(owner_id, [])
     org = await create_org(client, token, "closing")
@@ -374,9 +376,10 @@ async def test_deactivate_reason_is_optional_and_bounded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The body is optional; a reason over 500 characters is refused."""
-    del migrated_database, clean_orgs
+    del migrated_database
     record_owner_notifications(monkeypatch)
     owner_id = await create_user("optional-owner")
+    await grant_step_up(clean_orgs, owner_id)
     token = create_access_token(owner_id, [])
     org = await create_org(client, token, "optional")
 
@@ -409,6 +412,7 @@ async def test_admin_reactivate_reopens_and_notifies_owners(
     del migrated_database
     recorder = record_owner_notifications(monkeypatch)
     owner_id = await create_user("reopen-owner")
+    await grant_step_up(clean_orgs, owner_id)
     token = create_access_token(owner_id, [])
     org = await create_org(client, token, "reopen")
     org_id = org["id"]
@@ -464,10 +468,11 @@ async def test_admin_directory_exposes_lifecycle_actors_and_reasons(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The admin org list carries who suspended/closed the org and why."""
-    del migrated_database, clean_orgs
+    del migrated_database
     record_owner_notifications(monkeypatch)
     admin_id, admin_headers = await create_platform_admin()
     owner_id = await create_user("dir-owner")
+    await grant_step_up(clean_orgs, owner_id)
     token = create_access_token(owner_id, [])
     suspended = await create_org(client, token, "dir-suspended")
     closed = await create_org(client, token, "dir-closed")
@@ -518,7 +523,7 @@ async def test_create_org_notifies_the_creator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST /v1/orgs leaves an ``org_created`` notification linking to the org."""
-    del migrated_database, clean_orgs
+    del migrated_database
     recorder = record_owner_notifications(monkeypatch)
     user_id = await create_user("create-ack")
     token = create_access_token(user_id, [])

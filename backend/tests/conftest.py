@@ -269,3 +269,29 @@ async def open_step_up_window(redis: object, user_id: object) -> None:
     await redis.set(  # type: ignore[attr-defined]
         step_up_key(resolved), datetime.now(UTC).isoformat(), ex=600
     )
+
+
+async def grant_step_up(redis: object, user_id: object) -> None:
+    """Enrol ``user_id`` in 2FA and open their step-up window.
+
+    ``require_step_up`` demands both: an account without ``totp_enabled``
+    answers ``totp_setup_required`` however fresh the window is. Tests that
+    exercise a step-up-gated endpoint need the pair, so they take it from here
+    rather than repeating the enrolment update.
+    """
+    from uuid import UUID as _StepUpUUID
+
+    from sqlalchemy import update as _update
+
+    from app.core.database import async_session_factory
+    from app.modules.auth.models import User
+
+    resolved = (
+        user_id if isinstance(user_id, _StepUpUUID) else _StepUpUUID(str(user_id))
+    )
+    async with async_session_factory() as session:
+        await session.execute(
+            _update(User).where(User.id == resolved).values(totp_enabled=True)
+        )
+        await session.commit()
+    await open_step_up_window(redis, resolved)

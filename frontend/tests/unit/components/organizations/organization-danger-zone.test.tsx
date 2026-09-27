@@ -45,6 +45,12 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   deactivateOrganizationV1OrgsOrgIdDelete: vi.fn(),
   listMembersV1OrgsOrgIdMembersGet: vi.fn(),
   transferOwnershipV1OrgsOrgIdTransferOwnershipPost: vi.fn(),
+  // The danger zone also hosts the capability wind-down panel, whose own
+  // behaviour is covered in organization-capability-winddown.test.tsx.
+  withdrawAttestorCapabilityV1OrgsOrgIdAttestorCapabilityWithdrawPost: vi.fn(),
+  withdrawContributorCapabilityV1OrgsOrgIdContributorCapabilityWithdrawPost:
+    vi.fn(),
+  withdrawOperatorCapabilityV1OrgsOrgIdOperatorCapabilityWithdrawPost: vi.fn(),
 }));
 
 function ok<T>(data: T) {

@@ -8780,6 +8780,16 @@ export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostR
 
 export type SetAttestorTaxDocumentV1OrgsOrgIdAttestorApplicationTaxDocumentPostError = (HTTPValidationError);
 
+export type WithdrawAttestorCapabilityV1OrgsOrgIdAttestorCapabilityWithdrawPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type WithdrawAttestorCapabilityV1OrgsOrgIdAttestorCapabilityWithdrawPostResponse = (void);
+
+export type WithdrawAttestorCapabilityV1OrgsOrgIdAttestorCapabilityWithdrawPostError = (HTTPValidationError);
+
 export type GetAttestorTrialV1OrgsOrgIdAttestorTrialGetData = {
     path: {
         org_id: string;
@@ -8810,6 +8820,16 @@ export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivat
 export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostResponse = (OrgCapabilityResponse);
 
 export type ActivateContributorCapabilityV1OrgsOrgIdContributorCapabilityActivatePostError = (HTTPValidationError);
+
+export type WithdrawContributorCapabilityV1OrgsOrgIdContributorCapabilityWithdrawPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type WithdrawContributorCapabilityV1OrgsOrgIdContributorCapabilityWithdrawPostResponse = (void);
+
+export type WithdrawContributorCapabilityV1OrgsOrgIdContributorCapabilityWithdrawPostError = (HTTPValidationError);
 
 export type ListOrgDeliveriesV1OrgsOrgIdDeliveriesGetData = {
     path: {
@@ -9498,6 +9518,16 @@ export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostD
 export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostResponse = (OrgCapabilityResponse);
 
 export type ActivateOperatorCapabilityV1OrgsOrgIdOperatorCapabilityActivatePostError = (HTTPValidationError);
+
+export type WithdrawOperatorCapabilityV1OrgsOrgIdOperatorCapabilityWithdrawPostData = {
+    path: {
+        org_id: string;
+    };
+};
+
+export type WithdrawOperatorCapabilityV1OrgsOrgIdOperatorCapabilityWithdrawPostResponse = (void);
+
+export type WithdrawOperatorCapabilityV1OrgsOrgIdOperatorCapabilityWithdrawPostError = (HTTPValidationError);
 
 export type ListOrgProjectsV1OrgsOrgIdProjectsGetData = {
     path: {

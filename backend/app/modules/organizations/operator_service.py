@@ -123,6 +123,82 @@ async def activate_operator_capability(
     return capability
 
 
+async def withdraw_operator_capability(
+    db: AsyncSession,
+    *,
+    org_id: UUID,
+    actor_id: UUID,
+) -> None:
+    """Stand the org Operator capability down at its owner's request.
+
+    The operator half of the owner-initiated wind-down: closing an
+    organization refuses while any capability is active, and every status
+    change used to be admin-only, so an owner had no route out. Unlike
+    contributor and attestor there is no profile row here, so the status and
+    the derived roles are the whole change.
+
+    Writes `withdrawn` rather than `revoked`, which means an admin took the
+    capability away. `activate_operator_capability` reinstates any non-active
+    status, so this is reversible without an admin.
+
+    The caller enforces owner role and step-up; the money gate belongs to the
+    close endpoint, because money outlives any single capability.
+
+    Args:
+        org_id: Organization standing the capability down.
+        actor_id: Owner making the change, for the audit row.
+
+    Raises:
+        HTTPException(404): No operator capability exists for the org.
+        HTTPException(409): The capability is already inactive.
+    """
+    if db.in_transaction():
+        await db.rollback()
+
+    async with db.begin():
+        capability = await db.scalar(
+            select(OrgCapability)
+            .where(
+                OrgCapability.org_id == org_id,
+                OrgCapability.capability == "operator",
+            )
+            .with_for_update()
+        )
+        if capability is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Org operator capability not found.",
+            )
+        if capability.status != "active":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The operator capability is not active.",
+            )
+        capability.status = "withdrawn"
+        # No reason text: an admin's reason explains an action taken against
+        # the org, which is not what this is.
+        capability.status_reason = None
+
+        await write_audit(
+            db=db,
+            actor_id=actor_id,
+            action="org_operator_capability_withdrawn",
+            target_type="organization",
+            target_id=org_id,
+            metadata={"status": "withdrawn"},
+        )
+
+    # Derived roles follow the capability, or a member keeps acting as an
+    # operator for an organization that has stopped being one.
+    await _sync_org_member_roles(db, org_id)
+    logger.bind(
+        module="organizations",
+        action="org_operator_withdrawn",
+        user_id=str(actor_id),
+        org_id=str(org_id),
+    ).info("org_operator_capability_withdrawn")
+
+
 async def admin_set_operator_capability_status(
     db: AsyncSession,
     *,

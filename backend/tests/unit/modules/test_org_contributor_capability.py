@@ -299,3 +299,52 @@ async def test_admin_status_changes_revoke_and_restore_derived_roles(
     assert capability.status == "revoked"
     assert profile is not None
     assert profile.active is False
+
+
+async def test_owner_withdraws_contributor_capability(
+    migrated_database: None,
+    contributor_capability_state: None,
+) -> None:
+    """An owner can stand the contributor capability down themselves.
+
+    Closing an organization refuses while any capability is active, and every
+    status change used to be admin-only — so an owner who wanted out had no
+    route that did not go through support, and account deletion was blocked
+    behind that. Withdrawing is the owner's half of the wind-down.
+    """
+    owner = await _create_user("withdraw-owner")
+    member = await _create_user("withdraw-member")
+    organization = await _create_org_with_member(owner, member)
+
+    async with async_session_factory() as session:
+        await contributor_service.activate_contributor_capability(
+            session, org_id=organization.id, actor_id=owner.id
+        )
+
+    async with async_session_factory() as session:
+        await contributor_service.withdraw_contributor_capability(
+            session, org_id=organization.id, actor_id=owner.id
+        )
+
+    async with async_session_factory() as session:
+        capability = await session.scalar(
+            select(OrgCapability).where(
+                OrgCapability.org_id == organization.id,
+                OrgCapability.capability == "contributor",
+            )
+        )
+        profile = await session.scalar(
+            select(OrgContributorProfile).where(
+                OrgContributorProfile.org_id == organization.id
+            )
+        )
+
+    assert capability is not None
+    # `withdrawn`, not `revoked`: revoked means an admin took it away, bars
+    # re-application, and tells the owner to appeal to support.
+    assert capability.status == "withdrawn"
+    assert profile is not None
+    assert profile.active is False
+    # The derived contributor role goes with the capability, or a member keeps
+    # acting as a contributor for an org that has stopped being one.
+    assert await _contributor_roles(member.id) == []
