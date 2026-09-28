@@ -76,12 +76,17 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy app
       - run: uv run openapi-spec-validator ../contracts/openapi.yaml
-      # conftest pins the suite at a dedicated `auracles_test` DB so fixtures can
-      # truncate freely. The Postgres service only seeds `auracles`, so create the
-      # test DB here; the `migrated_database` fixtures run the Alembic upgrade.
-      - name: Create test database
-        run: PGPASSWORD=secret psql -h localhost -U auracles -d auracles -c "CREATE DATABASE auracles_test OWNER auracles;"
-      - run: uv run pytest --cov=app.modules --cov=app.workers --cov-fail-under=80
+      # conftest pins the suite at dedicated `auracles_test*` DBs so fixtures can
+      # truncate freely, and gives each xdist worker its own. The Postgres
+      # service only seeds `auracles`, so the databases are created here: the
+      # template is migrated once and cloned, rather than every worker paying
+      # the full Alembic upgrade.
+      - name: Create test databases
+        run: USE_DOCKER_PSQL=0 TEST_WORKERS=4 ../scripts/test-databases.sh
+      # -n 4 matches TEST_WORKERS above; a worker without a database fails on
+      # connect. --dist loadfile keeps a module's tests on one worker, which the
+      # module-scoped truncation fixture in conftest requires.
+      - run: uv run pytest -n 4 --dist loadfile --cov=app.modules --cov=app.workers --cov-fail-under=80
       - run: uv run alembic upgrade head
       - run: uv run alembic downgrade -1
       - run: docker build . --tag auracles-backend:checks

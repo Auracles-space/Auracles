@@ -14,6 +14,13 @@ from app.modules.realtime.pubsub import publish_to_channel, subscribe_channel
 @pytest.fixture(autouse=True)
 async def redis_connection() -> None:
     """Skip realtime integration tests when local Redis is unavailable."""
+    # The client is cached per process and outlives the event loop it was built
+    # on, so one an earlier test created fails this ping with "Event loop is
+    # closed" while Redis is perfectly healthy — and the whole module then
+    # skipped itself, reporting nothing. Rebuild on this loop first, so a skip
+    # here means Redis is genuinely unavailable rather than that this file ran
+    # second.
+    get_redis.cache_clear()
     client = get_redis()
     try:
         await client.ping()

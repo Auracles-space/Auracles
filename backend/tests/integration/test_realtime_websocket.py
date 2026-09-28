@@ -19,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
 from app.core.database import engine
+from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
@@ -27,6 +28,22 @@ from app.modules.projects.models import Project, Proposal
 from app.modules.realtime import gateway
 from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_sync
+
+
+@pytest.fixture(autouse=True)
+def _reset_cached_redis_client() -> Iterator[None]:
+    """Drop the process-cached Redis client around every test in this module.
+
+    `TestClient` runs the app lifespan, and its shutdown closes the cached
+    client. That cache is per process and outlives the event loop the client
+    was built on, so a client an earlier test created is closed here on a loop
+    it does not belong to — "got Future attached to a different loop". Which
+    test ran before this one depends on how the files are distributed across
+    xdist workers, so it cannot be left to ordering.
+    """
+    get_redis.cache_clear()
+    yield
+    get_redis.cache_clear()
 
 
 class FakeSubscriptionHandle:
