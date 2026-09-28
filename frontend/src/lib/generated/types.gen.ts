@@ -565,6 +565,76 @@ export type AdminFinancialEventsResponse = {
 };
 
 /**
+ * One Artifact on a Framework, described without exposing the file.
+ *
+ * Admins adjudicate holds from metadata only: no ``file_key`` and no
+ * download URL is ever serialized here, so a held Artifact's contents stay
+ * behind the same licence gate as every other Artifact.
+ */
+export type AdminFrameworkArtifactItem = {
+    artifact_id: string;
+    auto_redacted: boolean;
+    blocking: boolean;
+    created_at: string;
+    current_for_framework: boolean;
+    file_size: number;
+    mime_type: string;
+    name: string;
+    pii_detected: boolean;
+    pii_review_needed: boolean;
+    pii_types_found: Array<(string)>;
+    processing_status: string;
+    rarity_score?: (string | null);
+    redaction_accepted: boolean;
+    redaction_available: boolean;
+    redaction_status?: (string | null);
+    scan_status: string;
+};
+
+/**
+ * Read-only admin view of one Framework in any status.
+ *
+ * The moderation queue names a held Framework but shows nothing of the
+ * Framework itself, and the directory lists published Frameworks only, so a
+ * held Framework appears in no other admin surface. This is the only place
+ * an admin can read one.
+ */
+export type AdminFrameworkDetailResponse = {
+    action_links: Array<AdminModerationActionLink>;
+    artifacts: Array<AdminFrameworkArtifactItem>;
+    business_function?: (string | null);
+    category: string;
+    complexity?: (number | null);
+    contributor_email?: (string | null);
+    contributor_id?: (string | null);
+    contributor_name?: (string | null);
+    created_at: string;
+    currency: string;
+    description: string;
+    framework_id: string;
+    industry?: (string | null);
+    jurisdiction?: (string | null);
+    last_pipeline_run_at?: (string | null);
+    license_types: Array<(string)>;
+    org_price?: (string | null);
+    organization_id?: (string | null);
+    organization_name?: (string | null);
+    pipeline_failure_reasons: {
+        [key: string]: unknown;
+    };
+    price: string;
+    published_at?: (string | null);
+    rejection_reason?: (string | null);
+    sector?: (string | null);
+    status: string;
+    tags: Array<(string)>;
+    timeline: Array<AdminFrameworkTimelineEntry>;
+    title: string;
+    updated_at: string;
+    version: string;
+};
+
+/**
  * One Framework in the admin directory used to pick a delist target.
  */
 export type AdminFrameworkDirectoryItem = {
@@ -610,6 +680,19 @@ export type AdminFrameworkStatusResponse = {
  */
 export type AdminFrameworkSuspendRequest = {
     reason: string;
+};
+
+/**
+ * One audit entry recorded against a Framework.
+ */
+export type AdminFrameworkTimelineEntry = {
+    action: string;
+    actor_id?: (string | null);
+    actor_name?: (string | null);
+    created_at: string;
+    metadata: {
+        [key: string]: unknown;
+    };
 };
 
 /**
@@ -6008,6 +6091,16 @@ export type WorkspaceUploadSessionResponse = {
     size_limit: number;
     url: string;
 };
+
+export type GetAdminFrameworkDetailV1AdminFrameworksFrameworkIdGetData = {
+    path: {
+        framework_id: string;
+    };
+};
+
+export type GetAdminFrameworkDetailV1AdminFrameworksFrameworkIdGetResponse = (AdminFrameworkDetailResponse);
+
+export type GetAdminFrameworkDetailV1AdminFrameworksFrameworkIdGetError = (HTTPValidationError);
 
 export type AdminOrgAttestationsV1AdminOrgsOrgIdAttestationsGetData = {
     path: {

@@ -12,6 +12,7 @@
  *
  * Maps to: admin content moderation (FR-ADMIN, FR-FWK).
  */
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -137,7 +138,12 @@ export function AdminSuspendedFrameworksPanel() {
             >
               <div className="min-w-0">
                 <p className="truncate font-semibold text-foreground">
-                  {item.title}
+                  <Link
+                    className="rounded-md transition-colors hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    href={`/admin/frameworks/${item.framework_id}`}
+                  >
+                    {item.title}
+                  </Link>
                 </p>
                 <p className="mt-0.5 text-xs text-foreground-muted">
                   {item.contributor_name} · Suspended{" "}

@@ -113,4 +113,16 @@ describe("AdminModerationPanel", () => {
       });
     });
   });
+
+  it("links each queued Framework to its admin detail page", async () => {
+    // A held Framework is not published, so /explore/{id} would 404 and the
+    // admin directory does not list it. The detail route is the only place an
+    // admin can open one.
+    render(<AdminModerationPanel />);
+
+    const link = await screen.findByRole("link", {
+      name: "Blocked Similarity Framework",
+    });
+    expect(link).toHaveAttribute("href", "/admin/frameworks/framework-1");
+  });
 });

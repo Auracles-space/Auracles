@@ -9,6 +9,7 @@
  * requires a step-up 2FA window, which the global step-up prompt handles when
  * the call is refused.
  */
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import {
@@ -232,7 +233,12 @@ export function AdminModerationPanel() {
                     {formatLabel(item.queue_type)}
                   </p>
                   <h3 className="mt-1 font-heading text-xl font-bold text-foreground">
-                    {item.framework_title}
+                    <Link
+                      className="rounded-md transition-colors hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      href={`/admin/frameworks/${item.framework_id}`}
+                    >
+                      {item.framework_title}
+                    </Link>
                   </h3>
                   <p className="mt-1 text-sm text-foreground-muted">
                     Contributor: <span className="font-medium text-foreground">{item.contributor_name}</span>

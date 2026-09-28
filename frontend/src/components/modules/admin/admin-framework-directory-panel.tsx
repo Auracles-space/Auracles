@@ -11,6 +11,7 @@
  * Delisting is a sensitive action: the API requires a step-up 2FA window,
  * which the global step-up prompt handles when the call is refused.
  */
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -189,7 +190,12 @@ export function AdminFrameworkDirectoryPanel() {
                 {/* Framework title cell */}
                 <div className="grid gap-0.5">
                   <h3 className="font-heading text-lg font-bold text-foreground md:text-sm md:font-semibold">
-                    {item.title}
+                    <Link
+                      className="rounded-md transition-colors hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      href={`/admin/frameworks/${item.framework_id}`}
+                    >
+                      {item.title}
+                    </Link>
                   </h3>
                   <span className="inline-flex w-fit items-center rounded-badge border border-success/30 bg-success/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-success">
                     {item.status}

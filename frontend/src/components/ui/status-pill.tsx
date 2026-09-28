@@ -86,6 +86,13 @@ const PRESENTATION: Record<string, StatusPresentation> = {
   pipeline_failed: { label: "Processing failed", tone: "error" },
   published: { label: "Published", tone: "success" },
   unpublished: { label: "Unpublished", tone: "neutral" },
+  // Artifact processing states, shown on the admin Framework detail. A held
+  // Artifact reads as the review it is waiting on, not as the enum label
+  // ("Flagged Pii"), and `processed` is the clean terminal state.
+  processed: { label: "Processed", tone: "success" },
+  flagged_pii: { label: "PII review", tone: "warning" },
+  flagged_rarity: { label: "Rarity review", tone: "warning" },
+  infected: { label: "Virus found", tone: "error" },
   // Payouts: `pending`, `processing` and `failed` share the keys above; a
   // settled payout reads as "Paid" whichever word the provider rail uses.
   completed: { label: "Paid", tone: "success" },
