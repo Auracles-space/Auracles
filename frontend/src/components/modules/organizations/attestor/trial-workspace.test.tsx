@@ -175,6 +175,29 @@ describe("TrialWorkspace", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows why a PII-held fixture blocks the trial instead of an empty workspace", async () => {
+    // A 409 takes the generic branch rather than the 404/403 ones, so this
+    // guards against a later branch swallowing it into a blank page. The
+    // backend's sentence reaches the screen via describeGeneratedError, which
+    // returns the `message` from a structured detail.
+    vi.mocked(getAttestorTrial).mockResolvedValue({
+      data: undefined,
+      error: {
+        detail: {
+          error_code: "fixture_pii_hold",
+          message: "This calibration fixture is on hold pending review.",
+        },
+      },
+      response: { ok: false, status: 409 },
+    } as never);
+    render(<TrialWorkspace orgId="org-1" />);
+
+    expect(
+      await screen.findByText(/The request could not be completed\./i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Submit Trial/i })).toBeNull();
+  });
+
   it("renders the terminal outcome and feedback without a submit form", async () => {
     vi.mocked(getAttestorTrial).mockResolvedValue(
       ok({

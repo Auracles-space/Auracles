@@ -244,6 +244,34 @@ async def load_nominee_trial(
             .order_by(Artifact.created_at.asc())
         )
     ).all()
+    # A nominee is an external person. An Artifact whose PII flag is unresolved
+    # and for which redaction produced no clean copy would be served as the
+    # original below, so the trial cannot open at all. Dropping the file
+    # instead would leave the nominee grading an incomplete fixture and yield a
+    # calibration score the platform would then trust.
+    held = [
+        artifact
+        for artifact in artifacts
+        if artifact.pii_review_needed and artifact.clean_file_key is None
+    ]
+    if held:
+        logger.bind(
+            module="organizations",
+            action="load_nominee_trial",
+            org_id=str(org_id),
+            framework_id=str(framework.id),
+            artifact_count=len(held),
+        ).error("fixture_pii_hold")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=error_detail(
+                "fixture_pii_hold",
+                "This calibration fixture is on hold pending review and cannot "
+                "be opened. An administrator must resolve it before the trial "
+                "can start.",
+            ),
+        )
+
     saved_scores = (
         await db.scalars(
             select(AttestorTrialRubricScore)
