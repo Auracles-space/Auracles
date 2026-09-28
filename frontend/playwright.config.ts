@@ -12,6 +12,13 @@ export default defineConfig({
   },
   testDir: "./tests/e2e",
   timeout: 30_000,
+  // Pinned rather than left to Playwright's "50% of cores" default. The suite
+  // runs against `next dev`, which compiles each route on first hit, so more
+  // workers than this put several uncompiled routes under load at once and
+  // tests that pass in seconds time out after minutes. Two is what a 4-vCPU
+  // runner would pick anyway; fixing it keeps a developer's larger machine
+  // from behaving differently from CI.
+  workers: 2,
   use: {
     baseURL: "http://127.0.0.1:3100",
     trace: "on-first-retry",
