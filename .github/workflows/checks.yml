@@ -116,3 +116,12 @@ jobs:
       - run: corepack pnpm build
         env:
           NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ci_placeholder
+      # The end-to-end suite mocks every API call at the network boundary, so it
+      # needs no database, Redis or API — only a browser and the dev server that
+      # playwright.config.ts starts itself. Nothing ran these before, which is
+      # how they drifted to 16 failures without anyone noticing. This job runs
+      # beside the much longer Backend job, so it does not extend CI wall clock.
+      - run: corepack pnpm exec playwright install --with-deps chromium
+      - run: corepack pnpm test:e2e
+        env:
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ci_placeholder
