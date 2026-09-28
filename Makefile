@@ -37,15 +37,13 @@ beat:
 migrate:
 	cd backend && uv run alembic upgrade head
 
-# Create (if missing) and migrate the isolated test database. The suite points
-# at auracles_test via tests/conftest.py so its destructive fixtures never touch
-# the dev DB. `make dev` runs this automatically; use this to repair it.
+# Create and migrate the isolated test databases. The suite points at
+# auracles_test via tests/conftest.py so its destructive fixtures never touch
+# the dev DB, and runs under pytest-xdist, so each worker gets its own clone.
+# `make dev` runs this automatically; use this to repair it. Set TEST_WORKERS to
+# match the -n you pass to pytest.
 test-db:
-	docker compose exec -T postgres psql -U auracles -d postgres -tAc \
-	  "SELECT 1 FROM pg_database WHERE datname='auracles_test'" | grep -q 1 \
-	  || docker compose exec -T postgres psql -U auracles -d postgres \
-	       -c "CREATE DATABASE auracles_test OWNER auracles;"
-	cd backend && DATABASE_URL='postgresql+asyncpg://auracles:secret@localhost:5432/auracles_test' uv run alembic upgrade head
+	./scripts/test-databases.sh
 
 # Stop and remove the datastores (keeps named volumes).
 down:

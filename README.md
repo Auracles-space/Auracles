@@ -149,13 +149,22 @@ and staging already tested. Rollback is tagging an earlier commit.
 
 ## Tests
 
-The backend suite runs against an **isolated** `auracles_test` database and Redis
-db 1 — never the dev datastores — because integration fixtures delete Users and
-other rows. `make dev` creates and migrates `auracles_test` automatically; run
-`make test-db` to repair it if it's missing.
+The backend suite runs against **isolated** `auracles_test*` databases and Redis
+dbs 1-15 — never the dev datastores — because integration fixtures delete Users
+and other rows. It runs in parallel under pytest-xdist, so each worker gets its
+own database: `auracles_test` is migrated once and cloned to
+`auracles_test_gw0..gwN`. `make dev` creates them automatically; run
+`make test-db` to repair or rebuild them.
+
+`-n` must not exceed the number of worker databases (`TEST_WORKERS`, default 4),
+and `--dist loadfile` is required — the module-scoped truncation fixture in
+`tests/conftest.py` needs a module's tests to stay on one worker.
 
 ```bash
 # Backend
+cd backend && uv run pytest -n 4 --dist loadfile
+
+# Backend, serial (uses auracles_test directly)
 cd backend && uv run pytest
 
 # Frontend

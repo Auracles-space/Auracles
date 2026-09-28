@@ -9,10 +9,30 @@ os.environ.setdefault("ENVIRONMENT", "local")
 # fixtures delete Users/audit/etc., so pointing at the `auracles` dev DB (or
 # Redis db 0) would wipe the seeded dev account on every run. `auracles_test`
 # and Redis db 1 are created/migrated by `make test-db` (see scripts/dev-up.sh).
+# Under pytest-xdist every worker needs its own database and its own Redis
+# logical db. The fixtures here truncate whole tables and the suite writes
+# rate-limit counters and refresh tokens to Redis, so workers sharing either
+# store would delete each other's rows mid-run and surface as flake. xdist
+# exports PYTEST_XDIST_WORKER ("gw0", "gw1", ...) into each worker process
+# before conftest is imported, which is what makes the split possible here.
+# `scripts/test-databases.sh` (make test-db) creates the databases ahead of the
+# run. A serial run has no worker id and keeps the original names, so nothing
+# changes for `pytest` without -n.
+_XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")
+_XDIST_INDEX = int(_XDIST_WORKER[2:]) if _XDIST_WORKER.startswith("gw") else 0
+# Redis ships 16 logical databases. db 0 is the dev namespace, so the suite owns
+# 1-15. Refuse rather than wrap onto a neighbour's db, which would look like
+# cross-test interference from a long way away.
+if _XDIST_INDEX > 14:
+    raise RuntimeError(
+        f"pytest-xdist worker {_XDIST_WORKER!r} exceeds the 15 Redis databases "
+        "the suite can isolate. Run with -n 15 or fewer."
+    )
+_TEST_DATABASE = f"auracles_test_{_XDIST_WORKER}" if _XDIST_WORKER else "auracles_test"
 os.environ["DATABASE_URL"] = (
-    "postgresql+asyncpg://auracles:secret@localhost:5432/auracles_test"
+    f"postgresql+asyncpg://auracles:secret@localhost:5432/{_TEST_DATABASE}"
 )
-os.environ["REDIS_URL"] = "redis://localhost:6379/1"
+os.environ["REDIS_URL"] = f"redis://localhost:6379/{1 + _XDIST_INDEX}"
 os.environ["SECRET_KEY"] = "dev-only-change-me"
 os.environ["TOTP_ENCRYPTION_KEY"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 os.environ["PAYOUT_ACCOUNT_ENCRYPTION_KEY"] = (
