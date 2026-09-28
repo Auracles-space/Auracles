@@ -107,6 +107,11 @@ async def _profile_stats(db: AsyncSession, user_id: UUID) -> ProfileStats:
             select(func.count(Framework.id)).where(
                 Framework.contributor_id == user_id,
                 Framework.status == "published",
+                # Creating a calibration fixture mints a published Framework
+                # owned by the admin who created it, and every marketplace
+                # surface hides fixtures. Counting one advertised a Framework
+                # the profile could never display.
+                Framework.is_calibration.is_(False),
             )
         )
         or 0
