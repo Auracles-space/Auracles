@@ -236,7 +236,7 @@ async function mockBecomeAttestorApi(page: Page): Promise<void> {
 test.describe("Become an attestor front door", () => {
   test.use({ viewport: { width: 375, height: 812 } });
 
-  test("a user with no org creates one and lands on the attestor checklist", async ({
+  test("a user with no org creates one and lands on business verification", async ({
     context,
     page,
   }) => {
@@ -255,7 +255,14 @@ test.describe("Become an attestor front door", () => {
     await page.getByRole("button", { name: /^Create & continue$/i }).click();
 
     await expect(page).toHaveURL(/\/dashboard\/organizations\/org-1\/attestor$/);
-    await expect(page.getByText(/Attestor Application/i)).toBeVisible();
-    await expect(page.getByText(/Start with Apply below\./i)).toBeVisible();
+    // A new organization is sent to business verification first: the attestor
+    // application only opens once the business is verified, so the attestor tab
+    // renders the verification gate rather than the application checklist.
+    await expect(
+      page.getByRole("heading", { name: "Verify this organization" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/An organization is verified before it can act on Auracles/),
+    ).toBeVisible();
   });
 });

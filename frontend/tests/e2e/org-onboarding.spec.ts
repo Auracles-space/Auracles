@@ -85,6 +85,12 @@ type OwnerState = {
   invitations: Array<Record<string, unknown>>;
   applicationStatus: "rejected" | "draft";
   applicationCreated: boolean;
+  /**
+   * The org's attestor capability. `reviewStage` reads this before the
+   * application status, so a revoked capability hides the rejected-application
+   * state entirely — the two cannot be asserted on one org.
+   */
+  attestorCapability: "revoked" | undefined;
 };
 
 function org(id: string, name: string, overrides: Record<string, unknown> = {}) {
@@ -117,7 +123,8 @@ function org(id: string, name: string, overrides: Record<string, unknown> = {}) 
   };
 }
 
-const organizations = [
+function organizations(state: OwnerState) {
+  return [
   org("org-review", "Lagos Audit Partners", { kyb_status: "pending" }),
   org("org-suspended", "Meridian Advisory", {
     org: {
@@ -126,11 +133,14 @@ const organizations = [
     },
   }),
   org("org-revoked", "Harbour Attestations", {
-    capabilities: { attestor: "revoked", contributor: "active" },
+    capabilities: state.attestorCapability
+      ? { attestor: state.attestorCapability, contributor: "active" }
+      : { contributor: "active" },
     capability_reasons: { attestor: "Calibration drift after two disputes." },
     nda_required: true,
   }),
-];
+  ];
+}
 
 function application(state: OwnerState) {
   return {
@@ -204,7 +214,7 @@ async function mockOwnerApi(page: Page, state: OwnerState): Promise<void> {
       return;
     }
     if (path === "/v1/orgs/mine") {
-      await fulfillJson(route, { organizations });
+      await fulfillJson(route, { organizations: organizations(state) });
       return;
     }
     if (path === "/v1/org-invitations/received") {
@@ -275,6 +285,7 @@ function freshState(): OwnerState {
     ],
     applicationStatus: "rejected",
     applicationCreated: false,
+    attestorCapability: "revoked",
   };
 }
 
@@ -322,10 +333,7 @@ test("the suspended organization's shell explains why and when", async ({ contex
   );
 });
 
-test("a revoked capability is explained and a rejected application can be restarted", async ({
-  context,
-  page,
-}) => {
+test("a revoked capability is explained", async ({ context, page }) => {
   const state = freshState();
   await signIn(context, page);
   await mockOwnerApi(page, state);
@@ -333,9 +341,25 @@ test("a revoked capability is explained and a rejected application can be restar
   await page.goto("/dashboard/organizations/org-revoked/attestor");
 
   await expect(page.getByText("Attestor capability revoked")).toBeVisible();
-  await expect(page.getByText("Calibration drift after two disputes.").first()).toBeVisible();
+  await expect(
+    page.getByText("Calibration drift after two disputes.").first(),
+  ).toBeVisible();
+});
 
-  await expect(page.getByText("Rejected").first()).toBeVisible();
+test("a rejected application explains why and can be restarted", async ({
+  context,
+  page,
+}) => {
+  // No attestor capability on this run: `reviewStage` reports a revoked
+  // capability ahead of the application status, so the rejection is only
+  // reachable once the capability is gone. The two states cannot coexist.
+  const state: OwnerState = { ...freshState(), attestorCapability: undefined };
+  await signIn(context, page);
+  await mockOwnerApi(page, state);
+
+  await page.goto("/dashboard/organizations/org-revoked/attestor");
+
+  await expect(page.getByText("Application not approved").first()).toBeVisible();
   await expect(
     page.getByText("The sample work did not show a completed engagement."),
   ).toBeVisible();

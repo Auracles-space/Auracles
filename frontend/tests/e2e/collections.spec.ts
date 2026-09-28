@@ -432,8 +432,13 @@ test("Contributor builds a Collection and Operator sees/refunds collection licen
   for (const framework of frameworks) {
     await addFrameworkToActiveBundle(page, framework.id);
   }
-  await page.getByRole("button", { name: "Publish bundle" }).click();
-  await expect(page.getByText("Collection update failed.")).toBeVisible();
+  // An overpriced bundle is refused before it is sent now: publish stays
+  // disabled until the bundle is priced below the sum of its members, rather
+  // than submitting and surfacing a server error.
+  await expect(page.getByRole("button", { name: "Publish bundle" })).toBeDisabled();
+  await expect(
+    page.getByText(/priced below member value before publish/),
+  ).toBeVisible();
 
   await page.getByPlaceholder("Collection title").fill("Diligence Control Collection");
   await page

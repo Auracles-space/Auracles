@@ -1,7 +1,11 @@
 /**
  * Browser-level Organization Operator flow.
  *
- * Verifies org creation, invitation sending, and viewing the Org Projects tab.
+ * Covers the Org Projects tab. Creation and invitations are covered by
+ * organizations.spec.ts against the current UI: this file used to repeat them
+ * through a `/dashboard/organizations/new` route that no longer exists, a
+ * slug-based org URL, an Invitations tab an unverified org does not show, and
+ * an `auracles_access_token` in localStorage that the app never reads.
  */
 import { createHmac } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
@@ -11,25 +15,13 @@ import { mockSessionBootstrap } from "./helpers/authenticated-shell";
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
-const orgId = "00000000-0000-4000-8000-000000000org";
+const orgId = "00000000-0000-4000-8000-0000000000a1";
 const currentUserId = "00000000-0000-4000-8000-000000000011";
 
 function base64Url(value: string): string {
   return Buffer.from(value).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function fakeAccessToken(roles: string[]): string {
-  const header = base64Url(JSON.stringify({ alg: "none", typ: "JWT" }));
-  const payload = base64Url(
-    JSON.stringify({
-      exp: Math.floor(Date.now() / 1000) + 900,
-      roles,
-      sub: currentUserId,
-      totp_verified: true,
-    })
-  );
-  return `${header}.${payload}.signature`;
-}
 
 function sessionHintValue(roles = ["operator"]): string {
   const payload = base64Url(
@@ -63,7 +55,19 @@ async function fulfillJson(route: Parameters<Parameters<Page["route"]>[1]>[0], b
 }
 
 async function mockOrgApi(page: Page): Promise<void> {
-  let createdOrg: unknown = null;
+  // Seeded rather than left null: this file no longer creates the org through
+  // the UI (organizations.spec.ts owns that), so the detail read has to answer
+  // from the first request or the page renders its error state.
+  let createdOrg: unknown = {
+    country: "NG",
+    created_at: "2026-06-01T00:00:00Z",
+    id: orgId,
+    kyb_status: "verified",
+    name: "Test Org",
+    slug: "test-org",
+    status: "active",
+    updated_at: "2026-06-01T00:00:00Z",
+  };
   const invites: unknown[] = [];
 
   await page.route(`${apiOrigin}/v1/**`, async (route) => {
@@ -90,7 +94,27 @@ async function mockOrgApi(page: Page): Promise<void> {
       return;
     }
 
-    if (path === "/v1/organizations") {
+    // The organization shell resolves the current org from /v1/orgs/mine, not
+    // from the detail read — a nested membership record, not a bare org.
+    if (path === "/v1/orgs/mine") {
+      await fulfillJson(route, {
+        organizations: [
+          {
+            capabilities: { operator: "active" },
+            capability_reasons: {},
+            counts: { members: 1 },
+            grants: {},
+            kyb_status: "verified",
+            kyb_verified_at: "2026-06-01T00:00:00Z",
+            org: createdOrg,
+            role: "owner",
+          },
+        ],
+      });
+      return;
+    }
+
+    if (path === "/v1/orgs") {
       if (request.method() === "POST") {
         const body = JSON.parse(request.postData() ?? "{}");
         createdOrg = {
@@ -110,12 +134,12 @@ async function mockOrgApi(page: Page): Promise<void> {
       }
     }
 
-    if (path === `/v1/organizations/${orgId}`) {
+    if (path === `/v1/orgs/${orgId}`) {
       await fulfillJson(route, createdOrg);
       return;
     }
 
-    if (path === `/v1/organizations/${orgId}/invitations`) {
+    if (path === `/v1/orgs/${orgId}/invitations`) {
       if (request.method() === "POST") {
         const body = JSON.parse(request.postData() ?? "{}");
         const invite = {
@@ -136,7 +160,7 @@ async function mockOrgApi(page: Page): Promise<void> {
       }
     }
 
-    if (path === `/v1/organizations/${orgId}/projects`) {
+    if (path === `/v1/orgs/${orgId}/projects`) {
       await fulfillJson(route, {
         projects: [
           {
@@ -155,7 +179,10 @@ async function mockOrgApi(page: Page): Promise<void> {
       return;
     }
 
-    await route.continue();
+    // Anything not handled above would otherwise reach a backend that is not
+    // running here, and the rejection surfaces as an error page rather than as
+    // the assertion that actually failed.
+    await fulfillJson(route, {});
   });
   await mockSessionBootstrap(page);
 }
@@ -174,36 +201,11 @@ test.describe("Org Operator Flow", () => {
     ]);
   });
 
-  test("creates org, sends invite, views projects", async ({ page }) => {
+  test("an owner sees their organization's projects", async ({ page }) => {
     await mockOrgApi(page);
 
-    // Provide the JWT inside localStorage so form-client can use it
-    await page.goto(appOrigin);
-    await page.evaluate((token) => {
-      localStorage.setItem("auracles_access_token", token);
-    }, fakeAccessToken(["operator"]));
+    await page.goto(`${appOrigin}/dashboard/organizations/${orgId}/projects`);
 
-    // 1. Create org
-    await page.goto(`${appOrigin}/dashboard/organizations/new`);
-    await page.waitForLoadState("networkidle");
-    await page.fill('input[name="name"]', "Test Org");
-    await page.fill('input[name="slug"]', "test-org");
-    await page.click('button[type="submit"]');
-
-    // 2. View org and send invite
-    await expect(page).toHaveURL(`${appOrigin}/dashboard/organizations/test-org`);
-    await page.click("text=Invitations");
-    
-    // Fill invite form
-    await page.fill('input[name="email"]', "test@example.com");
-    // select role
-    await page.selectOption('select[name="role"]', "member");
-    await page.click('button:has-text("Send Invitation")');
-    await expect(page.getByText("test@example.com")).toBeVisible();
-
-    // 3. View org projects
-    await page.click("text=Projects");
-    await expect(page).toHaveURL(`${appOrigin}/dashboard/organizations/test-org/projects`);
     await expect(page.getByText("Org Playbook")).toBeVisible();
     await expect(page.getByText("Org description")).toBeVisible();
   });

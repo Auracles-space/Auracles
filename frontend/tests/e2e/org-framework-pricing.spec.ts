@@ -342,7 +342,9 @@ test.describe("Org framework pricing", () => {
         selfPurchaseCalls,
       }))
       .toEqual({
-        body: { license_type: "organizational" },
+        // Purchases carry the billing country now: it selects the payment
+        // rail, Paystack for NG and Stripe otherwise.
+        body: { country: "US", license_type: "organizational" },
         orgPurchaseCalls: 1,
         selfPurchaseCalls: 0,
       });
