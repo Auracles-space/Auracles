@@ -64,4 +64,15 @@ describe("DemandMap", () => {
 
     expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
   });
+
+  it("omits its own heading when embedded in a surface that has one", () => {
+    // The workspace tab titles the panel itself; two h1s in one page is wrong
+    // for a screen reader.
+    render(<DemandMap demand={demand()} showHeader={false} />);
+
+    expect(
+      screen.queryByRole("heading", { name: /what the market is asking for/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("soc")).toBeInTheDocument();
+  });
 });

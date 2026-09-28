@@ -17,6 +17,12 @@ import { formatLabel, formatShortDate } from "@/lib/marketplace/format";
 type DemandMapProps = {
   /** Loaded demand, or null when the API could not be reached. */
   demand: DemandMapResponse | null;
+  /**
+   * Render the page header. False where the surrounding surface already
+   * carries a heading — the workspace tab titles itself, and a second `h1`
+   * inside one page is wrong for a screen reader.
+   */
+  showHeader?: boolean;
 };
 
 /**
@@ -50,8 +56,9 @@ function DemandRow({ label, count }: { label: string; count: number }) {
  * Render unmet marketplace demand for a public page.
  *
  * @param demand - Loaded demand, or null when the API was unavailable.
+ * @param showHeader - Render the page header; false when embedded.
  */
-export function DemandMap({ demand }: DemandMapProps) {
+export function DemandMap({ demand, showHeader = true }: DemandMapProps) {
   if (demand === null) {
     return (
       <div className="rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm md:p-6">
@@ -66,17 +73,20 @@ export function DemandMap({ demand }: DemandMapProps) {
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <header className="rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm md:p-6">
-        <h1 className="font-heading text-2xl font-semibold tracking-[-0.02em] text-foreground md:text-3xl">
-          What the market is asking for
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-foreground-muted">
-          Searches on Auracles that returned nothing, since{" "}
-          {formatShortDate(demand.period_from)}. Each number counts the distinct
-          people who looked. Only what at least {demand.min_searchers} people
-          searched for is shown, so quieter demand is not listed here.
-        </p>
-      </header>
+      {showHeader ? (
+        <header className="rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm md:p-6">
+          <h1 className="font-heading text-2xl font-semibold tracking-[-0.02em] text-foreground md:text-3xl">
+            What the market is asking for
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-foreground-muted">
+            Searches on Auracles that returned nothing, since{" "}
+            {formatShortDate(demand.period_from)}. Each number counts the
+            distinct people who looked. Only what at least{" "}
+            {demand.min_searchers} people searched for is shown, so quieter
+            demand is not listed here.
+          </p>
+        </header>
+      ) : null}
 
       {isEmpty ? (
         <div className="rounded-2xl border border-border-default bg-surface-1 p-4 shadow-sm md:p-6">

@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Contributor workspace: Frameworks and Collections as two tabs of one page.
+ * Contributor workspace: Frameworks, Collections and Demand as tabs of one
+ * page.
  *
  * A Collection is a bundle of Frameworks, so the builder belongs beside the
  * list it draws from rather than behind a nav slot of its own — QA asked why a
@@ -9,7 +10,12 @@
  * `/dashboard/collections` route redirects here with `?tab=collections`, so
  * existing links keep working and there is only one builder.
  *
- * Maps to: FR-FWK (framework management), FR-EXP (collection bundling).
+ * Demand joins them for the same reason: the question "what should I build
+ * next" is asked here, and the public demand map is reachable only from public
+ * surfaces. A tab rather than a nav slot — QA pruned nav links, not tabs.
+ *
+ * Maps to: FR-FWK (framework management), FR-EXP (collection bundling),
+ * FR-SRCH (search).
  */
 import Link from "next/link";
 import { PlusIcon } from "@radix-ui/react-icons";
@@ -17,14 +23,15 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { CollectionBuilder } from "@/components/modules/collections/collection-builder";
+import { DemandPanel } from "@/components/modules/explore/demand-panel";
 import { FrameworkList } from "@/components/modules/frameworks/framework-list";
 import { Tabs, tabId, tabPanelId } from "@/components/ui/tabs";
 
-type WorkspaceTab = "frameworks" | "collections";
+type WorkspaceTab = "frameworks" | "collections" | "demand";
 
 /** Narrow a raw query value to a known tab. */
 function isTab(value: string | null): value is WorkspaceTab {
-  return value === "frameworks" || value === "collections";
+  return value === "frameworks" || value === "collections" || value === "demand";
 }
 
 const TAB_COPY: Record<WorkspaceTab, { title: string; blurb: string }> = {
@@ -38,10 +45,15 @@ const TAB_COPY: Record<WorkspaceTab, { title: string; blurb: string }> = {
     blurb:
       "Bundle published Frameworks into discounted Collections for marketplace operators.",
   },
+  demand: {
+    title: "Demand",
+    blurb:
+      "What Operators searched for on Auracles and did not find. Every number counts distinct people.",
+  },
 };
 
 /**
- * Render the Contributor's Frameworks and Collections workspace.
+ * Render the Contributor's Frameworks, Collections and Demand workspace.
  */
 export function ContributorWorkspace() {
   const router = useRouter();
@@ -105,6 +117,7 @@ export function ContributorWorkspace() {
         tabs={[
           { id: "frameworks", label: "Frameworks" },
           { id: "collections", label: "Collections" },
+          { id: "demand", label: "Demand" },
         ]}
       />
 
@@ -116,9 +129,9 @@ export function ContributorWorkspace() {
       >
         {active === "frameworks" ? (
           <FrameworkList seller={{ kind: "user" }} basePath="/dashboard/frameworks" />
-        ) : (
-          <CollectionBuilder />
-        )}
+        ) : null}
+        {active === "collections" ? <CollectionBuilder /> : null}
+        {active === "demand" ? <DemandPanel /> : null}
       </div>
     </div>
   );
