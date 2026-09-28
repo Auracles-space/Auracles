@@ -208,6 +208,14 @@ async def test_calibration_framework_hidden_from_public_surfaces_and_attestation
     assert visible_framework_id in profile_ids
     assert calibration_framework_id not in profile_ids
 
+    # The canonical profile counts Frameworks from its own query rather than
+    # the Explore one above, so it needs its own assertion here: a fixture that
+    # is counted but never listed leaves the profile advertising a Framework it
+    # cannot display.
+    canonical_profile = await client.get(f"/v1/profiles/{contributor_id}")
+    assert canonical_profile.status_code == 200
+    assert canonical_profile.json()["stats"]["frameworks_published"] == 1
+
     normal_request = await client.post(
         "/v1/attestations",
         headers=_auth_headers(operator_id, ["operator"]),

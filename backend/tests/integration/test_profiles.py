@@ -887,6 +887,40 @@ async def test_profile_stats_counts_published_frameworks_only(
     assert "attestations_performed" not in stats
 
 
+async def test_profile_stats_excludes_calibration_fixtures(
+    client: AsyncClient,
+    migrated_database: None,
+    profile_test_context: None,
+) -> None:
+    """A calibration fixture must not count towards its owner's published total.
+
+    Creating a fixture mints a published Framework owned by the admin who
+    created it. Every marketplace surface hides fixtures, so counting one here
+    left the profile advertising a Framework that can never be displayed.
+    """
+    from decimal import Decimal
+
+    user_id = await create_user("profile-stats-fixture@auracles.space", ["admin"])
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Framework(
+                    contributor_id=user_id,
+                    title="Calibration Fixture",
+                    description="d",
+                    category="security",
+                    price=Decimal("10"),
+                    status="published",
+                    is_calibration=True,
+                    license_types=["single_user"],
+                )
+            )
+
+    stats = (await client.get(f"/v1/profiles/{user_id}")).json()["stats"]
+
+    assert stats["frameworks_published"] == 0
+
+
 async def test_suspended_profile_withholds_stats(
     client: AsyncClient,
     migrated_database: None,
