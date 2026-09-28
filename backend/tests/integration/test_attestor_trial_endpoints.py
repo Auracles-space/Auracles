@@ -343,6 +343,62 @@ async def test_nominee_can_load_and_submit(
     assert submit.json()["status"] == "submitted"
 
 
+async def test_trial_refused_when_fixture_artifact_holds_unresolved_pii(
+    client,
+    seeded_trial_http: SeededTrialHttpContext,
+) -> None:
+    """A fixture artifact with unresolved PII and no clean copy blocks the trial.
+
+    The nominee is an external person. Serving the original file would hand
+    them the detected PII, and quietly omitting the artifact would leave them
+    grading an incomplete fixture and produce a score the platform then trusts.
+    Refusing is the only outcome that does neither.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            artifact = (await session.scalars(select(Artifact))).one()
+            artifact.pii_detected = True
+            artifact.pii_review_needed = True
+            artifact.clean_file_key = None
+
+    response = await client.get(
+        f"/v1/orgs/{seeded_trial_http.org_id}/attestor-trial",
+        headers=seeded_trial_http.nominee_headers,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["error_code"] == "fixture_pii_hold"
+
+
+async def test_trial_serves_the_redacted_copy_when_one_exists(
+    client,
+    seeded_trial_http: SeededTrialHttpContext,
+) -> None:
+    """A flagged Artifact with a clean copy opens the trial on that copy.
+
+    The hold above is about PII the nominee would actually receive. Once
+    redaction has produced a clean file there is none left to receive, so
+    refusing here would strand a usable fixture.
+    """
+    async with async_session_factory() as session:
+        async with session.begin():
+            artifact = (await session.scalars(select(Artifact))).one()
+            artifact.pii_detected = True
+            artifact.pii_review_needed = True
+            artifact.clean_file_key = f"frameworks/{artifact.framework_id}/clean.pdf"
+
+    response = await client.get(
+        f"/v1/orgs/{seeded_trial_http.org_id}/attestor-trial",
+        headers=seeded_trial_http.nominee_headers,
+    )
+
+    assert response.status_code == 200
+    urls = [item["url"] for item in response.json()["artifacts"]]
+    assert len(urls) == 1
+    assert "clean.pdf" in urls[0]
+    assert "fixture.pdf" not in urls[0]
+
+
 async def test_non_nominee_member_forbidden(
     client,
     seeded_trial_http: SeededTrialHttpContext,
