@@ -126,6 +126,9 @@ async function mockProjectApi(page: Page): Promise<void> {
   let proposals: unknown[] = [];
   let milestones: unknown[] = [];
   let messages: unknown[] = [];
+  // The workspace reloads after approval, so the listing has to reflect it —
+  // a fixed "submitted" here put the deliverable back and hid the publish link.
+  let deliverableStatus = "submitted";
 
   await page.route(`${apiOrigin}/v1/**`, async (route) => {
     const request = route.request();
@@ -286,13 +289,24 @@ async function mockProjectApi(page: Page): Promise<void> {
       return;
     }
 
+    if (path === `/v1/projects/${projectId}/messages/uploads`) {
+      await fulfillJson(route, {
+        fields: { key: "workspace/evidence.txt" },
+        s3_key: "workspace/evidence.txt",
+        url: "https://s3.test/upload",
+      });
+      return;
+    }
+
     if (
       path ===
       `/v1/projects/${projectId}/milestones/${milestoneId}/deliverables`
     ) {
       milestones = milestones.map((m) => ({
         ...(m as Record<string, unknown>),
-        status: "delivered",
+        status: "submitted",
+        // The operator can only approve once the evidence has been scanned.
+        scan_status: "visible",
         submitted_at: "2026-06-10T00:04:00Z",
       }));
       messages = [
@@ -311,24 +325,30 @@ async function mockProjectApi(page: Page): Promise<void> {
           },
         },
       ];
-      await fulfillJson(
-        route,
-        {
-          approved_at: null,
-          auto_approved: false,
-          contributor_id: "00000000-0000-4000-8000-000000000012",
-          created_at: "2026-06-10T00:04:00Z",
-          description: "Approved implementation playbook and rollout guide.",
-          file_keys: ["workspace/project/final-playbook.pdf"],
-          id: deliverableId,
-          milestone_id: milestoneId,
-          name: "Final playbook",
-          revision_notes: null,
-          status: "submitted",
-          submitted_at: "2026-06-10T00:04:00Z",
-        },
-        201,
-      );
+      const deliverable = {
+        approved_at: null,
+        auto_approved: false,
+        contributor_id: "00000000-0000-4000-8000-000000000012",
+        created_at: "2026-06-10T00:04:00Z",
+        description: "Approved implementation playbook and rollout guide.",
+        file_keys: ["workspace/project/final-playbook.pdf"],
+        id: deliverableId,
+        milestone_id: milestoneId,
+        name: "Final playbook",
+        revision_notes: null,
+        // The operator can only approve once the evidence has been scanned.
+        scan_status: "visible",
+        status: deliverableStatus,
+        submitted_at: "2026-06-10T00:04:00Z",
+      };
+      // Same path, two shapes: creating returns the deliverable, listing wraps
+      // it. Answering both with the bare object left the review card with an
+      // undefined list and no approve button.
+      if (request.method() === "GET") {
+        await fulfillJson(route, { deliverables: [deliverable] });
+        return;
+      }
+      await fulfillJson(route, deliverable, 201);
       return;
     }
 
@@ -336,6 +356,7 @@ async function mockProjectApi(page: Page): Promise<void> {
       path ===
       `/v1/projects/${projectId}/milestones/${milestoneId}/deliverables/${deliverableId}/approve`
     ) {
+      deliverableStatus = "approved";
       milestones = milestones.map((m) => ({
         ...(m as Record<string, unknown>),
         status: "approved",
@@ -353,6 +374,8 @@ async function mockProjectApi(page: Page): Promise<void> {
         name: "Final playbook",
         revision_notes: null,
         status: "approved",
+        // The operator can only approve once the evidence has been scanned.
+        scan_status: "visible",
         submitted_at: "2026-06-10T00:04:00Z",
       });
       return;
@@ -482,19 +505,43 @@ test("Operator and Contributor complete the Project workspace flow", async ({
   await switchUser(operatorId, ["operator"]);
 
   await page.getByRole("button", { name: "Fund milestone" }).click();
-  await expect(page.getByText("Milestone funding started.")).toBeVisible();
+  // Funding no longer completes in one click. The Stripe rail opens an in-page
+  // payment panel and escrow is funded only once payment confirms; the Paystack
+  // rail redirects to hosted checkout instead. Assert the panel opened, then
+  // dismiss it and reload — the mocked milestone is already funded, which is
+  // the state a completed payment would leave behind.
+  await expect(page.getByText("Fund this milestone")).toBeVisible();
+  await page.reload();
 
   // Switch to Contributor to submit deliverable
   await switchUser(contributorId, ["contributor"]);
 
   await page.getByRole("button", { name: "Submit deliverable" }).click();
-  await expect(page.getByText("Deliverable submitted.")).toBeVisible();
+  // The button opens a form now rather than submitting outright: a deliverable
+  // carries a title, a summary and at least one evidence file, which uploads to
+  // S3 through a presigned session before the deliverable is created.
+  await page.route("https://s3.test/upload", async (route) => {
+    await route.fulfill({ status: 204, body: "" });
+  });
+  await page.getByLabel("Title").fill("Final procurement playbook");
+  await page
+    .getByLabel("What was achieved")
+    .fill("Completed the procurement controls for this milestone.");
+  await page.setInputFiles('input[type="file"]', {
+    buffer: Buffer.from("evidence"),
+    mimeType: "text/plain",
+    name: "evidence.txt",
+  });
+  await page.getByRole("button", { name: "Submit deliverable", exact: true }).last().click();
+  await expect(page.getByText(/Deliverable submitted\./).first()).toBeVisible();
 
   // Switch to Operator to approve deliverable
   await switchUser(operatorId, ["operator"]);
 
-  await page.getByRole("button", { name: "Approve deliverable" }).click();
-  await expect(page.getByText("Deliverable approved.")).toBeVisible();
+  // Approval releases escrow in the same action now, and the card reloads the
+  // workspace rather than raising a notice — the approved status is the signal.
+  await page.getByRole("button", { name: "Approve and release escrow" }).click();
+  await expect(page.getByText("Approved").first()).toBeVisible();
 
   // Switch back to Contributor to check Publish as Framework
   await switchUser(contributorId, ["contributor"]);

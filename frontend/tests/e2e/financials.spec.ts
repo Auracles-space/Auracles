@@ -242,9 +242,9 @@ test("Contributor views earnings, payout account, and requests payout", async ({
   await expect(page.getByText("****tr_1")).toBeVisible();
   await page.getByRole("button", { name: "Request payout" }).click();
   await page.getByLabel("Amount").fill("200.00");
-  await page.getByLabel("Authenticator code").fill("123456");
+  // Step-up 2FA is a session-level window now, not a field on this form.
   await page.getByRole("button", { name: "Submit payout request" }).click();
 
-  await expect(page.getByText("$170")).toBeVisible();
+  await expect(page.getByText("₦170")).toBeVisible();
   await expect(page.getByText("Pending transfer")).toBeVisible();
 });

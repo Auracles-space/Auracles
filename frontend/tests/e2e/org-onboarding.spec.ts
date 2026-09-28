@@ -12,6 +12,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
+import { mockSessionBootstrap } from "./helpers/authenticated-shell";
+
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
@@ -242,7 +244,10 @@ async function mockOwnerApi(page: Page, state: OwnerState): Promise<void> {
   });
 }
 
-async function signIn(context: Parameters<Parameters<typeof test>[2]>[0]["context"]) {
+async function signIn(
+  context: Parameters<Parameters<typeof test>[2]>[0]["context"],
+  page: Parameters<Parameters<typeof test>[2]>[0]["page"],
+) {
   await context.addCookies([
     {
       domain: "127.0.0.1",
@@ -254,6 +259,7 @@ async function signIn(context: Parameters<Parameters<typeof test>[2]>[0]["contex
       value: sessionHintValue(),
     },
   ]);
+  await mockSessionBootstrap(page);
 }
 
 function freshState(): OwnerState {
@@ -277,7 +283,7 @@ test("the list shows verification, suspension, and capability state, and resolve
   page,
 }) => {
   const state = freshState();
-  await signIn(context);
+  await signIn(context, page);
   await mockOwnerApi(page, state);
 
   await page.goto("/dashboard/organizations");
@@ -302,7 +308,7 @@ test("the list shows verification, suspension, and capability state, and resolve
 });
 
 test("the suspended organization's shell explains why and when", async ({ context, page }) => {
-  await signIn(context);
+  await signIn(context, page);
   await mockOwnerApi(page, freshState());
 
   await page.goto("/dashboard/organizations/org-suspended");
@@ -321,7 +327,7 @@ test("a revoked capability is explained and a rejected application can be restar
   page,
 }) => {
   const state = freshState();
-  await signIn(context);
+  await signIn(context, page);
   await mockOwnerApi(page, state);
 
   await page.goto("/dashboard/organizations/org-revoked/attestor");

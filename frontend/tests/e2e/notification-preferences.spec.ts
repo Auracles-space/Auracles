@@ -8,6 +8,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
+import { mockSessionBootstrap } from "./helpers/authenticated-shell";
+
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
@@ -87,6 +89,7 @@ test("Operator updates notification preferences from the dedicated settings page
       value: sessionHintValue(),
     },
   ]);
+  await mockSessionBootstrap(page);
 
   let matrix = {
     categories: [

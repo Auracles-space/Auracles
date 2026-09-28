@@ -9,6 +9,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, type Page, test } from "@playwright/test";
 
+import { mockSessionBootstrap } from "./helpers/authenticated-shell";
+
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
@@ -286,7 +288,7 @@ async function mockGdprApi(
   });
 }
 
-test.beforeEach(async ({ context }) => {
+test.beforeEach(async ({ context, page }) => {
   await context.addCookies([
     {
       domain: "127.0.0.1",
@@ -295,6 +297,11 @@ test.beforeEach(async ({ context }) => {
       value: sessionHintValue(),
     },
   ]);
+  // The cookie alone only gets the request past the middleware guard. The
+  // authenticated shell then bootstraps its session over /v1/auth/me, and
+  // without that the page never renders and every assertion below fails on a
+  // blank document rather than on what it is testing.
+  await mockSessionBootstrap(page);
 });
 
 test("Operator requests an export and sees it move into preparing state", async ({
