@@ -34,6 +34,12 @@ BEAT_SCHEDULE: dict[str, dict[str, object]] = {
             max_hours=168,
         ),
     },
+    # Hourly so a month's counts are never more than an hour stale, and so the
+    # 90-day sweep of raw rows runs without its own schedule entry.
+    "roll-up-demand-signals-hourly": {
+        "task": "app.workers.tasks.demand.roll_up_demand_signals",
+        "schedule": crontab(minute=11),
+    },
     "expire-gdpr-exports-daily": {
         "task": "app.workers.tasks.gdpr_beat.expire_data_exports",
         "schedule": crontab(hour=4, minute=30),

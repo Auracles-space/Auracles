@@ -3,7 +3,9 @@
  *
  * Composes the hero, the loop explainer, role panels, the entry ladder,
  * license options, FAQ, and the closing waitlist CTA.
- * Server Component — fully static, no client JS required.
+ * Server Component, no client JS required. Revalidated hourly rather than
+ * fully static: the contributor section carries live demand, and the demand
+ * rollup runs hourly, so anything shorter would re-render for no new data.
  *
  * Phase 0 foundation status surface lives at `/status`.
  */
@@ -15,8 +17,13 @@ import { MarketingNav } from "@/components/modules/landing/marketing-nav";
 import { PricingStrip } from "@/components/modules/landing/pricing-strip";
 import { RoleStrip } from "@/components/modules/landing/role-strip";
 import { TrustGrid } from "@/components/modules/landing/trust-grid";
+import { loadDemandMap } from "@/lib/marketplace/explore-read-model";
 
-export default function Home() {
+export const revalidate = 3600;
+
+export default async function Home() {
+  const { demand } = await loadDemandMap();
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <MarketingNav />
@@ -24,7 +31,7 @@ export default function Home() {
         <LandingHero />
         <HowItWorks />
         <RoleStrip />
-        <TrustGrid />
+        <TrustGrid demandTerms={demand?.terms ?? null} />
         <PricingStrip />
         <FaqList />
       </main>

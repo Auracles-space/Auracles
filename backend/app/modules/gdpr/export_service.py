@@ -27,6 +27,7 @@ from app.modules.attestation.models import (
     Credential,
 )
 from app.modules.auth.models import User, UserRole
+from app.modules.demand.models import SearchGap
 from app.modules.developer.models import (
     ApiKey,
     DeveloperAccount,
@@ -1079,6 +1080,41 @@ async def download_data_export(
     )
 
 
+async def _collect_searches(db: AsyncSession, user_id: UUID) -> list[dict[str, Any]]:
+    """Collect the searches this user made that returned no results.
+
+    Only zero-result searches are recorded at all, and only for as long as the
+    retention window allows, so this is the complete set of search data held
+    about one person.
+
+    Args:
+        db: Async database session.
+        user_id: The subject of the export.
+
+    Returns:
+        One dict per recorded search, newest first.
+    """
+    rows = (
+        (
+            await db.execute(
+                select(SearchGap)
+                .where(SearchGap.searcher_id == user_id)
+                .order_by(SearchGap.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "query": row.query,
+            "filters": dict(row.filters or {}),
+            "searched_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]
+
+
 async def build_data_export_bundle(
     *,
     db: AsyncSession,
@@ -1108,4 +1144,5 @@ async def build_data_export_bundle(
             db, user_id=user_id
         ),
         "connected_integrations": await export_user_connections(db, user_id=user_id),
+        "searches": await _collect_searches(db, user_id),
     }

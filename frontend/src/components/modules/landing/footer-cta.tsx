@@ -67,6 +67,7 @@ export function FooterCta() {
         { href: "#roles", label: "For Contributors" },
         { href: "#how-it-works", label: "How it Works" },
         { href: "#become", label: "Become an Auracle" },
+        { href: "/demand", label: "Market Demand" },
         { href: "#pricing", label: "Licensing" },
         { href: "#faq", label: "FAQ" },
       ],

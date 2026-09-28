@@ -27,6 +27,10 @@ vi.mock("@/components/modules/collections/collection-builder", () => ({
   CollectionBuilder: () => <div>collection builder panel</div>,
 }));
 
+vi.mock("@/components/modules/explore/demand-panel", () => ({
+  DemandPanel: () => <div>demand panel</div>,
+}));
+
 describe("ContributorWorkspace", () => {
   beforeEach(() => {
     replace.mockReset();
@@ -72,5 +76,26 @@ describe("ContributorWorkspace", () => {
     fireEvent.click(screen.getByRole("tab", { name: /collections/i }));
 
     expect(screen.queryByRole("link", { name: /create framework/i })).not.toBeInTheDocument();
+  });
+
+  it("opens Demand when the URL asks for it", () => {
+    // A Contributor deciding what to build next has no other route to the
+    // demand map from inside the product — the footer is public-side only.
+    searchParams.value = new URLSearchParams("tab=demand");
+
+    render(<ContributorWorkspace />);
+
+    expect(screen.getByText("demand panel")).toBeInTheDocument();
+    expect(screen.queryByText("framework list panel")).not.toBeInTheDocument();
+  });
+
+  it("hides Create framework outside the Frameworks tab", () => {
+    searchParams.value = new URLSearchParams("tab=demand");
+
+    render(<ContributorWorkspace />);
+
+    expect(
+      screen.queryByRole("link", { name: /create framework/i }),
+    ).not.toBeInTheDocument();
   });
 });

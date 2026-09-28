@@ -28,6 +28,7 @@ def create_celery_app(settings: Settings | None = None) -> Celery:
             "app.workers.tasks.artifacts_beat",
             "app.workers.tasks.admin_beat",
             "app.workers.tasks.admin_notifications",
+            "app.workers.tasks.demand",
             "app.workers.tasks.deliverable_scan",
             "app.workers.tasks.attestation_beat",
             "app.workers.tasks.attestation_pdf",
