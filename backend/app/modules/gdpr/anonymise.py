@@ -19,6 +19,7 @@ from app.core.audit import write_audit
 from app.core.security import decrypt_connector_token, hash_password
 from app.integrations.google_drive import revoke_drive_token
 from app.modules.auth.models import KycDocument, OAuthAccount, User, UserBackupCode
+from app.modules.demand.models import SearchGap
 from app.modules.developer.models import ApiKey, DeveloperAccount
 from app.modules.financials.models import PayoutAccount
 from app.modules.gdpr.models import AccountDeletionRequest
@@ -108,6 +109,12 @@ async def anonymise_user_records(
         await db.execute(
             delete(OrgTeamMember).where(OrgTeamMember.member_id.in_(member_ids))
         )
+
+    # Raw demand rows name a searcher, so erasure removes them outright. They
+    # cannot be nulled: `ck_search_gaps_searcher_xor` requires exactly one
+    # identity per row. The counts they fed live in `demand_signals`, carry no
+    # identity, and are untouched — demand outlives the person who stated it.
+    await db.execute(delete(SearchGap).where(SearchGap.searcher_id == user_id))
 
     await db.execute(delete(OAuthAccount).where(OAuthAccount.user_id == user_id))
     await db.execute(delete(UserBackupCode).where(UserBackupCode.user_id == user_id))

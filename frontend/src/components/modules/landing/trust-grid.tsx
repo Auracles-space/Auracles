@@ -4,7 +4,14 @@
  * Rendered as a connected sequence rather than a card grid: the order is the
  * information here, and it keeps this section visually distinct from the
  * `HowItWorks` bento and the `RoleStrip` panels, which sit either side of it.
+ *
+ * The intro carries live demand: the person reading "how to become an
+ * Auracle" is exactly the one who should see what the market is already
+ * asking for. Demand is fetched by the page and passed in, so this stays
+ * presentational.
  */
+import { DemandTeaser } from "@/components/modules/landing/demand-teaser";
+import type { DemandTerm } from "@/lib/generated/types.gen";
 import {
   UploadIcon,
   BadgeIcon,
@@ -35,10 +42,17 @@ const entrySteps = [
   },
 ];
 
+type TrustGridProps = {
+  /** Top unmet-demand terms, or null when unavailable or not supplied. */
+  demandTerms?: DemandTerm[] | null;
+};
+
 /**
- * Render the contributor entry ladder.
+ * Render the contributor entry ladder with live unmet demand.
+ *
+ * @param demandTerms - Top demand terms; omitted renders no teaser.
  */
-export function TrustGrid() {
+export function TrustGrid({ demandTerms = null }: TrustGridProps = {}) {
   return (
     <section className="bg-surface-2 px-5 py-16 md:px-10 md:py-24" id="become">
       {/* The intro sticks alongside the steps at `lg`, so a wide viewport is
@@ -52,6 +66,7 @@ export function TrustGrid() {
             Four steps from professional knowledge to a trusted, reusable, and
             licensable asset.
           </p>
+          <DemandTeaser terms={demandTerms} />
         </div>
 
         <ol className="lg:pt-2">

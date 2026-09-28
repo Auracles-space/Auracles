@@ -7319,6 +7319,72 @@ components:
       - deliverables
       title: DeliverablesResponse
       type: object
+    DemandFilterCombination:
+      description: One combination of catalogue filters that returned nothing.
+      properties:
+        filters:
+          additionalProperties:
+            type: string
+          title: Filters
+          type: object
+        searcher_count:
+          minimum: 1.0
+          title: Searcher Count
+          type: integer
+      required:
+      - filters
+      - searcher_count
+      title: DemandFilterCombination
+      type: object
+    DemandMapResponse:
+      description: 'Unmet demand across the reporting window.
+
+
+        ``min_searchers`` is returned so the page can state the floor rather than
+
+        imply the list is exhaustive: anything quieter than this is deliberately
+
+        absent.'
+      properties:
+        filters:
+          items:
+            $ref: '#/components/schemas/DemandFilterCombination'
+          title: Filters
+          type: array
+        min_searchers:
+          title: Min Searchers
+          type: integer
+        period_from:
+          format: date
+          title: Period From
+          type: string
+        terms:
+          items:
+            $ref: '#/components/schemas/DemandTerm'
+          title: Terms
+          type: array
+      required:
+      - terms
+      - filters
+      - period_from
+      - min_searchers
+      title: DemandMapResponse
+      type: object
+    DemandTerm:
+      description: One search term people looked for and did not find.
+      properties:
+        searcher_count:
+          minimum: 1.0
+          title: Searcher Count
+          type: integer
+        term:
+          title: Term
+          type: string
+      required:
+      - term
+      - searcher_count
+      title: DemandTerm
+      type: object
     DeveloperApplicationCreateRequest:
       description: Request body for submitting a Developer role application.
       properties:
@@ -23665,6 +23731,23 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get Contributor Profile
+      tags:
+      - Explore
+  /v1/explore/demand:
+    get:
+      description: Unmet demand across the last six months, as counts of distinct searchers
+        per term and per filter combination. Only signals wanted by at least three distinct
+        searchers in a month are included; anything quieter is withheld. No raw query
+        is ever returned.
+      operationId: read_demand_map_v1_explore_demand_get
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DemandMapResponse'
+          description: Successful Response
+      summary: What Operators searched for and did not find
       tags:
       - Explore
   /v1/explore/frameworks:

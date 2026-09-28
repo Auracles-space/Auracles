@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -13,8 +14,13 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.network import client_ip
+from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
 from app.core.security import decode_access_token
+from app.modules.demand import service as demand_service
+from app.modules.demand.recorder import queue_search_gap
+from app.modules.demand.schemas import DemandMapResponse
 from app.modules.explore import service
 from app.modules.explore.schemas import (
     ExploreAttestationStatus,
@@ -51,6 +57,7 @@ async def optional_current_user_id(
 
 @router.get("/frameworks", response_model=ExploreFrameworkListResponse)
 async def list_frameworks(
+    request: Request,
     response: Response,
     db: DatabaseSession,
     current_user_id: Annotated[UUID | None, Depends(optional_current_user_id)],
@@ -94,7 +101,62 @@ async def list_frameworks(
     )
     if result.sort_shim:
         response.headers["X-Sort-Shim"] = "true"
+    if result.total == 0:
+        # A search that found nothing is the only search we keep: it states a
+        # gap in the catalogue. Queued, never awaited on the request path.
+        await queue_search_gap(
+            request=request,
+            query=q,
+            filters={
+                key: value
+                for key, value in (
+                    ("sector", sector),
+                    ("industry", industry),
+                    ("function", function),
+                    ("category", category),
+                    ("license_type", license_type),
+                    ("complexity", complexity),
+                    ("org_size", org_size),
+                    ("lifecycle_stage", lifecycle_stage),
+                    ("jurisdiction", jurisdiction),
+                    ("price_min", price_min),
+                    ("price_max", price_max),
+                    ("attestation_status", attestation_status),
+                )
+                if value is not None
+            },
+            searcher_id=current_user_id,
+        )
     return result
+
+
+# Public and unauthenticated, so it is a scraping target. The window is
+# generous — the page is cheap to render and the data changes hourly at most.
+DEMAND_RATE_LIMITER = RateLimiter(namespace="explore_demand", limit=60, window=60)
+
+
+@router.get(
+    "/demand",
+    response_model=DemandMapResponse,
+    summary="What Operators searched for and did not find",
+    description=(
+        "Unmet demand across the last six months, as counts of distinct "
+        "searchers per term and per filter combination. Only signals wanted by "
+        "at least three distinct searchers in a month are included; anything "
+        "quieter is withheld. No raw query is ever returned."
+    ),
+)
+async def read_demand_map(
+    request: Request,
+    db: DatabaseSession,
+) -> DemandMapResponse:
+    """Return the public demand map."""
+    await DEMAND_RATE_LIMITER.check(
+        cast(RedisCounter, get_redis()), client_ip(request) or "unknown"
+    )
+    return DemandMapResponse.model_validate(
+        await demand_service.read_demand_map(db, today=datetime.now(UTC).date())
+    )
 
 
 @router.get("/catalog", response_model=ExploreCatalogResponse)

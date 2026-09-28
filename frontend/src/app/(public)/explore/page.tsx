@@ -247,6 +247,14 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
                 <p className="mt-2 text-sm text-foreground-muted">
                   Clear filters or search a broader operational term.
                 </p>
+                {/* The reader has just created a demand signal themselves, so
+                    this is the one place the map is obviously relevant. */}
+                <a
+                  className="mt-4 inline-flex min-h-12 items-center rounded-xl px-1 text-sm font-semibold text-accent transition-colors hover:text-accent/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  href="/demand"
+                >
+                  See what else the market is asking for
+                </a>
               </div>
             )}
           </section>

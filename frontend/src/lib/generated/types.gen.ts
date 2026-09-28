@@ -2655,6 +2655,38 @@ export type DeliverableSubmitRequest = {
 };
 
 /**
+ * One combination of catalogue filters that returned nothing.
+ */
+export type DemandFilterCombination = {
+    filters: {
+        [key: string]: (string);
+    };
+    searcher_count: number;
+};
+
+/**
+ * Unmet demand across the reporting window.
+ *
+ * ``min_searchers`` is returned so the page can state the floor rather than
+ * imply the list is exhaustive: anything quieter than this is deliberately
+ * absent.
+ */
+export type DemandMapResponse = {
+    filters: Array<DemandFilterCombination>;
+    min_searchers: number;
+    period_from: string;
+    terms: Array<DemandTerm>;
+};
+
+/**
+ * One search term people looked for and did not find.
+ */
+export type DemandTerm = {
+    searcher_count: number;
+    term: string;
+};
+
+/**
  * Request body for submitting a Developer role application.
  */
 export type DeveloperApplicationCreateRequest = {
@@ -8031,6 +8063,10 @@ export type GetContributorProfileV1ExploreContributorsContributorIdGetData = {
 export type GetContributorProfileV1ExploreContributorsContributorIdGetResponse = (ExploreContributorProfile);
 
 export type GetContributorProfileV1ExploreContributorsContributorIdGetError = (HTTPValidationError);
+
+export type ReadDemandMapV1ExploreDemandGetResponse = (DemandMapResponse);
+
+export type ReadDemandMapV1ExploreDemandGetError = unknown;
 
 export type ListFrameworksV1ExploreFrameworksGetData = {
     query?: {
