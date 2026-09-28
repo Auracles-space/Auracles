@@ -31,6 +31,7 @@ from app.modules.admin.schemas import (
     AdminEscrowResponse,
     AdminExportRequestsResponse,
     AdminFinancialEventsResponse,
+    AdminFrameworkDetailResponse,
     AdminFrameworkDirectoryResponse,
     AdminFrameworkReinstateRequest,
     AdminFrameworkStatusResponse,
@@ -779,6 +780,32 @@ async def list_suspended_frameworks(
     """List Frameworks suspended from the marketplace for reinstatement review."""
     return AdminSuspendedFrameworksResponse.model_validate(
         await service.list_suspended_frameworks(db=db)
+    )
+
+
+@router.get(
+    "/frameworks/{framework_id}",
+    response_model=AdminFrameworkDetailResponse,
+    summary="Read one Framework in any status for admin review",
+    description=(
+        "Return a Framework with its Artifacts, processing findings and audit "
+        "trail. A Framework held by the pipeline is neither published nor "
+        "listed in the admin directory, so this is the only admin surface on "
+        "which it appears. Metadata only: no file keys and no download URLs."
+    ),
+)
+async def get_admin_framework_detail(
+    framework_id: UUID,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminFrameworkDetailResponse:
+    """Read one Framework, whatever its status, for admin adjudication."""
+    return AdminFrameworkDetailResponse.model_validate(
+        await service.get_admin_framework_detail(
+            db=db,
+            admin=admin,
+            framework_id=framework_id,
+        )
     )
 
 

@@ -191,6 +191,8 @@ GMV_SOURCE_KEYS = (
 ACTIVE_DISPUTE_STATUSES = ("open", "under_review")
 ATTESTATION_ISSUED_STATUSES = ("report_submitted", *SETTLED_ATTESTATION_STATUSES)
 MODERATION_QUEUE_TYPES = ("rarity_review", "near_duplicate_block", "pii_review")
+# Enough Framework history for an admin to judge a hold without paging.
+FRAMEWORK_TIMELINE_LIMIT = 50
 MODERATION_QUEUE_SORT_PRIORITY = {
     "pii_review": 0,
     "near_duplicate_block": 1,
@@ -2269,6 +2271,227 @@ async def list_suspended_frameworks(db: AsyncSession) -> dict[str, Any]:
             }
             for framework, contributor, organization, suspended_at in rows
         ]
+    }
+
+
+def _framework_detail_action_links(framework: Framework) -> list[dict[str, str]]:
+    """Return the admin actions available on a Framework in its current state.
+
+    Mirrors what the router will actually accept: suspension applies only to a
+    published Framework, reinstatement only to a suspended one, and the rarity
+    override only while the pipeline is blocking publication.
+    """
+    links: list[dict[str, str]] = []
+    if framework.status == "published":
+        links.append(
+            _admin_action_link(
+                rel="suspend_framework",
+                path=f"/v1/admin/frameworks/{framework.id}/suspend",
+            )
+        )
+    if framework.status == "suspended":
+        links.append(
+            _admin_action_link(
+                rel="reinstate_framework",
+                path=f"/v1/admin/frameworks/{framework.id}/reinstate",
+            )
+        )
+    if framework.status == "pipeline_failed":
+        links.append(
+            _admin_action_link(
+                rel="override_rarity_block",
+                path=f"/v1/admin/frameworks/{framework.id}/rarity-block/override",
+            )
+        )
+    return links
+
+
+def _detail_artifact_item(
+    *,
+    artifact: Artifact,
+    pii_audit: ArtifactPiiAudit | None,
+    blocking_artifact_ids: set[str],
+) -> dict[str, Any]:
+    """Serialize one Artifact for the admin detail view, metadata only.
+
+    Neither ``file_key`` nor ``clean_file_key`` is included: an admin
+    adjudicates a hold from the findings, never from the file, so held content
+    stays behind the same licence gate as any other Artifact.
+    """
+    redaction = dict((artifact.metadata_vector or {}).get("redaction") or {})
+    return {
+        "artifact_id": artifact.id,
+        "name": artifact.name,
+        "mime_type": artifact.mime_type,
+        "file_size": artifact.file_size,
+        "scan_status": artifact.scan_status,
+        "processing_status": artifact.processing_status,
+        "pii_detected": artifact.pii_detected,
+        "pii_review_needed": artifact.pii_review_needed,
+        "current_for_framework": artifact.current_for_framework,
+        "blocking": str(artifact.id) in blocking_artifact_ids,
+        "pii_types_found": list(pii_audit.pii_types_found if pii_audit else []),
+        "auto_redacted": bool(pii_audit.auto_redacted) if pii_audit else False,
+        "redaction_status": (
+            str(redaction.get("status")) if redaction.get("status") else None
+        ),
+        "redaction_accepted": bool(redaction.get("accepted")),
+        "redaction_available": artifact.clean_file_key is not None,
+        "rarity_score": artifact.rarity_score,
+        "created_at": artifact.created_at,
+    }
+
+
+def _blocking_artifact_ids(framework: Framework) -> set[str]:
+    """Flatten ``pipeline_failure_reasons`` into the artifact ids it names.
+
+    The column maps a reason key to a list of artifact ids; the keys differ by
+    signal (``pii``, ``internal_rarity``, and so on), so the detail view cares
+    only about which artifacts appear anywhere in it.
+    """
+    blocking: set[str] = set()
+    for artifact_ids in (framework.pipeline_failure_reasons or {}).values():
+        if isinstance(artifact_ids, list):
+            blocking.update(str(artifact_id) for artifact_id in artifact_ids)
+    return blocking
+
+
+async def get_admin_framework_detail(
+    db: AsyncSession,
+    *,
+    admin: User,
+    framework_id: UUID,
+) -> dict[str, Any]:
+    """Return one Framework in any status with its artifacts and audit trail.
+
+    A Framework held by the processing pipeline is neither published nor
+    listed anywhere else in the admin console, so this is the only surface on
+    which an admin can see it at all. Read-only and metadata-only: it exposes
+    no file keys and generates no download URLs.
+
+    Args:
+        db: Async database session.
+        admin: The requesting admin, recorded on the audit entry.
+        framework_id: UUID of the Framework to read.
+
+    Returns:
+        A dict matching ``AdminFrameworkDetailResponse``.
+
+    Raises:
+        HTTPException(404): If no Framework exists with that id.
+    """
+    row = (
+        await db.execute(
+            select(Framework, User, Organization)
+            .outerjoin(User, User.id == Framework.contributor_id)
+            .outerjoin(Organization, Organization.id == Framework.contributor_org_id)
+            .where(Framework.id == framework_id)
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Framework not found.",
+        )
+    framework, contributor, organization = row
+
+    artifacts = list(
+        (
+            await db.execute(
+                select(Artifact)
+                .where(Artifact.framework_id == framework.id)
+                .order_by(Artifact.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    latest_pii_audits: dict[UUID, ArtifactPiiAudit] = {}
+    if artifacts:
+        pii_rows = (
+            (
+                await db.execute(
+                    select(ArtifactPiiAudit)
+                    .where(
+                        ArtifactPiiAudit.artifact_id.in_(
+                            [artifact.id for artifact in artifacts]
+                        )
+                    )
+                    .order_by(ArtifactPiiAudit.processed_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Ordered newest first, so the first row seen per artifact is current.
+        for pii_audit in pii_rows:
+            latest_pii_audits.setdefault(pii_audit.artifact_id, pii_audit)
+
+    timeline_rows = (
+        await db.execute(
+            select(AuditLog, User)
+            .outerjoin(User, User.id == AuditLog.actor_id)
+            .where(AuditLog.target_id == framework.id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(FRAMEWORK_TIMELINE_LIMIT)
+        )
+    ).all()
+
+    await write_audit(
+        db,
+        actor_id=admin.id,
+        action="admin_framework_viewed",
+        target_type="framework",
+        target_id=framework.id,
+        metadata={"status": framework.status},
+    )
+    await db.commit()
+
+    blocking_artifact_ids = _blocking_artifact_ids(framework)
+    return {
+        "framework_id": framework.id,
+        "title": framework.title,
+        "description": framework.description,
+        "version": framework.version,
+        "status": framework.status,
+        "category": framework.category,
+        "sector": framework.sector,
+        "industry": framework.industry,
+        "business_function": framework.business_function,
+        "jurisdiction": framework.jurisdiction,
+        "complexity": framework.complexity,
+        "tags": list(framework.tags or []),
+        "price": framework.price,
+        "org_price": framework.org_price,
+        "currency": framework.currency,
+        "license_types": list(framework.license_types or []),
+        **_framework_owner_fields(contributor, organization),
+        "contributor_email": contributor.email if contributor is not None else None,
+        "rejection_reason": framework.rejection_reason,
+        "pipeline_failure_reasons": dict(framework.pipeline_failure_reasons or {}),
+        "last_pipeline_run_at": framework.last_pipeline_run_at,
+        "published_at": framework.published_at,
+        "created_at": framework.created_at,
+        "updated_at": framework.updated_at,
+        "artifacts": [
+            _detail_artifact_item(
+                artifact=artifact,
+                pii_audit=latest_pii_audits.get(artifact.id),
+                blocking_artifact_ids=blocking_artifact_ids,
+            )
+            for artifact in artifacts
+        ],
+        "timeline": [
+            {
+                "action": entry.action,
+                "actor_id": entry.actor_id,
+                "actor_name": actor.display_name if actor is not None else None,
+                "created_at": entry.created_at,
+                "metadata": dict(entry.metadata_ or {}),
+            }
+            for entry, actor in timeline_rows
+        ],
+        "action_links": _framework_detail_action_links(framework),
     }
 
 

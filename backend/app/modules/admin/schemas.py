@@ -445,6 +445,88 @@ class AdminModerationQueueResponse(BaseModel):
     page_size: int = Field(ge=1, le=100)
 
 
+class AdminFrameworkArtifactItem(BaseModel):
+    """One Artifact on a Framework, described without exposing the file.
+
+    Admins adjudicate holds from metadata only: no ``file_key`` and no
+    download URL is ever serialized here, so a held Artifact's contents stay
+    behind the same licence gate as every other Artifact.
+    """
+
+    artifact_id: UUID
+    name: str
+    mime_type: str
+    file_size: int
+    scan_status: str
+    processing_status: str
+    pii_detected: bool
+    pii_review_needed: bool
+    current_for_framework: bool
+    # True when this Artifact is named in the Framework's
+    # ``pipeline_failure_reasons`` — the reason the Framework cannot publish.
+    blocking: bool
+    pii_types_found: list[str]
+    auto_redacted: bool
+    redaction_status: str | None = None
+    redaction_accepted: bool
+    redaction_available: bool
+    rarity_score: Decimal | None = None
+    created_at: datetime
+
+
+class AdminFrameworkTimelineEntry(BaseModel):
+    """One audit entry recorded against a Framework."""
+
+    action: str
+    actor_id: UUID | None = None
+    actor_name: str | None = None
+    created_at: datetime
+    metadata: dict[str, Any]
+
+
+class AdminFrameworkDetailResponse(BaseModel):
+    """Read-only admin view of one Framework in any status.
+
+    The moderation queue names a held Framework but shows nothing of the
+    Framework itself, and the directory lists published Frameworks only, so a
+    held Framework appears in no other admin surface. This is the only place
+    an admin can read one.
+    """
+
+    framework_id: UUID
+    title: str
+    description: str
+    version: str
+    status: str
+    category: str
+    sector: str | None = None
+    industry: str | None = None
+    business_function: str | None = None
+    jurisdiction: str | None = None
+    complexity: int | None = None
+    tags: list[str]
+    price: Decimal
+    org_price: Decimal | None = None
+    currency: str
+    license_types: list[str]
+    # Exactly one seller owns a Framework (ck_frameworks_seller_xor): a
+    # Contributor-owned row nulls the organization fields and vice versa.
+    contributor_id: UUID | None = None
+    contributor_name: str | None = None
+    contributor_email: str | None = None
+    organization_id: UUID | None = None
+    organization_name: str | None = None
+    rejection_reason: str | None = None
+    pipeline_failure_reasons: dict[str, Any]
+    last_pipeline_run_at: datetime | None = None
+    published_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    artifacts: list[AdminFrameworkArtifactItem]
+    timeline: list[AdminFrameworkTimelineEntry]
+    action_links: list[AdminModerationActionLink]
+
+
 class AdminPayoutItem(BaseModel):
     """One payout row for read-only admin oversight.
 
