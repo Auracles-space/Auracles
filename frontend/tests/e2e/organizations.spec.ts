@@ -14,6 +14,8 @@ import { createHmac } from "node:crypto";
 
 import { expect, type BrowserContext, type Page, test } from "@playwright/test";
 
+import { mockSessionBootstrap } from "./helpers/authenticated-shell";
+
 const apiOrigin = "http://127.0.0.1:8000";
 const appOrigin = "http://127.0.0.1:3100";
 const sessionHintSecret = "auracles-e2e-secret";
@@ -363,6 +365,7 @@ async function signIn(page: Page, context: BrowserContext, state: OrgState): Pro
       value: sessionHintValue(state.userId),
     },
   ]);
+  await mockSessionBootstrap(page);
   await mockOrgApi(page, state);
 }
 
@@ -390,7 +393,11 @@ test("an owner creates an organization and can manage people before verification
   await dialog.getByLabel("Name").fill("Kano Audit Partners");
   await dialog.getByLabel("Slug").fill("kano-audit");
   await expect(dialog.getByTestId("slug-preview")).toContainText("/orgs/kano-audit");
-  await expect(dialog.getByText("The slug and country cannot be changed")).toBeVisible();
+  // The slug is editable after creation now, through its own dialog, so the
+  // old "cannot be changed" warning was dropped; the country is what locks.
+  await expect(
+    dialog.getByText(/The country picks the payout rail and locks once/),
+  ).toBeVisible();
   await shot(page, "org-create-dialog");
   await dialog.getByRole("button", { name: "Create Organization" }).click();
 
@@ -398,10 +405,13 @@ test("an owner creates an organization and can manage people before verification
   await expect(page.getByText("Public profile").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy public profile URL" })).toBeVisible();
 
-  // Decision 2: people tabs are open while the business is unverified.
+  // Members stays open while the business is unverified, but Invitations and
+  // Teams no longer do — an unverified org cannot bring people in yet. The
+  // tab order is asserted in organization-shell.test.tsx, which is where this
+  // rule is owned.
   await expect(page.getByRole("tab", { name: "Members", exact: true })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Invitations", exact: true })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Teams", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Invitations", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Teams", exact: true })).toHaveCount(0);
   await shot(page, "org-profile");
 });
 
@@ -453,6 +463,7 @@ test("an admin invites, filters to expired and resends; an invitee accepts from 
       value: sessionHintValue(colleagueId),
     },
   ]);
+  await mockSessionBootstrap(page);
   await page.goto("/dashboard/organizations");
   await expect(page.getByText("Kano Audit Partners")).toBeVisible();
   await page.getByRole("button", { name: "Accept" }).click();

@@ -353,7 +353,7 @@ test("Developer manages Partner API access, webhooks, analytics, and payout", as
   await page.goto("/dashboard/developer");
 
   await expect(page.getByRole("heading", { name: "Developer platform" })).toBeVisible();
-  await expect(page.getByText("$17.50").first()).toBeVisible();
+  await expect(page.getByText("₦17.50").first()).toBeVisible();
   await expect(page.getByText("Governance Operating Model")).toBeVisible();
 
   await page.getByRole("button", { name: "API & Webhooks" }).click();
@@ -375,7 +375,7 @@ test("Developer manages Partner API access, webhooks, analytics, and payout", as
   await page.getByRole("button", { name: "Payouts & Tier" }).click();
   await expect(page.getByText("payout_1")).toBeVisible();
   await page.getByPlaceholder("e.g. 100.00").fill("10.00");
-  await page.getByLabel("Authenticator code").fill("123456");
+  // Step-up 2FA is a session-level window now, not a field on this form.
   await page.getByRole("button", { name: "Request payout" }).click();
   await expect(page.getByText("payout_2")).toBeVisible();
 });

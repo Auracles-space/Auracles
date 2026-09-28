@@ -402,11 +402,10 @@ export function AdminModerationPanel() {
                   // The badge used to say follow-up was required and stop
                   // there, naming neither who was waited on nor where they act
                   // — so an admin saw a row with nothing to click and read it
-                  // as broken. Name the owner and link to their framework.
-                  // No link: a framework held here is not published, so
-                  // /explore/{id} would 404, and there is no admin framework
-                  // detail route to send them to instead. Naming the owner and
-                  // the action is what the row was missing.
+                  // as broken. Name the owner and the action they owe.
+                  // The Framework title above links to the admin detail route,
+                  // which is where an admin opens a held Framework; /explore
+                  // would 404 on one, since a held Framework is not published.
                   <span className="inline-flex items-center rounded-badge border border-warning/35 bg-warning/10 px-2.5 py-1 text-[10px] font-bold text-warning uppercase tracking-wider">
                     Awaiting{" "}
                     {item.organization_name ?? item.contributor_name ?? "the owner"}

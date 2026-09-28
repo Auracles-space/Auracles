@@ -71,7 +71,12 @@ export function NotificationDropdown() {
       });
 
       if (result.response.ok && result.data) {
-        setNotifications(result.data.notifications);
+        // Default to empty rather than trusting the field to be present. This
+        // component renders inside the authenticated shell, so a response
+        // without `notifications` put `undefined` into state and the unread
+        // count below then threw — blanking every signed-in page over a
+        // notifications hiccup.
+        setNotifications(result.data.notifications ?? []);
       }
     } catch {
       console.error("Failed to load notifications");

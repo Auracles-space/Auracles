@@ -289,20 +289,21 @@ test("admin can use analytics, moderation, and user controls", async ({
 
   await page.goto("/admin/analytics");
   await expect(page.getByRole("heading", { name: "Platform analytics" })).toBeVisible();
-  await expect(page.getByText("$2,075")).toBeVisible();
+  await expect(page.getByText("₦2,075").first()).toBeVisible();
 
   await page.getByRole("link", { name: "Moderation" }).click();
   await expect(page.getByRole("heading", { name: "Moderation queue" })).toBeVisible();
   await page.getByLabel("Queue type").selectOption("pii_review");
   await expect(page.getByText("PII Framework")).toBeVisible();
-  await expect(page.getByText("Contributor follow-up required")).toBeVisible();
+  await expect(page.getByText(/Awaiting Bayo Contributor/)).toBeVisible();
 
   await page.getByRole("link", { name: "Users" }).click();
   await expect(page.getByRole("heading", { name: "User controls" })).toBeVisible();
   await expect(page.getByText("ada@example.com")).toBeVisible();
   await page.getByRole("button", { name: "Suspend" }).click();
   await page.getByLabel("Reason").fill("Fraud review");
-  await page.getByLabel("Authenticator code").fill("123456");
+  // No code field here any more: step-up 2FA is a session-level window opened
+  // from the header pill, not a field on each destructive form.
   await page.getByRole("button", { name: "Confirm suspension" }).click();
   await expect(
     page.getByRole("article", { name: "Ada Contributor" }).getByText("Suspended", {

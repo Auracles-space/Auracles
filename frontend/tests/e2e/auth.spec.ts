@@ -239,6 +239,12 @@ async function mockAuthenticatedShellApi(
   page: Page,
   currentUser: MockCurrentUser,
 ): Promise<void> {
+  // The shell polls for received invitations on every authenticated page. With
+  // no backend running the call rejects, and the rejection raises the Next dev
+  // error overlay, which then intercepts clicks this test needs to make.
+  await page.route(`${apiOrigin}/v1/org-invitations/received*`, async (route) => {
+    await fulfillJson(route, { invitations: [] });
+  });
   await page.route(`${apiOrigin}/v1/auth/me`, async (route) => {
     await fulfillJson(route, {
       avatar_url: currentUser.avatar_url ?? null,
@@ -414,6 +420,6 @@ test("onboarding page navigation to KYC settings renders the dashboard shell", a
   await expect(page).toHaveURL(/\/settings\/kyc$/);
 
   // Verify the layout shell is now visible
-  await expect(page.locator("aside")).toBeVisible();
+  await expect(page.locator("aside").first()).toBeVisible();
 });
 

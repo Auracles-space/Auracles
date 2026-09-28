@@ -184,8 +184,8 @@ async function mockSavedSearchApi(page: Page): Promise<{
     await fulfillJson(route, { detail: "Unhandled saved-search route." }, 404);
   });
 
-  return writes;
   await mockSessionBootstrap(page);
+  return writes;
 }
 
 test("Operator saves Explore filters and manages the saved search", async ({
@@ -203,7 +203,7 @@ test("Operator saves Explore filters and manages the saved search", async ({
   const writes = await mockSavedSearchApi(page);
 
   await page.goto("/explore?q=risk&category=playbook&page=3&sort=newest");
-  await page.getByLabel("Saved search name").fill("Risk playbooks");
+  await page.getByLabel("Name this search").fill("Risk playbooks");
   await page.getByRole("button", { name: "Save search" }).click();
   await expect(page.getByText("Saved as Risk playbooks.")).toBeVisible();
   expect(writes.posts).toEqual([

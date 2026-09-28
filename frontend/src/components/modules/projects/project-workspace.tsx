@@ -1275,6 +1275,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                         milestoneStatus={milestone.status}
                         mode={mode}
                         onChanged={() => void loadWorkspace()}
+                        onLoaded={updateLastDeliverable}
                         projectId={projectId}
                       />
                     ) : null}
