@@ -117,12 +117,16 @@ export function CreateOrganizationDialog({
     <div
       aria-labelledby={titleId}
       aria-modal="true"
-      className="fixed inset-0 z-50 grid place-items-end bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
+      className="fixed inset-0 z-50 grid place-items-end overflow-y-auto bg-black/40 p-0 motion-safe:animate-[fade-in_120ms_ease-out] sm:place-items-center sm:p-4"
       onClick={onClose}
       role="dialog"
     >
       <div
-        className="w-full rounded-t-2xl border border-border-default bg-surface-1 p-5 shadow-xl sm:max-w-md sm:rounded-2xl"
+        // The form is taller than a short viewport and neither this panel nor
+        // the fixed overlay scrolled, so the submit button sat below the fold
+        // with no way to reach it — on a phone the dialog could not be
+        // completed at all.
+        className="max-h-[100dvh] w-full overflow-y-auto rounded-t-2xl border border-border-default bg-surface-1 p-5 shadow-xl sm:max-h-[calc(100dvh-2rem)] sm:max-w-md sm:rounded-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <h2

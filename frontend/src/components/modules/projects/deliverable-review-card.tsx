@@ -41,6 +41,8 @@ type DeliverableReviewCardProps = {
   isOperator: boolean;
   /** Refresh the workspace after an approve / revision request. */
   onChanged: () => void;
+  /** Report the freshly loaded Deliverable so the workspace can track it. */
+  onLoaded?: (deliverable: DeliverableResponse | null) => void;
   /** Identity mode for the API call (default self). */
   mode?: ProjectApiMode;
 };
@@ -54,6 +56,7 @@ export function DeliverableReviewCard({
   milestoneStatus,
   isOperator,
   onChanged,
+  onLoaded,
   mode = { kind: "self" },
 }: DeliverableReviewCardProps) {
   const [deliverable, setDeliverable] = useState<DeliverableResponse | null>(null);
@@ -69,9 +72,14 @@ export function DeliverableReviewCard({
       path: { milestone_id: milestoneId, project_id: projectId },
     });
     if (result.response.ok && result.data) {
-      setDeliverable(result.data.deliverables[0] ?? null);
+      const latest = result.data.deliverables[0] ?? null;
+      setDeliverable(latest);
+      // The workspace kept its own copy from submission time and nothing ever
+      // refreshed it, so an approved Deliverable still read as "submitted"
+      // there and the publish-as-Framework action never appeared.
+      onLoaded?.(latest);
     }
-  }, [milestoneId, projectId]);
+  }, [milestoneId, onLoaded, projectId]);
 
   useEffect(() => {
     void load();
