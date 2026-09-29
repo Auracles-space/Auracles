@@ -22,7 +22,6 @@ import {
 } from "@/lib/auth/form-client";
 import { getStripeClient } from "@/lib/financials/stripe-client";
 import {
-  createCollectionPurchase,
   getExploreCollectionDetail,
   listMyOrganizationsV1OrgsMineGet,
 } from "@/lib/generated/sdk.gen";
@@ -37,6 +36,7 @@ import {
   type BuyerOption,
   type PurchaseSession,
   buyerOptions,
+  startCollectionPurchase,
   startPurchase,
 } from "@/lib/marketplace/purchase-context";
 import { BuyerContextSelector } from "./buyer-context-selector";
@@ -247,6 +247,7 @@ export function CollectionCheckoutForm({
   const [session, setSession] = useState<StripeCheckoutSession | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [country, setCountry] = useState(defaultCheckoutCountry);
   const stripePromise = useMemo(() => getStripeClient(), []);
   const alreadyOwnedCount =
     displayCollection.already_owned_member_ids?.length ?? 0;
@@ -271,27 +272,28 @@ export function CollectionCheckoutForm({
     setSubmitting(true);
     configureBrowserClient();
 
-    const result = await createCollectionPurchase({
-      body: { license_type: licenseType },
+    const result = await startCollectionPurchase({
+      collectionId: displayCollection.id,
+      licenseType,
       headers: getAccessTokenHeaders(),
-      path: { collection_id: displayCollection.id },
+      country,
     });
-    setSubmitting(false);
 
-    if (!result.response.ok || !result.data) {
+    if ("error" in result) {
+      setSubmitting(false);
       setError(describeGeneratedError(result.error));
       return;
     }
 
-    if (!result.data.client_secret) {
-      setError("Checkout could not be started.");
+    if (result.kind === "paystack") {
+      // Paystack owns the next screen. Stay in the submitting state through
+      // navigation so the button cannot be pressed twice into two charges.
+      window.location.assign(result.authorizationUrl);
       return;
     }
-    setSession({
-      kind: "stripe",
-      clientSecret: result.data.client_secret,
-      transactionId: result.data.transaction_id,
-    });
+
+    setSubmitting(false);
+    setSession(result);
   }
 
   return (
@@ -378,6 +380,27 @@ export function CollectionCheckoutForm({
           </label>
         ))}
       </fieldset>
+
+      {!session ? (
+        <label className="mt-6 grid gap-2 text-sm font-semibold text-foreground">
+          Billing country
+          <select
+            className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
+            disabled={submitting}
+            onChange={(event) => setCountry(event.target.value)}
+            value={country}
+          >
+            {CHECKOUT_COUNTRIES.map((option) => (
+              <option key={option.code} value={option.code}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs font-normal leading-5 text-foreground-muted">
+            Determines how your payment is processed.
+          </span>
+        </label>
+      ) : null}
 
       {error ? <p className="mt-4 text-sm text-error">{error}</p> : null}
 

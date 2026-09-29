@@ -211,7 +211,9 @@ describe("CheckoutForm", () => {
     await waitFor(() => {
       expect(createCollectionPurchase).toHaveBeenCalledWith(
         expect.objectContaining({
-          body: { license_type: "team" },
+          // The billing country is part of the body now: it is what picks the
+          // payment rail, and omitting it settled every bundle on Stripe.
+          body: { country: "US", license_type: "team" },
           path: { collection_id: collection.id },
         }),
       );
