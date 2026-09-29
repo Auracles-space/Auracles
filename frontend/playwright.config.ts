@@ -8,10 +8,19 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   expect: {
-    timeout: 5_000,
+    // 5s was enough locally and not on a CI runner: the suite runs against
+    // `next dev`, which compiles a route the first time it is hit, and the
+    // project workspace took longer than that to appear on a 4-vCPU box. The
+    // test timeout does not cover this — `expect` carries its own.
+    timeout: 15_000,
   },
   testDir: "./tests/e2e",
-  timeout: 30_000,
+  timeout: 60_000,
+  // A first-hit compile stall is a slow pass, not a failure, so CI retries it
+  // rather than failing the branch. This also makes `trace: "on-first-retry"`
+  // below mean something: with retries at their default of 0 no trace was ever
+  // captured, so the one CI failure so far left nothing to look at.
+  retries: process.env.CI ? 2 : 0,
   // Pinned rather than left to Playwright's "50% of cores" default. The suite
   // runs against `next dev`, which compiles each route on first hit, so more
   // workers than this put several uncompiled routes under load at once and
