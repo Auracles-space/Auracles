@@ -37,6 +37,40 @@ from app.modules.explore.schemas import (
 router = APIRouter(prefix="/explore", tags=["Explore"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
+
+# The search endpoints are the same scraping target and a far more expensive
+# one: full-text search across thirteen facets rather than a cached aggregate.
+# They went unlimited until staging was found absorbing ~6 requests a second of
+# randomised-filter traffic (2026-09-29). 60/minute sits well above real
+# browsing, which rarely passes 30 even while someone is actively filtering.
+SEARCH_RATE_LIMITER = RateLimiter(namespace="explore_search", limit=60, window=60)
+
+
+async def enforce_search_rate_limit(request: Request, redis: RedisClient) -> None:
+    """Rate-limit one public search request by client IP.
+
+    A route dependency rather than a call inside each handler: these endpoints
+    are unauthenticated, so the IP is the only identity available, and applying
+    it to one of them alone is bypassed by changing a single path segment.
+
+    The Redis client is injected rather than read from `get_redis()` directly.
+    That cache is process-wide and survives a test's event loop, so calling it
+    here reached a closed loop from whichever test ran next — and it also stepped
+    around any dependency override a caller had installed.
+
+    Args:
+        request: Incoming request, read for the forwarded client address.
+        redis: Injected Redis client backing the counter.
+
+    Raises:
+        HTTPException(429): If this IP has exhausted its window.
+    """
+    await SEARCH_RATE_LIMITER.check(
+        cast(RedisCounter, redis), client_ip(request) or "unknown"
+    )
+
+
+SearchRateLimit = Depends(enforce_search_rate_limit)
 optional_bearer = HTTPBearer(auto_error=False)
 
 
@@ -55,7 +89,11 @@ async def optional_current_user_id(
         return None
 
 
-@router.get("/frameworks", response_model=ExploreFrameworkListResponse)
+@router.get(
+    "/frameworks",
+    response_model=ExploreFrameworkListResponse,
+    dependencies=[SearchRateLimit],
+)
 async def list_frameworks(
     request: Request,
     response: Response,
@@ -159,7 +197,9 @@ async def read_demand_map(
     )
 
 
-@router.get("/catalog", response_model=ExploreCatalogResponse)
+@router.get(
+    "/catalog", response_model=ExploreCatalogResponse, dependencies=[SearchRateLimit]
+)
 async def list_mixed_catalog(
     db: DatabaseSession,
     current_user_id: Annotated[UUID | None, Depends(optional_current_user_id)],
@@ -207,7 +247,11 @@ async def list_mixed_catalog(
     )
 
 
-@router.get("/collections", response_model=ExploreCollectionListResponse)
+@router.get(
+    "/collections",
+    response_model=ExploreCollectionListResponse,
+    dependencies=[SearchRateLimit],
+)
 async def list_collections(
     db: DatabaseSession,
     current_user_id: Annotated[UUID | None, Depends(optional_current_user_id)],

@@ -86,13 +86,14 @@ os.environ["S3_AVATARS_BUCKET"] = "auracles-avatars-dev"
 os.environ["S3_REPORTS_BUCKET"] = "auracles-reports-dev"
 os.environ["S3_THUMBNAILS_BUCKET"] = "auracles-thumbnails-dev"
 
-from collections.abc import AsyncIterator  # noqa: E402
+from collections.abc import AsyncIterator, Iterator  # noqa: E402
 
 import pytest  # noqa: E402
 import sqlalchemy as sa  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
+from app.core.redis import get_redis  # noqa: E402
 from app.main import app  # noqa: E402
 
 # Background tasks enqueued by code under test must never reach the local
@@ -160,6 +161,26 @@ _OUTBOUND_FK_COLUMNS = sa.text(
     "  AND tc.table_name = :table "
     "  AND ccu.table_name <> :table"
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_cached_redis_client() -> Iterator[None]:
+    """Drop the process-wide Redis client between tests.
+
+    `get_redis` is `lru_cache`d, so the client one test builds stays bound to
+    that test's event loop and the next test reusing it dies with
+    `Event loop is closed` — or `got Future attached to a different loop` — in
+    whatever code happens to touch Redis, nowhere near the cause. Modules kept
+    rediscovering this one at a time, and the blast radius grows every time an
+    endpoint starts reaching Redis: rate-limiting the public Explore search
+    surface put a dozen previously unaffected tests on that path at once.
+
+    Clearing the cache is enough. The connections are closed by the interpreter
+    at process exit, which for a test run is soon and harmless.
+    """
+    get_redis.cache_clear()
+    yield
+    get_redis.cache_clear()
 
 
 @pytest.fixture(scope="module", autouse=True)

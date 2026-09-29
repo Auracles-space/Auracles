@@ -71,6 +71,15 @@ class FakeRedis:
         del key, seconds
         return True
 
+    async def ttl(self, key: str) -> int:
+        """Return a recorded TTL, or Redis' no-expiry sentinel.
+
+        Required since the public Explore search endpoints became rate limited:
+        `RateLimiter` reads the TTL to tell a caller how long to wait, and these
+        tests reach those endpoints.
+        """
+        return self.ttls.get(key, -1)
+
 
 class FakeExploreStorage:
     """S3 storage double for preview URL generation."""
