@@ -66,7 +66,7 @@ function PartnerPaymentForm({ transactionId }: { transactionId: string }) {
     const result = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/partner-demo?paid=${transactionId}`,
+        return_url: `${window.location.origin}/partner-demo?purchase=${transactionId}`,
       },
     });
     setSubmitting(false);
@@ -112,7 +112,10 @@ export function PartnerCheckoutDemo() {
     if (typeof window === "undefined") {
       return null;
     }
-    return new URLSearchParams(window.location.search).get("paid");
+    // `purchase` is what the platform appends to a return URL on both rails —
+    // Paystack's callback and the Stripe return below. Reading a name only one
+    // of them sets meant a Paystack buyer paid and then saw the form again.
+    return new URLSearchParams(window.location.search).get("purchase");
   }, []);
 
   /** Headers for an unauthenticated Partner API call. */
@@ -159,7 +162,8 @@ export function PartnerCheckoutDemo() {
             license_type: licenseType,
             // A real Partner sends a page on their own storefront. The demo
             // stands in for one by returning to itself, which is also how the
-            // `?paid=` confirmation below is reached on the Paystack rail.
+            // confirmation above is reached on the Paystack rail: the platform
+            // appends `purchase=<transaction_id>` to whatever is given here.
             return_url: `${window.location.origin}/partner-demo`,
           }),
         },

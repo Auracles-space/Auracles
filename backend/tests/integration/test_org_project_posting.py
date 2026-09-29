@@ -74,6 +74,11 @@ async def org_project_context() -> AsyncIterator[None]:
     finally:
         await cleanup()
         await engine.dispose()
+        # Removed on the way out. `app` is the shared production app, so an
+        # override left installed follows the worker into every later module —
+        # this FakeRedis has no `eval`, which the Partner API rate limiter
+        # needs, so the leak surfaces as an AttributeError in an unrelated test.
+        app.dependency_overrides.pop(get_redis, None)
 
 
 async def _activate_operator_capability(
