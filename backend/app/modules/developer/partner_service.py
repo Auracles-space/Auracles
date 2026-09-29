@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from secrets import token_urlsafe
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -21,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.currency import platform_currency
-from app.integrations import stripe
+from app.integrations import paystack, stripe
+from app.integrations.payment_router import PaymentProvider, select_provider
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.attestation.models import Attestation
 from app.modules.auth import service as auth_service
@@ -194,7 +197,8 @@ async def _create_pending_partner_purchase(
     developer_account_id: UUID,
     developer_user_id: UUID,
     buyer_id: UUID,
-    customer_id: str,
+    customer_id: str | None,
+    provider: PaymentProvider,
     framework_id: UUID,
     contributor_id: UUID,
     amount: Decimal,
@@ -203,7 +207,12 @@ async def _create_pending_partner_purchase(
     tier_at_sale: int,
     tier_rate: Decimal,
 ) -> UUID:
-    """Persist pending transaction and Partner attribution atomically."""
+    """Persist pending transaction and Partner attribution atomically.
+
+    `customer_id` is Stripe-only — Paystack has no stored-customer concept and
+    passes None, which leaves any existing `stripe_customer_id` untouched
+    rather than blanking a buyer who has also paid by card.
+    """
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -213,7 +222,7 @@ async def _create_pending_partner_purchase(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Buyer account not found.",
             )
-        if buyer_row.stripe_customer_id is None:
+        if customer_id is not None and buyer_row.stripe_customer_id is None:
             buyer_row.stripe_customer_id = customer_id
         transaction = Transaction(
             payer_id=buyer_id,
@@ -224,7 +233,7 @@ async def _create_pending_partner_purchase(
             net_amount=amount,
             transaction_type="purchase",
             status="pending",
-            provider="stripe",
+            provider=provider,
             ref_id=framework_id,
             ref_type="framework",
         )
@@ -502,6 +511,154 @@ async def list_attestations(
     )
 
 
+def _partner_purchase_callback_url(return_url: str, transaction_id: UUID) -> str:
+    """Build the URL Paystack returns a Partner-originated buyer to.
+
+    The buyer came from the Partner's storefront and has never seen Auracles,
+    so they go back there rather than to our Library. Paystack keeps the payer
+    on its own success page when no callback URL is sent at all, where a buyer
+    who has already paid can pay a second time.
+
+    The Partner's own query string is preserved and `purchase` appended, so
+    their order reference and our transaction id both survive the round trip.
+
+    Args:
+        return_url: Partner page supplied on the purchase request.
+        transaction_id: Pending purchase, echoed so the Partner can confirm
+            which purchase just completed.
+
+    Returns:
+        The Partner's return URL carrying the transaction id.
+    """
+    parts = urlsplit(return_url)
+    query = urlencode(
+        [
+            *parse_qsl(parts.query, keep_blank_values=True),
+            ("purchase", str(transaction_id)),
+        ]
+    )
+    return urlunsplit(parts._replace(query=query))
+
+
+async def _start_paystack_partner_purchase(
+    db: AsyncSession,
+    *,
+    api_key_id: UUID,
+    developer_account_id: UUID,
+    developer_user_id: UUID,
+    buyer_id: UUID,
+    buyer_email: str,
+    framework_id: UUID,
+    contributor_id: UUID,
+    amount: Decimal,
+    currency: str,
+    license_type: str,
+    return_url: str,
+    tier_at_sale: int,
+    tier_rate: Decimal,
+) -> PartnerPurchaseResponse:
+    """Book a pending Paystack purchase and return its hosted checkout URL.
+
+    Paystack has no stored-payment-method equivalent, so unlike the Stripe
+    branch there is no customer to create first: the transaction is written,
+    the charge is initialized, and the Partner sends the buyer to Paystack's
+    own page. The metadata mirrors the Stripe branch exactly because
+    `webhooks/service.py` reads the same keys off whichever rail settles.
+
+    Args:
+        db: Async SQLAlchemy session.
+        api_key_id: API key the purchase is attributed to.
+        developer_account_id: Partner account earning commission on the sale.
+        developer_user_id: Partner user recorded as the audit actor.
+        buyer_id: Operator being charged.
+        buyer_email: Address Paystack sends the receipt to.
+        framework_id: Framework being licensed.
+        contributor_id: Selling Contributor.
+        amount: Charge amount in major units.
+        currency: ISO 4217 code, always the platform settlement currency.
+        license_type: License tier being bought, echoed back by the webhook.
+        return_url: Partner page the paid buyer is returned to.
+        tier_at_sale: Partner commission tier snapshotted at sale.
+        tier_rate: Partner commission rate snapshotted at sale.
+
+    Returns:
+        The Partner handoff carrying Paystack's authorization URL.
+
+    Raises:
+        HTTPException(502): If Paystack cannot initialize the transaction.
+    """
+    transaction_id = await _create_pending_partner_purchase(
+        db,
+        api_key_id=api_key_id,
+        developer_account_id=developer_account_id,
+        developer_user_id=developer_user_id,
+        buyer_id=buyer_id,
+        customer_id=None,
+        provider="paystack",
+        framework_id=framework_id,
+        contributor_id=contributor_id,
+        amount=amount,
+        currency=currency,
+        license_type=license_type,
+        tier_at_sale=tier_at_sale,
+        tier_rate=tier_rate,
+    )
+    try:
+        initialized = await paystack.initialize_transaction(
+            email=buyer_email,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "transaction_id": str(transaction_id),
+                "kind": "purchase",
+                "framework_id": str(framework_id),
+                "license_type": license_type,
+                "api_key_id": str(api_key_id),
+                "tier_rate": str(tier_rate),
+            },
+            callback_url=_partner_purchase_callback_url(return_url, transaction_id),
+        )
+    except PaystackProviderError as exc:
+        await _mark_partner_purchase_failed(
+            db,
+            actor_id=developer_user_id,
+            api_key_id=api_key_id,
+            transaction_id=transaction_id,
+            reason="paystack_initialize_failed",
+        )
+        logger.bind(
+            module="developer",
+            action="partner_purchase",
+            framework_id=framework_id,
+            transaction_id=transaction_id,
+            user_id=developer_user_id,
+        ).error("paystack_initialize_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    await _mark_partner_purchase_provider_ref(
+        db,
+        actor_id=developer_user_id,
+        api_key_id=api_key_id,
+        transaction_id=transaction_id,
+        provider_ref=initialized.reference,
+    )
+    logger.bind(
+        module="developer",
+        action="partner_purchase",
+        framework_id=framework_id,
+        transaction_id=transaction_id,
+        user_id=developer_user_id,
+    ).info("partner_purchase_initiated")
+    return PartnerPurchaseResponse(
+        transaction_id=transaction_id,
+        provider="paystack",
+        authorization_url=initialized.authorization_url,
+    )
+
+
 async def initiate_purchase(
     db: AsyncSession,
     redis: Redis,
@@ -583,6 +740,25 @@ async def initiate_purchase(
             detail="Framework is already licensed by this buyer.",
         )
 
+    provider = select_provider(user_country=None, currency=currency)
+    if provider == "paystack":
+        return await _start_paystack_partner_purchase(
+            db,
+            api_key_id=api_key_id,
+            developer_account_id=developer_account_id,
+            developer_user_id=developer_user_id,
+            buyer_id=buyer_id,
+            buyer_email=buyer_email,
+            framework_id=framework_uuid,
+            contributor_id=contributor_id,
+            amount=amount,
+            currency=currency,
+            license_type=payload.license_type,
+            return_url=str(payload.return_url),
+            tier_at_sale=tier_at_sale,
+            tier_rate=tier_rate,
+        )
+
     customer_id = buyer_customer_id
     try:
         if customer_id is None:
@@ -611,6 +787,7 @@ async def initiate_purchase(
         developer_user_id=developer_user_id,
         buyer_id=buyer_id,
         customer_id=customer_id,
+        provider="stripe",
         framework_id=framework_uuid,
         contributor_id=contributor_id,
         amount=amount,

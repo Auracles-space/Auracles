@@ -149,6 +149,43 @@ type ApiKeysPanelProps = {
   rawApiKey: string | null;
 };
 
+/**
+ * Scopes a key can be granted, in the order they are offered.
+ *
+ * Every key used to receive all of these regardless of what the integration
+ * needed, so a Partner that only read the catalog held a key that could also
+ * charge their customers. Each is now chosen deliberately.
+ */
+const API_KEY_SCOPES: { scope: string; label: string; detail: string }[] = [
+  {
+    scope: "catalog:read",
+    label: "Read the catalog",
+    detail: "List and open published Frameworks.",
+  },
+  {
+    scope: "preview:read",
+    label: "Read previews",
+    detail: "Fetch the redacted preview artifact for a Framework.",
+  },
+  {
+    scope: "attestations:read",
+    label: "Read attestations",
+    detail: "See which Attestors have verified a Framework.",
+  },
+  {
+    scope: "purchase:write",
+    label: "Start purchases",
+    detail: "Charge a buyer for a Framework. Grant this sparingly.",
+  },
+  {
+    scope: "purchases:read",
+    label: "Read purchase status",
+    detail: "Check an order it started, without being able to charge.",
+  },
+];
+
+const DEFAULT_SCOPES = ["catalog:read"];
+
 export function ApiKeysPanel({
   apiKeys,
   onCreate,
@@ -157,22 +194,37 @@ export function ApiKeysPanel({
   rawApiKey,
 }: ApiKeysPanelProps) {
   const nameId = useId();
+  const scopesId = useId();
   const [name, setName] = useState("");
+  const [scopes, setScopes] = useState<string[]>(DEFAULT_SCOPES);
   const [isCreating, setIsCreating] = useState(false);
 
-  const canSubmit = isNonEmpty(name) && !isCreating;
+  // The API rejects an empty scope list, so the form does too rather than
+  // letting a Partner submit a key that can do nothing.
+  const canSubmit = isNonEmpty(name) && scopes.length > 0 && !isCreating;
+
+  function toggleScope(scope: string) {
+    setScopes((current) =>
+      current.includes(scope)
+        ? current.filter((entry) => entry !== scope)
+        : [...current, scope],
+    );
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsCreating(true);
     try {
-      await onCreate(name, [
-        "catalog:read",
-        "preview:read",
-        "attestations:read",
-        "purchase:write",
-      ]);
+      // Sent in the declared order rather than the order they were clicked, so
+      // two keys with the same access read identically in the list below.
+      await onCreate(
+        name,
+        API_KEY_SCOPES.map((entry) => entry.scope).filter((scope) =>
+          scopes.includes(scope),
+        ),
+      );
       setName("");
+      setScopes(DEFAULT_SCOPES);
     } finally {
       setIsCreating(false);
     }
@@ -187,11 +239,8 @@ export function ApiKeysPanel({
       {rawApiKey ? (
         <OneTimeKeyModal onDismiss={onClearRawKey} value={rawApiKey} />
       ) : null}
-      <form
-        className="mt-5 flex flex-col gap-3 sm:flex-row"
-        onSubmit={handleSubmit}
-      >
-        <label className="grid flex-1 gap-2 text-sm font-semibold" htmlFor={nameId}>
+      <form className="mt-5 grid gap-4" onSubmit={handleSubmit}>
+        <label className="grid gap-2 text-sm font-semibold" htmlFor={nameId}>
           Key name
           <input
             className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-3 font-normal outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
@@ -203,8 +252,43 @@ export function ApiKeysPanel({
             placeholder="e.g. Staging Integration Key"
           />
         </label>
+        <fieldset className="grid gap-2" id={scopesId}>
+          <legend className="text-sm font-semibold">Access</legend>
+          <p className="text-xs text-foreground-muted">
+            Grant only what this integration needs. A key that leaks can do
+            everything it was given.
+          </p>
+          <div className="mt-1 grid gap-2">
+            {API_KEY_SCOPES.map((entry) => (
+              <label
+                className="flex min-h-12 cursor-pointer items-start gap-3 rounded-xl border border-border-default bg-surface-2 px-3 py-3 transition-colors hover:bg-surface-1"
+                key={entry.scope}
+              >
+                <input
+                  checked={scopes.includes(entry.scope)}
+                  className="mt-0.5 h-5 w-5 flex-shrink-0 accent-accent outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  disabled={isCreating}
+                  onChange={() => toggleScope(entry.scope)}
+                  type="checkbox"
+                  value={entry.scope}
+                />
+                <span className="grid gap-0.5">
+                  <span className="text-sm font-semibold text-foreground">
+                    {entry.label}
+                  </span>
+                  <span className="text-xs text-foreground-muted">
+                    {entry.detail}
+                  </span>
+                  <code className="mt-0.5 font-mono text-[11px] text-foreground-subtle">
+                    {entry.scope}
+                  </code>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <button
-          className="min-h-12 w-full sm:w-auto sm:self-end rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-12 w-full sm:w-auto sm:justify-self-start rounded-xl shadow-sm outline-none transition-all focus-visible:ring-2 focus-visible:ring-accent bg-foreground hover:bg-foreground/90 px-4 text-sm font-semibold text-background disabled:cursor-not-allowed disabled:opacity-60"
           disabled={!canSubmit}
           type="submit"
         >
@@ -256,11 +340,9 @@ export function ApiKeysPanel({
       </div>
 
       <p className="mt-4 text-xs text-foreground-muted">
-        Keys are scoped (<code className="font-mono text-foreground">catalog:read</code>,{" "}
-        <code className="font-mono text-foreground">preview:read</code>,{" "}
-        <code className="font-mono text-foreground">attestations:read</code>,{" "}
-        <code className="font-mono text-foreground">purchase:write</code>) and
-        rate-limited. See usage examples below.
+        Keys are rate-limited per minute and their scopes are fixed once
+        created. To change what a key can do, create a new one and revoke the
+        old. See usage examples below.
       </p>
     </section>
   );

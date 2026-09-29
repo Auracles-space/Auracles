@@ -625,16 +625,24 @@ async def test_partner_purchase_initiates_checkout_for_existing_operator(
     response = await client.post(
         f"/v1/partner/frameworks/{framework_id}/purchase",
         headers=api_key_headers(raw_key),
-        json={"buyer_email": "partner-buyer@auracles.space", "license_type": "team"},
+        json={
+            "buyer_email": "partner-buyer@auracles.space",
+            "license_type": "team",
+            "return_url": "https://partner.example.com/orders/complete",
+        },
     )
 
     assert response.status_code == 200
     body = response.json()
     transaction_id = UUID(body["transaction_id"])
+    # `authorization_url` is the Paystack half of the handoff and is null on this
+    # rail. Asserted rather than ignored: a Partner branching on its presence
+    # must never see both fields populated.
     assert body == {
         "transaction_id": str(transaction_id),
         "provider": "stripe",
         "client_secret": "secret_partner",
+        "authorization_url": None,
     }
     assert stripe_calls["customers"][0]["email"] == "partner-buyer@auracles.space"
     payment_intent = stripe_calls["payment_intents"][0]
@@ -680,8 +688,8 @@ async def test_partner_purchase_invites_buyer_and_scopes_status_to_key(
     del migrated_database
     raw_key = "ak_partner_invite"
     other_raw_key = "ak_partner_other"
-    await create_partner_key(raw_key, ["purchase:write"])
-    await create_partner_key(other_raw_key, ["purchase:write"])
+    await create_partner_key(raw_key, ["purchase:write", "purchases:read"])
+    await create_partner_key(other_raw_key, ["purchase:write", "purchases:read"])
     contributor_id = await create_user(
         "partner-invite-seller@auracles.space",
         ["contributor"],
@@ -734,6 +742,7 @@ async def test_partner_purchase_invites_buyer_and_scopes_status_to_key(
         json={
             "buyer_email": "new-buyer@auracles.space",
             "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
         },
     )
 
@@ -825,8 +834,32 @@ async def test_partner_routes_hide_suspended_contributor_frameworks(
         json={
             "buyer_email": "hidden-partner-buyer@auracles.space",
             "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
         },
     )
 
     assert detail.status_code == 404
     assert purchase.status_code == 404
+
+
+async def test_purchase_status_requires_its_own_read_scope(
+    client: AsyncClient,
+    migrated_database: None,
+    partner_read_context: dict[str, Any],
+) -> None:
+    """Reading a purchase must require `purchases:read`, not the write scope.
+
+    A Partner's back office checking order status should not need a key that
+    can also charge their customers. The gate fires before the lookup, so the
+    refusal is 403 and not a 404 that would leak whether the purchase exists.
+    """
+    del migrated_database, partner_read_context
+    raw_key = "ak_partner_write_only"
+    await create_partner_key(raw_key, ["purchase:write"])
+
+    response = await client.get(
+        f"/v1/partner/purchases/{uuid4()}",
+        headers=api_key_headers(raw_key),
+    )
+
+    assert response.status_code == 403

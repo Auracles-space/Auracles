@@ -349,14 +349,38 @@ class PartnerPurchaseRequest(BaseModel):
 
     buyer_email: EmailStr
     license_type: SelfServeLicenseType
+    return_url: HttpUrl
+    """Partner page the buyer is returned to once payment completes.
+
+    Required on every purchase, not only the redirecting rail: the provider is
+    chosen server-side from the settlement currency, so a Partner cannot know
+    in advance whether their buyer will be sent away and back. Auracles appends
+    `purchase=<transaction_id>` to it.
+    """
+
+    @field_validator("return_url")
+    @classmethod
+    def return_url_is_https(cls, value: HttpUrl) -> HttpUrl:
+        """Require HTTPS return URLs, as Partner webhook URLs already are."""
+        if value.scheme != "https":
+            raise ValueError("Return URL must use https.")
+        return value
 
 
 class PartnerPurchaseResponse(BaseModel):
-    """Stripe checkout data returned to a Partner API purchase request."""
+    """Provider handoff a Partner sends its buyer to in order to pay.
+
+    The two rails hand off differently and exactly one field is populated:
+    Stripe returns a `client_secret` the Partner mounts Elements against, while
+    Paystack returns an `authorization_url` the buyer's browser is redirected
+    to. Which one arrives is decided by `select_provider`, so a Partner must
+    branch on `provider` rather than assuming either field is present.
+    """
 
     transaction_id: UUID
-    provider: Literal["stripe"]
-    client_secret: str
+    provider: Literal["stripe", "paystack"]
+    client_secret: str | None = None
+    authorization_url: str | None = None
 
 
 class PartnerPurchaseStatusResponse(BaseModel):
@@ -364,7 +388,7 @@ class PartnerPurchaseStatusResponse(BaseModel):
 
     transaction_id: UUID
     status: str
-    provider: Literal["stripe"]
+    provider: Literal["stripe", "paystack"]
     framework_id: UUID
     buyer_email: EmailStr
     license_type: str

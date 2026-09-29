@@ -4731,16 +4731,23 @@ export type PartnerPreviewArtifactResponse = {
 export type PartnerPurchaseRequest = {
     buyer_email: string;
     license_type: 'single_user' | 'team' | 'organizational';
+    /**
+     * Partner page the buyer is returned to once payment completes.
+     * Required on every purchase, not only the redirecting rail: the provider is chosen server-side from the settlement currency, so a Partner cannot know in advance whether their buyer will be sent away and back. Auracles appends purchase=<transaction_id> to it. Must be https.
+     */
+    return_url: string;
 };
 
 export type license_type = 'single_user' | 'team' | 'organizational';
 
 /**
- * Stripe checkout data returned to a Partner API purchase request.
+ * Provider handoff a Partner sends its buyer to in order to pay.
+ * Exactly one of client_secret and authorization_url is populated, decided by the payment rail: Stripe returns a client secret to mount Elements against, Paystack an authorization URL to redirect the buyer to. Branch on provider rather than assuming either field is present.
  */
 export type PartnerPurchaseResponse = {
-    client_secret: string;
-    provider: "stripe";
+    authorization_url?: (string | null);
+    client_secret?: (string | null);
+    provider: 'stripe' | 'paystack';
     transaction_id: string;
 };
 
@@ -4753,7 +4760,7 @@ export type PartnerPurchaseStatusResponse = {
     currency: string;
     framework_id: string;
     license_type: string;
-    provider: "stripe";
+    provider: 'stripe' | 'paystack';
     status: string;
     transaction_id: string;
 };
