@@ -352,11 +352,19 @@ class PartnerPurchaseRequest(BaseModel):
 
 
 class PartnerPurchaseResponse(BaseModel):
-    """Stripe checkout data returned to a Partner API purchase request."""
+    """Provider handoff a Partner sends its buyer to in order to pay.
+
+    The two rails hand off differently and exactly one field is populated:
+    Stripe returns a `client_secret` the Partner mounts Elements against, while
+    Paystack returns an `authorization_url` the buyer's browser is redirected
+    to. Which one arrives is decided by `select_provider`, so a Partner must
+    branch on `provider` rather than assuming either field is present.
+    """
 
     transaction_id: UUID
-    provider: Literal["stripe"]
-    client_secret: str
+    provider: Literal["stripe", "paystack"]
+    client_secret: str | None = None
+    authorization_url: str | None = None
 
 
 class PartnerPurchaseStatusResponse(BaseModel):
@@ -364,7 +372,7 @@ class PartnerPurchaseStatusResponse(BaseModel):
 
     transaction_id: UUID
     status: str
-    provider: Literal["stripe"]
+    provider: Literal["stripe", "paystack"]
     framework_id: UUID
     buyer_email: EmailStr
     license_type: str

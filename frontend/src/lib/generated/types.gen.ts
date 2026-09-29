@@ -4736,11 +4736,13 @@ export type PartnerPurchaseRequest = {
 export type license_type = 'single_user' | 'team' | 'organizational';
 
 /**
- * Stripe checkout data returned to a Partner API purchase request.
+ * Provider handoff a Partner sends its buyer to in order to pay.
+ * Exactly one of client_secret and authorization_url is populated, decided by the payment rail: Stripe returns a client secret to mount Elements against, Paystack an authorization URL to redirect the buyer to. Branch on provider rather than assuming either field is present.
  */
 export type PartnerPurchaseResponse = {
-    client_secret: string;
-    provider: "stripe";
+    authorization_url?: (string | null);
+    client_secret?: (string | null);
+    provider: 'stripe' | 'paystack';
     transaction_id: string;
 };
 
@@ -4753,7 +4755,7 @@ export type PartnerPurchaseStatusResponse = {
     currency: string;
     framework_id: string;
     license_type: string;
-    provider: "stripe";
+    provider: 'stripe' | 'paystack';
     status: string;
     transaction_id: string;
 };

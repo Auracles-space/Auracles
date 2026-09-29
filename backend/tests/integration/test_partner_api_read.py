@@ -631,10 +631,14 @@ async def test_partner_purchase_initiates_checkout_for_existing_operator(
     assert response.status_code == 200
     body = response.json()
     transaction_id = UUID(body["transaction_id"])
+    # `authorization_url` is the Paystack half of the handoff and is null on this
+    # rail. Asserted rather than ignored: a Partner branching on its presence
+    # must never see both fields populated.
     assert body == {
         "transaction_id": str(transaction_id),
         "provider": "stripe",
         "client_secret": "secret_partner",
+        "authorization_url": None,
     }
     assert stripe_calls["customers"][0]["email"] == "partner-buyer@auracles.space"
     payment_intent = stripe_calls["payment_intents"][0]

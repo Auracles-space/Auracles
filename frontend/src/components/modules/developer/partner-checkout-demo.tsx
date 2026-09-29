@@ -33,6 +33,13 @@ type FrameworkPreview = {
   currency: string;
 };
 
+/**
+ * Provider handoff returned by the Partner purchase endpoint.
+ *
+ * Exactly one of the two rails applies, so `clientSecret` is present only for
+ * Stripe. Paystack is not represented here because it never reaches component
+ * state: the browser is redirected to its authorization URL immediately.
+ */
 type CheckoutSession = {
   clientSecret: string;
   transactionId: string;
@@ -158,6 +165,22 @@ export function PartnerCheckoutDemo() {
         return;
       }
       const data = await res.json();
+      // The rail is chosen server-side from the settlement currency, so a
+      // Partner cannot assume either handoff. Paystack hosts its own checkout
+      // page and takes the buyer away from this site; Stripe hands back a
+      // client secret to mount Elements against, in-page.
+      if (data.provider === "paystack") {
+        if (!data.authorization_url) {
+          setError("Paystack checkout did not return an authorization URL.");
+          return;
+        }
+        window.location.href = data.authorization_url;
+        return;
+      }
+      if (!data.client_secret) {
+        setError("Stripe checkout did not return a client secret.");
+        return;
+      }
       setSession({
         clientSecret: data.client_secret,
         transactionId: data.transaction_id,
