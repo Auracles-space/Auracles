@@ -883,7 +883,10 @@ async def get_purchase_status(
     return PartnerPurchaseStatusResponse(
         transaction_id=transaction.id,
         status=transaction.status,
-        provider="stripe",
+        # Read off the transaction, never assumed: the rail is chosen from the
+        # settlement currency, and a Partner reconciling orders uses this field
+        # to know which provider's dashboard the payment is in.
+        provider=transaction.provider,
         framework_id=attribution.framework_id,
         buyer_email=buyer.email,
         license_type=attribution.license_type,

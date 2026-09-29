@@ -199,6 +199,11 @@ async def org_invoice_context(
         s3.storage = original_storage
         await cleanup()
         await engine.dispose()
+        # Removed on the way out. `app` is the shared production app, so an
+        # override left installed follows the worker into every later module —
+        # this FakeRedis has no `eval`, which the Partner API rate limiter
+        # needs, so the leak surfaces as an AttributeError in an unrelated test.
+        app.dependency_overrides.pop(get_redis, None)
 
 
 async def test_org_purchase_invoice_issues_under_org_identity_then_returns_url(

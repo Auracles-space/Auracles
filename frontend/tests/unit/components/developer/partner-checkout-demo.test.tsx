@@ -122,4 +122,25 @@ describe("PartnerCheckoutDemo", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("confirms a Paystack buyer who returns on the platform's own param", async () => {
+    // Paystack sends the buyer back to the return URL with `purchase=`
+    // appended. The demo used to read `paid=`, which only its own Stripe
+    // branch set, so a buyer who had paid landed back on the empty form.
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        origin: "https://partner.example.com",
+        search: "?purchase=b2a6f2c0-3d1e-4a5b-8c7d-9e0f1a2b3c4d&trxref=T1121",
+        href: "",
+      },
+    });
+
+    render(<PartnerCheckoutDemo />);
+
+    expect(screen.getByText("Payment complete")).toBeInTheDocument();
+    expect(
+      screen.getByText("b2a6f2c0-3d1e-4a5b-8c7d-9e0f1a2b3c4d"),
+    ).toBeInTheDocument();
+  });
 });

@@ -136,7 +136,7 @@ async def _seed_partner_and_framework(
                     name="Routing test key",
                     key_prefix=raw_api_key[:12],
                     key_hash=hashlib.sha256(raw_api_key.encode()).hexdigest(),
-                    scopes=["catalog:read", "purchase:write"],
+                    scopes=["catalog:read", "purchase:write", "purchases:read"],
                 )
             )
             framework = Framework(
@@ -401,3 +401,56 @@ async def test_partner_purchase_rejects_an_insecure_return_url(
     )
 
     assert response.status_code == 422
+
+
+async def test_purchase_status_reports_the_rail_it_settled_on(
+    client: AsyncClient,
+    naira_platform: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The status endpoint must report the real provider, not a fixed one.
+
+    A Partner reconciling their orders reads this field. Reporting `stripe` for
+    a charge that settled on Paystack sends them to the wrong dashboard to find
+    a payment that is not there.
+    """
+    del naira_platform
+    seeded = await _seed_partner_and_framework(slug="status", currency="NGN")
+
+    async def fake_initialize_transaction(
+        *,
+        email: str,
+        amount: Decimal,
+        currency: str,
+        metadata: dict[str, str],
+        callback_url: str | None = None,
+    ) -> paystack.PaystackInitializedTransaction:
+        """Return a deterministic hosted checkout without network access."""
+        del email, amount, currency, metadata, callback_url
+        return paystack.PaystackInitializedTransaction(
+            reference="ref_partner_status",
+            authorization_url="https://checkout.paystack.com/ref_partner_status",
+            access_code="acc_partner_status",
+        )
+
+    monkeypatch.setattr(paystack, "initialize_transaction", fake_initialize_transaction)
+
+    purchase = await client.post(
+        f"/v1/partner/frameworks/{seeded['framework_id']}/purchase",
+        headers={"X-API-Key": seeded["raw_api_key"]},
+        json={
+            "buyer_email": "partner-routing-buyer-status@auracles.space",
+            "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
+        },
+    )
+    assert purchase.status_code == 200, purchase.text
+    transaction_id = purchase.json()["transaction_id"]
+
+    status_response = await client.get(
+        f"/v1/partner/purchases/{transaction_id}",
+        headers={"X-API-Key": seeded["raw_api_key"]},
+    )
+
+    assert status_response.status_code == 200, status_response.text
+    assert status_response.json()["provider"] == "paystack"
