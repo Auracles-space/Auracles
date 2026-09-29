@@ -2129,6 +2129,21 @@ async def _dispatch_paystack_event(
             db, event_id=event_id, status_="processed", provider="paystack"
         )
         return "processed", invoice_transaction_id, partner_work + purchase_notices
+    if event_type == "charge.success" and metadata.get("kind") == "collection":
+        # Bundles were Stripe-only until Collection checkout began routing by
+        # currency. Without this branch a bundle bought in the platform's own
+        # settlement currency was charged, acknowledged and never settled — the
+        # buyer paid and received no Licenses.
+        invoice_transaction_id = await confirm_collection_purchase(
+            db,
+            transaction_id=_purchase_transaction_id(envelope),
+            payment_intent_id=_event_object_id(envelope),
+            provider="paystack",
+        )
+        await _mark_event_status(
+            db, event_id=event_id, status_="processed", provider="paystack"
+        )
+        return "processed", invoice_transaction_id, []
     if event_type == "charge.success" and metadata.get("kind") == "escrow":
         after_commit_notifications = await _handle_escrow_succeeded(
             db, envelope, provider="paystack"

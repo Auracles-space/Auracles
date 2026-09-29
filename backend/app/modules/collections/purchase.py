@@ -93,13 +93,18 @@ async def confirm_collection_purchase(
     *,
     transaction_id: UUID,
     payment_intent_id: str | None,
+    provider: str = "stripe",
 ) -> UUID:
     """Complete a Collection purchase from its checkout snapshot.
 
     Args:
         db: Async SQLAlchemy session inside the webhook transaction boundary.
         transaction_id: Pending collection purchase transaction id.
-        payment_intent_id: Stripe PaymentIntent id from the verified event.
+        payment_intent_id: Provider reference from the verified event — a
+            Stripe PaymentIntent id, or a Paystack transaction reference.
+        provider: Rail the settling event arrived on. Checked against the
+            transaction so a Stripe event can never settle a Paystack charge,
+            or the reverse.
 
     Returns:
         The completed transaction id for invoice generation.
@@ -119,7 +124,7 @@ async def confirm_collection_purchase(
         raise CollectionPurchaseProcessingError(
             "transaction is not a collection purchase"
         )
-    if transaction.provider != "stripe":
+    if transaction.provider != provider:
         raise CollectionPurchaseProcessingError("transaction provider mismatch")
     if transaction.provider_ref and transaction.provider_ref != payment_intent_id:
         raise CollectionPurchaseProcessingError("payment intent id mismatch")
