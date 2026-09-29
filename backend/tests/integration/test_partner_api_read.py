@@ -688,8 +688,8 @@ async def test_partner_purchase_invites_buyer_and_scopes_status_to_key(
     del migrated_database
     raw_key = "ak_partner_invite"
     other_raw_key = "ak_partner_other"
-    await create_partner_key(raw_key, ["purchase:write"])
-    await create_partner_key(other_raw_key, ["purchase:write"])
+    await create_partner_key(raw_key, ["purchase:write", "purchases:read"])
+    await create_partner_key(other_raw_key, ["purchase:write", "purchases:read"])
     contributor_id = await create_user(
         "partner-invite-seller@auracles.space",
         ["contributor"],
@@ -840,3 +840,26 @@ async def test_partner_routes_hide_suspended_contributor_frameworks(
 
     assert detail.status_code == 404
     assert purchase.status_code == 404
+
+
+async def test_purchase_status_requires_its_own_read_scope(
+    client: AsyncClient,
+    migrated_database: None,
+    partner_read_context: dict[str, Any],
+) -> None:
+    """Reading a purchase must require `purchases:read`, not the write scope.
+
+    A Partner's back office checking order status should not need a key that
+    can also charge their customers. The gate fires before the lookup, so the
+    refusal is 403 and not a 404 that would leak whether the purchase exists.
+    """
+    del migrated_database, partner_read_context
+    raw_key = "ak_partner_write_only"
+    await create_partner_key(raw_key, ["purchase:write"])
+
+    response = await client.get(
+        f"/v1/partner/purchases/{uuid4()}",
+        headers=api_key_headers(raw_key),
+    )
+
+    assert response.status_code == 403

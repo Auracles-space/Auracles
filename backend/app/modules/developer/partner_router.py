@@ -47,6 +47,12 @@ PurchaseWriteContext = Annotated[
     PartnerApiContext,
     Depends(require_api_key_scope("purchase:write")),
 ]
+# Reading an order's status is a read: a Partner's back office should be able to
+# poll it with a key that cannot also charge their customers.
+PurchaseReadContext = Annotated[
+    PartnerApiContext,
+    Depends(require_api_key_scope("purchases:read")),
+]
 
 
 @router.get("/catalog", response_model=ExploreFrameworkListResponse)
@@ -171,7 +177,7 @@ async def initiate_partner_framework_purchase(
 async def get_partner_purchase_status(
     transaction_id: UUID,
     db: DatabaseSession,
-    context: PurchaseWriteContext,
+    context: PurchaseReadContext,
 ) -> PartnerPurchaseStatusResponse:
     """Return status for a purchase created by the same Partner API key."""
     return await partner_service.get_purchase_status(
