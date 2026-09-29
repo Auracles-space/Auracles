@@ -16,8 +16,11 @@ from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.currency import platform_currency
-from app.integrations import stripe
+from app.integrations import paystack, stripe
+from app.integrations.payment_router import PaymentProvider, select_provider
+from app.integrations.paystack import PaystackProviderError
 from app.integrations.stripe import StripeProviderError
 from app.modules.auth.models import User
 from app.modules.collections.models import (
@@ -411,7 +414,8 @@ async def _create_pending_collection_transaction(
     *,
     db: AsyncSession,
     operator_id: UUID,
-    customer_id: str,
+    customer_id: str | None,
+    provider: PaymentProvider,
     collection_id: UUID,
     contributor_id: UUID,
     amount: Decimal,
@@ -419,7 +423,12 @@ async def _create_pending_collection_transaction(
     member_snapshots: list[tuple[UUID, Decimal, bool]],
     license_type: str,
 ) -> UUID:
-    """Persist a collection transaction and immutable member snapshot rows."""
+    """Persist a collection transaction and immutable member snapshot rows.
+
+    `customer_id` is Stripe-only — Paystack has no stored-customer concept and
+    passes None, which leaves an existing `stripe_customer_id` untouched rather
+    than blanking a buyer who has also paid by card.
+    """
     if db.in_transaction():
         await db.rollback()
     async with db.begin():
@@ -429,7 +438,7 @@ async def _create_pending_collection_transaction(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid access token.",
             )
-        if operator_row.stripe_customer_id is None:
+        if customer_id is not None and operator_row.stripe_customer_id is None:
             operator_row.stripe_customer_id = customer_id
         transaction = Transaction(
             payer_id=operator_id,
@@ -440,7 +449,7 @@ async def _create_pending_collection_transaction(
             net_amount=_normalise_money(amount),
             transaction_type="purchase",
             status="pending",
-            provider="stripe",
+            provider=provider,
             ref_id=collection_id,
             ref_type="collection",
         )
@@ -531,6 +540,100 @@ async def _mark_collection_purchase_failed(
         )
 
 
+async def _start_paystack_collection_purchase(
+    *,
+    db: AsyncSession,
+    operator_id: UUID,
+    operator_email: str,
+    collection_id: UUID,
+    contributor_id: UUID,
+    amount: Decimal,
+    currency: str,
+    member_snapshots: list[tuple[UUID, Decimal, bool]],
+    license_type: str,
+) -> PurchaseResponse:
+    """Book a pending Paystack bundle purchase and return its checkout URL.
+
+    Paystack has no stored-payment-method equivalent, so unlike the Stripe
+    branch there is no customer to create first: the transaction and its member
+    snapshots are written, the charge is initialized, and the browser is sent
+    to Paystack's own page. The metadata mirrors the Stripe branch because the
+    webhook reads the same keys off whichever rail settles.
+
+    Args:
+        db: Async SQLAlchemy session.
+        operator_id: Purchasing Operator.
+        operator_email: Address Paystack sends the receipt to.
+        collection_id: Bundle being licensed.
+        contributor_id: Selling Contributor.
+        amount: Bundle price in major units.
+        currency: ISO 4217 code, always the platform settlement currency.
+        member_snapshots: Per-member price and ownership rows to persist.
+        license_type: License tier being bought, echoed by the webhook.
+
+    Returns:
+        The checkout handoff carrying Paystack's authorization URL.
+
+    Raises:
+        HTTPException(502): If Paystack cannot initialize the transaction.
+    """
+    transaction_id = await _create_pending_collection_transaction(
+        db=db,
+        operator_id=operator_id,
+        customer_id=None,
+        provider="paystack",
+        collection_id=collection_id,
+        contributor_id=contributor_id,
+        amount=amount,
+        currency=currency,
+        member_snapshots=member_snapshots,
+        license_type=license_type,
+    )
+    try:
+        initialized = await paystack.initialize_transaction(
+            email=operator_email,
+            amount=amount,
+            currency=currency,
+            metadata={
+                "kind": "collection",
+                "transaction_id": str(transaction_id),
+                "collection_id": str(collection_id),
+                "license_type": license_type,
+            },
+            # Without this Paystack keeps the payer on its own success page, so
+            # a buyer who has already paid never sees the Licenses land and can
+            # pay for the bundle a second time.
+            callback_url=(
+                f"{get_settings().frontend_base_url}/library?purchase={transaction_id}"
+            ),
+        )
+    except PaystackProviderError as exc:
+        logger.bind(
+            module="collections",
+            action="create_collection_purchase",
+            user_id=operator_id,
+            collection_id=collection_id,
+            transaction_id=transaction_id,
+        ).error("paystack_initialize_failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Payment provider is unavailable.",
+        ) from exc
+
+    logger.bind(
+        module="collections",
+        action="create_collection_purchase",
+        user_id=operator_id,
+        collection_id=collection_id,
+        transaction_id=transaction_id,
+    ).info("collection_purchase_initiated")
+    return PurchaseResponse(
+        transaction_id=transaction_id,
+        provider="paystack",
+        authorization_url=initialized.authorization_url,
+    )
+
+
 async def create_collection_purchase(
     *,
     db: AsyncSession,
@@ -596,6 +699,23 @@ async def create_collection_purchase(
         (member.id, member.price, member.id in already_owned_ids) for member in members
     ]
 
+    provider = select_provider(
+        user_country=payload.country,
+        currency=collection_currency,
+    )
+    if provider == "paystack":
+        return await _start_paystack_collection_purchase(
+            db=db,
+            operator_id=operator_id,
+            operator_email=operator.email,
+            collection_id=collection_id,
+            contributor_id=contributor_id,
+            amount=collection_amount,
+            currency=collection_currency,
+            member_snapshots=member_snapshots,
+            license_type=payload.license_type,
+        )
+
     customer_id = operator.stripe_customer_id
     try:
         if customer_id is None:
@@ -621,6 +741,7 @@ async def create_collection_purchase(
         db=db,
         operator_id=operator_id,
         customer_id=customer_id,
+        provider="stripe",
         collection_id=collection_id,
         contributor_id=contributor_id,
         amount=collection_amount,

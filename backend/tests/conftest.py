@@ -45,8 +45,17 @@ os.environ["PARTNER_WEBHOOK_ENCRYPTION_KEY"] = (
 # deliberate: pinning it here keeps the existing money tests exercising the
 # machinery unchanged, and any test that hardcodes a currency is then asserting
 # against a known value rather than against whatever the deployment default
-# happens to be. The NGN pilot configuration has its own dedicated coverage in
-# tests/integration/test_ngn_pilot_settlement.py.
+# happens to be.
+#
+# It is also a hazard, and the cost is known rather than theoretical. Staging
+# and production settle in NGN, and `select_provider` routes on currency, so a
+# money path that never consults it looks correct under this pin: in USD,
+# Stripe is the right answer anyway. That is exactly how the Partner purchase
+# endpoint shipped able to charge no one (2026-09-29). Provider routing
+# therefore has dedicated NGN coverage in
+# tests/integration/test_ngn_pilot_settlement.py, which pins the real
+# settlement currency for itself. Anything that decides a rail, a fee or a
+# payout destination belongs there too.
 os.environ["PLATFORM_CURRENCY"] = "USD"
 # Pinned for the same reason as the datastores above: tests that build Settings
 # directly (tests/unit/test_cookies.py) otherwise inherit whatever a developer
