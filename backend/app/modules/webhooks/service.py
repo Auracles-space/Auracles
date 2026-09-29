@@ -442,6 +442,41 @@ async def _org_purchase_notice(
     )
 
 
+def _individual_payout_notice(
+    *,
+    payee_id: UUID,
+    payout_id: UUID,
+    amount: Decimal,
+    currency: str,
+    outcome: str,
+    failure_reason: str | None,
+) -> Callable[[], None]:
+    """Build the post-commit payout outcome notice for a person paid directly.
+
+    Args:
+        payee_id: Contributor being paid.
+        payout_id: Payout whose status just became terminal.
+        amount: Net amount of the payout, in major units.
+        currency: ISO 4217 code the payout settled in.
+        outcome: ``completed`` or ``failed``.
+        failure_reason: Normalized provider message for a failed transfer.
+
+    Returns:
+        A callable to run once the webhook transaction has committed.
+    """
+    if outcome == "completed":
+        return lambda: financial_notifications.notify_payout_completed(
+            payee_id, payout_id=payout_id, amount=amount, currency=currency
+        )
+    return lambda: financial_notifications.notify_payout_failed(
+        payee_id,
+        payout_id=payout_id,
+        amount=amount,
+        currency=currency,
+        failure_reason=failure_reason,
+    )
+
+
 async def _org_payout_notice(
     db: AsyncSession,
     *,
@@ -1671,15 +1706,31 @@ async def _handle_transfer_event(
         ),
     )
     notices: list[Callable[[], None]] = []
-    if payout.org_id is not None and payout_status in {"completed", "failed"}:
-        notices.append(
-            await _org_payout_notice(
-                db,
-                payout=payout,
-                outcome=payout_status,
-                failure_reason=failure.message if failure else None,
+    if payout_status in {"completed", "failed"}:
+        if payout.org_id is not None:
+            notices.append(
+                await _org_payout_notice(
+                    db,
+                    payout=payout,
+                    outcome=payout_status,
+                    failure_reason=failure.message if failure else None,
+                )
             )
-        )
+        elif payout.contributor_id is not None:
+            # An individual payee used to get nothing here: the notice was
+            # gated on the payout having an org. On Paystack the transfer is
+            # terminal at the bank, so this event is the only signal that the
+            # money moved — or did not.
+            notices.append(
+                _individual_payout_notice(
+                    payee_id=payout.contributor_id,
+                    payout_id=payout.id,
+                    amount=payout.net_amount,
+                    currency=payout.currency,
+                    outcome=payout_status,
+                    failure_reason=failure.message if failure else None,
+                )
+            )
     if payout_status != "failed":
         return notices
     failed_payout_id = payout.id
