@@ -771,7 +771,7 @@ async def test_admin_fixture_artifact_upload_confirm_list_delete(
 ) -> None:
     """Admin uploads, confirms, lists, and deletes a fixture artifact."""
     from app.integrations import s3
-    from app.modules.organizations import attestor_trial_service
+    from app.workers.tasks import artifacts as artifact_tasks
 
     monkeypatch.setattr(
         s3.storage,
@@ -789,7 +789,10 @@ async def test_admin_fixture_artifact_upload_confirm_list_delete(
         def delay(self, artifact_id: str) -> None:
             scanned.append(artifact_id)
 
-    monkeypatch.setattr(attestor_trial_service, "scan_artifact", _FakeScan())
+    # Patched on the task module, not on the service: the service imports
+    # `scan_artifact` inside the function to keep the Celery worker's import
+    # graph acyclic, so there is no module-level name here to replace.
+    monkeypatch.setattr(artifact_tasks, "scan_artifact", _FakeScan())
 
     admin_id = await _new_user("admin", roles=["admin"])
     owner_id = await _new_user("owner")

@@ -55,7 +55,6 @@ from app.modules.organizations.schemas import (
     UpsertTrialAnswerKeyRequest,
 )
 from app.shared.errors import error_detail
-from app.workers.tasks.artifacts import scan_artifact
 
 _OPEN_TRIAL_STATES = ("assigned", "submitted")
 _TRIAL_ARTIFACT_URL_TTL_SECONDS = 900
@@ -966,6 +965,15 @@ async def confirm_fixture_artifact_upload(
             assert locked is not None
             locked.processing_status = "processing"
             locked.processing_started_at = datetime.now(UTC)
+        # Imported here, not at module scope. `app.modules.organizations`
+        # eagerly imports this service from its `__init__`, so a module-level
+        # import of the artifact tasks closes a cycle:
+        # workers.tasks.artifacts → processing.orchestrator → processing.pii →
+        # modules.organizations → here → back to workers.tasks.artifacts.
+        # That killed the Celery worker on startup while leaving the API fine,
+        # because only the worker imports the task modules first.
+        from app.workers.tasks.artifacts import scan_artifact
+
         scan_artifact.delay(str(artifact_id))
         logger.bind(
             module="organizations",
