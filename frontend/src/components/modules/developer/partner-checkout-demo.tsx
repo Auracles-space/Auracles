@@ -157,6 +157,10 @@ export function PartnerCheckoutDemo() {
           body: JSON.stringify({
             buyer_email: buyerEmail.trim(),
             license_type: licenseType,
+            // A real Partner sends a page on their own storefront. The demo
+            // stands in for one by returning to itself, which is also how the
+            // `?paid=` confirmation below is reached on the Paystack rail.
+            return_url: `${window.location.origin}/partner-demo`,
           }),
         },
       );

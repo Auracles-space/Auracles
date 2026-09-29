@@ -534,7 +534,11 @@ async def test_developer_platform_end_to_end_money_and_webhook_flow(
     purchase = await client.post(
         f"/v1/partner/frameworks/{users['framework_id']}/purchase",
         headers={"X-API-Key": raw_api_key},
-        json={"buyer_email": users["operator_email"], "license_type": "team"},
+        json={
+            "buyer_email": users["operator_email"],
+            "license_type": "team",
+            "return_url": "https://partner.example.com/orders/complete",
+        },
     )
     assert purchase.status_code == 200
     transaction_id = UUID(purchase.json()["transaction_id"])

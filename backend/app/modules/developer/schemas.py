@@ -349,6 +349,22 @@ class PartnerPurchaseRequest(BaseModel):
 
     buyer_email: EmailStr
     license_type: SelfServeLicenseType
+    return_url: HttpUrl
+    """Partner page the buyer is returned to once payment completes.
+
+    Required on every purchase, not only the redirecting rail: the provider is
+    chosen server-side from the settlement currency, so a Partner cannot know
+    in advance whether their buyer will be sent away and back. Auracles appends
+    `purchase=<transaction_id>` to it.
+    """
+
+    @field_validator("return_url")
+    @classmethod
+    def return_url_is_https(cls, value: HttpUrl) -> HttpUrl:
+        """Require HTTPS return URLs, as Partner webhook URLs already are."""
+        if value.scheme != "https":
+            raise ValueError("Return URL must use https.")
+        return value
 
 
 class PartnerPurchaseResponse(BaseModel):

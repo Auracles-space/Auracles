@@ -4731,6 +4731,11 @@ export type PartnerPreviewArtifactResponse = {
 export type PartnerPurchaseRequest = {
     buyer_email: string;
     license_type: 'single_user' | 'team' | 'organizational';
+    /**
+     * Partner page the buyer is returned to once payment completes.
+     * Required on every purchase, not only the redirecting rail: the provider is chosen server-side from the settlement currency, so a Partner cannot know in advance whether their buyer will be sent away and back. Auracles appends purchase=<transaction_id> to it. Must be https.
+     */
+    return_url: string;
 };
 
 export type license_type = 'single_user' | 'team' | 'organizational';

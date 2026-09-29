@@ -211,6 +211,7 @@ async def test_partner_purchase_settles_naira_on_paystack(
         json={
             "buyer_email": "partner-routing-buyer-ngn@auracles.space",
             "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
         },
     )
 
@@ -287,6 +288,7 @@ async def test_partner_purchase_settles_dollars_on_stripe(
         json={
             "buyer_email": "partner-routing-buyer-usd@auracles.space",
             "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
         },
     )
 
@@ -295,3 +297,107 @@ async def test_partner_purchase_settles_dollars_on_stripe(
     assert body["provider"] == "stripe"
     assert body["client_secret"] is not None
     assert body.get("authorization_url") is None
+
+
+async def test_partner_purchase_returns_the_buyer_to_the_partner(
+    client: AsyncClient,
+    naira_platform: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Paystack must send the paid buyer back to the Partner, not to Auracles.
+
+    The buyer belongs to the Partner's storefront and has never seen this site.
+    Landing them in our Library ends their purchase somewhere they did not come
+    from, and Paystack keeps them on its own success page if no callback is
+    sent at all, where they can pay a second time.
+    """
+    del naira_platform
+    seeded = await _seed_partner_and_framework(slug="return", currency="NGN")
+    initialized: dict[str, Any] = {}
+
+    async def fake_initialize_transaction(
+        *,
+        email: str,
+        amount: Decimal,
+        currency: str,
+        metadata: dict[str, str],
+        callback_url: str | None = None,
+    ) -> paystack.PaystackInitializedTransaction:
+        """Record the callback URL Paystack is handed."""
+        del email, amount, currency, metadata
+        initialized["callback_url"] = callback_url
+        return paystack.PaystackInitializedTransaction(
+            reference="ref_partner_return",
+            authorization_url="https://checkout.paystack.com/ref_partner_return",
+            access_code="acc_partner_return",
+        )
+
+    monkeypatch.setattr(paystack, "initialize_transaction", fake_initialize_transaction)
+
+    response = await client.post(
+        f"/v1/partner/frameworks/{seeded['framework_id']}/purchase",
+        headers={"X-API-Key": seeded["raw_api_key"]},
+        json={
+            "buyer_email": "partner-routing-buyer-return@auracles.space",
+            "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders?ref=abc",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    transaction_id = response.json()["transaction_id"]
+    # The Partner's own query string survives, so their order reference and our
+    # purchase id both arrive.
+    assert initialized["callback_url"] == (
+        f"https://partner.example.com/orders?ref=abc&purchase={transaction_id}"
+    )
+
+
+async def test_partner_purchase_requires_a_return_url(
+    client: AsyncClient,
+    naira_platform: None,
+) -> None:
+    """A purchase without a return URL is refused at the contract boundary.
+
+    The rail is chosen server-side, so a Partner cannot know whether their buyer
+    will be redirected. Rejecting at integration time beats stranding a buyer
+    who has already paid.
+    """
+    del naira_platform
+    seeded = await _seed_partner_and_framework(slug="noreturn", currency="NGN")
+
+    response = await client.post(
+        f"/v1/partner/frameworks/{seeded['framework_id']}/purchase",
+        headers={"X-API-Key": seeded["raw_api_key"]},
+        json={
+            "buyer_email": "partner-routing-buyer-noreturn@auracles.space",
+            "license_type": "single_user",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_partner_purchase_rejects_an_insecure_return_url(
+    client: AsyncClient,
+    naira_platform: None,
+) -> None:
+    """A plaintext return URL is refused, as Partner webhook URLs already are.
+
+    The buyer arrives back carrying a purchase id in the query string; over
+    http that is readable in transit.
+    """
+    del naira_platform
+    seeded = await _seed_partner_and_framework(slug="insecure", currency="NGN")
+
+    response = await client.post(
+        f"/v1/partner/frameworks/{seeded['framework_id']}/purchase",
+        headers={"X-API-Key": seeded["raw_api_key"]},
+        json={
+            "buyer_email": "partner-routing-buyer-insecure@auracles.space",
+            "license_type": "single_user",
+            "return_url": "http://partner.example.com/orders",
+        },
+    )
+
+    assert response.status_code == 422

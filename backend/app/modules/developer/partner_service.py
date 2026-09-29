@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from secrets import token_urlsafe
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -20,7 +21,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
-from app.core.config import get_settings
 from app.core.currency import platform_currency
 from app.integrations import paystack, stripe
 from app.integrations.payment_router import PaymentProvider, select_provider
@@ -511,28 +511,33 @@ async def list_attestations(
     )
 
 
-def _partner_purchase_callback_url(transaction_id: UUID) -> str:
+def _partner_purchase_callback_url(return_url: str, transaction_id: UUID) -> str:
     """Build the URL Paystack returns a Partner-originated buyer to.
 
-    Paystack keeps the payer on its own success page when no callback URL is
-    sent, so a buyer who has already paid never sees the License land and can
-    pay a second time. The buyer holds a real Operator account here — one is
-    created for them at purchase time — so their Library is a coherent landing
-    place and mirrors the direct checkout.
+    The buyer came from the Partner's storefront and has never seen Auracles,
+    so they go back there rather than to our Library. Paystack keeps the payer
+    on its own success page when no callback URL is sent at all, where a buyer
+    who has already paid can pay a second time.
 
-    It is not the Partner's own site, which is where a Partner would rather
-    send them. Doing that needs a return URL on the request, which the Partner
-    purchase contract does not carry today.
+    The Partner's own query string is preserved and `purchase` appended, so
+    their order reference and our transaction id both survive the round trip.
 
     Args:
-        transaction_id: Pending purchase, echoed so the Library can confirm
-            the specific purchase that just completed.
+        return_url: Partner page supplied on the purchase request.
+        transaction_id: Pending purchase, echoed so the Partner can confirm
+            which purchase just completed.
 
     Returns:
-        Absolute URL on the frontend origin.
+        The Partner's return URL carrying the transaction id.
     """
-    base = get_settings().frontend_base_url
-    return f"{base}/library?purchase={transaction_id}"
+    parts = urlsplit(return_url)
+    query = urlencode(
+        [
+            *parse_qsl(parts.query, keep_blank_values=True),
+            ("purchase", str(transaction_id)),
+        ]
+    )
+    return urlunsplit(parts._replace(query=query))
 
 
 async def _start_paystack_partner_purchase(
@@ -548,6 +553,7 @@ async def _start_paystack_partner_purchase(
     amount: Decimal,
     currency: str,
     license_type: str,
+    return_url: str,
     tier_at_sale: int,
     tier_rate: Decimal,
 ) -> PartnerPurchaseResponse:
@@ -571,6 +577,7 @@ async def _start_paystack_partner_purchase(
         amount: Charge amount in major units.
         currency: ISO 4217 code, always the platform settlement currency.
         license_type: License tier being bought, echoed back by the webhook.
+        return_url: Partner page the paid buyer is returned to.
         tier_at_sale: Partner commission tier snapshotted at sale.
         tier_rate: Partner commission rate snapshotted at sale.
 
@@ -609,7 +616,7 @@ async def _start_paystack_partner_purchase(
                 "api_key_id": str(api_key_id),
                 "tier_rate": str(tier_rate),
             },
-            callback_url=_partner_purchase_callback_url(transaction_id),
+            callback_url=_partner_purchase_callback_url(return_url, transaction_id),
         )
     except PaystackProviderError as exc:
         await _mark_partner_purchase_failed(
@@ -747,6 +754,7 @@ async def initiate_purchase(
             amount=amount,
             currency=currency,
             license_type=payload.license_type,
+            return_url=str(payload.return_url),
             tier_at_sale=tier_at_sale,
             tier_rate=tier_rate,
         )

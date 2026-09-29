@@ -625,7 +625,11 @@ async def test_partner_purchase_initiates_checkout_for_existing_operator(
     response = await client.post(
         f"/v1/partner/frameworks/{framework_id}/purchase",
         headers=api_key_headers(raw_key),
-        json={"buyer_email": "partner-buyer@auracles.space", "license_type": "team"},
+        json={
+            "buyer_email": "partner-buyer@auracles.space",
+            "license_type": "team",
+            "return_url": "https://partner.example.com/orders/complete",
+        },
     )
 
     assert response.status_code == 200
@@ -738,6 +742,7 @@ async def test_partner_purchase_invites_buyer_and_scopes_status_to_key(
         json={
             "buyer_email": "new-buyer@auracles.space",
             "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
         },
     )
 
@@ -829,6 +834,7 @@ async def test_partner_routes_hide_suspended_contributor_frameworks(
         json={
             "buyer_email": "hidden-partner-buyer@auracles.space",
             "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
         },
     )
 
