@@ -30,6 +30,11 @@ from app.core.security import (
 from app.integrations.paystack import PaystackProviderError
 from app.modules.attestation.models import Attestation
 from app.modules.auth.models import User, UserRole
+from app.modules.collections.models import (
+    CollectionFramework,
+    CollectionPurchaseSnapshot,
+    FrameworkCollection,
+)
 from app.modules.developer.models import (
     ApiKey,
     DeveloperAccount,
@@ -42,11 +47,6 @@ from app.modules.financials.models import (
     Payout,
     PayoutAccount,
     Transaction,
-)
-from app.modules.collections.models import (
-    CollectionFramework,
-    CollectionPurchaseSnapshot,
-    FrameworkCollection,
 )
 from app.modules.frameworks.models import Framework, License
 from app.modules.projects.models import Milestone, Project, Proposal

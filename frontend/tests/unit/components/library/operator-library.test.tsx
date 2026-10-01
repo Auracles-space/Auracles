@@ -50,6 +50,15 @@ describe("OperatorLibrary", () => {
     vi.mocked(listOperatorLibrary).mockReset();
     vi.mocked(getExploreFrameworkDetail).mockReset();
     vi.mocked(downloadLicensedArtifact).mockReset();
+    // Every rendered card fetches its own artifacts on mount. A reset mock
+    // returns undefined, and the card's `result.response` read then rejects
+    // unhandled — which `pnpm test:coverage` fails the build on even while
+    // every assertion passes. Tests that care override this.
+    vi.mocked(getExploreFrameworkDetail).mockResolvedValue({
+      data: { artifacts: [] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
   });
 
   it("shows the empty state when no licenses exist", async () => {
@@ -125,13 +134,6 @@ describe("OperatorLibrary", () => {
     const firstPage = Array.from({ length: 25 }, (_, index) =>
       libraryItem(`p1-${index}`),
     );
-    // Every card fetches its own artifacts on mount; without this each of the
-    // 26 would reject unhandled and bury the assertion in noise.
-    vi.mocked(getExploreFrameworkDetail).mockResolvedValue({
-      data: { artifacts: [] },
-      error: undefined,
-      response: new Response(null, { status: 200 }),
-    } as never);
     vi.mocked(listOperatorLibrary)
       .mockResolvedValueOnce({
         data: { items: firstPage, page: 1, page_size: 25, total: 26 },

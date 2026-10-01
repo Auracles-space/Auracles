@@ -15,9 +15,8 @@ invite the provider to redeliver it.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from decimal import Decimal
+from uuid import UUID
 
 from loguru import logger
 
