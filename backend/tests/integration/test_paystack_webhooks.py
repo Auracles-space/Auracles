@@ -43,6 +43,11 @@ from app.modules.financials.models import (
     PayoutAccount,
     Transaction,
 )
+from app.modules.collections.models import (
+    CollectionFramework,
+    CollectionPurchaseSnapshot,
+    FrameworkCollection,
+)
 from app.modules.frameworks.models import Framework, License
 from app.modules.projects.models import Milestone, Project, Proposal
 from app.modules.webhooks import service as webhook_service
@@ -505,9 +510,7 @@ async def test_amount_mismatch_is_recorded_not_settled(
             select(AuditLog).where(AuditLog.action == "amount_mismatch")
         )
         ledger = await session.scalar(
-            select(FinancialEvent).where(
-                FinancialEvent.event_type == "amount_mismatch"
-            )
+            select(FinancialEvent).where(FinancialEvent.event_type == "amount_mismatch")
         )
 
     assert response.status_code == 200
@@ -527,9 +530,12 @@ async def test_escrow_amount_mismatch_holds_nothing(
     paystack_context: dict[str, Any],
 ) -> None:
     """An escrow success with the wrong paid amount must not hold escrow."""
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     event = escrow_charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -679,9 +685,12 @@ async def test_escrow_charge_success_funds_the_milestone(
     completes, an Escrow row is held against the Milestone, and the parent
     Project moves into progress. Enforces FR-FIN-005 on the Paystack rail.
     """
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     paystack_context["event"] = escrow_charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -738,9 +747,12 @@ async def test_escrow_charge_success_stamps_the_commission_snapshot(
     paystack_context: dict[str, Any],
 ) -> None:
     """Milestone escrow funding stamps the marketplace commission at hold."""
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     paystack_context["event"] = escrow_charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -764,9 +776,11 @@ async def test_attestation_fee_stamps_the_attestation_commission(
     paystack_context: dict[str, Any],
 ) -> None:
     """Attestation fee funding stamps the attestation rate, not marketplace."""
-    transaction_id, attestation_id, operator_id = (
-        await create_pending_paystack_attestation_fee()
-    )
+    (
+        transaction_id,
+        attestation_id,
+        operator_id,
+    ) = await create_pending_paystack_attestation_fee()
     paystack_context["event"] = {
         "event": "charge.success",
         "data": {
@@ -812,9 +826,12 @@ async def test_escrow_mismatch_is_recorded_durably(
     `escrow_mismatch` audit row and ledger event must be written durably on
     their own — a CRITICAL log line alone ages out of the drain.
     """
-    transaction_id, project_id, milestone_id, operator_id = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        operator_id,
+    ) = await create_pending_paystack_milestone_escrow()
     paystack_context["event"] = escrow_charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -862,9 +879,7 @@ async def test_escrow_mismatch_is_recorded_durably(
             select(AuditLog).where(AuditLog.action == "escrow_mismatch")
         )
         ledger = await session.scalar(
-            select(FinancialEvent).where(
-                FinancialEvent.event_type == "escrow_mismatch"
-            )
+            select(FinancialEvent).where(FinancialEvent.event_type == "escrow_mismatch")
         )
         duplicate_row = await session.get(Transaction, duplicate_id)
 
@@ -884,9 +899,12 @@ async def test_escrow_charge_success_replay_holds_funds_once(
     paystack_context: dict[str, Any],
 ) -> None:
     """Redelivered escrow charge.success must not hold a second Escrow."""
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     paystack_context["event"] = escrow_charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -910,9 +928,12 @@ async def test_escrow_charge_failed_marks_funding_failed(
     paystack_context: dict[str, Any],
 ) -> None:
     """A failed escrow charge fails the transaction; the Milestone stays fundable."""
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     paystack_context["event"] = escrow_charge_event(
         "charge.failed",
         transaction_id=transaction_id,
@@ -945,9 +966,12 @@ async def test_escrow_charge_for_a_stripe_transaction_is_refused(
     paystack_context: dict[str, Any],
 ) -> None:
     """A Paystack escrow event must never settle a Stripe-funded transaction."""
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     async with async_session_factory() as session:
         async with session.begin():
             transaction = await session.get(Transaction, transaction_id)
@@ -996,9 +1020,12 @@ async def test_escrow_refund_processed_settles_the_refund(
     paystack_context: dict[str, Any],
 ) -> None:
     """A confirmed escrow refund settles without moving any state."""
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     paystack_context["event"] = escrow_charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -1041,9 +1068,12 @@ async def test_escrow_refund_failed_restores_the_hold(
     Operator was never repaid, so the escrow returns to `held` and the funding
     transaction to `completed` — an admin can then re-issue the refund.
     """
-    transaction_id, project_id, milestone_id, _ = (
-        await create_pending_paystack_milestone_escrow()
-    )
+    (
+        transaction_id,
+        project_id,
+        milestone_id,
+        _,
+    ) = await create_pending_paystack_milestone_escrow()
     paystack_context["event"] = escrow_charge_event(
         "charge.success",
         transaction_id=transaction_id,
@@ -1126,9 +1156,11 @@ async def test_attestation_fee_charge_success_holds_escrow_and_starts_matching(
     With no eligible Attestors the request lands in `needs_admin`, matching
     the Stripe-rail behaviour. Enforces FR-FIN-006 on the Nigerian corridor.
     """
-    transaction_id, attestation_id, operator_id = (
-        await create_pending_paystack_attestation_fee()
-    )
+    (
+        transaction_id,
+        attestation_id,
+        operator_id,
+    ) = await create_pending_paystack_attestation_fee()
     paystack_context["event"] = {
         "event": "charge.success",
         "data": {
@@ -1182,9 +1214,7 @@ async def test_attestation_fee_charge_failed_cancels_the_request(
     paystack_context: dict[str, Any],
 ) -> None:
     """A failed Paystack Attestation fee charge cancels the request."""
-    transaction_id, attestation_id, _ = (
-        await create_pending_paystack_attestation_fee()
-    )
+    transaction_id, attestation_id, _ = await create_pending_paystack_attestation_fee()
     paystack_context["event"] = {
         "event": "charge.failed",
         "data": {
@@ -1793,3 +1823,134 @@ async def test_repurchase_after_refund_revives_the_revoked_license(
     assert licenses[0].status == "active"
     assert licenses[0].operator_id == operator_id
     assert licenses[0].transaction_id == second_id
+
+
+async def create_pending_paystack_collection_purchase() -> tuple[UUID, UUID, UUID]:
+    """Create a pending naira bundle purchase sitting on the Paystack rail."""
+    contributor_id = await create_user_with_roles(
+        "paystack-bundle-seller@auracles.space", ["contributor"]
+    )
+    operator_id = await create_user_with_roles(
+        "paystack-bundle-buyer@auracles.space", ["operator"]
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            frameworks = [
+                Framework(
+                    contributor_id=contributor_id,
+                    title=f"Bundle Member {index}",
+                    description="Member of a bundle bought on the local rail.",
+                    status="published",
+                    category="operations",
+                    sector="technology",
+                    industry="software",
+                    business_function="revenue_operations",
+                    tags=["paystack", "collection"],
+                    price=price,
+                    currency="USD",
+                    license_types=["single_user"],
+                    published_at=datetime.now(UTC),
+                )
+                for index, price in enumerate((Decimal("400.00"), Decimal("500.00")))
+            ]
+            session.add_all(frameworks)
+            await session.flush()
+            collection = FrameworkCollection(
+                contributor_id=contributor_id,
+                title="Paystack Bundle",
+                description="Bundle used by Paystack webhook tests.",
+                bundle_price=Decimal("700.00"),
+                currency="USD",
+                status="published",
+            )
+            session.add(collection)
+            await session.flush()
+            session.add_all(
+                CollectionFramework(
+                    collection_id=collection.id, framework_id=framework.id
+                )
+                for framework in frameworks
+            )
+            transaction = Transaction(
+                payer_id=operator_id,
+                payee_id=contributor_id,
+                amount=Decimal("700.00"),
+                currency="USD",
+                platform_commission=Decimal("0.00"),
+                net_amount=Decimal("700.00"),
+                transaction_type="purchase",
+                status="pending",
+                provider="paystack",
+                provider_ref="ref_bundle_paystack",
+                ref_id=collection.id,
+                ref_type="collection",
+            )
+            session.add(transaction)
+            await session.flush()
+            session.add_all(
+                CollectionPurchaseSnapshot(
+                    transaction_id=transaction.id,
+                    collection_id=collection.id,
+                    framework_id=framework.id,
+                    list_price_at_purchase=framework.price,
+                    license_type="single_user",
+                    already_owned=False,
+                )
+                for framework in frameworks
+            )
+            return transaction.id, collection.id, operator_id
+
+
+async def test_charge_success_settles_a_bundle_bought_in_naira(
+    client: AsyncClient,
+    paystack_context: dict[str, Any],
+) -> None:
+    """A bundle paid on Paystack must grant its Licenses.
+
+    Collections were Stripe-only until they began routing by currency, and the
+    Paystack handler only ever knew `kind: purchase`. A bundle bought in the
+    platform's own settlement currency therefore took the buyer's money,
+    acknowledged the webhook, and granted nothing — which is exactly what QA
+    reported: the charge went through and the Library stayed empty.
+    """
+    (
+        transaction_id,
+        collection_id,
+        operator_id,
+    ) = await create_pending_paystack_collection_purchase()
+    paystack_context["event"] = {
+        "event": "charge.success",
+        "data": {
+            "id": 556677,
+            "reference": "ref_bundle_paystack",
+            "amount": 70000,
+            "currency": "USD",
+            "status": "success",
+            "metadata": {
+                "transaction_id": str(transaction_id),
+                "kind": "collection",
+                "collection_id": str(collection_id),
+            },
+        },
+    }
+
+    response = await post_webhook(client)
+
+    async with async_session_factory() as session:
+        transaction = await session.get(Transaction, transaction_id)
+        assert transaction is not None
+        await session.refresh(transaction)
+        settled_status = transaction.status
+        licenses = (
+            (
+                await session.execute(
+                    select(License).where(License.operator_id == operator_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert response.status_code == 200
+    assert settled_status == "completed"
+    assert len(licenses) == 2
