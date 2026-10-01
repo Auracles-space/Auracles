@@ -127,6 +127,14 @@ module "monitoring" {
     for name, group in module.ecs.log_group_names : name => group
     if name != "api"
   }
+
+  # Every service, api included: "running no tasks" is unambiguous whoever it
+  # happens to, unlike a traceback.
+  cluster_name     = module.ecs.cluster_name
+  watched_services = toset(keys(module.ecs.log_group_names))
+
+  alb_arn_suffix              = module.alb.arn_suffix
+  api_target_group_arn_suffix = module.alb.target_group_arn_suffix
 }
 
 module "ecs" {

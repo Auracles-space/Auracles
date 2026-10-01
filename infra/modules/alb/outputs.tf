@@ -19,3 +19,13 @@ output "https_listener_arn" {
   description = "HTTPS listener, dependency anchor for the ECS service."
   value       = aws_lb_listener.https.arn
 }
+
+output "arn_suffix" {
+  description = "Load balancer ARN suffix, the dimension CloudWatch keys ALB metrics by."
+  value       = aws_lb.this.arn_suffix
+}
+
+output "target_group_arn_suffix" {
+  description = "API target group ARN suffix, the dimension CloudWatch keys target health by."
+  value       = aws_lb_target_group.api.arn_suffix
+}
