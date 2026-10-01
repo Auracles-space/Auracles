@@ -24,3 +24,8 @@ output "staging_certificate_validated" {
   description = "Whether the ACM validation wait has been run. False means the delegation step is still outstanding and the staging stack is not yet safe to apply."
   value       = length(aws_acm_certificate_validation.staging) > 0
 }
+
+output "alerts_topic_arn" {
+  description = "SNS topic every environment's alarms publish to. Confirmed once and outlives any environment rebuild."
+  value       = aws_sns_topic.alerts.arn
+}

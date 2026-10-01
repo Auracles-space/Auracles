@@ -5,8 +5,8 @@ variable "environment" {
   type        = string
 }
 
-variable "alert_email" {
-  description = "Address that receives alarm notifications. An SNS email subscription must be confirmed once by clicking the link AWS sends; until then the alarm fires into silence."
+variable "alerts_topic_arn" {
+  description = "SNS topic from shared/ that alarms publish to. Not created here: see the header for why it must outlive an environment."
   type        = string
 }
 

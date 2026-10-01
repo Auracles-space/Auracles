@@ -58,3 +58,9 @@ variable "dns_delegation_complete" {
   type        = bool
   default     = false
 }
+
+variable "alert_email" {
+  description = "Address every environment's alarms notify. An SNS email subscription must be confirmed once by clicking the link AWS sends; until then alarms fire into silence."
+  type        = string
+  default     = "dev@auracles.space"
+}

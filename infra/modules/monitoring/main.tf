@@ -1,31 +1,12 @@
-# The alerting path. Before this the project had no alarms and no SNS topics at
-# all, which is how the Celery worker and beat ran dead for 44 hours
-# (2026-09-27 to 2026-09-29) with every dashboard green.
+# Per-environment alarms. The SNS topic they publish to lives in shared/ and is
+# passed in: an email subscription is only live once a human clicks AWS's
+# confirmation link, and a topic owned per environment owes that click again on
+# every staging rebuild and once more when production is created. An
+# unconfirmed subscription fires into silence while looking monitored.
 #
-# This lives in its own module rather than inside `ecs` because the SNS topic is
-# shared infrastructure: RDS, the ALB and the queue depth all want to publish to
-# it later, and moving a topic between modules afterwards means state surgery.
-# The metric filters take their log group names as input so this module never
-# needs to know how `ecs` builds them.
-
-resource "aws_sns_topic" "alerts" {
-  name = "auracles-${var.environment}-alerts"
-
-  tags = {
-    Name = "auracles-${var.environment}-alerts"
-  }
-}
-
-resource "aws_sns_topic_subscription" "alerts_email" {
-  topic_arn = aws_sns_topic.alerts.arn
-  protocol  = "email"
-  endpoint  = var.alert_email
-
-  # AWS emails a confirmation link on create and the subscription stays
-  # "PendingConfirmation" until someone clicks it. Terraform cannot complete
-  # that, and it cannot detect it either, so a successful apply does not mean
-  # alerts are being delivered — confirm the mail, then test the alarm.
-}
+# Before 2026-10-01 the project had no alarms and no SNS topics at all, which is
+# how the Celery worker and beat both ran dead for 44 hours while ECS reported
+# ACTIVE 1/1.
 
 # A container that dies on startup writes a traceback and nothing else: no
 # metric, no health transition for a crash-loop, and a service that still
@@ -72,8 +53,8 @@ resource "aws_cloudwatch_metric_alarm" "crash" {
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
 
-  alarm_actions = [aws_sns_topic.alerts.arn]
-  ok_actions    = [aws_sns_topic.alerts.arn]
+  alarm_actions = [var.alerts_topic_arn]
+  ok_actions    = [var.alerts_topic_arn]
 
   tags = {
     Name = "auracles-${var.environment}-${each.key}-crashing"
