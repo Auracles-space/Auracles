@@ -102,6 +102,7 @@ module "alb" {
   source = "../../modules/alb"
 
   environment       = "staging"
+  account_id        = data.aws_caller_identity.current.account_id
   vpc_id            = module.networking.vpc_id
   public_subnet_ids = module.networking.public_subnet_ids
   security_group_id = module.networking.alb_security_group_id
