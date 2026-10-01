@@ -6,7 +6,7 @@
  * Lists active licenses and requests short-lived download URLs only after the
  * backend confirms role, KYC, license state, and version coverage.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   downloadLicensedArtifact,
@@ -35,29 +35,54 @@ type LibraryCardState = {
 /**
  * Render Operator licenses and download actions.
  */
+/** Licences fetched per request. The API caps `page_size` at 100. */
+const PAGE_SIZE = 25;
+
 export function OperatorLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Pages append rather than replace. This used to fetch page 1 and stop, with
+  // nothing to reach the rest: a buyer past the cap could not see or download a
+  // Framework they had paid for, while checkout — which queries without a limit
+  // — correctly reported it owned.
+  const loadPage = useCallback(async (page: number) => {
+    configureBrowserClient();
+    const result = await listOperatorLibrary({
+      headers: getAccessTokenHeaders(),
+      query: { page, page_size: PAGE_SIZE },
+    });
+    if (!result.response.ok || !result.data) {
+      setError(describeGeneratedError(result.error));
+      return;
+    }
+    const batch = result.data.items;
+    setTotal(result.data.total);
+    setItems((current) =>
+      page === 1 ? batch : [...current, ...batch],
+    );
+  }, []);
 
   useEffect(() => {
-    async function loadLibrary() {
-      configureBrowserClient();
-      const result = await listOperatorLibrary({
-        headers: getAccessTokenHeaders(),
-        query: { page: 1, page_size: 25 },
-      });
-      if (!result.response.ok || !result.data) {
-        setError(describeGeneratedError(result.error));
-        setLoading(false);
-        return;
-      }
-      setItems(result.data.items);
+    async function loadFirstPage() {
+      await loadPage(1);
       setLoading(false);
     }
 
-    void loadLibrary();
-  }, []);
+    void loadFirstPage();
+  }, [loadPage]);
+
+  async function showMore() {
+    setLoadingMore(true);
+    try {
+      await loadPage(Math.floor(items.length / PAGE_SIZE) + 1);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   if (loading) {
     return <CardSkeleton />;
@@ -85,6 +110,21 @@ export function OperatorLibrary() {
       {items.map((item) => (
         <LibraryCard item={item} key={item.license_id} />
       ))}
+      {items.length < total ? (
+        <div className="grid justify-items-center gap-2 pt-2">
+          <button
+            className="min-h-12 w-full rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            disabled={loadingMore}
+            onClick={() => void showMore()}
+            type="button"
+          >
+            {loadingMore ? "Loading..." : "Show more"}
+          </button>
+          <p className="text-xs text-foreground-muted">
+            Showing {items.length} of {total}
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

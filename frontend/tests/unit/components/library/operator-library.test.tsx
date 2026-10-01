@@ -27,12 +27,12 @@ vi.mock("@/components/modules/library/framework-review-panel", () => ({
   FrameworkReviewPanel: () => null,
 }));
 
-function libraryItem() {
+function libraryItem(suffix = "1") {
   return {
-    license_id: "lic-1",
-    framework_id: "fw-1",
+    license_id: `lic-${suffix}`,
+    framework_id: `fw-${suffix}`,
     license_type: "single_user",
-    title: "Board Risk Operating System",
+    title: `Board Risk Operating System ${suffix}`,
     version_at_grant: "1.0.0",
     current_version: "1.1.0",
     price: "499.00",
@@ -114,5 +114,67 @@ describe("OperatorLibrary", () => {
       });
       expect(assign).toHaveBeenCalledWith("https://s3.test/signed");
     });
+  });
+
+  it("reaches licences beyond the first page", async () => {
+    // The Library used to request page 1 with a fixed size and render only
+    // that, with no control to go further. A buyer past the cap could not see
+    // or download a Framework they had paid for — and the bundle checkout,
+    // which queries without a limit, correctly called it owned. QA hit exactly
+    // that disagreement.
+    const firstPage = Array.from({ length: 25 }, (_, index) =>
+      libraryItem(`p1-${index}`),
+    );
+    // Every card fetches its own artifacts on mount; without this each of the
+    // 26 would reject unhandled and bury the assertion in noise.
+    vi.mocked(getExploreFrameworkDetail).mockResolvedValue({
+      data: { artifacts: [] },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    vi.mocked(listOperatorLibrary)
+      .mockResolvedValueOnce({
+        data: { items: firstPage, page: 1, page_size: 25, total: 26 },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [libraryItem("beyond-the-cap")],
+          page: 2,
+          page_size: 25,
+          total: 26,
+        },
+        error: undefined,
+        response: new Response(null, { status: 200 }),
+      });
+
+    render(<OperatorLibrary />);
+
+    const more = await screen.findByRole("button", { name: /show more/i });
+    fireEvent.click(more);
+
+    expect(
+      await screen.findByText(/Board Risk Operating System beyond-the-cap/),
+    ).toBeInTheDocument();
+    // The first page must still be there: pages append rather than replace.
+    expect(
+      screen.getByText(/Board Risk Operating System p1-0/),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no control once everything is listed", async () => {
+    vi.mocked(listOperatorLibrary).mockResolvedValue({
+      data: { items: [libraryItem()], page: 1, page_size: 25, total: 1 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<OperatorLibrary />);
+
+    await screen.findByText(/Board Risk Operating System 1/);
+    expect(
+      screen.queryByRole("button", { name: /show more/i }),
+    ).toBeNull();
   });
 });
