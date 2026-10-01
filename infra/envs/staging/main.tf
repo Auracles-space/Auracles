@@ -115,7 +115,7 @@ module "monitoring" {
   environment = "staging"
   # Same address as ADMIN_EMAIL below; alarms reach whoever already watches
   # admin mail rather than a second inbox nobody checks.
-  alert_email = "dev@auracles.space"
+  alerts_topic_arn = data.terraform_remote_state.shared.outputs.alerts_topic_arn
 
   # Worker and beat only. The api is deliberately excluded: FastAPI prints a
   # traceback for any unhandled 500, so this filter would fire on ordinary
