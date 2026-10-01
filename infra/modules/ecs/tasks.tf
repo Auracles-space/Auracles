@@ -80,8 +80,10 @@ resource "aws_ecs_task_definition" "worker" {
       # A worker that exits on boot never reaches this check at all; the
       # deployment circuit breaker is what catches that, and both are needed.
       #
-      # startPeriod covers the wait on clamav HEALTHY plus Celery's own import
-      # of every task module, so a slow cold start is not read as a failure.
+      # 300 is ECS's hard ceiling for startPeriod, and it is ample here: this
+      # container does not start until clamav reports HEALTHY (dependsOn
+      # below), so the grace period covers only Celery's own import of every
+      # task module, which takes seconds.
       #
       # `$(hostname)` rather than `$HOSTNAME`: Celery names its node
       # `celery@<hostname>`, and reading it from the command removes a
@@ -93,7 +95,7 @@ resource "aws_ecs_task_definition" "worker" {
         interval    = 30
         timeout     = 15
         retries     = 3
-        startPeriod = 360
+        startPeriod = 300
       }
 
       environment = [for k, v in local.worker_env : { name = k, value = v }]
