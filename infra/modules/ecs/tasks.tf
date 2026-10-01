@@ -69,6 +69,33 @@ resource "aws_ecs_task_definition" "worker" {
       essential = true
       command   = ["celery", "-A", "app.workers.celery_app:app", "worker", "--loglevel=INFO", "--concurrency=2"]
 
+      # Nothing asked whether this worker worked. It sits behind no load
+      # balancer, so unlike the api there was no target-group check either, and
+      # `describe-services` happily reported 1/1 running while it had executed
+      # no task for 44 hours (2026-09-27 to 2026-09-29, a circular import).
+      #
+      # `inspect ping` round-trips through the broker to this node, so it fails
+      # for the case a process check cannot see: a worker still up but no
+      # longer consuming — broker unreachable, pool deadlocked, queue wedged.
+      # A worker that exits on boot never reaches this check at all; the
+      # deployment circuit breaker is what catches that, and both are needed.
+      #
+      # startPeriod covers the wait on clamav HEALTHY plus Celery's own import
+      # of every task module, so a slow cold start is not read as a failure.
+      #
+      # `$(hostname)` rather than `$HOSTNAME`: Celery names its node
+      # `celery@<hostname>`, and reading it from the command removes a
+      # dependency on the runtime exporting that variable. The failure mode if
+      # it were ever unset is a check that can never pass, which the circuit
+      # breaker would turn into a worker that never deploys.
+      healthCheck = {
+        command     = ["CMD-SHELL", "celery -A app.workers.celery_app:app inspect ping -d celery@$(hostname) --timeout 10 || exit 1"]
+        interval    = 30
+        timeout     = 15
+        retries     = 3
+        startPeriod = 360
+      }
+
       environment = [for k, v in local.worker_env : { name = k, value = v }]
       secrets     = local.secrets
 

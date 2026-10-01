@@ -61,6 +61,22 @@ resource "aws_ecs_service" "worker" {
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
 
+  # A deploy that cannot produce a healthy worker rolls itself back.
+  #
+  # Without this, the deploy that introduced a circular import on 2026-09-27
+  # crash-looped for 44 hours: ECS kept replacing the task, every replacement
+  # died on boot, and the service reported ACTIVE throughout. The breaker
+  # counts those failed launches and reverts to the last image that ran, which
+  # would have ended that outage in minutes instead of two days.
+  #
+  # Paired with the container health check, not instead of it: the breaker only
+  # watches deployments, so a worker that stops consuming in steady state is
+  # the health check's job.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = var.public_subnet_ids
     security_groups  = [var.worker_security_group_id]
