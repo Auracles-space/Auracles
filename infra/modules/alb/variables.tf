@@ -30,3 +30,14 @@ variable "api_container_port" {
   type        = number
   default     = 8000
 }
+
+variable "account_id" {
+  description = "AWS account id, used to keep the access-log bucket name globally unique."
+  type        = string
+}
+
+variable "access_logs_retention_days" {
+  description = "Days to keep ALB access logs before expiry. Logs are a diagnostic, not a record: they answer 'who is hammering us' for a fortnight and then stop paying rent. Raise it only with a reason, because every request writes a line."
+  type        = number
+  default     = 14
+}

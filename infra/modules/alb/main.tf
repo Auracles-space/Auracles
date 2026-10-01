@@ -13,9 +13,19 @@ resource "aws_lb" "this" {
   # Ephemeral staging must destroy unattended; production flips this on.
   enable_deletion_protection = var.environment == "production"
 
+  access_logs {
+    bucket  = aws_s3_bucket.access_logs.id
+    prefix  = "alb"
+    enabled = true
+  }
+
   tags = {
     Name = "auracles-${var.environment}"
   }
+
+  # Without this the load balancer can come up before the bucket will accept
+  # writes, and logging silently stays off until something touches it again.
+  depends_on = [aws_s3_bucket_policy.access_logs]
 }
 
 resource "aws_lb_target_group" "api" {
@@ -77,4 +87,102 @@ resource "aws_lb_listener" "http_redirect" {
       status_code = "HTTP_301"
     }
   }
+}
+
+# ALB access logs.
+#
+# Added after staging was found absorbing ~6 requests a second of randomised
+# filter traffic against the public Explore search endpoints with no record of
+# where it came from: uvicorn sees only the load balancer's private address, and
+# nothing else captured the real client or its user agent. A per-IP rate limiter
+# now caps any single source, but capping is not identifying.
+#
+# The bucket lives here rather than in the s3 module because it is part of this
+# load balancer's own configuration, not an application bucket the app reads or
+# writes. Nothing in the API ever touches it.
+
+resource "aws_s3_bucket" "access_logs" {
+  bucket = "auracles-alb-logs-${var.environment}-${var.account_id}"
+
+  # Staging is destroyed and rebuilt routinely, and logs are disposable by
+  # design; production keeps the bucket so a destroy cannot silently discard an
+  # audit trail mid-incident.
+  force_destroy = var.environment != "production"
+
+  tags = {
+    Name    = "auracles-alb-logs-${var.environment}"
+    Purpose = "alb-access-logs"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "access_logs" {
+  bucket                  = aws_s3_bucket.access_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      # SSE-S3, not KMS: ALB log delivery cannot use a customer managed key,
+      # and silently stops writing rather than erroring if one is required.
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+
+  rule {
+    id     = "expire-access-logs"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = var.access_logs_retention_days
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+# The delivery principal, not the legacy per-region ELB account id: load
+# balancers in every current region write as this service, and the account-id
+# form is only still needed for pre-2022 regions.
+data "aws_iam_policy_document" "access_logs" {
+  statement {
+    sid    = "AllowALBLogDelivery"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["logdelivery.elasticloadbalancing.amazonaws.com"]
+    }
+
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.access_logs.arn}/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:x-amz-acl"
+      values   = ["bucket-owner-full-control"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  policy = data.aws_iam_policy_document.access_logs.json
+
+  # The public-access block must exist first: attaching a policy to a bucket
+  # whose block is still settling can fail as a public-policy violation.
+  depends_on = [aws_s3_bucket_public_access_block.access_logs]
 }

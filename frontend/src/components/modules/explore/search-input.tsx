@@ -7,7 +7,7 @@
  * component only captures the query and emits stable debounced values.
  */
 import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type SearchInputProps = {
   initialValue?: string;
@@ -22,17 +22,35 @@ type SearchInputProps = {
 export function SearchInput({ initialValue = "", onSearch }: SearchInputProps) {
   const [query, setQuery] = useState(initialValue);
 
+  // Held in a ref, not read from the closure. `SearchPanel` builds `onSearch`
+  // with `useCallback(..., [router, searchParams])`, so every navigation gives
+  // it a new identity — and with that identity in the dependency list this
+  // effect re-armed its timer, fired again, navigated again, for as long as the
+  // tab stayed open. Each navigation re-rendered the server component and
+  // refetched the catalog: ~6 requests a second of one unchanging query.
+  const onSearchRef = useRef(onSearch);
   useEffect(() => {
-    if (!onSearch) {
+    onSearchRef.current = onSearch;
+  }, [onSearch]);
+
+  // What the parent already knows about, so an unchanged query emits nothing.
+  // Seeded from `initialValue` because arriving at `/explore?q=risk` already
+  // has its results; re-emitting that query navigates for nothing.
+  const lastEmitted = useRef(initialValue.trim());
+
+  useEffect(() => {
+    const next = query.trim();
+    if (next === lastEmitted.current) {
       return;
     }
 
     const timeout = window.setTimeout(() => {
-      onSearch(query.trim());
+      lastEmitted.current = next;
+      onSearchRef.current?.(next);
     }, 300);
 
     return () => window.clearTimeout(timeout);
-  }, [onSearch, query]);
+  }, [query]);
 
   return (
     <label className="block">
