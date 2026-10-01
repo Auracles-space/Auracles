@@ -109,6 +109,26 @@ module "alb" {
   certificate_arn   = data.terraform_remote_state.shared.outputs.staging_certificate_arn
 }
 
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  environment = "staging"
+  # Same address as ADMIN_EMAIL below; alarms reach whoever already watches
+  # admin mail rather than a second inbox nobody checks.
+  alert_email = "dev@auracles.space"
+
+  # Worker and beat only. The api is deliberately excluded: FastAPI prints a
+  # traceback for any unhandled 500, so this filter would fire on ordinary
+  # application bugs and train everyone to ignore the alarm — and the api is
+  # already detected when it dies, because the ALB marks its target unhealthy.
+  # What the api wants is an alarm on 5xx rate or unhealthy target count, which
+  # is a different metric and a separate piece of work.
+  watched_log_groups = {
+    for name, group in module.ecs.log_group_names : name => group
+    if name != "api"
+  }
+}
+
 module "ecs" {
   source = "../../modules/ecs"
 

@@ -106,6 +106,18 @@ resource "aws_ecs_service" "beat" {
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
 
+  # No health check on beat, deliberately: `celery inspect ping` addresses
+  # workers and beat is not one, and its scheduler syncs its schedule file only
+  # every few minutes, so a freshness probe on that file could fail spuriously
+  # and leave beat permanently un-deployable. The breaker needs no health check
+  # to do the job that matters here — the 2026-09-27 outage was a deploy that
+  # could not produce a working task, and this reverts that within minutes.
+  # Steady-state death is covered by the crash alarm in the monitoring module.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets          = var.public_subnet_ids
     security_groups  = [var.beat_security_group_id]

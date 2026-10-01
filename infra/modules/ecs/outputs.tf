@@ -13,3 +13,8 @@ output "service_names" {
     beat   = aws_ecs_service.beat.name
   }
 }
+
+output "log_group_names" {
+  description = "CloudWatch log group name per service, for alarms defined outside this module."
+  value       = { for name, group in aws_cloudwatch_log_group.service : name => group.name }
+}
