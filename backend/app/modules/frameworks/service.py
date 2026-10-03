@@ -906,9 +906,17 @@ async def update_framework(
     framework = await _load_owned_framework_by_owner(db, owner, framework_id)
     _require_metadata_editable(framework)
     _apply_framework_metadata_update(framework, payload)
+    audit_metadata: dict[str, str] = {"status": framework.status}
     if payload.pricing is not None:
         _require_live_state_access(owner)
+        # Captured before the write. Crossing zero in either direction is the
+        # price change most likely to be disputed later: an Operator who
+        # acquired this Framework while it was free needs the switch evidenced,
+        # and the free path leaves no transaction to reconstruct it from.
+        price_before = framework.price
         _apply_framework_pricing_update(framework, payload.pricing)
+        audit_metadata["price_before"] = f"{price_before:.2f}"
+        audit_metadata["price_after"] = f"{framework.price:.2f}"
 
     await write_audit(
         db=db,
@@ -916,7 +924,7 @@ async def update_framework(
         action="framework_updated",
         target_type="framework",
         target_id=framework.id,
-        metadata={"status": framework.status},
+        metadata=audit_metadata,
     )
     await db.commit()
     await db.refresh(framework)

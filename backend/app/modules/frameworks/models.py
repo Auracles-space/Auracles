@@ -97,9 +97,12 @@ class Framework(UpdatedAtMixin, Base):
 
     __tablename__ = "frameworks"
     __table_args__ = (
-        CheckConstraint("price > 0", name="ck_frameworks_price_positive"),
+        # Zero is a listing price, not a missing one: a Framework may be
+        # offered free. A NULL org_price still means "reuse the base price",
+        # which an explicit zero does not.
+        CheckConstraint("price >= 0", name="ck_frameworks_price_positive"),
         CheckConstraint(
-            "org_price IS NULL OR org_price > 0",
+            "org_price IS NULL OR org_price >= 0",
             name="ck_frameworks_org_price_positive",
         ),
         CheckConstraint(

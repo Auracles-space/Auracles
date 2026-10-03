@@ -41,7 +41,7 @@ SEMVER_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 class PricingConfig(BaseModel):
     """Framework pricing and licensing options configured by a Contributor."""
 
-    price: Decimal = Field(gt=0, decimal_places=2, max_digits=12)
+    price: Decimal = Field(ge=0, decimal_places=2, max_digits=12)
     currency: str = Field(
         default_factory=platform_currency,
         min_length=3,
@@ -50,7 +50,7 @@ class PricingConfig(BaseModel):
     license_types: list[LicenseType] = Field(min_length=1)
     org_price: Decimal | None = Field(
         default=None,
-        gt=0,
+        ge=0,
         decimal_places=2,
         max_digits=12,
     )
