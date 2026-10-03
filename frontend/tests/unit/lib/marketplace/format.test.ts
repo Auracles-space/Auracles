@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { formatFrameworkStatus, formatMoney } from "@/lib/marketplace/format";
+import {
+  formatFrameworkStatus,
+  formatListingPrice,
+  formatMoney,
+} from "@/lib/marketplace/format";
 
 // A distinctive third currency: tests/setup.ts pins NEXT_PUBLIC_PLATFORM_CURRENCY
 // to USD, so asserting against the real constant would pass even if the default
@@ -45,5 +49,29 @@ describe("formatFrameworkStatus", () => {
   it("falls back to title-case for unknown values", () => {
     expect(formatFrameworkStatus("some_new_state")).toBe("Some New State");
     expect(formatFrameworkStatus(null)).toBe("Not set");
+  });
+});
+
+describe("formatListingPrice", () => {
+  it("renders a zero listing price as Free", () => {
+    expect(formatListingPrice("0.00")).toBe("Free");
+    expect(formatListingPrice("0")).toBe("Free");
+  });
+
+  it("formats a priced listing exactly as formatMoney does", () => {
+    // Listings must not drift from every other money figure on the page just
+    // because this helper knows about zero.
+    expect(formatListingPrice("25000.00")).toBe(formatMoney("25000.00"));
+    expect(formatListingPrice("499.50", "USD")).toBe(formatMoney("499.50", "USD"));
+  });
+
+  it("leaves a zero that is not a listing price alone", () => {
+    // formatMoney is shared with payouts, earnings and invoices. A balance of
+    // zero is a number, not an offer, and must keep reading as money.
+    expect(formatMoney("0.00")).not.toBe("Free");
+  });
+
+  it("falls back to plain text for an unparseable amount", () => {
+    expect(formatListingPrice("not-a-number")).toBe(formatMoney("not-a-number"));
   });
 });

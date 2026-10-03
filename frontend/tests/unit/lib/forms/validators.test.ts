@@ -8,6 +8,7 @@ import {
   isNonEmpty,
   isPasswordLongEnough,
   meetsPasswordPolicy,
+  isNonNegativeNumber,
   isPositiveNumber,
   passwordsMatch,
 } from "@/lib/forms/validators";
@@ -61,6 +62,17 @@ describe("form validators", () => {
     expect(isPositiveNumber("0")).toBe(false);
     expect(isPositiveNumber("-1")).toBe(false);
     expect(isPositiveNumber("abc")).toBe(false);
+  });
+
+  it("isNonNegativeNumber accepts zero but still rejects negatives", () => {
+    // A listing price of zero is a free Framework, which is valid. A negative
+    // price is still nonsense, and a blank field is not yet a price.
+    expect(isNonNegativeNumber("0")).toBe(true);
+    expect(isNonNegativeNumber("0.00")).toBe(true);
+    expect(isNonNegativeNumber("5")).toBe(true);
+    expect(isNonNegativeNumber("-1")).toBe(false);
+    expect(isNonNegativeNumber("")).toBe(false);
+    expect(isNonNegativeNumber("abc")).toBe(false);
   });
 
   it("passwordsMatch requires non-empty identical passwords", () => {

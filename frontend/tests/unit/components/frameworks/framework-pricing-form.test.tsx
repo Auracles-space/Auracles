@@ -66,3 +66,89 @@ describe("FrameworkPricingForm", () => {
     expect(screen.getByRole("button", { name: /save pricing/i })).toBeEnabled();
   });
 });
+
+describe("FrameworkPricingForm free listings", () => {
+  it("zeroes and locks the base price when the free toggle is checked", () => {
+    render(
+      <FrameworkPricingForm api={api} framework={framework} onUpdated={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByLabelText(/offer this framework free/i));
+
+    const priceInput = screen.getByLabelText(/base price/i);
+    expect(priceInput).toBeDisabled();
+    expect(priceInput).toHaveValue("0.00");
+  });
+
+  it("restores the previous amount when the free toggle is unchecked", () => {
+    // Someone trying the toggle to see what it does must not lose the price
+    // they already typed.
+    render(
+      <FrameworkPricingForm api={api} framework={framework} onUpdated={vi.fn()} />,
+    );
+
+    const toggle = screen.getByLabelText(/offer this framework free/i);
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
+    const priceInput = screen.getByLabelText(/base price/i);
+    expect(priceInput).toBeEnabled();
+    expect(priceInput).toHaveValue("499.00");
+  });
+
+  it("saves a free Framework as a zero price", async () => {
+    const onUpdated = vi.fn();
+    vi.mocked(api.updatePricing).mockResolvedValue(framework);
+    render(
+      <FrameworkPricingForm api={api} framework={framework} onUpdated={onUpdated} />,
+    );
+
+    fireEvent.click(screen.getByLabelText(/offer this framework free/i));
+    fireEvent.click(screen.getByRole("button", { name: /save pricing/i }));
+
+    await vi.waitFor(() => {
+      expect(api.updatePricing).toHaveBeenCalledWith(
+        "fw_1",
+        expect.objectContaining({
+          pricing: expect.objectContaining({ price: "0.00" }),
+        }),
+      );
+    });
+  });
+
+  it("prices the organization tier free independently of the base price", async () => {
+    // Free for individuals, paid for Organizations is the shape this exists
+    // for, so the two toggles must not be wired together.
+    const orgTierFramework = {
+      ...framework,
+      pricing: {
+        ...framework.pricing,
+        license_types: ["single_user", "organizational"],
+      },
+    } as unknown as FrameworkResponse;
+    vi.mocked(api.updatePricing).mockResolvedValue(orgTierFramework);
+    render(
+      <FrameworkPricingForm
+        api={api}
+        framework={orgTierFramework}
+        onUpdated={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText(/organization tier is free/i));
+    fireEvent.click(screen.getByRole("button", { name: /save pricing/i }));
+
+    await vi.waitFor(() => {
+      expect(api.updatePricing).toHaveBeenCalledWith(
+        "fw_1",
+        expect.objectContaining({
+          pricing: expect.objectContaining({
+            price: "499.00",
+            org_price: "0.00",
+          }),
+        }),
+      );
+    });
+    expect(screen.getByLabelText(/base price/i)).toBeEnabled();
+  });
+});

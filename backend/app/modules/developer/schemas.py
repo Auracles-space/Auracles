@@ -370,15 +370,22 @@ class PartnerPurchaseRequest(BaseModel):
 class PartnerPurchaseResponse(BaseModel):
     """Provider handoff a Partner sends its buyer to in order to pay.
 
-    The two rails hand off differently and exactly one field is populated:
-    Stripe returns a `client_secret` the Partner mounts Elements against, while
+    The rails hand off differently and at most one handoff field is populated:
+    Stripe returns a `client_secret` the Partner mounts Elements against,
     Paystack returns an `authorization_url` the buyer's browser is redirected
-    to. Which one arrives is decided by `select_provider`, so a Partner must
-    branch on `provider` rather than assuming either field is present.
+    to, and a Framework offered free returns neither because the licence is
+    already granted. Which one arrives is decided by the resolved price and
+    then `select_provider`, so a Partner must branch on `provider` rather than
+    assuming any field is present.
+
+    A `free` response carries `license_id` and no `transaction_id`: nothing was
+    charged, so there is no transaction, no commission, and nothing for the
+    Partner to reconcile against a payout.
     """
 
-    transaction_id: UUID
-    provider: Literal["stripe", "paystack"]
+    provider: Literal["stripe", "paystack", "free"]
+    transaction_id: UUID | None = None
+    license_id: UUID | None = None
     client_secret: str | None = None
     authorization_url: str | None = None
 

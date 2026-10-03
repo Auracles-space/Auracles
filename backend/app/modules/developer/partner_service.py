@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from secrets import token_urlsafe
+from typing import cast
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.currency import platform_currency
+from app.core.rate_limit import RateLimiter, RedisCounter
 from app.integrations import paystack, stripe
 from app.integrations.payment_router import PaymentProvider, select_provider
 from app.integrations.paystack import PaystackProviderError
@@ -47,6 +49,7 @@ from app.modules.explore.schemas import (
     ExploreSort,
 )
 from app.modules.financials.models import PlatformConfig, Transaction
+from app.modules.frameworks.licensing import grant_free_license
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import Artifact
 from app.workers.tasks.notifications import send_verification_email
@@ -103,15 +106,43 @@ async def _send_invited_operator_verification(
     send_verification_email.delay(email, token)
 
 
+# Creating a buyer account happens before the charge is initiated, so a key
+# can mint Operator accounts and send verification emails by starting
+# purchases it never completes. That was true before free Frameworks existed
+# and had no ceiling at all. Set well above a real partner's signup rate.
+PARTNER_PROVISION_RATE_LIMITER = RateLimiter(
+    namespace="partner_provision", limit=20, window=3600
+)
+
+
 async def _find_or_invite_operator(
     db: AsyncSession,
     redis: Redis,
     *,
     buyer_email: str,
+    api_key_id: UUID,
 ) -> User:
-    """Find an existing buyer or create an invited Operator account."""
+    """Find an existing buyer or create an invited Operator account.
+
+    Args:
+        db: Session. Any open transaction is rolled back before inviting.
+        redis: Backs the verification token and the provisioning limit.
+        buyer_email: Address the Partner is selling to.
+        api_key_id: Key the provisioning ceiling is counted against.
+
+    Returns:
+        The existing or newly invited buyer.
+
+    Raises:
+        HTTPException(429): The key is over its new-account ceiling.
+    """
     user = await db.scalar(select(User).where(User.email == buyer_email))
     if user is None:
+        # Counted only when an account is actually created, so a Partner
+        # selling repeatedly to its existing buyers is never limited.
+        await PARTNER_PROVISION_RATE_LIMITER.check(
+            cast(RedisCounter, redis), str(api_key_id)
+        )
         if db.in_transaction():
             await db.rollback()
         async with db.begin():
@@ -689,6 +720,7 @@ async def initiate_purchase(
     assert contributor_id is not None
     framework_license_types = list(framework.license_types)
     framework_price = framework.price
+    framework_version = framework.version
     framework_currency = framework.currency.upper()
     if payload.license_type not in framework_license_types:
         raise HTTPException(
@@ -716,7 +748,9 @@ async def initiate_purchase(
             detail="Partner tier rate cannot exceed platform commission rate.",
         )
 
-    buyer = await _find_or_invite_operator(db, redis, buyer_email=buyer_email)
+    buyer = await _find_or_invite_operator(
+        db, redis, buyer_email=buyer_email, api_key_id=api_key_id
+    )
     buyer_id = buyer.id
     buyer_customer_id = buyer.stripe_customer_id
     buyer_display_name = buyer.display_name
@@ -739,6 +773,32 @@ async def initiate_purchase(
             status_code=status.HTTP_409_CONFLICT,
             detail="Framework is already licensed by this buyer.",
         )
+
+    # After every guard above, and before the tier/commission machinery: a
+    # free Framework has no revenue to attribute, so it writes no transaction,
+    # no attribution and no PartnerCommission. That last one matters beyond
+    # bookkeeping — `partner_sales_count` advances a Partner's tier by counting
+    # commission rows, and the tier sets their cut of real sales, so a free
+    # referral that created one would buy a higher rate on paid business.
+    # The Partner attribution is recorded in the audit trail instead.
+    if amount == 0:
+        license_id = await grant_free_license(
+            db,
+            cast(RedisCounter, redis),
+            framework_id=framework_uuid,
+            version_at_grant=framework_version,
+            license_type=payload.license_type,
+            operator_id=buyer_id,
+            licensee_org_id=None,
+            actor_id=buyer_id,
+            module="developer",
+            action="partner_purchase",
+            audit_metadata={
+                "api_key_id": str(api_key_id),
+                "developer_account_id": str(developer_account_id),
+            },
+        )
+        return PartnerPurchaseResponse(provider="free", license_id=license_id)
 
     provider = select_provider(user_country=None, currency=currency)
     if provider == "paystack":

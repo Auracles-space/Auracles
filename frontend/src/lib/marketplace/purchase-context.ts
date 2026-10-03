@@ -50,12 +50,15 @@ type StartPurchaseArgs = {
  * How the chosen provider expects checkout to continue.
  *
  * Stripe confirms in-page against a client secret; Paystack takes over on its
- * own hosted page. The two are mutually exclusive, so the caller discriminates
- * on `kind` rather than testing which field happens to be present.
+ * own hosted page; a free acquisition is already complete and has a License
+ * instead of a transaction. All three are mutually exclusive, so the caller
+ * discriminates on `kind` rather than testing which field happens to be
+ * present.
  */
 export type PurchaseSession =
   | { kind: "stripe"; clientSecret: string; transactionId: string }
-  | { kind: "paystack"; authorizationUrl: string; transactionId: string };
+  | { kind: "paystack"; authorizationUrl: string; transactionId: string }
+  | { kind: "free"; licenseId: string };
 
 /** Start a purchase transaction as self or as an org; returns a session or an error envelope. */
 export async function startPurchase(
@@ -86,12 +89,22 @@ export async function startPurchase(
  * whose handoff field is missing rather than render a form that cannot submit.
  */
 function toPurchaseSession(data: {
-  transaction_id: string;
+  transaction_id?: string | null;
   provider: string;
+  license_id?: string | null;
   client_secret?: string | null;
   authorization_url?: string | null;
 }): PurchaseSession | { error: unknown } {
-  const transactionId = data.transaction_id;
+  if (data.provider === "free") {
+    // Nothing was charged, so there is no transaction to carry. Without a
+    // License id nothing was granted either, and reporting success would send
+    // the buyer to a Library that does not contain it.
+    if (!data.license_id) {
+      return { error: { detail: "Checkout could not be started." } };
+    }
+    return { kind: "free", licenseId: data.license_id };
+  }
+  const transactionId = data.transaction_id ?? "";
   if (data.provider === "paystack") {
     // A Paystack response without a URL is unusable — there is no in-page
     // fallback to degrade to — so surface it rather than rendering a dead form.

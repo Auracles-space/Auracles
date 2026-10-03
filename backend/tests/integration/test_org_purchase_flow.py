@@ -574,3 +574,50 @@ async def test_org_purchase_rejects_self_deal(
     assert response.status_code == 422
     assert response.json()["detail"] == "self_deal_conflict"
     assert org_purchase_context["calls"]["payment_intents"] == []
+
+
+async def test_org_acquires_a_free_framework_without_a_payment_method(
+    client: AsyncClient,
+    migrated_database: None,
+    org_purchase_context: dict[str, Any],
+) -> None:
+    """A free Framework is granted to the Organization with no checkout at all.
+
+    The paid path 402s an org with no Stripe customer on file. Nothing is
+    charged here, so the payment method is never consulted and the License
+    lands owned by the Organization.
+    """
+    del migrated_database
+    contributor_id = await _create_user("org-free-contributor")
+    owner_id = await _create_user("org-free-owner")
+    org = await _create_org(client, owner_id, "org-free")
+    await open_step_up_window(org_purchase_context["redis"], owner_id)
+    await _activate_operator_capability(client, org["id"], owner_id)
+    framework_id = await _create_published_framework(
+        contributor_id,
+        price=Decimal("0.00"),
+        license_types=["single_user"],
+    )
+
+    response = await client.post(
+        f"/v1/orgs/{org['id']}/frameworks/{framework_id}/purchase",
+        headers=_auth_headers(owner_id),
+        json={"license_type": "single_user"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+        license_row = await session.scalar(select(License))
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["provider"] == "free"
+    assert body["transaction_id"] is None
+    assert transaction is None
+    assert license_row is not None
+    assert body["license_id"] == str(license_row.id)
+    assert license_row.licensee_org_id == UUID(org["id"])
+    assert license_row.operator_id is None
+    assert license_row.transaction_id is None
+    assert license_row.status == "active"
+    assert org_purchase_context["calls"]["payment_intents"] == []

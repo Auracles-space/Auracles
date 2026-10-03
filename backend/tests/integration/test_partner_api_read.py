@@ -643,6 +643,9 @@ async def test_partner_purchase_initiates_checkout_for_existing_operator(
         "provider": "stripe",
         "client_secret": "secret_partner",
         "authorization_url": None,
+        # Null on a paid purchase: a licence is granted by the webhook on
+        # payment, and only a free acquisition carries one in the response.
+        "license_id": None,
     }
     assert stripe_calls["customers"][0]["email"] == "partner-buyer@auracles.space"
     payment_intent = stripe_calls["payment_intents"][0]

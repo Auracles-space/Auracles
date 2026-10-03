@@ -9,7 +9,7 @@
 import { ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 
-import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
+import { allValid, isNonEmpty, isNonNegativeNumber } from "@/lib/forms/validators";
 import {
   PLATFORM_CURRENCY,
   currencySymbol,
@@ -70,6 +70,18 @@ function sanitizePriceInput(raw: string): string {
     .replace(/\./g, "")
     .slice(0, 2);
   return `${intPart}.${decPart}`;
+}
+
+/**
+ * Whether a price field holds an explicit zero, which makes the tier free.
+ *
+ * Blank is excluded: an empty organization price means "same as the
+ * single-user price", and `Number("")` is 0.
+ *
+ * @param value - Raw price field contents.
+ */
+function isZeroPrice(value: string): boolean {
+  return value.trim() !== "" && Number(value) === 0;
 }
 
 type FrameworkFormProps = {
@@ -208,13 +220,48 @@ export function FrameworkForm({
   // The last values the server accepted. Editing an existing framework only
   // enables Save when something differs; a new framework has nothing saved.
   const [savedForm, setSavedForm] = useState<FrameworkFormState>(initialForm);
+  // What to put back when a free toggle is switched off, so trying the toggle
+  // does not discard an amount that was already typed.
+  const savedPrice = framework?.pricing.price ?? "";
+  const savedOrgPrice =
+    framework?.pricing.org_price != null
+      ? String(framework.pricing.org_price)
+      : "";
+  const [lastPaidPrice, setLastPaidPrice] = useState(
+    isZeroPrice(savedPrice) ? "" : savedPrice,
+  );
+  const [lastPaidOrgPrice, setLastPaidOrgPrice] = useState(
+    isZeroPrice(savedOrgPrice) ? "" : savedOrgPrice,
+  );
+  const isFree = isZeroPrice(form.price);
+  // A blank organization price means "same as the single-user price", which is
+  // not the same as giving the tier away, so blank must never read as free.
+  const isOrgFree = isZeroPrice(form.orgPrice);
+
+  function toggleFree(next: boolean) {
+    if (next) {
+      setLastPaidPrice(form.price);
+      setForm((current) => ({ ...current, price: "0.00" }));
+      return;
+    }
+    setForm((current) => ({ ...current, price: lastPaidPrice }));
+  }
+
+  function toggleOrgFree(next: boolean) {
+    if (next) {
+      setLastPaidOrgPrice(form.orgPrice);
+      setForm((current) => ({ ...current, orgPrice: "0.00" }));
+      return;
+    }
+    setForm((current) => ({ ...current, orgPrice: lastPaidOrgPrice }));
+  }
   const isDirty =
     !framework || JSON.stringify(form) !== JSON.stringify(savedForm);
 
   const canSubmit = allValid(
     isNonEmpty(form.title),
     isNonEmpty(form.description),
-    !pricingInline || isPositiveNumber(form.price),
+    !pricingInline || isNonNegativeNumber(form.price),
     !pricingInline || form.licenseTypes.length > 0,
     isNonEmpty(form.category),
     isNonEmpty(form.function),
@@ -250,6 +297,8 @@ export function FrameworkForm({
     const pricing: PricingConfig = {
       currency: framework?.pricing.currency ?? PLATFORM_CURRENCY,
       license_types: form.licenseTypes,
+      // Blank still means "reuse the base price" (null); an explicit zero is a
+      // deliberately free organization tier and must be sent as such.
       org_price:
         form.licenseTypes.includes("organizational") && form.orgPrice.trim() !== ""
           ? form.orgPrice
@@ -450,7 +499,8 @@ export function FrameworkForm({
                   inputMode="decimal"
                   autoComplete="off"
                   placeholder="250.00"
-                  className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                  className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 disabled:opacity-60"
+                  disabled={isFree}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
@@ -464,6 +514,16 @@ export function FrameworkForm({
                   <span className="text-xs uppercase">{PLATFORM_CURRENCY}</span>
                 </div>
               </div>
+            </label>
+
+            <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground">
+              <input
+                checked={isFree}
+                className="accent-accent"
+                onChange={(event) => toggleFree(event.target.checked)}
+                type="checkbox"
+              />
+              Offer this Framework free
             </label>
 
             {form.licenseTypes.includes("organizational") ? (
@@ -480,7 +540,8 @@ export function FrameworkForm({
                     inputMode="decimal"
                     autoComplete="off"
                     placeholder="Same as single-user price"
-                    className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                    className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 disabled:opacity-60"
+                    disabled={isOrgFree}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
@@ -496,6 +557,18 @@ export function FrameworkForm({
                 <span className="mt-1.5 block text-xs text-foreground-muted">
                   Leave blank to charge the same as the single-user price.
                 </span>
+              </label>
+            ) : null}
+
+            {form.licenseTypes.includes("organizational") ? (
+              <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground">
+                <input
+                  checked={isOrgFree}
+                  className="accent-accent"
+                  onChange={(event) => toggleOrgFree(event.target.checked)}
+                  type="checkbox"
+                />
+                Organization tier is free
               </label>
             ) : null}
           </div>

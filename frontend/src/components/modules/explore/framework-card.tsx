@@ -11,6 +11,7 @@ import type {
   ExploreCollectionCard,
   ExploreFrameworkCard,
 } from "@/lib/generated/types.gen";
+import { ListingPrice } from "@/components/ui/listing-price";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 
 import { ReputationBadge } from "@/components/modules/reputation/reputation-badge";
@@ -166,9 +167,11 @@ export function FrameworkCard({ framework }: FrameworkCardProps) {
             </Link>
           </h2>
           <div className="text-right flex-shrink-0 pt-0.5">
-            <strong className="font-heading text-lg font-bold text-foreground">
-              {formatMoney(framework.price, framework.currency)}
-            </strong>
+            <ListingPrice
+              className="text-lg"
+              currency={framework.currency}
+              price={framework.price}
+            />
           </div>
         </div>
 
@@ -342,7 +345,7 @@ export function CollectionCard({ collection }: CollectionCardProps) {
                 <span className="text-foreground-subtle"> · </span>
                 <span className="text-foreground-subtle text-[10px] uppercase font-medium tracking-wider">{formatLabel(member.category)}</span>
               </div>
-              <span className="text-xs font-medium text-foreground">{formatMoney(member.price, member.currency)}</span>
+              <ListingPrice className="text-xs" currency={member.currency} price={member.price} />
             </div>
           ))}
         </div>

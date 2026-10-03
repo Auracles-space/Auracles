@@ -55,6 +55,14 @@ const filterGroups = [
     ],
   },
   {
+    key: "price_max",
+    label: "Price",
+    // A ceiling of zero is the only price filter offered: it is the one buyers
+    // ask for by name. The API takes any non-negative ceiling, so a range
+    // control can be added here later without a backend change.
+    values: [{ label: "Free", value: "0" }],
+  },
+  {
     key: "license_type",
     label: "License",
     values: [

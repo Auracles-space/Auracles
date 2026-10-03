@@ -72,6 +72,31 @@ describe("startPurchase", () => {
     expect(res).toEqual({ error: { detail: "Checkout could not be started." } });
   });
 
+  it("returns a completed free session carrying the granted license", async () => {
+    // A free acquisition is finished by the time it responds: there is no
+    // provider to hand off to, so the caller must not look for a secret or a
+    // redirect URL.
+    vi.mocked(sdk.createFrameworkPurchase).mockResolvedValue({
+      data: { provider: "free", license_id: "lic_1", transaction_id: null },
+      error: undefined,
+      response: { ok: true },
+    } as never);
+    const res = await startPurchase({ buyer: { kind: "self", label: "Myself" }, frameworkId: "fw", licenseType: "single_user", headers: { Authorization: "Bearer t" } });
+    expect(res).toEqual({ kind: "free", licenseId: "lic_1" });
+  });
+
+  it("reports an error when a free response carries no license", async () => {
+    // Nothing was granted, so telling the buyer it succeeded would send them
+    // to a Library that does not contain it.
+    vi.mocked(sdk.createFrameworkPurchase).mockResolvedValue({
+      data: { provider: "free", license_id: null, transaction_id: null },
+      error: undefined,
+      response: { ok: true },
+    } as never);
+    const res = await startPurchase({ buyer: { kind: "self", label: "Myself" }, frameworkId: "fw", licenseType: "single_user", headers: { Authorization: "Bearer t" } });
+    expect(res).toEqual({ error: { detail: "Checkout could not be started." } });
+  });
+
   it("returns the error envelope on failure", async () => {
     vi.mocked(sdk.createFrameworkPurchase).mockResolvedValue({ data: undefined, error: { detail: "x" }, response: { ok: false } } as never);
     const res = await startPurchase({ buyer: { kind: "self", label: "Myself" }, frameworkId: "fw", licenseType: "team", headers: {} });

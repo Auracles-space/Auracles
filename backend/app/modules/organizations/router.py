@@ -2472,6 +2472,7 @@ async def create_org_framework_purchase(
         db,
         org_id=org_id,
         actor=context.user,
+        redis=cast(RedisCounter, redis),
         framework_id=framework_id,
         payload=payload,
     )

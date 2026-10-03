@@ -85,13 +85,22 @@ class PurchaseRequest(BaseModel):
 class PurchaseResponse(BaseModel):
     """Provider handoff data the browser needs to complete checkout.
 
-    The two rails hand off differently and exactly one field is populated:
-    Stripe returns a `client_secret` for in-page Elements, while Paystack
-    returns an `authorization_url` the browser is redirected to.
+    The rails hand off differently and at most one handoff field is populated:
+    Stripe returns a `client_secret` for in-page Elements, Paystack returns an
+    `authorization_url` the browser is redirected to, and a free acquisition
+    returns neither because it is already finished.
+
+    `provider` is the discriminator; callers branch on it rather than testing
+    which field happens to be present. A `free` response carries `license_id`
+    and no `transaction_id`, because nothing was charged and so no transaction
+    exists. Routing on price happens on the server: the price can change
+    between the page rendering and the buyer clicking, so the client is in no
+    position to choose.
     """
 
-    transaction_id: UUID
-    provider: Literal["stripe", "paystack"]
+    provider: Literal["stripe", "paystack", "free"]
+    transaction_id: UUID | None = None
+    license_id: UUID | None = None
     client_secret: str | None = None
     authorization_url: str | None = None
 

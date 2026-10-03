@@ -172,8 +172,12 @@ test("Operator updates notification preferences from the dedicated settings page
 
   await page.goto("/settings/notifications");
 
+  // Exact: the page also carries "Discovery notifications" and "Financial
+  // notifications" section headings, so a substring match resolves to three
+  // elements and trips strict mode. It only ever passed by winning the race
+  // against those sections rendering.
   await expect(
-    page.getByRole("heading", { name: "Notifications" }),
+    page.getByRole("heading", { exact: true, name: "Notifications" }),
   ).toBeVisible();
 
   const savedSearchEmailToggle = page.getByRole("checkbox", {

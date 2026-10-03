@@ -30,7 +30,8 @@ import {
   isFrameworkApiErrorCode,
   type FrameworkSeller,
 } from "@/lib/frameworks/framework-api";
-import { formatLabel, formatMoney } from "@/lib/marketplace/format";
+import { ListingPrice } from "@/components/ui/listing-price";
+import { formatLabel } from "@/lib/marketplace/format";
 
 /** Statuses where the framework has stopped and the owner has to act. */
 const BLOCKED_STATUSES = ["pipeline_failed", "suspended"];
@@ -310,7 +311,7 @@ export function FrameworkList({
                   <div className="rounded-xl bg-surface-2 border border-border-default/40 p-3 flex items-center justify-between text-xs text-foreground-muted">
                     <span>Version {framework.version}</span>
                     <span className="font-semibold text-foreground px-2 py-0.5 rounded bg-surface-3 border border-border-default/50">
-                      {formatMoney(framework.price, framework.currency)}
+                      <ListingPrice currency={framework.currency} price={framework.price} />
                     </span>
                   </div>
 

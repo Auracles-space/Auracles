@@ -32,9 +32,12 @@ from app.modules.developer.models import (
     ApiKey,
     DeveloperAccount,
     DeveloperApplication,
+    PartnerCommission,
+    PartnerPurchaseAttribution,
 )
 from app.modules.financials.models import Transaction
-from app.modules.frameworks.models import Framework
+from app.modules.frameworks.models import Framework, License
+from app.shared.models.audit_log import AuditLog
 
 
 def _raw_api_key(slug: str) -> str:
@@ -78,6 +81,7 @@ async def _seed_partner_and_framework(
     *,
     slug: str,
     currency: str,
+    price: Decimal = Decimal("400000.00"),
 ) -> dict[str, Any]:
     """Create an active Developer account, an API key, and a priced Framework.
 
@@ -87,6 +91,8 @@ async def _seed_partner_and_framework(
             seeding the same addresses collide on the unique email index.
         currency: Settlement currency to price the Framework in, which is what
             the provider decision is derived from.
+        price: Listing price. Zero makes the Framework free, which takes
+            neither rail.
     """
     raw_api_key = _raw_api_key(slug)
     async with async_session_factory() as session:
@@ -150,7 +156,7 @@ async def _seed_partner_and_framework(
                 business_function="revenue_operations",
                 tags=["partner", "routing"],
                 tags_text="partner routing",
-                price=Decimal("400000.00"),
+                price=price,
                 currency=currency,
                 license_types=["single_user"],
                 published_at=datetime.now(UTC),
@@ -454,3 +460,124 @@ async def test_purchase_status_reports_the_rail_it_settled_on(
 
     assert status_response.status_code == 200, status_response.text
     assert status_response.json()["provider"] == "paystack"
+
+
+async def test_partner_purchase_of_a_free_framework_grants_without_commission(
+    client: AsyncClient,
+    naira_platform: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A free Framework sold through the Partner API grants and earns nothing.
+
+    No transaction, no attribution, and above all no PartnerCommission:
+    `partner_sales_count` advances a Partner's tier by counting commission
+    rows, and the tier sets their cut of real sales, so a free referral that
+    created one would buy a higher rate on paid business. The attribution is
+    recorded in the audit trail instead.
+    """
+    del naira_platform
+    seeded = await _seed_partner_and_framework(
+        slug="free",
+        currency="NGN",
+        price=Decimal("0.00"),
+    )
+
+    async def unreachable_initialize(**kwargs: Any) -> None:
+        """Fail loudly if a free purchase ever reaches a payment provider."""
+        raise AssertionError(f"a free purchase called Paystack: {kwargs}")
+
+    monkeypatch.setattr(paystack, "initialize_transaction", unreachable_initialize)
+
+    response = await client.post(
+        f"/v1/partner/frameworks/{seeded['framework_id']}/purchase",
+        headers={"X-API-Key": seeded["raw_api_key"]},
+        json={
+            "buyer_email": "partner-free-buyer@auracles.space",
+            "license_type": "single_user",
+            "return_url": "https://partner.example.com/orders/complete",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["provider"] == "free"
+    assert body["transaction_id"] is None
+    assert body.get("client_secret") is None
+    assert body.get("authorization_url") is None
+
+    # Scoped to this Framework: the suite truncates between modules, not
+    # between tests, so an unfiltered query reads a sibling test's rows.
+    framework_id = seeded["framework_id"]
+    async with async_session_factory() as session:
+        transaction = await session.scalar(
+            select(Transaction).where(Transaction.ref_id == framework_id)
+        )
+        commission = await session.scalar(
+            select(PartnerCommission).where(
+                PartnerCommission.framework_id == framework_id
+            )
+        )
+        attribution = await session.scalar(
+            select(PartnerPurchaseAttribution).where(
+                PartnerPurchaseAttribution.framework_id == framework_id
+            )
+        )
+        license_row = await session.scalar(
+            select(License).where(License.framework_id == framework_id)
+        )
+        audit = await session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "free_license_granted",
+                AuditLog.metadata_["framework_id"].astext == str(framework_id),
+            )
+        )
+
+    assert transaction is None
+    assert commission is None
+    assert attribution is None
+    assert license_row is not None
+    assert body["license_id"] == str(license_row.id)
+    assert license_row.transaction_id is None
+    assert license_row.status == "active"
+    # The Partner has no revenue row to be credited on, so the audit trail is
+    # the only record that this acquisition came through their key.
+    assert audit is not None
+    assert audit.metadata_["developer_account_id"]
+    assert audit.metadata_["api_key_id"]
+
+
+async def test_partner_key_cannot_mint_unlimited_buyer_accounts(
+    client: AsyncClient,
+    naira_platform: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provisioning new buyer accounts is capped per API key.
+
+    The buyer account is created before any charge is initiated, so a key
+    could already mint Operator accounts and send verification emails by
+    starting purchases it never paid for. Free Frameworks remove even the
+    abandoned-payment step, so the ceiling is enforced where the account is
+    actually created.
+    """
+    del naira_platform
+    seeded = await _seed_partner_and_framework(
+        slug="provision",
+        currency="NGN",
+        price=Decimal("0.00"),
+    )
+
+    statuses = []
+    for index in range(21):
+        response = await client.post(
+            f"/v1/partner/frameworks/{seeded['framework_id']}/purchase",
+            headers={"X-API-Key": seeded["raw_api_key"]},
+            json={
+                "buyer_email": f"partner-provision-{index}@auracles.space",
+                "license_type": "single_user",
+                "return_url": "https://partner.example.com/orders/complete",
+            },
+        )
+        statuses.append(response.status_code)
+
+    assert statuses[:20] == [200] * 20
+    assert statuses[20] == 429

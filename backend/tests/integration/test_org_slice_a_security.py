@@ -53,6 +53,7 @@ from tests.integration.test_organizations_endpoints import (
     create_user,
     migrated_database,
 )
+from tests.support.rate_limit import InMemoryRateCounter
 
 pytestmark = pytest.mark.asyncio
 
@@ -380,6 +381,7 @@ async def test_org_suspended_denial_carries_a_message(
 
 async def test_capability_suspended_purchase_denial_carries_a_message(
     db_session,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """The financials capability gate answers both an error code and a message."""
     owner_id = await create_user("cap-msg")
@@ -399,6 +401,7 @@ async def test_capability_suspended_purchase_denial_carries_a_message(
     with pytest.raises(HTTPException) as excinfo:
         await financials_service.create_org_framework_purchase(
             db_session,
+            redis=rate_limit_counter,
             org_id=org_id,
             actor=owner,
             framework_id=uuid4(),

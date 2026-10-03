@@ -521,7 +521,9 @@ async def test_non_contributor_cannot_create_framework(
 @pytest.mark.parametrize(
     ("pricing_patch", "expected_field"),
     [
-        ({"price": "0.00"}, "price"),
+        # Zero is a valid listing price now that a Framework may be free;
+        # a negative price is still the nonsense this case was written for.
+        ({"price": "-1.00"}, "price"),
         ({"license_types": []}, "license_types"),
     ],
 )
@@ -3667,3 +3669,98 @@ async def test_import_from_connector_foreign_connection_is_404(
         json={"connection_id": str(foreign_connection_id), "file_id": "f1"},
     )
     assert response.status_code == 404
+
+
+async def test_contributor_can_create_a_free_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A price of zero is a valid listing price, not a rejected amount.
+
+    Until free Frameworks existed a Contributor could only enter an amount
+    above zero, so giving knowledge away was unexpressible.
+    """
+    contributor_id = await create_user_with_roles(
+        "free-lister@auracles.space",
+        ["contributor"],
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    payload = valid_framework_payload()
+    payload["pricing"]["price"] = "0.00"
+
+    created = await client.post("/v1/frameworks", json=payload, headers=headers)
+
+    assert created.status_code == 201
+    assert created.json()["pricing"]["price"] == "0.00"
+
+
+async def test_free_framework_can_price_the_org_tier_separately(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """Free for individuals, paid for Organizations, survives a round trip."""
+    contributor_id = await create_user_with_roles(
+        "open-core@auracles.space",
+        ["contributor"],
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    payload = valid_framework_payload()
+    payload["pricing"]["price"] = "0.00"
+    payload["pricing"]["license_types"] = ["single_user", "organizational"]
+    payload["pricing"]["org_price"] = "500000.00"
+
+    created = await client.post("/v1/frameworks", json=payload, headers=headers)
+
+    assert created.status_code == 201
+    assert created.json()["pricing"]["price"] == "0.00"
+    assert created.json()["pricing"]["org_price"] == "500000.00"
+
+
+async def test_switching_a_framework_from_free_to_paid_audits_both_amounts(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A price change records what it moved from and to.
+
+    Crossing zero is the change most likely to be disputed later — an Operator
+    who acquired a Framework while it was free needs the switch to be
+    evidenced, and `framework_updated` previously recorded only status.
+    """
+    contributor_id = await create_user_with_roles(
+        "free-to-paid@auracles.space",
+        ["contributor"],
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    payload = valid_framework_payload()
+    payload["pricing"]["price"] = "0.00"
+    created = await client.post("/v1/frameworks", json=payload, headers=headers)
+    framework_id = created.json()["id"]
+
+    updated = await client.patch(
+        f"/v1/frameworks/{framework_id}",
+        json={
+            "pricing": {
+                "price": "25000.00",
+                "currency": platform_currency(),
+                "license_types": ["single_user"],
+            }
+        },
+        headers=headers,
+    )
+
+    assert updated.status_code == 200
+    async with async_session_factory() as session:
+        audit = await session.scalar(
+            select(AuditLog)
+            .where(
+                AuditLog.action == "framework_updated",
+                AuditLog.target_id == UUID(framework_id),
+            )
+            .order_by(AuditLog.created_at.desc())
+        )
+    assert audit is not None
+    assert audit.metadata_["price_before"] == "0.00"
+    assert audit.metadata_["price_after"] == "25000.00"

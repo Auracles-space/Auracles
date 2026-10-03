@@ -31,6 +31,7 @@ import type {
   PurchaseRequest,
 } from "@/lib/generated/types.gen";
 import { CHECKOUT_COUNTRIES, defaultBillingCountry } from "@/lib/marketplace/countries";
+import { ListingPrice } from "@/components/ui/listing-price";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
 import {
   type BuyerOption,
@@ -89,6 +90,10 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
     buyer.kind === "org" && framework.org_price == null
       ? "Same as single user"
       : null;
+  // Decided from the resolved tier price, not from `framework.price`, so a
+  // Framework that is free for individuals and paid for Organizations shows
+  // the right screen to each buyer.
+  const isFree = Number(displayPrice) === 0;
 
   useEffect(() => {
     async function fetchBuyers() {
@@ -102,6 +107,13 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
     }
     void fetchBuyers();
   }, [offersOrgTier]);
+
+  // Where this buyer's licence lands, shared by the paid confirmation step and
+  // the free grant, which has no confirmation step to route from.
+  const libraryPath =
+    buyer.kind === "org"
+      ? `/dashboard/organizations/${buyer.orgId}/operator/library`
+      : "/library";
 
   async function handleStartCheckout() {
     setError(null);
@@ -128,6 +140,15 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
       return;
     }
 
+    if (result.kind === "free") {
+      // Nothing to pay and nothing to confirm: the licence was granted by the
+      // time this responded. Go straight to the Library, staying in the
+      // submitting state through navigation so the button cannot be pressed
+      // again into an "already licensed" conflict.
+      window.location.assign(libraryPath);
+      return;
+    }
+
     setSubmitting(false);
     setSession(result);
   }
@@ -136,14 +157,15 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
     <section className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
-          Secure checkout
+          {isFree ? "No charge" : "Secure checkout"}
         </p>
         <h2 className="mt-2 font-heading text-2xl font-bold text-foreground">
           License this Framework
         </h2>
         <p className="mt-2 text-sm leading-6 text-foreground-muted">
-          Choose who is purchasing, then complete payment through your provider&rsquo;s
-          secure hosted fields.
+          {isFree
+            ? "This Framework is offered at no charge. Add it to your library to download the artifacts."
+            : "Choose who is purchasing, then complete payment through your provider\u2019s secure hosted fields."}
         </p>
       </div>
 
@@ -162,9 +184,11 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-sm font-semibold text-foreground">
-              {formatMoney(displayPrice, framework.currency)}
-            </p>
+            <ListingPrice
+              className="block text-sm"
+              currency={framework.currency}
+              price={displayPrice}
+            />
             {priceHint ? (
               <p className="mt-1 text-xs uppercase tracking-[0.05em] text-foreground-muted">
                 {priceHint}
@@ -174,7 +198,7 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
         </div>
       </div>
 
-      {!session ? (
+      {!session && !isFree ? (
         <label className="mt-6 grid gap-2 text-sm font-semibold text-foreground">
           Billing country
           <select
@@ -204,7 +228,13 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
           onClick={handleStartCheckout}
           type="button"
         >
-          {submitting ? "Preparing checkout" : "Start checkout"}
+          {isFree
+            ? submitting
+              ? "Adding to library"
+              : "Add to library"
+            : submitting
+              ? "Preparing checkout"
+              : "Start checkout"}
         </button>
       ) : (
         <div className="mt-6">
@@ -213,11 +243,7 @@ export function CheckoutForm({ framework }: CheckoutFormProps) {
             stripe={stripePromise}
           >
             <CheckoutPaymentConfirmation
-              successPath={
-                buyer.kind === "org"
-                  ? `/dashboard/organizations/${buyer.orgId}/operator/library`
-                  : "/library"
-              }
+              successPath={libraryPath}
               transactionId={session.transactionId}
             />
           </Elements>
@@ -289,6 +315,15 @@ export function CollectionCheckoutForm({
       // Paystack owns the next screen. Stay in the submitting state through
       // navigation so the button cannot be pressed twice into two charges.
       window.location.assign(result.authorizationUrl);
+      return;
+    }
+
+    if (result.kind === "free") {
+      // Nothing to pay and nothing to confirm: the licence was granted by the
+      // time this responded. Go straight to the Library, staying in the
+      // submitting state through navigation so the button cannot be pressed
+      // again into an "already licensed" conflict.
+      window.location.assign("/library");
       return;
     }
 

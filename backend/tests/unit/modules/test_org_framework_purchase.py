@@ -37,6 +37,7 @@ from app.modules.webhooks import service as webhooks_service
 from app.shared.models.audit_log import AuditLog
 from tests.conftest import verify_org_kyb
 from tests.support.db_cleanup import clear_identity_state_async
+from tests.support.rate_limit import InMemoryRateCounter
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
@@ -230,6 +231,7 @@ async def test_org_purchase_creates_pending_transaction_with_org_payer(
     migrated_database: None,
     org_purchase_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """Org checkout stamps `payer_org_id` and leaves `payer_id` NULL."""
     del migrated_database, org_purchase_state
@@ -247,6 +249,7 @@ async def test_org_purchase_creates_pending_transaction_with_org_payer(
     async with async_session_factory() as session:
         response = await financials_service.create_org_framework_purchase(
             session,
+            redis=rate_limit_counter,
             org_id=org.id,
             actor=owner,
             framework_id=framework.id,
@@ -285,6 +288,7 @@ async def test_org_purchase_self_deal_blocks_before_any_charge(
     migrated_database: None,
     org_purchase_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """Buying a Framework the org itself sells is rejected before any Stripe call."""
     del migrated_database, org_purchase_state
@@ -301,6 +305,7 @@ async def test_org_purchase_self_deal_blocks_before_any_charge(
         async with async_session_factory() as session:
             await financials_service.create_org_framework_purchase(
                 session,
+                redis=rate_limit_counter,
                 org_id=org.id,
                 actor=owner,
                 framework_id=framework.id,
@@ -320,6 +325,7 @@ async def test_org_purchase_requires_payment_method_on_file(
     migrated_database: None,
     org_purchase_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """An org with no Stripe customer on file cannot start checkout."""
     del migrated_database, org_purchase_state
@@ -337,6 +343,7 @@ async def test_org_purchase_requires_payment_method_on_file(
         async with async_session_factory() as session:
             await financials_service.create_org_framework_purchase(
                 session,
+                redis=rate_limit_counter,
                 org_id=org.id,
                 actor=owner,
                 framework_id=framework.id,
@@ -351,6 +358,7 @@ async def test_org_purchase_blocks_when_capability_suspended(
     migrated_database: None,
     org_purchase_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """A suspended Operator capability blocks checkout with a specific error code."""
     del migrated_database, org_purchase_state
@@ -370,6 +378,7 @@ async def test_org_purchase_blocks_when_capability_suspended(
         async with async_session_factory() as session:
             await financials_service.create_org_framework_purchase(
                 session,
+                redis=rate_limit_counter,
                 org_id=org.id,
                 actor=owner,
                 framework_id=framework.id,
@@ -385,6 +394,7 @@ async def test_org_purchase_rejects_second_license_on_same_framework(
     migrated_database: None,
     org_purchase_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """A second purchase attempt on an already-licensed Framework is a 409."""
     del migrated_database, org_purchase_state
@@ -416,6 +426,7 @@ async def test_org_purchase_rejects_second_license_on_same_framework(
         async with async_session_factory() as session:
             await financials_service.create_org_framework_purchase(
                 session,
+                redis=rate_limit_counter,
                 org_id=org.id,
                 actor=owner,
                 framework_id=framework.id,
@@ -516,6 +527,7 @@ async def test_individual_purchase_and_webhook_path_unchanged(
     migrated_database: None,
     org_purchase_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """Regression: individual checkout and webhook grant behavior is untouched."""
     del migrated_database, org_purchase_state
@@ -547,6 +559,7 @@ async def test_individual_purchase_and_webhook_path_unchanged(
         response = await financials_service.create_framework_purchase(
             session,
             operator,
+            redis=rate_limit_counter,
             framework_id=framework.id,
             payload=PurchaseRequest(license_type="single_user"),
         )

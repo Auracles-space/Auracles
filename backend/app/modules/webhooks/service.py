@@ -61,6 +61,7 @@ from app.modules.financials.refunds import reverse_refund, settle_refund
 from app.modules.financials.unrecognized_transfers import (
     record_unrecognized_transfer,
 )
+from app.modules.frameworks.licensing import license_seats_total
 from app.modules.frameworks.models import Framework, License
 from app.modules.notifications.service import create_notification
 from app.modules.organizations import notifications as org_notifications
@@ -296,15 +297,6 @@ def _purchase_transaction_id(event: dict[str, Any]) -> UUID:
         raise WebhookProcessingError(
             "purchase event transaction_id is invalid"
         ) from exc
-
-
-def _license_seats_total(license_type: str) -> int | None:
-    """Return default seat allocation for purchased license types."""
-    if license_type == "single_user":
-        return 1
-    if license_type == "team":
-        return 10
-    return None
 
 
 def _escrow_release_conditions(event: dict[str, Any]) -> dict[str, Any]:
@@ -599,7 +591,7 @@ async def _handle_purchase_succeeded(
                 status="active",
                 version_at_grant=framework.version,
                 seats_used=1,
-                seats_total=_license_seats_total(license_type),
+                seats_total=license_seats_total(license_type),
             )
             db.add(existing_license)
             await db.flush()
@@ -611,7 +603,7 @@ async def _handle_purchase_succeeded(
             existing_license.status = "active"
             existing_license.version_at_grant = framework.version
             existing_license.seats_used = 1
-            existing_license.seats_total = _license_seats_total(license_type)
+            existing_license.seats_total = license_seats_total(license_type)
         else:
             raise WebhookProcessingError(
                 "framework already licensed by a different transaction"
@@ -660,7 +652,7 @@ async def _handle_purchase_succeeded(
                 status="active",
                 version_at_grant=framework.version,
                 seats_used=1,
-                seats_total=_license_seats_total(license_type),
+                seats_total=license_seats_total(license_type),
             )
             db.add(existing_license)
             await db.flush()
@@ -672,7 +664,7 @@ async def _handle_purchase_succeeded(
             existing_license.status = "active"
             existing_license.version_at_grant = framework.version
             existing_license.seats_used = 1
-            existing_license.seats_total = _license_seats_total(license_type)
+            existing_license.seats_total = license_seats_total(license_type)
         else:
             raise WebhookProcessingError(
                 "framework already licensed by a different transaction"

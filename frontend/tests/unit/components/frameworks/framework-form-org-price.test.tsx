@@ -62,3 +62,56 @@ describe("FrameworkForm org pricing tier", () => {
     });
   });
 });
+
+describe("FrameworkForm free listings", () => {
+  it("submits a zero price when the free toggle is checked", async () => {
+    const onSubmit = vi.fn(async (_payload: unknown) => undefined);
+    const { container } = render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByLabelText(/offer this framework free/i));
+    fireEvent.submit(container.querySelector("form") as HTMLFormElement);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      pricing: { price: "0.00" },
+    });
+  });
+
+  it("locks the amount field while the Framework is free", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
+
+    fireEvent.click(screen.getByLabelText(/offer this framework free/i));
+
+    expect(screen.getByLabelText(/^base price/i)).toBeDisabled();
+  });
+
+  it("restores a typed amount when the free toggle is unchecked", () => {
+    render(<FrameworkForm onSubmit={async () => undefined} />);
+
+    fireEvent.change(screen.getByLabelText(/^base price/i), {
+      target: { value: "250.00" },
+    });
+    const toggle = screen.getByLabelText(/offer this framework free/i);
+    fireEvent.click(toggle);
+    fireEvent.click(toggle);
+
+    expect(screen.getByLabelText(/^base price/i)).toHaveValue("250.00");
+  });
+
+  it("prices the organization tier free while the base tier stays paid", async () => {
+    const onSubmit = vi.fn(async (_payload: unknown) => undefined);
+    const { container } = render(<FrameworkForm onSubmit={onSubmit} />);
+
+    fireEvent.change(screen.getByLabelText(/^base price/i), {
+      target: { value: "250.00" },
+    });
+    fireEvent.click(screen.getByLabelText(/^organizational$/i));
+    fireEvent.click(screen.getByLabelText(/organization tier is free/i));
+    fireEvent.submit(container.querySelector("form") as HTMLFormElement);
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      pricing: { price: "250.00", org_price: "0.00" },
+    });
+  });
+});

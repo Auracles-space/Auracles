@@ -16,6 +16,7 @@ from app.core.database import async_session_factory
 from app.modules.financials import service as financials_service
 from app.modules.financials.models import Transaction
 from app.modules.financials.schemas import PurchaseRequest
+from tests.support.rate_limit import InMemoryRateCounter
 from tests.unit.modules.test_org_framework_purchase import (
     _activate_operator_capability,
     _create_framework,
@@ -99,11 +100,13 @@ async def org_pricing_state_reuse(
 @pytest.mark.asyncio
 async def test_org_purchase_charges_org_price(
     org_pricing_state: SimpleNamespace,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """An org buying the organizational tier is charged org_price, not base."""
     async with org_pricing_state.db as session:
         response = await financials_service.create_org_framework_purchase(
             session,
+            redis=rate_limit_counter,
             org_id=org_pricing_state.org_id,
             actor=org_pricing_state.actor,
             framework_id=org_pricing_state.framework_id,
@@ -120,11 +123,13 @@ async def test_org_purchase_charges_org_price(
 @pytest.mark.asyncio
 async def test_org_purchase_reuse_charges_base_price(
     org_pricing_state_reuse: SimpleNamespace,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """An org tier with NULL org_price is charged the base price."""
     async with org_pricing_state_reuse.db as session:
         response = await financials_service.create_org_framework_purchase(
             session,
+            redis=rate_limit_counter,
             org_id=org_pricing_state_reuse.org_id,
             actor=org_pricing_state_reuse.actor,
             framework_id=org_pricing_state_reuse.framework_id,

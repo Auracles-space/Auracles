@@ -536,3 +536,48 @@ async def test_collection_reads_and_edits_are_owner_only(
 
     assert read_response.status_code == 404
     assert edit_response.status_code == 404
+
+
+async def test_publishing_an_all_free_bundle_explains_why_it_cannot(
+    client: AsyncClient,
+    migrated_database: None,
+    collection_test_context: None,
+) -> None:
+    """A bundle of only free Frameworks is refused with a message that says why.
+
+    The discount rule requires a bundle to cost less than its members do
+    separately. When every member is free that sum is zero, so no bundle price
+    can satisfy it — correctly, because there is nothing to discount. The
+    generic "lower than member price sum" wording left a Contributor with no
+    way to work out what to change.
+    """
+    contributor_id = await create_user_with_roles(
+        "all-free-bundle@auracles.space",
+        ["contributor"],
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    first_id = await create_framework(
+        contributor_id,
+        title="Free Risk Register",
+        price=Decimal("0.00"),
+    )
+    second_id = await create_framework(
+        contributor_id,
+        title="Free Controls Matrix",
+        price=Decimal("0.00"),
+    )
+    collection = await create_collection(client, contributor_id)
+    for framework_id in (first_id, second_id):
+        await client.post(
+            f"/v1/collections/{collection['id']}/members",
+            json={"framework_id": str(framework_id)},
+            headers=headers,
+        )
+
+    response = await client.post(
+        f"/v1/collections/{collection['id']}/publish",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert "already free" in response.json()["detail"]

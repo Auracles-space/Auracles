@@ -381,6 +381,18 @@ def _validate_publishable(
                 detail="Collection members must all be published Frameworks.",
             )
     member_price_sum = sum((member.price for member in members), Decimal("0.00"))
+    # Every member being free makes the sum zero, so no bundle price can be
+    # below it. The refusal is right — there is nothing to discount — but the
+    # discount wording below leaves a Contributor with no way to work out what
+    # to change, so say what actually happened.
+    if member_price_sum == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Every Framework in this Collection is already free, so there "
+                "is nothing to bundle at a discount."
+            ),
+        )
     if collection.bundle_price >= member_price_sum:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

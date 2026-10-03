@@ -13481,10 +13481,15 @@ components:
     PartnerPurchaseResponse:
       description: 'Provider handoff a Partner sends its buyer to in order to pay.
 
-        Exactly one of client_secret and authorization_url is populated, decided
-        by the payment rail: Stripe returns a client secret to mount Elements
-        against, Paystack an authorization URL to redirect the buyer to. Branch
-        on provider rather than assuming either field is present.'
+        At most one handoff field is populated, decided by the resolved price and
+        then the payment rail: Stripe returns a client secret to mount Elements
+        against, Paystack an authorization URL to redirect the buyer to, and a
+        Framework offered free returns neither because the licence is already
+        granted. Branch on provider rather than assuming any field is present.
+
+        A free response carries license_id and no transaction_id: nothing was
+        charged, so there is no transaction, no commission, and nothing to
+        reconcile against a payout.'
       properties:
         authorization_url:
           anyOf:
@@ -13496,18 +13501,26 @@ components:
           - type: string
           - type: 'null'
           title: Client Secret
+        license_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: License Id
         provider:
           enum:
           - stripe
           - paystack
+          - free
           title: Provider
           type: string
         transaction_id:
-          format: uuid
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
           title: Transaction Id
-          type: string
       required:
-      - transaction_id
       - provider
       title: PartnerPurchaseResponse
       type: object
@@ -14398,7 +14411,7 @@ components:
           type: array
         org_price:
           anyOf:
-          - exclusiveMinimum: 0.0
+          - minimum: 0.0
             type: number
           - pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
             type: string
@@ -14406,7 +14419,7 @@ components:
           title: Org Price
         price:
           anyOf:
-          - exclusiveMinimum: 0.0
+          - minimum: 0.0
             type: number
           - pattern: ^(?!^[-+.]*$)[+-]?0*(?:\d{0,10}|(?=[\d.]{1,13}0*$)\d{0,10}\.\d{0,2}0*$)
             type: string
@@ -15481,11 +15494,22 @@ components:
       description: 'Provider handoff data the browser needs to complete checkout.
 
 
-        The two rails hand off differently and exactly one field is populated:
+        The rails hand off differently and at most one handoff field is populated:
 
-        Stripe returns a `client_secret` for in-page Elements, while Paystack
+        Stripe returns a `client_secret` for in-page Elements, Paystack returns
 
-        returns an `authorization_url` the browser is redirected to.'
+        an `authorization_url` the browser is redirected to, and a free
+
+        acquisition returns neither because it is already finished.
+
+
+        `provider` is the discriminator; callers branch on it rather than testing
+
+        which field happens to be present. A `free` response carries `license_id`
+
+        and no `transaction_id`, because nothing was charged and so no
+
+        transaction exists.'
       properties:
         authorization_url:
           anyOf:
@@ -15497,18 +15521,26 @@ components:
           - type: string
           - type: 'null'
           title: Client Secret
+        license_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: License Id
         provider:
           enum:
           - stripe
           - paystack
+          - free
           title: Provider
           type: string
         transaction_id:
-          format: uuid
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
           title: Transaction Id
-          type: string
       required:
-      - transaction_id
       - provider
       title: PurchaseResponse
       type: object
