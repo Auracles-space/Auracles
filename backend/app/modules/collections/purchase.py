@@ -20,6 +20,7 @@ from app.modules.collections.models import (
 )
 from app.modules.financials import commission
 from app.modules.financials.models import Transaction
+from app.modules.frameworks.licensing import license_seats_total
 from app.modules.frameworks.models import Framework, License
 
 
@@ -30,15 +31,6 @@ class CollectionPurchaseProcessingError(RuntimeError):
 def _normalise_money(amount: Decimal) -> Decimal:
     """Return a two-decimal money value for allocation rows."""
     return amount.quantize(Decimal("0.01"))
-
-
-def _license_seats_total(license_type: str) -> int | None:
-    """Return default seat allocation for purchased Collection member licenses."""
-    if license_type == "single_user":
-        return 1
-    if license_type == "team":
-        return 10
-    return None
 
 
 def _allocation_amounts(
@@ -203,7 +195,7 @@ async def confirm_collection_purchase(
                 status="active",
                 version_at_grant=framework.version,
                 seats_used=1,
-                seats_total=_license_seats_total(snapshot.license_type),
+                seats_total=license_seats_total(snapshot.license_type),
             )
             db.add(existing_license)
             await db.flush()
@@ -225,7 +217,7 @@ async def confirm_collection_purchase(
             existing_license.status = "active"
             existing_license.version_at_grant = framework.version
             existing_license.seats_used = 1
-            existing_license.seats_total = _license_seats_total(snapshot.license_type)
+            existing_license.seats_total = license_seats_total(snapshot.license_type)
             minted_snapshots.append(snapshot)
             minted_license_ids.append(str(existing_license.id))
 

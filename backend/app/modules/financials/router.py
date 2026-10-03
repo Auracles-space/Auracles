@@ -44,6 +44,7 @@ from app.modules.financials.schemas import (
 
 router = APIRouter(prefix="/financials", tags=["Financials"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
+RedisClient = Annotated[Redis, Depends(get_redis)]
 OperatorUser = Annotated[User, Depends(require_role("operator"))]
 # Query-token auth is reserved for browser-navigated redirect downloads.
 ContributorUser = Annotated[User, Depends(require_role("contributor"))]
@@ -125,13 +126,20 @@ async def create_framework_purchase(
     framework_id: UUID,
     payload: PurchaseRequest,
     operator: OperatorUser,
-    _: KycVerifiedUser,
     db: DatabaseSession,
+    redis: RedisClient,
 ) -> PurchaseResponse:
-    """Start Stripe checkout for a published self-serve Framework license."""
+    """Acquire a published self-serve Framework license.
+
+    A paid Framework returns a provider checkout handoff; one priced at zero
+    returns a completed grant. The KYC gate lives in the service rather than
+    on this route because the price is not known until the Framework is
+    loaded, and KYC exists to gate money movement.
+    """
     return await service.create_framework_purchase(
         db=db,
         operator=operator,
+        redis=cast(RedisCounter, redis),
         framework_id=framework_id,
         payload=payload,
     )

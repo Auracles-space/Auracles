@@ -47,6 +47,7 @@ from app.modules.organizations.models import (
 from app.modules.projects.models import Milestone, Project, Proposal
 from app.shared.models.audit_log import AuditLog
 from tests.support.db_cleanup import clear_identity_state_async
+from tests.support.rate_limit import InMemoryRateCounter
 
 BACKEND_DIR = Path(__file__).resolve().parents[3]
 
@@ -109,8 +110,14 @@ async def _create_user(
     *,
     stripe_customer_id: str | None = None,
     totp_secret: str | None = None,
+    kyc_status: str = "verified",
 ) -> User:
-    """Create and return one verified user for settlement tests."""
+    """Create and return one verified user for settlement tests.
+
+    KYC defaults to verified because these tests call the purchase service
+    directly, and a paid purchase enforces KYC there rather than on the route
+    (the route cannot know the price before the Framework is loaded).
+    """
     email = f"{prefix}-{uuid4().hex[:8]}@auracles.space"
     async with async_session_factory() as session:
         async with session.begin():
@@ -119,6 +126,7 @@ async def _create_user(
                 password_hash=hash_password("CorrectHorse9"),
                 display_name=prefix,
                 email_verified=True,
+                kyc_status=kyc_status,
                 stripe_customer_id=stripe_customer_id,
                 totp_enabled=totp_secret is not None,
                 totp_secret=(
@@ -354,6 +362,7 @@ async def test_create_framework_purchase_credits_org_beneficiary(
     migrated_database: None,
     settlement_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """An org-owned Framework purchase must credit ``payee_org_id`` only."""
     del migrated_database, settlement_state
@@ -379,6 +388,7 @@ async def test_create_framework_purchase_credits_org_beneficiary(
         response = await financials_service.create_framework_purchase(
             session,
             operator,
+            redis=rate_limit_counter,
             framework_id=framework_id,
             payload=PurchaseRequest(license_type="single_user"),
         )
@@ -398,6 +408,7 @@ async def test_create_framework_purchase_keeps_individual_beneficiary(
     migrated_database: None,
     settlement_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """A user-owned Framework purchase must keep the existing ``payee_id`` path."""
     del migrated_database, settlement_state
@@ -422,6 +433,7 @@ async def test_create_framework_purchase_keeps_individual_beneficiary(
         response = await financials_service.create_framework_purchase(
             session,
             operator,
+            redis=rate_limit_counter,
             framework_id=framework_id,
             payload=PurchaseRequest(license_type="single_user"),
         )
@@ -443,6 +455,7 @@ async def test_create_framework_purchase_blocks_inactive_org_seller(
     settlement_state: None,
     monkeypatch: pytest.MonkeyPatch,
     suspend: bool,
+    rate_limit_counter: InMemoryRateCounter,
 ) -> None:
     """Purchasing an org-owned Framework must 404 once the org is inactive.
 
@@ -483,6 +496,7 @@ async def test_create_framework_purchase_blocks_inactive_org_seller(
             await financials_service.create_framework_purchase(
                 session,
                 operator,
+                redis=rate_limit_counter,
                 framework_id=framework_id,
                 payload=PurchaseRequest(license_type="single_user"),
             )

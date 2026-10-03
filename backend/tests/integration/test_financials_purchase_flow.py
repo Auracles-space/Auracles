@@ -13,7 +13,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from httpx import AsyncClient
-from sqlalchemy import create_engine, delete, select
+from sqlalchemy import create_engine, delete, func, select
 
 from app.core.database import async_session_factory, engine
 from app.core.security import create_access_token, hash_password
@@ -1100,3 +1100,174 @@ async def test_purchase_rejects_malformed_country(
     )
 
     assert response.status_code == 422
+
+
+async def test_free_framework_grants_a_license_without_a_transaction(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """A free Framework is granted in-request, with no provider and no charge.
+
+    There is no webhook to wait for, so the License is written inline. No
+    Transaction is created at all rather than a zero-amount one, which keeps
+    `ck_transactions_amount_positive` guarding every real charge.
+    """
+    contributor_id = await create_user_with_roles(
+        "free-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "free-operator@auracles.space",
+        ["operator"],
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("0.00"),
+        license_types=["single_user", "team"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "team"},
+    )
+
+    async with async_session_factory() as session:
+        transaction = await session.scalar(select(Transaction))
+        license_row = await session.scalar(select(License))
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["provider"] == "free"
+    assert body["transaction_id"] is None
+    assert body["client_secret"] is None
+    assert body["authorization_url"] is None
+    assert transaction is None
+    assert license_row is not None
+    assert body["license_id"] == str(license_row.id)
+    assert license_row.operator_id == operator_id
+    assert license_row.framework_id == framework_id
+    assert license_row.transaction_id is None
+    assert license_row.status == "active"
+    assert license_row.license_type == "team"
+    assert license_row.seats_total == 10
+    assert purchase_context["payment_intents"] == []
+
+
+async def test_unverified_operator_can_acquire_a_free_framework(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """KYC gates charges, not free acquisitions.
+
+    Requiring admin document review before someone can take a Framework
+    offered at no charge would make free listings a perk for already-verified
+    Operators instead of a way to reach new ones.
+    """
+    contributor_id = await create_user_with_roles(
+        "free-nokyc-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "free-nokyc-operator@auracles.space",
+        ["operator"],
+        kyc_status="unverified",
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("0.00"),
+        license_types=["single_user"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "free"
+
+
+async def test_paid_framework_still_requires_kyc_after_the_gate_moves(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Moving the KYC check off the route must not unguard paid checkout.
+
+    The dependency had to leave the router because the endpoint cannot know
+    the price before loading the Framework; the paid branch now enforces it,
+    and must return the same 403 contract the route did.
+    """
+    contributor_id = await create_user_with_roles(
+        "paid-kyc-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "paid-kyc-operator@auracles.space",
+        ["operator"],
+        kyc_status="unverified",
+    )
+    framework_id = await create_published_framework(
+        contributor_id,
+        price=Decimal("149.00"),
+        license_types=["single_user"],
+    )
+
+    response = await client.post(
+        f"/v1/financials/purchase/{framework_id}",
+        headers=auth_headers(operator_id, ["operator"]),
+        json={"license_type": "single_user"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["error_code"] == "kyc_required"
+    assert purchase_context["payment_intents"] == []
+
+
+async def test_free_acquisitions_are_capped_per_account(
+    client: AsyncClient,
+    migrated_database: None,
+    purchase_context: dict[str, list[Any]],
+) -> None:
+    """Taking free Frameworks is rate limited per acquirer.
+
+    A free acquisition has no charge in front of it and a License is all a
+    review needs, so without a ceiling one person could take a free Framework
+    on many accounts and farm its rating. The eleventh in a day is refused.
+    """
+    contributor_id = await create_user_with_roles(
+        "free-cap-contributor@auracles.space",
+        ["contributor"],
+    )
+    operator_id = await create_user_with_roles(
+        "free-cap-operator@auracles.space",
+        ["operator"],
+    )
+    headers = auth_headers(operator_id, ["operator"])
+    framework_ids = [
+        await create_published_framework(
+            contributor_id,
+            price=Decimal("0.00"),
+            license_types=["single_user"],
+        )
+        for _ in range(11)
+    ]
+
+    statuses = []
+    for framework_id in framework_ids:
+        response = await client.post(
+            f"/v1/financials/purchase/{framework_id}",
+            headers=headers,
+            json={"license_type": "single_user"},
+        )
+        statuses.append(response.status_code)
+
+    assert statuses[:10] == [200] * 10
+    assert statuses[10] == 429
+    async with async_session_factory() as session:
+        granted = await session.scalar(select(func.count(License.id)))
+    assert granted == 10

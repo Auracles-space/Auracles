@@ -102,6 +102,7 @@ from app.main import app  # noqa: E402
 # accepts the publish and nothing consumes it, matching CI where no worker runs.
 from app.workers.celery_app import app as _celery_app  # noqa: E402
 from tests._guard import assert_local_datastores  # noqa: E402
+from tests.support.rate_limit import InMemoryRateCounter  # noqa: E402
 
 _celery_app.conf.broker_url = "memory://"
 _celery_app.conf.result_backend = "cache+memory://"
@@ -345,3 +346,9 @@ async def grant_step_up(redis: object, user_id: object) -> None:
         )
         await session.commit()
     await open_step_up_window(redis, resolved)
+
+
+@pytest.fixture
+def rate_limit_counter() -> InMemoryRateCounter:
+    """Provide an in-memory counter for direct service-layer calls."""
+    return InMemoryRateCounter()
