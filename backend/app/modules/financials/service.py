@@ -78,7 +78,7 @@ from app.modules.financials.schemas import (
     PurchaseResponse,
     RefundResponse,
 )
-from app.modules.frameworks.licensing import license_seats_total
+from app.modules.frameworks.licensing import grant_free_license
 from app.modules.frameworks.models import Framework, License
 from app.modules.frameworks.models_artifact import ArtifactDownload
 from app.modules.frameworks.pricing import resolve_license_price
@@ -107,13 +107,6 @@ MAX_PAYOUT_DESTINATION_OWNERS = 3
 # set for someone correcting one typo, not for walking the number space.
 PAYOUT_ACCOUNT_RESOLVE_RATE_LIMITER = RateLimiter(
     namespace="payout_account_resolve", limit=15, window=3600
-)
-# A free acquisition has no charge in front of it, and a License is all a
-# review needs. Without a ceiling, one person could take a free Framework on
-# many accounts and farm its rating. Set for someone collecting what they
-# actually want to read in a day, not for building a review farm.
-FREE_LICENSE_RATE_LIMITER = RateLimiter(
-    namespace="free_license", limit=10, window=86400
 )
 # Earning classes for payout-balance derivation. Marketplace earnings clear
 # after the refund window at the marketplace commission rate; attestation
@@ -1519,90 +1512,6 @@ async def _start_paystack_org_purchase(
     )
 
 
-async def _grant_free_license(
-    db: AsyncSession,
-    redis: RedisCounter,
-    *,
-    framework: Framework,
-    license_type: str,
-    operator_id: UUID | None,
-    licensee_org_id: UUID | None,
-    actor_id: UUID,
-    action: str,
-) -> PurchaseResponse:
-    """Grant a License for a Framework priced at zero and return immediately.
-
-    Written in-request because there is no provider callback to wait for. No
-    Transaction is created — not even a zero-amount one — so the money tables
-    keep their positive-amount guarantees and nothing reaches commission,
-    invoicing, or payouts.
-
-    Every caller must have already run the full purchase guard sequence
-    (published, seller active, not self-dealing, no existing License, tier
-    offered). This grants unconditionally.
-
-    Args:
-        db: Session. The caller must not hold an open transaction.
-        redis: Counter backing the per-acquirer rate limit.
-        framework: The Framework being granted, already loaded and validated.
-        license_type: The requested tier, already checked against the listing.
-        operator_id: Individual acquirer, or None for an organization.
-        licensee_org_id: Acquiring organization, or None for an individual.
-        actor_id: The person who performed this, which is the org admin rather
-            than the licence holder on the organization path.
-        action: Log and audit action name of the calling path.
-
-    Returns:
-        A `free` PurchaseResponse carrying the new License id.
-
-    Raises:
-        HTTPException(429): The acquirer is over the free-acquisition ceiling.
-    """
-    rate_limit_key = str(operator_id or licensee_org_id)
-    await FREE_LICENSE_RATE_LIMITER.check(redis, rate_limit_key)
-
-    framework_id = framework.id
-    version_at_grant = framework.version
-    if db.in_transaction():
-        await db.rollback()
-    async with db.begin():
-        license_row = License(
-            framework_id=framework_id,
-            operator_id=operator_id,
-            licensee_org_id=licensee_org_id,
-            transaction_id=None,
-            license_type=license_type,
-            status="active",
-            version_at_grant=version_at_grant,
-            seats_used=1,
-            seats_total=license_seats_total(license_type),
-        )
-        db.add(license_row)
-        await db.flush()
-        license_id = license_row.id
-        await write_audit(
-            db=db,
-            actor_id=actor_id,
-            action="free_license_granted",
-            target_type="license",
-            target_id=license_id,
-            metadata={
-                "framework_id": str(framework_id),
-                "license_type": license_type,
-                "version_at_grant": version_at_grant,
-                **({"org_id": str(licensee_org_id)} if licensee_org_id else {}),
-            },
-        )
-
-    logger.bind(
-        module="financials",
-        action=action,
-        user_id=actor_id,
-        framework_id=framework_id,
-    ).info("free_license_granted")
-    return PurchaseResponse(provider="free", license_id=license_id)
-
-
 async def create_framework_purchase(
     db: AsyncSession,
     operator: User,
@@ -1731,16 +1640,19 @@ async def create_framework_purchase(
     # Last branch before the rails, and deliberately after every guard above:
     # free changes how a License is paid for, not who may hold one.
     if amount == 0:
-        return await _grant_free_license(
+        license_id = await grant_free_license(
             db,
             redis,
-            framework=framework,
+            framework_id=framework.id,
+            version_at_grant=framework.version,
             license_type=payload.license_type,
             operator_id=operator_id,
             licensee_org_id=None,
             actor_id=operator_id,
+            module="financials",
             action="create_framework_purchase",
         )
+        return PurchaseResponse(provider="free", license_id=license_id)
 
     # Moved off the route: the endpoint cannot know the price before loading
     # the Framework, and KYC exists to gate money movement, not to gate taking
@@ -1988,16 +1900,19 @@ async def create_org_framework_purchase(
     # require: an Organization can hold a free Framework without ever having
     # set up checkout.
     if amount == 0:
-        return await _grant_free_license(
+        license_id = await grant_free_license(
             db,
             redis,
-            framework=framework,
+            framework_id=framework.id,
+            version_at_grant=framework.version,
             license_type=payload.license_type,
             operator_id=None,
             licensee_org_id=org_id,
             actor_id=actor_id,
+            module="financials",
             action="create_org_framework_purchase",
         )
+        return PurchaseResponse(provider="free", license_id=license_id)
 
     provider = select_provider(user_country=payload.country, currency=currency)
     if provider == "paystack":
