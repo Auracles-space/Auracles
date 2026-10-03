@@ -68,16 +68,17 @@ describe("FrameworkPricingForm", () => {
 });
 
 describe("FrameworkPricingForm free listings", () => {
-  it("zeroes and locks the base price when the free toggle is checked", () => {
+  it("removes the base price field when the free toggle is checked", () => {
+    // A greyed-out field under a "Base price" label still reads as the form
+    // asking for a price the seller has just said is not being charged.
     render(
       <FrameworkPricingForm api={api} framework={framework} onUpdated={vi.fn()} />,
     );
 
+    expect(screen.getByLabelText(/base price/i)).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/offer this framework free/i));
 
-    const priceInput = screen.getByLabelText(/base price/i);
-    expect(priceInput).toBeDisabled();
-    expect(priceInput).toHaveValue("0.00");
+    expect(screen.queryByLabelText(/base price/i)).not.toBeInTheDocument();
   });
 
   it("restores the previous amount when the free toggle is unchecked", () => {

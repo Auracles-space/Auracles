@@ -483,93 +483,115 @@ export function FrameworkForm({
           </fieldset>
 
           <div className="grid gap-6 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-semibold text-foreground">
-                Base Price
-                <span aria-hidden="true" className="ml-1 text-accent">
-                  *
-                </span>
-              </span>
-              <div className="relative">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
-                  <span className="text-sm font-medium">{currencySymbol()}</span>
-                </div>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="250.00"
-                  className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 disabled:opacity-60"
-                  disabled={isFree}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      price: sanitizePriceInput(event.target.value),
-                    }))
-                  }
-                  required
-                  value={form.price}
-                />
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
-                  <span className="text-xs uppercase">{PLATFORM_CURRENCY}</span>
-                </div>
-              </div>
-            </label>
-
-            <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground">
-              <input
-                checked={isFree}
-                className="accent-accent"
-                onChange={(event) => toggleFree(event.target.checked)}
-                type="checkbox"
-              />
-              Offer this Framework free
-            </label>
-
-            {form.licenseTypes.includes("organizational") ? (
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-semibold text-foreground">
-                  Organization price
-                </span>
-                <div className="relative">
-                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
-                    <span className="text-sm font-medium">{currencySymbol()}</span>
-                  </div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    placeholder="Same as single-user price"
-                    className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 disabled:opacity-60"
-                    disabled={isOrgFree}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        orgPrice: sanitizePriceInput(event.target.value),
-                      }))
-                    }
-                    value={form.orgPrice}
-                  />
-                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
-                    <span className="text-xs uppercase">{PLATFORM_CURRENCY}</span>
-                  </div>
-                </div>
-                <span className="mt-1.5 block text-xs text-foreground-muted">
-                  Leave blank to charge the same as the single-user price.
-                </span>
-              </label>
-            ) : null}
-
-            {form.licenseTypes.includes("organizational") ? (
+            <div className="grid gap-3">
+              {/* The toggle leads, and the amount field is removed rather than
+                  disabled when it is on. A disabled field still carried the
+                  "Base Price *" label and its required marker, which reads as
+                  the form asking for a price the Contributor has just said is
+                  not being charged. */}
               <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground">
                 <input
-                  checked={isOrgFree}
-                  className="accent-accent"
-                  onChange={(event) => toggleOrgFree(event.target.checked)}
+                  checked={isFree}
+                  className="h-4 w-4 shrink-0 accent-accent"
+                  onChange={(event) => toggleFree(event.target.checked)}
                   type="checkbox"
                 />
-                Organization tier is free
+                Offer this Framework free
               </label>
+
+              {isFree ? (
+                <p className="text-sm leading-6 text-foreground-muted">
+                  No charge. Operators add this to their library without paying.
+                </p>
+              ) : (
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-semibold text-foreground">
+                    Base Price
+                    <span aria-hidden="true" className="ml-1 text-accent">
+                      *
+                    </span>
+                  </span>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+                      <span className="text-sm font-medium">{currencySymbol()}</span>
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="250.00"
+                      className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          price: sanitizePriceInput(event.target.value),
+                        }))
+                      }
+                      required
+                      value={form.price}
+                    />
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+                      <span className="text-xs uppercase">{PLATFORM_CURRENCY}</span>
+                    </div>
+                  </div>
+                </label>
+              )}
+            </div>
+
+            {form.licenseTypes.includes("organizational") ? (
+              <div className="grid gap-3">
+                <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm text-foreground">
+                  <input
+                    checked={isOrgFree}
+                    className="h-4 w-4 shrink-0 accent-accent"
+                    onChange={(event) => toggleOrgFree(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Organization tier is free
+                </label>
+
+                {isOrgFree ? (
+                  <p className="text-sm leading-6 text-foreground-muted">
+                    No charge for organizations, whatever the single-user price
+                    is.
+                  </p>
+                ) : (
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-semibold text-foreground">
+                      Organization price
+                    </span>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-foreground-muted">
+                        <span className="text-sm font-medium">
+                          {currencySymbol()}
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="Same as single-user price"
+                        className="min-h-12 w-full rounded-xl border border-border-default bg-background pl-8 pr-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            orgPrice: sanitizePriceInput(event.target.value),
+                          }))
+                        }
+                        value={form.orgPrice}
+                      />
+                      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-foreground-muted">
+                        <span className="text-xs uppercase">
+                          {PLATFORM_CURRENCY}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="mt-1.5 block text-xs text-foreground-muted">
+                      Leave blank to charge the same as the single-user price.
+                    </span>
+                  </label>
+                )}
+              </div>
             ) : null}
           </div>
         </>

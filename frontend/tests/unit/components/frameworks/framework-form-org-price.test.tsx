@@ -77,12 +77,17 @@ describe("FrameworkForm free listings", () => {
     });
   });
 
-  it("locks the amount field while the Framework is free", () => {
+  it("removes the amount field while the Framework is free", () => {
+    // Not merely disabled: the field carries a "Base Price *" label and a
+    // `required` input, so leaving it on screen reads as the form still asking
+    // for a price the Contributor has just said is not being charged. QA
+    // reported exactly that.
     render(<FrameworkForm onSubmit={async () => undefined} />);
 
+    expect(screen.getByLabelText(/^base price/i)).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/offer this framework free/i));
 
-    expect(screen.getByLabelText(/^base price/i)).toBeDisabled();
+    expect(screen.queryByLabelText(/^base price/i)).not.toBeInTheDocument();
   });
 
   it("restores a typed amount when the free toggle is unchecked", () => {

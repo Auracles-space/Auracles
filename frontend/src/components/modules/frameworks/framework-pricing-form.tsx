@@ -146,49 +146,63 @@ export function FrameworkPricingForm({
       </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
-          <label className="text-sm font-semibold text-foreground">
-            Base price
-            <input
-              className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-              disabled={isFree}
-              inputMode="decimal"
-              onChange={(event) => setPrice(event.target.value)}
-              value={price}
-            />
-          </label>
+          {/* Toggle first, and the amount field removed rather than disabled
+              when it is on: a greyed-out field under a "Base price" label
+              still reads as the form asking for a price the seller has just
+              said is not being charged. */}
           <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm font-normal text-foreground">
             <input
               checked={isFree}
-              className="accent-accent"
+              className="h-4 w-4 shrink-0 accent-accent"
               onChange={(event) => toggleFree(event.target.checked)}
               type="checkbox"
             />
             Offer this Framework free
           </label>
+          {isFree ? (
+            <p className="text-sm text-foreground-muted">
+              No charge. Operators add this to their library without paying.
+            </p>
+          ) : (
+            <label className="text-sm font-semibold text-foreground">
+              Base price
+              <input
+                className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                inputMode="decimal"
+                onChange={(event) => setPrice(event.target.value)}
+                value={price}
+              />
+            </label>
+          )}
         </div>
         <div className="grid gap-2">
-          <label className="text-sm font-semibold text-foreground">
-            Organization price
-            <input
-              className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
-              disabled={isOrgFree}
-              inputMode="decimal"
-              onChange={(event) => setOrgPrice(event.target.value)}
-              placeholder="Same as base price"
-              value={orgPrice}
-            />
-          </label>
           {offersOrgTier ? (
             <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm font-normal text-foreground">
               <input
                 checked={isOrgFree}
-                className="accent-accent"
+                className="h-4 w-4 shrink-0 accent-accent"
                 onChange={(event) => toggleOrgFree(event.target.checked)}
                 type="checkbox"
               />
               Organization tier is free
             </label>
           ) : null}
+          {isOrgFree ? (
+            <p className="text-sm text-foreground-muted">
+              No charge for organizations, whatever the base price is.
+            </p>
+          ) : (
+            <label className="text-sm font-semibold text-foreground">
+              Organization price
+              <input
+                className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                inputMode="decimal"
+                onChange={(event) => setOrgPrice(event.target.value)}
+                placeholder="Same as base price"
+                value={orgPrice}
+              />
+            </label>
+          )}
         </div>
       </div>
       <fieldset className="mt-4 grid gap-2 sm:grid-cols-2">
