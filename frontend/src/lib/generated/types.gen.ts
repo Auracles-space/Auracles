@@ -4742,14 +4742,18 @@ export type license_type = 'single_user' | 'team' | 'organizational';
 
 /**
  * Provider handoff a Partner sends its buyer to in order to pay.
- * Exactly one of client_secret and authorization_url is populated, decided by the payment rail: Stripe returns a client secret to mount Elements against, Paystack an authorization URL to redirect the buyer to. Branch on provider rather than assuming either field is present.
+ * At most one handoff field is populated, decided by the resolved price and then the payment rail: Stripe returns a client secret to mount Elements against, Paystack an authorization URL to redirect the buyer to, and a Framework offered free returns neither because the licence is already granted. Branch on provider rather than assuming any field is present.
+ * A free response carries license_id and no transaction_id: nothing was charged, so there is no transaction, no commission, and nothing to reconcile against a payout.
  */
 export type PartnerPurchaseResponse = {
     authorization_url?: (string | null);
     client_secret?: (string | null);
-    provider: 'stripe' | 'paystack';
-    transaction_id: string;
+    license_id?: (string | null);
+    provider: 'stripe' | 'paystack' | 'free';
+    transaction_id?: (string | null);
 };
+
+export type provider2 = 'stripe' | 'paystack' | 'free';
 
 /**
  * Partner-visible purchase status without licensed artifact access.
@@ -5505,15 +5509,22 @@ export type PurchaseRequest = {
 /**
  * Provider handoff data the browser needs to complete checkout.
  *
- * The two rails hand off differently and exactly one field is populated:
- * Stripe returns a `client_secret` for in-page Elements, while Paystack
- * returns an `authorization_url` the browser is redirected to.
+ * The rails hand off differently and at most one handoff field is populated:
+ * Stripe returns a `client_secret` for in-page Elements, Paystack returns
+ * an `authorization_url` the browser is redirected to, and a free
+ * acquisition returns neither because it is already finished.
+ *
+ * `provider` is the discriminator; callers branch on it rather than testing
+ * which field happens to be present. A `free` response carries `license_id`
+ * and no `transaction_id`, because nothing was charged and so no
+ * transaction exists.
  */
 export type PurchaseResponse = {
     authorization_url?: (string | null);
     client_secret?: (string | null);
-    provider: 'stripe' | 'paystack';
-    transaction_id: string;
+    license_id?: (string | null);
+    provider: 'stripe' | 'paystack' | 'free';
+    transaction_id?: (string | null);
 };
 
 /**

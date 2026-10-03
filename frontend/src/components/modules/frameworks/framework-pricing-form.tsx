@@ -14,6 +14,19 @@ import type {
   PricingConfig_Input,
 } from "@/lib/generated/types.gen";
 
+/**
+ * Whether a price field holds an explicit zero.
+ *
+ * Blank is excluded deliberately: an empty organization price means "reuse the
+ * base price", which is not the same as giving the tier away, and `Number("")`
+ * is 0.
+ *
+ * @param value - Raw price field contents.
+ */
+function isZero(value: string): boolean {
+  return value.trim() !== "" && Number(value) === 0;
+}
+
 const LICENSE_TYPES = [
   ["single_user", "Single user"],
   // Team and Enterprise tiers are not offered yet — only single-user and
@@ -37,6 +50,16 @@ export function FrameworkPricingForm({
 }: FrameworkPricingFormProps) {
   const [price, setPrice] = useState(framework.pricing.price);
   const [orgPrice, setOrgPrice] = useState(framework.pricing.org_price ?? "");
+  // What to put back when a free toggle is switched off, so trying the toggle
+  // does not discard an amount that was already typed.
+  const [lastPaidPrice, setLastPaidPrice] = useState(
+    isZero(framework.pricing.price) ? "" : framework.pricing.price,
+  );
+  const [lastPaidOrgPrice, setLastPaidOrgPrice] = useState(
+    isZero(framework.pricing.org_price ?? "")
+      ? ""
+      : (framework.pricing.org_price ?? ""),
+  );
   const [licenseTypes, setLicenseTypes] = useState<
     PricingConfig_Input["license_types"]
   >([...framework.pricing.license_types]);
@@ -54,6 +77,30 @@ export function FrameworkPricingForm({
     price !== framework.pricing.price ||
     orgPrice !== (framework.pricing.org_price ?? "") ||
     licenseTypesChanged;
+
+  const isFree = isZero(price);
+  // An empty organization price means "reuse the base price", which is not the
+  // same as an explicit zero, so blank must never read as a free org tier.
+  const isOrgFree = isZero(orgPrice);
+  const offersOrgTier = licenseTypes.includes("organizational");
+
+  function toggleFree(next: boolean) {
+    if (next) {
+      setLastPaidPrice(price);
+      setPrice("0.00");
+      return;
+    }
+    setPrice(lastPaidPrice);
+  }
+
+  function toggleOrgFree(next: boolean) {
+    if (next) {
+      setLastPaidOrgPrice(orgPrice);
+      setOrgPrice("0.00");
+      return;
+    }
+    setOrgPrice(lastPaidOrgPrice);
+  }
 
   function toggleLicenseType(
     value: PricingConfig_Input["license_types"][number],
@@ -98,25 +145,51 @@ export function FrameworkPricingForm({
         Set the organization&apos;s marketplace license prices.
       </p>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <label className="text-sm font-semibold text-foreground">
-          Base price
-          <input
-            className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            inputMode="decimal"
-            onChange={(event) => setPrice(event.target.value)}
-            value={price}
-          />
-        </label>
-        <label className="text-sm font-semibold text-foreground">
-          Organization price
-          <input
-            className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            inputMode="decimal"
-            onChange={(event) => setOrgPrice(event.target.value)}
-            placeholder="Same as base price"
-            value={orgPrice}
-          />
-        </label>
+        <div className="grid gap-2">
+          <label className="text-sm font-semibold text-foreground">
+            Base price
+            <input
+              className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+              disabled={isFree}
+              inputMode="decimal"
+              onChange={(event) => setPrice(event.target.value)}
+              value={price}
+            />
+          </label>
+          <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm font-normal text-foreground">
+            <input
+              checked={isFree}
+              className="accent-accent"
+              onChange={(event) => toggleFree(event.target.checked)}
+              type="checkbox"
+            />
+            Offer this Framework free
+          </label>
+        </div>
+        <div className="grid gap-2">
+          <label className="text-sm font-semibold text-foreground">
+            Organization price
+            <input
+              className="mt-1.5 min-h-12 w-full rounded-xl border border-border-default bg-background px-4 text-sm font-normal text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-60"
+              disabled={isOrgFree}
+              inputMode="decimal"
+              onChange={(event) => setOrgPrice(event.target.value)}
+              placeholder="Same as base price"
+              value={orgPrice}
+            />
+          </label>
+          {offersOrgTier ? (
+            <label className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-background px-3 text-sm font-normal text-foreground">
+              <input
+                checked={isOrgFree}
+                className="accent-accent"
+                onChange={(event) => toggleOrgFree(event.target.checked)}
+                type="checkbox"
+              />
+              Organization tier is free
+            </label>
+          ) : null}
+        </div>
       </div>
       <fieldset className="mt-4 grid gap-2 sm:grid-cols-2">
         <legend className="mb-1 text-sm font-semibold text-foreground">

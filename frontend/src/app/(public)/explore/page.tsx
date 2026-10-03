@@ -66,6 +66,27 @@ function numberParam(
 }
 
 /**
+ * Parse a price ceiling query param.
+ *
+ * Zero is the meaningful value here — it is what the "Free" filter sets — so
+ * this accepts it where {@link numberParam} would reject it as falsy.
+ *
+ * @param value - Query string value.
+ * @returns The ceiling as a string the API accepts, or undefined when absent
+ *   or not a non-negative number.
+ */
+function priceCeilingParam(
+  value: string | string[] | undefined,
+): string | undefined {
+  const raw = firstParam(value);
+  if (raw === undefined || raw.trim() === "") {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? raw : undefined;
+}
+
+/**
  * Parse a taxonomy query param only when it is in the current vocabulary.
  *
  * @param value - Next.js search param value.
@@ -148,6 +169,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     taxonomyParam<OrgSize>(params.org_size, ORG_SIZE_OPTIONS) ?? undefined;
   const sector =
     taxonomyParam<FrameworkSector>(params.sector, SECTOR_OPTIONS) ?? undefined;
+  const price_max = priceCeilingParam(params.price_max);
 
   const query: NonNullable<ListMixedCatalogV1ExploreCatalogGetData["query"]> = {
     page: numberParam(params.page, 1),
@@ -160,6 +182,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     industry: industry ?? null,
     license_type: license_type ?? null,
     org_size: org_size ?? null,
+    price_max: price_max ?? null,
     sector: sector ?? null,
   };
   const filterActive = {
@@ -169,6 +192,7 @@ export default async function ExplorePage({ searchParams }: ExplorePageProps) {
     industry,
     license_type,
     org_size,
+    price_max,
     q: query.q ?? undefined,
     sector,
     sort: query.sort,

@@ -42,6 +42,30 @@ export function formatMoney(
   }
 }
 
+/**
+ * Format a Framework or Collection listing price, rendering zero as "Free".
+ *
+ * Separate from {@link formatMoney} on purpose. That helper is shared with
+ * payouts, earnings, invoices and admin totals, where zero is a quantity
+ * rather than an offer: a cleared balance must read as money, not as
+ * something being given away. Only a listing price carries the "Free"
+ * meaning, so only listing surfaces call this.
+ *
+ * @param price - Decimal string returned by the backend.
+ * @param currency - ISO currency code; defaults to the settlement currency.
+ * @returns "Free" for a zero price, otherwise the standard money label.
+ */
+export function formatListingPrice(
+  price: string,
+  currency = PLATFORM_CURRENCY,
+): string {
+  const amount = Number(price);
+  if (Number.isFinite(amount) && amount === 0) {
+    return "Free";
+  }
+  return formatMoney(price, currency);
+}
+
 const SHORT_MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

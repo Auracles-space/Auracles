@@ -59,6 +59,22 @@ export function isPositiveNumber(value: string | number): boolean {
   return Number.isFinite(parsed) && parsed > 0;
 }
 
+/**
+ * True when the value is a finite number of zero or more.
+ *
+ * Separate from {@link isPositiveNumber}, which several forms rely on to mean
+ * strictly positive. Only a listing price may legitimately be zero, because a
+ * Framework can be offered free; a blank field is not yet a price and a
+ * negative one never is.
+ */
+export function isNonNegativeNumber(value: string | number): boolean {
+  if (typeof value === "string" && value.trim() === "") {
+    return false;
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed >= 0;
+}
+
 /** True when both passwords are non-empty and identical. */
 export function passwordsMatch(password: string, confirm: string): boolean {
   return password.length > 0 && password === confirm;
