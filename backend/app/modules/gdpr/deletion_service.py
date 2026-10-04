@@ -16,19 +16,27 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.currency import platform_currency
 from app.core.security import verify_password
 from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth.models import User
 from app.modules.developer.models import DeveloperAccount, PartnerPayout
 from app.modules.financials.models import Escrow, Payout, PlatformConfig
+from app.modules.financials.service import user_unwithdrawn_balance
 from app.modules.gdpr.models import AccountDeletionRequest
+from app.modules.gdpr.notifications import (
+    notify_account_deletion_blocked,
+    notify_account_deletion_cancelled,
+    notify_account_deletion_scheduled,
+)
 from app.modules.gdpr.schemas import (
     AccountDeletionBlockedReason,
     AccountDeletionRequestBody,
     AccountDeletionStatusResponse,
 )
 from app.modules.organizations.models import OrgMember
+from app.modules.organizations.notifications import format_money
 from app.modules.organizations.service import user_deletion_org_blockers
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 
@@ -402,6 +410,23 @@ async def collect_blocked_reasons(
             )
         )
 
+    # Money at rest. Every check above looks at money still moving — held
+    # escrow, a payout in flight, an open dispute. Earnings that settled past
+    # the refund window and were never claimed are none of those, so before
+    # this check deleting the account orphaned them, with no admin able to
+    # reopen it afterwards.
+    unwithdrawn = await user_unwithdrawn_balance(db, user_id=user_id)
+    if unwithdrawn > 0:
+        held = format_money(unwithdrawn, platform_currency())
+        reasons.append(
+            AccountDeletionBlockedReason(
+                code="unwithdrawn_balance",
+                message=(
+                    f"Withdraw your {held} balance before requesting account deletion."
+                ),
+            )
+        )
+
     org_blockers = await user_deletion_org_blockers(db, user_id=user_id)
     reasons.extend(org_blockers)
 
@@ -424,6 +449,8 @@ async def request_account_deletion(
     user_id = user.id
     created_request_id: UUID
     created_blocked = False
+    created_reasons: list[AccountDeletionBlockedReason] = []
+    created_scheduled_for: datetime | None = None
     blocked_response: AccountDeletionStatusResponse | None = None
     if db.in_transaction():
         await db.rollback()
@@ -464,6 +491,7 @@ async def request_account_deletion(
                 )
                 created_request_id = request.id
                 created_blocked = True
+                created_reasons = reasons
                 blocked_response = _status_response(request)
             else:
                 grace_days = await _account_deletion_grace_days(db)
@@ -484,6 +512,7 @@ async def request_account_deletion(
                 )
                 created_request_id = request.id
                 created_blocked = False
+                created_scheduled_for = request.scheduled_for
                 blocked_response = None
     except IntegrityError as exc:
         await db.rollback()
@@ -504,6 +533,23 @@ async def request_account_deletion(
         ),
         link="/admin/gdpr",
     )
+
+    # And the account holder. Before this they were told nothing at all: no
+    # acknowledgement, no date, and no mention of the window they can cancel
+    # in — which is also the only warning they would get if the request came
+    # from someone else holding their session.
+    if created_blocked:
+        notify_account_deletion_blocked(
+            user_id=user_id,
+            request_id=created_request_id,
+            reasons=created_reasons,
+        )
+    elif created_scheduled_for is not None:
+        notify_account_deletion_scheduled(
+            user_id=user_id,
+            request_id=created_request_id,
+            scheduled_for=created_scheduled_for,
+        )
 
     if blocked_response is not None:
         return blocked_response, status.HTTP_409_CONFLICT
@@ -559,4 +605,13 @@ async def cancel_account_deletion(
             target_type="account_deletion_request",
             target_id=request.id,
         )
+        cancelled_request_id = request.id
+
+    # Confirm it after commit: the account holder asked for an irreversible
+    # thing and then called it off, and the confirmation is also what tells
+    # them if somebody else cancelled on their behalf.
+    notify_account_deletion_cancelled(
+        user_id=user_id,
+        request_id=cancelled_request_id,
+    )
     return await get_account_deletion_status(db=db, user_id=user_id)

@@ -66,6 +66,9 @@ describe("IntegrationsList", () => {
     connectProvider.mockReset();
     disconnectProvider.mockReset();
     searchParams.value = new URLSearchParams();
+    // These cover the connect/disconnect UI, which presumes the integration
+    // is on offer. The gate itself is covered in the describe below.
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_DRIVE_ENABLED", "true");
   });
 
   it("offers Connect when Google Drive is not connected", async () => {
@@ -141,5 +144,28 @@ describe("IntegrationsList", () => {
     expect(
       await screen.findByText("Connection cancelled — access was not granted."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("IntegrationsList while Google Drive is unapproved", () => {
+  beforeEach(() => {
+    listConnectors.mockReset();
+    connectProvider.mockReset();
+    disconnectProvider.mockReset();
+    searchParams.value = new URLSearchParams();
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_DRIVE_ENABLED", "");
+  });
+
+  it("hides the connect flow and says why", async () => {
+    mockConnectors([DISCONNECTED]);
+    render(<IntegrationsList />);
+    expect(await screen.findByText(/under review/i)).toBeInTheDocument();
+    expect(screen.queryByText("Connect")).not.toBeInTheDocument();
+  });
+
+  it("still lets an already-connected account disconnect", async () => {
+    mockConnectors([CONNECTED]);
+    render(<IntegrationsList />);
+    expect(await screen.findByText("Disconnect")).toBeInTheDocument();
   });
 });

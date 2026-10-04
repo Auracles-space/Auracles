@@ -45,6 +45,12 @@ CRITICAL_NOTIFICATION_TYPES: Final[set[str]] = {
     # A PII hold is the only signal that a framework is stuck, and only its
     # owner can clear it — muting this would strand the framework silently.
     "artifact_pii_review_required",
+    # Account destruction is not a preference. The scheduled notice carries
+    # the cancellation window, and reaches the account holder even when the
+    # person who started the deletion is not them.
+    "account_deletion_scheduled",
+    "account_deletion_blocked",
+    "account_deletion_cancelled",
 }
 NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "project_created": "project",
@@ -99,6 +105,9 @@ NOTIFICATION_TYPE_CATEGORY: Final[dict[str, str]] = {
     "saved_search_alert": "discovery",
     "kyc_verified": "account",
     "kyc_rejected": "account",
+    "account_deletion_scheduled": "account",
+    "account_deletion_blocked": "account",
+    "account_deletion_cancelled": "account",
     "org_invitation_received": "account",
     "org_invitation_accepted": "account",
     "org_invitation_declined": "account",

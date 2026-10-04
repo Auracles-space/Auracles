@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.config import get_settings
+from app.core.currency import platform_currency
 from app.core.profile_images import resolve_profile_image_url
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import hash_token
@@ -756,6 +757,26 @@ async def deactivate_organization(
                     "This organization still has pending money: a payment, "
                     "escrow, or payout has not settled. Wait for it to complete "
                     "before closing the organization."
+                ),
+            )
+        # Money at rest, not in motion. The guard above only sees funds still
+        # moving; a settled sale past the refund window is none of those, so
+        # before this check closing the organization orphaned the balance.
+        #
+        # Imported inside the function on purpose: financials.service imports
+        # this module at import time, so a module-level import back would be a
+        # cycle.
+        from app.modules.financials.service import org_unwithdrawn_balance
+
+        unwithdrawn = await org_unwithdrawn_balance(db, org_id=org_id)
+        if unwithdrawn > 0:
+            held = org_notifications.format_money(unwithdrawn, platform_currency())
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"This organization still holds {held} it has not "
+                    "withdrawn. Withdraw the balance before closing the "
+                    "organization."
                 ),
             )
 

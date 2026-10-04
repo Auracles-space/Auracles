@@ -2654,6 +2654,47 @@ async def _available_org_payout_balance(
     return gross_revenue, pending_clearance, available, claimed, commission_rate
 
 
+async def org_unwithdrawn_balance(db: AsyncSession, *, org_id: UUID) -> Decimal:
+    """Return money the organization has earned and not yet withdrawn.
+
+    The public face of `_available_org_payout_balance` for callers that only
+    need to know whether a balance is sitting there — chiefly the guards that
+    refuse to close an organization or delete an account over the top of it.
+    Reusing the balance the owner is shown, rather than re-deriving it, is the
+    point: a guard that disagrees with the earnings page is worse than none.
+
+    Args:
+        db: Async database session.
+        org_id: Organization whose balance to total.
+
+    Returns:
+        Cleared net earnings minus claimed payouts, never below zero.
+    """
+    _, _, available, _, _ = await _available_org_payout_balance(
+        db, org_id=org_id, currency=platform_currency()
+    )
+    return available
+
+
+async def user_unwithdrawn_balance(db: AsyncSession, *, user_id: UUID) -> Decimal:
+    """Return money the user has earned as a Contributor and not withdrawn.
+
+    The individual twin of `org_unwithdrawn_balance`; see there for why the
+    guards share the balance rather than computing their own.
+
+    Args:
+        db: Async database session.
+        user_id: Contributor whose balance to total.
+
+    Returns:
+        Cleared net earnings minus claimed payouts, never below zero.
+    """
+    _, _, available, _, _ = await _available_payout_balance(
+        db, contributor_id=user_id, currency=platform_currency()
+    )
+    return available
+
+
 async def _lock_org_financials(db: AsyncSession, *, org_id: UUID) -> None:
     """Serialize payout balance mutations for one organization."""
     await db.execute(

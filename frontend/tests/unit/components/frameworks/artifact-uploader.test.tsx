@@ -162,3 +162,37 @@ describe("ArtifactUploader", () => {
     expect(screen.getByText(/does not replace/i)).toBeInTheDocument();
   });
 });
+
+describe("ArtifactUploader Google Drive availability", () => {
+  it("offers the Drive import when the integration is enabled", () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_DRIVE_ENABLED", "true");
+    render(
+      <ArtifactUploader
+        api={api}
+        artifactCount={0}
+        existingBytes={0}
+        frameworkId="fw_drive_on"
+        onUploaded={() => undefined}
+      />,
+    );
+
+    expect(screen.getByText("Import from Google Drive")).toBeInTheDocument();
+  });
+
+  it("hides the Drive import while the OAuth app is unapproved", () => {
+    vi.stubEnv("NEXT_PUBLIC_GOOGLE_DRIVE_ENABLED", "");
+    render(
+      <ArtifactUploader
+        api={api}
+        artifactCount={0}
+        existingBytes={0}
+        frameworkId="fw_drive_off"
+        onUploaded={() => undefined}
+      />,
+    );
+
+    expect(
+      screen.queryByText("Import from Google Drive"),
+    ).not.toBeInTheDocument();
+  });
+});
