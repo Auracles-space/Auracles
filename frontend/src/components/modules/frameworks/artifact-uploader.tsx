@@ -10,6 +10,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { GoogleDrivePicker } from "@/components/modules/artifacts/google-drive-picker";
+import { isGoogleDriveEnabled } from "@/lib/integrations/google-drive";
 import type { ArtifactResponse } from "@/lib/generated/types.gen";
 import type { FrameworkApi } from "@/lib/frameworks/framework-api";
 
@@ -61,6 +62,12 @@ export function ArtifactUploader({
   const [uploading, setUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [showDrivePicker, setShowDrivePicker] = useState(false);
+
+  // `allowConnectorImport` says whether this seller may import at all (org
+  // Frameworks may not). The flag says whether anyone may: Drive is hidden
+  // until Google approves the OAuth app, because the consent screen warns
+  // every user that it is unverified.
+  const driveImportAvailable = allowConnectorImport && isGoogleDriveEnabled();
 
   async function handleFile(file: File | null) {
     if (!file) {
@@ -225,7 +232,7 @@ export function ArtifactUploader({
           type="file"
         />
       </label>
-      {allowConnectorImport && !showDrivePicker && (
+      {driveImportAvailable && !showDrivePicker && (
         <>
           <div className="relative my-5">
             <div className="absolute inset-0 flex items-center">
@@ -254,7 +261,7 @@ export function ArtifactUploader({
         </>
       )}
 
-      {allowConnectorImport && showDrivePicker && (
+      {driveImportAvailable && showDrivePicker && (
         <div className="mt-5 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="mb-3 flex items-center justify-between rounded-xl bg-surface-3 p-3 pl-4 border border-border-default">
             <span className="text-sm font-semibold text-foreground">Importing from Google Drive</span>

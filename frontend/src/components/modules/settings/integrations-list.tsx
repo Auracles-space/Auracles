@@ -18,6 +18,7 @@ import {
   listConnectorsV1IntegrationsConnectorsGet,
 } from "@/lib/generated/sdk.gen";
 import type { ConnectorStatusItem } from "@/lib/generated/types.gen";
+import { isGoogleDriveEnabled } from "@/lib/integrations/google-drive";
 import {
   configureBrowserClient,
   describeGeneratedError,
@@ -101,8 +102,22 @@ export function IntegrationsList() {
     return <p className="p-4 text-sm text-foreground-muted">Loading connections…</p>;
   }
 
+  // While the OAuth app is unapproved, offer the connect flow to nobody: the
+  // consent screen is where Google's unverified-app warning appears. An
+  // account that connected before still appears, so it can be disconnected.
+  const driveEnabled = isGoogleDriveEnabled();
+  const visibleConnectors = driveEnabled
+    ? connectors
+    : connectors.filter((connector) => connector.connected);
+
   return (
     <div className="space-y-4">
+      {driveEnabled ? null : (
+        <p className="rounded-xl border border-border-default bg-surface-2 p-4 text-sm text-foreground-muted">
+          Importing from Google Drive is unavailable while the integration is
+          under review by Google. Upload files directly in the meantime.
+        </p>
+      )}
       {callbackMessage ? (
         <p
           className={
@@ -115,7 +130,7 @@ export function IntegrationsList() {
         </p>
       ) : null}
       {error ? <p className="rounded-xl border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</p> : null}
-      {connectors.map((connector) => {
+      {visibleConnectors.map((connector) => {
         const needsReauth = connector.status === "reauth_required";
         return (
           <div
