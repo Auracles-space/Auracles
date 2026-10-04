@@ -30,6 +30,7 @@ const baseArtifact: ArtifactResponse = {
 function makeApi(overrides: Partial<FrameworkApi> = {}): FrameworkApi {
   return {
     acceptRedaction: vi.fn().mockResolvedValue(baseArtifact),
+    declarePiiCitations: vi.fn().mockResolvedValue(baseArtifact),
     resolvePiiReview: vi.fn().mockResolvedValue(baseArtifact),
     ...overrides,
   } as unknown as FrameworkApi;
@@ -175,6 +176,81 @@ describe("PiiReviewResolution", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /re-run pii review/i }),
+    ).toBeInTheDocument();
+  });
+});
+
+
+describe("PiiReviewResolution citation override", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("offers a citations action beside redaction", () => {
+    // Neither existing action helps a cited agency: redaction deletes the name
+    // the document exists to quote, and re-running the review finds it again.
+    const api = makeApi();
+    render(
+      <PiiReviewResolution
+        api={api}
+        artifacts={[baseArtifact]}
+        frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={vi.fn()}
+        open
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /these are citations/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("clears the hold through the citations action", async () => {
+    const api = makeApi();
+    const onResolved = vi.fn();
+    render(
+      <PiiReviewResolution
+        api={api}
+        artifacts={[baseArtifact]}
+        frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={onResolved}
+        open
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /these are citations/i }));
+
+    await waitFor(() =>
+      expect(api.declarePiiCitations).toHaveBeenCalledWith("fw_123", "art_123"),
+    );
+    expect(api.acceptRedaction).not.toHaveBeenCalled();
+  });
+
+  it("offers the citations action even when no redacted copy exists", () => {
+    // Scanned and image-based files cannot be auto-redacted, which today
+    // leaves the owner with no way forward at all.
+    const api = makeApi();
+    render(
+      <PiiReviewResolution
+        api={api}
+        artifacts={[
+          {
+            ...baseArtifact,
+            redaction_available: false,
+            redaction_status: "failed",
+          } as ArtifactResponse,
+        ]}
+        frameworkId="fw_123"
+        onClose={vi.fn()}
+        onResolved={vi.fn()}
+        open
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /these are citations/i }),
     ).toBeInTheDocument();
   });
 });

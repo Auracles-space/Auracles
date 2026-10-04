@@ -574,6 +574,9 @@ export type AdminFinancialEventsResponse = {
 export type AdminFrameworkArtifactItem = {
     artifact_id: string;
     auto_redacted: boolean;
+    citation_override_accepted?: boolean;
+    citation_override_at?: (string | null);
+    citation_override_by?: (string | null);
     blocking: boolean;
     created_at: string;
     current_for_framework: boolean;
@@ -8376,6 +8379,17 @@ export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedac
 
 export type AcceptRedactionV1FrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
 
+export type DeclarePiiCitationsV1FrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPostData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+    };
+};
+
+export type DeclarePiiCitationsV1FrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPostResponse = (ArtifactResponse);
+
+export type DeclarePiiCitationsV1FrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPostError = (HTTPValidationError);
+
 export type BindArtifactSourceV1FrameworksFrameworkIdArtifactsArtifactIdBindSourcePostData = {
     body: BindSourceRequest;
     path: {
@@ -9259,6 +9273,18 @@ export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifacts
 export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostResponse = (ArtifactResponse);
 
 export type AcceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPostError = (HTTPValidationError);
+
+export type DeclareOrgFrameworkPiiCitationsV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPostData = {
+    path: {
+        artifact_id: string;
+        framework_id: string;
+        org_id: string;
+    };
+};
+
+export type DeclareOrgFrameworkPiiCitationsV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPostResponse = (ArtifactResponse);
+
+export type DeclareOrgFrameworkPiiCitationsV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPostError = (HTTPValidationError);
 
 export type ResolveOrgFrameworkPiiReviewV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdResolvePiiReviewPostData = {
     path: {

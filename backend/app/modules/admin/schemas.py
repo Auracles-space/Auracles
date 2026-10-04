@@ -470,6 +470,12 @@ class AdminFrameworkArtifactItem(BaseModel):
     redaction_status: str | None = None
     redaction_accepted: bool
     redaction_available: bool
+    # The owner declared these matches to be cited institutions and published
+    # the file unredacted. Surfaced so an admin can see what was waved through,
+    # and spot an owner who waves through everything.
+    citation_override_accepted: bool = False
+    citation_override_by: UUID | None = None
+    citation_override_at: str | None = None
     rarity_score: Decimal | None = None
     created_at: datetime
 

@@ -2319,6 +2319,7 @@ def _detail_artifact_item(
     stays behind the same licence gate as any other Artifact.
     """
     redaction = dict((artifact.metadata_vector or {}).get("redaction") or {})
+    override = dict((artifact.metadata_vector or {}).get("pii_override") or {})
     return {
         "artifact_id": artifact.id,
         "name": artifact.name,
@@ -2337,6 +2338,11 @@ def _detail_artifact_item(
         ),
         "redaction_accepted": bool(redaction.get("accepted")),
         "redaction_available": artifact.clean_file_key is not None,
+        # The owner published this unredacted, declaring its matches to be
+        # cited institutions. Shown so an admin can see what was waved through.
+        "citation_override_accepted": bool(override.get("accepted")),
+        "citation_override_by": override.get("accepted_by"),
+        "citation_override_at": override.get("accepted_at"),
         "rarity_score": artifact.rarity_score,
         "created_at": artifact.created_at,
     }

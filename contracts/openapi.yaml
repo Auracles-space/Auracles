@@ -142,6 +142,21 @@ components:
         auto_redacted:
           title: Auto Redacted
           type: boolean
+        citation_override_accepted:
+          default: false
+          title: Citation Override Accepted
+          type: boolean
+        citation_override_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Citation Override At
+        citation_override_by:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Citation Override By
         blocking:
           title: Blocking
           type: boolean
@@ -24862,6 +24877,46 @@ paths:
       summary: Accept Redaction
       tags:
       - Frameworks
+  /v1/frameworks/{framework_id}/artifacts/{artifact_id}/declare-pii-citations:
+    post:
+      description: 'Clear a PII hold the Contributor declares to be citations.
+
+
+        Publishes the file unredacted. The claim is recorded against the caller.'
+      operationId: declare_pii_citations_v1_frameworks__framework_id__artifacts__artifact_id__declare_pii_citations_post
+      parameters:
+      - in: path
+        name: framework_id
+        required: true
+        schema:
+          format: uuid
+          title: Framework Id
+          type: string
+      - in: path
+        name: artifact_id
+        required: true
+        schema:
+          format: uuid
+          title: Artifact Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Declare Pii Citations
+      tags:
+      - Frameworks
   /v1/frameworks/{framework_id}/artifacts/{artifact_id}/bind-source:
     post:
       description: Owner-only, pre-publish-only. Binds the artifact to the given connector
@@ -27886,6 +27941,52 @@ paths:
       security:
       - HTTPBearer: []
       summary: Accept a redacted copy on an organization Framework artifact
+      tags:
+      - Frameworks
+  /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/{artifact_id}/declare-pii-citations:
+    post:
+      description: Clear a PII hold on an organization-owned Framework Artifact that
+        the member declares to be cited institutions rather than personal data. The
+        file is published unredacted and the claim is audited.
+      operationId: declare_org_framework_pii_citations_v1_orgs__org_id__frameworks__framework_id__artifacts__artifact_id__declare_pii_citations_post
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      - in: path
+        name: framework_id
+        required: true
+        schema:
+          format: uuid
+          title: Framework Id
+          type: string
+      - in: path
+        name: artifact_id
+        required: true
+        schema:
+          format: uuid
+          title: Artifact Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Declare an organization Framework artifact's matches to be citations
       tags:
       - Frameworks
   /v1/orgs/{org_id}/frameworks/{framework_id}/artifacts/{artifact_id}/resolve-pii-review:

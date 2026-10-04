@@ -145,6 +145,17 @@ function ArtifactRow({ artifact }: { artifact: Artifact }) {
         </p>
       ) : null}
 
+      {artifact.citation_override_accepted ? (
+        <p className="mt-1 text-sm text-warning">
+          Published unredacted: the owner declared these matches to be
+          citations
+          {artifact.citation_override_at
+            ? ` on ${formatShortDate(artifact.citation_override_at)}`
+            : ""}
+          .
+        </p>
+      ) : null}
+
       {artifact.rarity_score !== null && artifact.rarity_score !== undefined ? (
         <p className="mt-1 text-sm text-foreground-muted">
           Rarity {artifact.rarity_score}

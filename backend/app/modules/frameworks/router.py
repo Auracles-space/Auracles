@@ -851,6 +851,33 @@ async def resolve_org_framework_pii_review(
 
 
 @org_router.post(
+    "/{framework_id}/artifacts/{artifact_id}/declare-pii-citations",
+    response_model=ArtifactResponse,
+    summary="Declare an organization Framework artifact's matches to be citations",
+    description=(
+        "Clear a PII hold on an organization-owned Framework Artifact that the "
+        "member declares to be cited institutions rather than personal data. "
+        "The file is published unredacted and the claim is audited."
+    ),
+)
+async def declare_org_framework_pii_citations(
+    org_id: UUID,
+    framework_id: UUID,
+    artifact_id: UUID,
+    context: OrgContributorContext,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Clear a PII hold declared to be citations on an org-owned Artifact."""
+    del org_id
+    return await service.declare_pii_citations_for_owner(
+        db=db,
+        owner=_org_owner(context),
+        framework_id=framework_id,
+        artifact_id=artifact_id,
+    )
+
+
+@org_router.post(
     "/{framework_id}/artifacts/{artifact_id}/accept-redaction",
     response_model=ArtifactResponse,
     summary="Accept a redacted copy on an organization Framework artifact",
@@ -1159,6 +1186,30 @@ async def resolve_pii_review(
 ) -> ArtifactResponse:
     """Re-run processing after a Contributor replaces a PII-flagged Artifact."""
     return await service.resolve_pii_review(
+        db=db,
+        contributor=contributor,
+        framework_id=framework_id,
+        artifact_id=artifact_id,
+    )
+
+
+@router.post(
+    "/{framework_id}/artifacts/{artifact_id}/declare-pii-citations",
+    response_model=ArtifactResponse,
+)
+async def declare_pii_citations(
+    framework_id: UUID,
+    artifact_id: UUID,
+    contributor: ContributorUser,
+    _: KycVerifiedUser,
+    __: ProfileCompleteUser,
+    db: DatabaseSession,
+) -> ArtifactResponse:
+    """Clear a PII hold the Contributor declares to be citations.
+
+    Publishes the file unredacted. The claim is recorded against the caller.
+    """
+    return await service.declare_pii_citations(
         db=db,
         contributor=contributor,
         framework_id=framework_id,
