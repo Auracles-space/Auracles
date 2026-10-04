@@ -14,6 +14,7 @@ from alembic.config import Config
 from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, select
 
+from app.core.currency import platform_currency
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, encrypt_totp_secret, hash_password
@@ -1665,3 +1666,55 @@ async def test_process_account_deletions_defers_side_effects_until_final_recheck
         )
         is not None
     )
+
+
+@pytest.mark.asyncio
+async def test_request_account_deletion_blocks_unwithdrawn_balance(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+) -> None:
+    """Deletion is blocked while the Contributor holds money never withdrawn.
+
+    The obligation checks all looked at money in motion — held escrow, a
+    pending payout, an open dispute. Earnings that settled past the refund
+    window and were never claimed are none of those, so deleting the account
+    orphaned them.
+    """
+    del migrated_database, account_deletion_test_context
+    user_id = await create_verified_user(
+        "unwithdrawn-delete@auracles.space",
+        roles=["contributor"],
+    )
+    buyer_id = await create_verified_user(
+        "unwithdrawn-buyer@auracles.space",
+        roles=["operator"],
+    )
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Transaction(
+                    payer_id=buyer_id,
+                    payee_id=user_id,
+                    amount=Decimal("1000.00"),
+                    platform_commission=Decimal("100.00"),
+                    net_amount=Decimal("900.00"),
+                    currency=platform_currency(),
+                    transaction_type="purchase",
+                    status="completed",
+                    created_at=datetime.now(UTC) - timedelta(days=30),
+                )
+            )
+
+    response = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id, ["contributor"]),
+        json={"password": "CorrectHorse9"},
+    )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["status"] == "blocked"
+    assert "unwithdrawn_balance" in {
+        reason["code"] for reason in body["blocked_reasons"]
+    }

@@ -16,12 +16,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.currency import platform_currency
 from app.core.security import verify_password
 from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.attestation.models import Attestation, AttestationDispute
 from app.modules.auth.models import User
 from app.modules.developer.models import DeveloperAccount, PartnerPayout
 from app.modules.financials.models import Escrow, Payout, PlatformConfig
+from app.modules.financials.service import user_unwithdrawn_balance
 from app.modules.gdpr.models import AccountDeletionRequest
 from app.modules.gdpr.schemas import (
     AccountDeletionBlockedReason,
@@ -29,6 +31,7 @@ from app.modules.gdpr.schemas import (
     AccountDeletionStatusResponse,
 )
 from app.modules.organizations.models import OrgMember
+from app.modules.organizations.notifications import format_money
 from app.modules.organizations.service import user_deletion_org_blockers
 from app.modules.projects.models import Dispute, Milestone, Project, Proposal
 
@@ -399,6 +402,23 @@ async def collect_blocked_reasons(
                     "requesting account deletion."
                 ),
                 count=delivery_assignment_count,
+            )
+        )
+
+    # Money at rest. Every check above looks at money still moving — held
+    # escrow, a payout in flight, an open dispute. Earnings that settled past
+    # the refund window and were never claimed are none of those, so before
+    # this check deleting the account orphaned them, with no admin able to
+    # reopen it afterwards.
+    unwithdrawn = await user_unwithdrawn_balance(db, user_id=user_id)
+    if unwithdrawn > 0:
+        held = format_money(unwithdrawn, platform_currency())
+        reasons.append(
+            AccountDeletionBlockedReason(
+                code="unwithdrawn_balance",
+                message=(
+                    f"Withdraw your {held} balance before requesting account deletion."
+                ),
             )
         )
 

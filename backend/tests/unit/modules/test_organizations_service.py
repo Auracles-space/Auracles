@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,10 +14,12 @@ from alembic.config import Config
 from fastapi import HTTPException
 from sqlalchemy import create_engine, delete, func, select
 
+from app.core.currency import platform_currency
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
 from app.main import app
 from app.modules.auth.models import User, UserRole
+from app.modules.financials.models import Transaction
 from app.modules.organizations import service
 from app.modules.organizations.dependencies import OrgContext
 from app.modules.organizations.models import Organization, OrgCapability, OrgMember
@@ -50,6 +53,7 @@ async def org_service_state() -> AsyncIterator[None]:
     async def cleanup() -> None:
         """Delete org-linked rows before shared identity cleanup."""
         async with async_session_factory() as session:
+            await session.execute(delete(Transaction))
             await session.execute(delete(OrgCapability))
             await session.execute(delete(OrgMember))
             await session.execute(delete(Organization))
@@ -264,3 +268,52 @@ async def test_sync_idempotent(
             .where(UserRole.user_id == owner.id, UserRole.role == "attestor")
         )
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_deactivate_organization_blocks_unwithdrawn_balance(
+    migrated_database: None,
+    org_service_state: None,
+) -> None:
+    """Deactivation is rejected while the org holds money it never withdrew.
+
+    The pre-existing guard only refused money *in motion* — a pending
+    transaction, a held escrow, an open payout. A settled sale past the refund
+    window is none of those, so closing the organization orphaned the balance.
+    """
+    del migrated_database, org_service_state
+    owner = await _create_user("org-balance-owner")
+    buyer = await _create_user("org-balance-buyer")
+    organization = await _seed_organization(owner, slug="balance-unit")
+    async with async_session_factory() as session:
+        async with session.begin():
+            session.add(
+                Transaction(
+                    payer_id=buyer.id,
+                    payee_org_id=organization.id,
+                    amount=Decimal("1000.00"),
+                    platform_commission=Decimal("100.00"),
+                    net_amount=Decimal("900.00"),
+                    currency=platform_currency(),
+                    transaction_type="purchase",
+                    status="completed",
+                    created_at=datetime.now(UTC) - timedelta(days=30),
+                )
+            )
+
+    async with async_session_factory() as session:
+        context = OrgContext(
+            org=organization,
+            member=OrgMember(
+                org_id=organization.id,
+                user_id=owner.id,
+                role="owner",
+                joined_at=datetime.now(UTC),
+            ),
+            user=owner,
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await service.deactivate_organization(db=session, context=context)
+
+    assert exc_info.value.status_code == 409
+    assert "withdraw" in str(exc_info.value.detail).lower()
