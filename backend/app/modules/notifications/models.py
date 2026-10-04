@@ -124,6 +124,11 @@ NOTIFICATION_TYPE_ENUM = ENUM(
     "payout_completed",
     "org_invoice_ready",
     "org_slug_changed",
+    # Account destruction. Critical in preferences.py: the scheduled one is
+    # the account holder's only out-of-band warning if someone else began it.
+    "account_deletion_scheduled",
+    "account_deletion_blocked",
+    "account_deletion_cancelled",
     name="notification_type_enum",
     create_type=False,
 )

@@ -1718,3 +1718,111 @@ async def test_request_account_deletion_blocks_unwithdrawn_balance(
     assert "unwithdrawn_balance" in {
         reason["code"] for reason in body["blocked_reasons"]
     }
+
+
+@pytest.mark.asyncio
+async def test_request_account_deletion_notifies_the_account_holder(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scheduling a deletion acknowledges it to the person who asked.
+
+    Only admins were told before, so someone who requested deletion by
+    accident — or whose session was used by someone else — learned nothing
+    about the window they could still cancel in.
+    """
+    del migrated_database, account_deletion_test_context
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        deletion_service,
+        "notify_account_deletion_scheduled",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    user_id = await create_verified_user("holder-notice@auracles.space")
+
+    created = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id),
+        json={"password": "CorrectHorse9"},
+    )
+
+    async with async_session_factory() as session:
+        request = await session.scalar(
+            select(AccountDeletionRequest).where(
+                AccountDeletionRequest.user_id == user_id
+            )
+        )
+
+    assert created.status_code == 202
+    assert request is not None
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == user_id
+    assert calls[0]["request_id"] == request.id
+    assert calls[0]["scheduled_for"] == request.scheduled_for
+
+
+@pytest.mark.asyncio
+async def test_blocked_account_deletion_tells_the_holder_what_blocks_it(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blocked request reaches the account holder with the open obligations."""
+    del migrated_database, account_deletion_test_context
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        deletion_service,
+        "notify_account_deletion_blocked",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    user_id = await create_verified_user(
+        "holder-blocked-notice@auracles.space",
+        roles=["operator", "contributor"],
+    )
+    await seed_blocking_state(user_id)
+
+    response = await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id, ["operator", "contributor"]),
+        json={"password": "CorrectHorse9"},
+    )
+
+    assert response.status_code == 409
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == user_id
+    assert [reason.code for reason in calls[0]["reasons"]] != []
+
+
+@pytest.mark.asyncio
+async def test_cancel_account_deletion_confirms_to_the_account_holder(
+    client: AsyncClient,
+    migrated_database: None,
+    account_deletion_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancelling confirms the account survives, so a silent cancel is visible."""
+    del migrated_database, account_deletion_test_context
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        deletion_service,
+        "notify_account_deletion_cancelled",
+        lambda **kwargs: calls.append(kwargs),
+    )
+    user_id = await create_verified_user("holder-cancel-notice@auracles.space")
+    await client.post(
+        "/v1/gdpr/account-deletion",
+        headers=auth_headers(user_id),
+        json={"password": "CorrectHorse9"},
+    )
+
+    cancelled = await client.post(
+        "/v1/gdpr/account-deletion/cancel",
+        headers=auth_headers(user_id),
+    )
+
+    assert cancelled.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["user_id"] == user_id
