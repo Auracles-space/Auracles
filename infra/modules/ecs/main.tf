@@ -17,11 +17,21 @@ locals {
     for name, arn in var.secret_arns : { name = name, valueFrom = arn }
   ]
 
-  # Capacity split per the 2026-09-01 decision: user-facing api on-demand,
-  # everything idempotent on Spot.
-  spot_strategy = [
+  # Capacity per the 2026-09-01 decision: the user-facing api is on-demand
+  # always, and is not represented here — its strategy is written inline in
+  # services.tf precisely so no variable can move it onto Spot.
+  #
+  # Worker and beat are separate (2026-10-04) because a reclaim means
+  # different things to each: see their variable descriptions.
+  worker_strategy = [
     {
-      capacity_provider = var.use_spot ? "FARGATE_SPOT" : "FARGATE"
+      capacity_provider = var.worker_use_spot ? "FARGATE_SPOT" : "FARGATE"
+      weight            = 1
+    }
+  ]
+  beat_strategy = [
+    {
+      capacity_provider = var.beat_use_spot ? "FARGATE_SPOT" : "FARGATE"
       weight            = 1
     }
   ]

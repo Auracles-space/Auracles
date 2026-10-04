@@ -57,8 +57,14 @@ variable "secret_arns" {
   type        = map(string)
 }
 
-variable "use_spot" {
-  description = "Run worker and beat on Fargate Spot (~70% off). The api always stays on-demand — it serves users; a reclaimed api task is a user-facing error, a reclaimed worker task is a re-queued Celery job."
+variable "worker_use_spot" {
+  description = "Run the worker on Fargate Spot (~70% off). Safe to reclaim: the Celery job it was running returns to the queue and reruns, because tasks are idempotent by project rule. The cost of a reclaim is the ~3 minute clamd/freshclam warmup before the replacement can scan anything."
+  type        = bool
+  default     = true
+}
+
+variable "beat_use_spot" {
+  description = "Run beat on Fargate Spot. Separate from the worker because reclaiming beat is not the same bet: it is the only scheduler, and nothing queues a tick that never fired, so a reclaim silently skips whatever was due — a payout sweep, an escrow auto-release — until ECS replaces it. False in production (decision 2026-10-04); true in staging, where a missed window costs nothing."
   type        = bool
   default     = true
 }

@@ -7,7 +7,8 @@
 # difference between minutes and most of an hour. Requires every image to be
 # arm64 (the official clamav image is multi-arch). If worker/beat ever fail to
 # place on FARGATE_SPOT with a capacity error, ARM Spot availability in this
-# region is the first suspect — flip use_spot off or this to X86_64.
+# region is the first suspect — flip that service's *_use_spot off, or this
+# to X86_64.
 
 resource "aws_ecs_task_definition" "api" {
   family                   = "auracles-${var.environment}-api"

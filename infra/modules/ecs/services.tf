@@ -51,7 +51,7 @@ resource "aws_ecs_service" "worker" {
   desired_count   = 1
 
   dynamic "capacity_provider_strategy" {
-    for_each = local.spot_strategy
+    for_each = local.worker_strategy
     content {
       capacity_provider = capacity_provider_strategy.value.capacity_provider
       weight            = capacity_provider_strategy.value.weight
@@ -95,7 +95,7 @@ resource "aws_ecs_service" "beat" {
   desired_count   = 1
 
   dynamic "capacity_provider_strategy" {
-    for_each = local.spot_strategy
+    for_each = local.beat_strategy
     content {
       capacity_provider = capacity_provider_strategy.value.capacity_provider
       weight            = capacity_provider_strategy.value.weight
