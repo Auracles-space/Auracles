@@ -104,18 +104,25 @@ promotes both halves together. Alternative: accept continuous frontend deploys.
 
 ---
 
-## Task 1 — Split the Spot flag per service
+## Task 1 — Split the Spot flag per service — DONE (`b3f4c7cf`)
 
-- [ ] `infra/modules/ecs/variables.tf`: delete `use_spot`; add `worker_use_spot`
-      (default `true`) and `beat_use_spot` (default `true`), each documenting
-      what a reclamation costs that service.
-- [ ] `infra/modules/ecs/main.tf`: replace `local.spot_strategy` with
-      `local.worker_strategy` and `local.beat_strategy`.
-- [ ] `infra/modules/ecs/services.tf`: point each service's dynamic block at its
+**This one had to happen before `make staging-down`.** Its verification is a
+`terraform plan` that reports no changes; against a destroyed staging the
+state is empty, the plan says "create 60 resources", and it proves nothing.
+
+- [x] `infra/modules/ecs/variables.tf`: `use_spot` replaced by
+      `worker_use_spot` and `beat_use_spot` (both default `true`), each
+      documenting what a reclamation costs that service.
+- [x] `infra/modules/ecs/main.tf`: `local.spot_strategy` replaced by
+      `local.worker_strategy` and `local.beat_strategy`. The api stays absent
+      from both, its on-demand strategy written inline in `services.tf` so no
+      variable can move the user-facing service onto Spot.
+- [x] `infra/modules/ecs/services.tf`: each service's dynamic block reads its
       own local.
-- [ ] `terraform fmt -check` and `terraform validate` in `infra/envs/staging`.
-- [ ] `terraform plan` in `infra/envs/staging` shows **no changes** — proof the
-      split is a refactor, not a staging behaviour change.
+- [x] Stale `use_spot` reference in `modules/ecs/tasks.tf` updated.
+- [x] `terraform fmt -recursive -check` and `terraform validate` clean.
+- [x] `terraform plan` against live staging: **"No changes. Your
+      infrastructure matches the configuration."**
 
 ## Task 2 — Delegate `api.auracles.space` (two passes, human in the middle)
 
