@@ -98,6 +98,28 @@ def detect_pii_from_text(text: str) -> list[PiiFinding]:
     ]
 
 
+def pii_override_accepted(metadata: dict[str, Any] | None) -> bool:
+    """Whether the owner has declared this artifact's matches to be citations.
+
+    The detector cannot tell an institution from a person: "Central Bank of
+    Nigeria" reads as a PERSON or LOCATION, so a document whose purpose is
+    citing an agency is held, and the only way through — redaction — removes
+    the very name the document exists to quote.
+
+    An override waives the hold. It never suppresses the finding: the scan
+    still records the entity types so an admin reviewing the override can see
+    exactly what was waved through, and by whom.
+
+    Args:
+        metadata: The artifact's metadata vector, or None.
+
+    Returns:
+        True when an accepted override is recorded.
+    """
+    override = (metadata or {}).get("pii_override") or {}
+    return bool(override.get("accepted"))
+
+
 def select_blocking_findings(findings: list[PiiFinding]) -> list[PiiFinding]:
     """Return findings that should block publishing.
 
@@ -175,7 +197,11 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
 
     findings = detect_pii_from_text(text) if text else []
     blocking = select_blocking_findings(findings)
-    review_needed = bool(blocking)
+    # The scan always runs and always records what it found. An override only
+    # waives the hold, so re-processing an artifact whose owner declared its
+    # matches to be citations does not strand it again on the same names.
+    overridden = pii_override_accepted(metadata)
+    review_needed = bool(blocking) and not overridden
 
     # Audit records the sensitive types that triggered review, not every benign
     # entity Presidio emitted, so the contributor-facing reason is meaningful.
@@ -185,7 +211,9 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
         if artifact is None:
             return {"artifact_id": artifact_id, "status": "missing"}
 
-        artifact.pii_detected = review_needed
+        # Detected and held are different facts: an overridden artifact still
+        # carries matches, and an admin reviewing the override needs to see so.
+        artifact.pii_detected = bool(blocking)
         artifact.pii_review_needed = review_needed
         artifact.clean_file_key = None
         if review_needed:
@@ -223,6 +251,7 @@ async def _detect_pii_impl(artifact_id: str) -> dict[str, Any]:
                     "pii_types_found": entity_types,
                     "auto_redacted": False,
                     "flagged_for_review": review_needed,
+                    "citation_override": overridden,
                 },
             )
         await db.commit()

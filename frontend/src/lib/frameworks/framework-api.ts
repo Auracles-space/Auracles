@@ -86,6 +86,8 @@ export interface FrameworkApi {
   resyncArtifact?(id: string, artifactId: string): Promise<ArtifactResponse>;
   resolvePiiReview(id: string, artifactId: string): Promise<ArtifactResponse>;
   acceptRedaction(id: string, artifactId: string): Promise<ArtifactResponse>;
+  /** Clear a PII hold the owner declares to be cited institutions, keeping the original file. */
+  declarePiiCitations(id: string, artifactId: string): Promise<ArtifactResponse>;
   acknowledgeSoftFail(id: string): Promise<FrameworkResponse>;
   acknowledgeSimilarityNotice(
     id: string,
@@ -270,6 +272,15 @@ function personalFrameworkApi(): FrameworkApi {
           path: { framework_id: id, artifact_id: artifactId },
         }),
       ),
+    declarePiiCitations: (id, artifactId) =>
+      unwrap(
+        sdk.declarePiiCitationsV1FrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPost(
+          {
+            headers: authorizedHeaders(),
+            path: { framework_id: id, artifact_id: artifactId },
+          },
+        ),
+      ),
     acknowledgeSoftFail: (id) =>
       unwrap(
         sdk.acknowledgeFrameworkSoftFail({
@@ -435,6 +446,15 @@ function orgFrameworkApi(orgId: string): FrameworkApi {
     acceptRedaction: (id, artifactId) =>
       unwrap(
         sdk.acceptOrgFrameworkRedactionV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdAcceptRedactionPost(
+          {
+            headers: authorizedHeaders(),
+            path: { ...orgPath, framework_id: id, artifact_id: artifactId },
+          },
+        ),
+      ),
+    declarePiiCitations: (id, artifactId) =>
+      unwrap(
+        sdk.declareOrgFrameworkPiiCitationsV1OrgsOrgIdFrameworksFrameworkIdArtifactsArtifactIdDeclarePiiCitationsPost(
           {
             headers: authorizedHeaders(),
             path: { ...orgPath, framework_id: id, artifact_id: artifactId },

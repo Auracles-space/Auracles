@@ -3764,3 +3764,123 @@ async def test_switching_a_framework_from_free_to_paid_audits_both_amounts(
     assert audit is not None
     assert audit.metadata_["price_before"] == "0.00"
     assert audit.metadata_["price_after"] == "25000.00"
+
+
+async def test_contributor_can_declare_pii_matches_to_be_citations(
+    monkeypatch: pytest.MonkeyPatch,
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A held Artifact can be published unredacted when its matches are citations.
+
+    The detector reads an agency name as a PERSON or LOCATION, so a document
+    whose purpose is quoting that agency is held on the very name it exists to
+    cite — and redaction, the only other way through, removes it. The owner
+    declares the matches are citations; the file is kept as uploaded and the
+    claim is audited against them.
+    """
+    dispatched: list[str] = []
+
+    class FakeProcessTask:
+        """Celery task double that records processing dispatches."""
+
+        def delay(self, artifact_id: str) -> None:
+            """Record a process dispatch instead of touching Celery."""
+            dispatched.append(artifact_id)
+
+    monkeypatch.setattr(
+        "app.modules.frameworks.service.process_artifact",
+        FakeProcessTask(),
+        raising=False,
+    )
+    contributor_id = await create_user_with_roles(
+        "pii-citations@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        processing_status="flagged_pii",
+        pii_detected=True,
+        pii_review_needed=True,
+    )
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        original_file_key = artifact.file_key
+        artifact.metadata_vector = {
+            "extraction": {"text": "As required by the Central Bank of Nigeria."},
+            "pii_review_types": ["LOCATION", "PERSON"],
+        }
+        framework = await session.get(Framework, UUID(framework_id))
+        assert framework is not None
+        framework.status = "pipeline_failed"
+        framework.pipeline_failure_reasons = {"pii": [artifact_id]}
+        session.add(
+            ArtifactPiiAudit(
+                artifact_id=UUID(artifact_id),
+                pii_types_found=["LOCATION", "PERSON"],
+                auto_redacted=False,
+                flagged_for_review=True,
+            )
+        )
+        await session.commit()
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}/declare-pii-citations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["pii_review_needed"] is False
+    assert dispatched == [artifact_id]
+
+    async with async_session_factory() as session:
+        artifact = await session.get(Artifact, UUID(artifact_id))
+        assert artifact is not None
+        # The whole point: the file the Contributor uploaded is the file that
+        # publishes. Swapping in a redacted copy would delete the citation.
+        assert artifact.file_key == original_file_key
+        override = (artifact.metadata_vector or {}).get("pii_override") or {}
+        assert override["accepted"] is True
+        assert override["reason"] == "citations"
+        assert override["types"] == ["LOCATION", "PERSON"]
+        assert override["accepted_by"] == str(contributor_id)
+        audit = await session.scalar(
+            select(AuditLog).where(AuditLog.action == "artifact_pii_citations_declared")
+        )
+        assert audit is not None
+        assert audit.actor_id == contributor_id
+        assert audit.metadata_["pii_types_found"] == ["LOCATION", "PERSON"]
+
+
+async def test_declaring_citations_requires_an_actual_pii_hold(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """An Artifact that is not held cannot be waved through."""
+    contributor_id = await create_user_with_roles(
+        "pii-citations-nohold@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client,
+        contributor_id,
+        framework_id,
+    )
+
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/artifacts/{artifact_id}/declare-pii-citations",
+        headers=auth_headers(contributor_id, ["contributor"]),
+    )
+
+    assert response.status_code == 409

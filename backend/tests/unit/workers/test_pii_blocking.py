@@ -8,6 +8,7 @@ block publishing. Benign entities Presidio emits on ordinary framework prose
 from app.workers.tasks.processing.pii import (
     PII_CONFIDENCE_THRESHOLD,
     PiiFinding,
+    pii_override_accepted,
     select_blocking_findings,
 )
 
@@ -51,3 +52,21 @@ def test_mixed_findings_keep_only_sensitive_above_threshold() -> None:
     blocking = select_blocking_findings([date, url, phone])
 
     assert blocking == [phone]
+
+
+def test_citation_override_waives_the_hold_but_not_the_finding() -> None:
+    """An accepted citation override stops a hold without hiding what was found.
+
+    The scan still records the entity types, because an admin reviewing an
+    override needs to see what the Contributor waved through. Only the block
+    is lifted.
+    """
+    assert pii_override_accepted({"pii_override": {"accepted": True}}) is True
+
+
+def test_an_unset_or_declined_override_still_holds() -> None:
+    """Absent, empty, or explicitly declined overrides leave the gate closed."""
+    assert pii_override_accepted({}) is False
+    assert pii_override_accepted(None) is False
+    assert pii_override_accepted({"pii_override": {}}) is False
+    assert pii_override_accepted({"pii_override": {"accepted": False}}) is False

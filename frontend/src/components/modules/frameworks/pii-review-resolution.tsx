@@ -177,6 +177,12 @@ export function PiiReviewResolution({
             </svg>
           </button>
         </div>
+        <p className="mb-4 text-sm leading-relaxed text-foreground-muted">
+          The checker cannot tell an organization&rsquo;s name from a
+          person&rsquo;s. If what it found is a cited body, standard or
+          publication rather than someone&rsquo;s personal data, say so and the
+          file publishes as you uploaded it. We record who made that call.
+        </p>
         <div className="grid gap-4">
           {flagged.map((artifact) => (
             <div
@@ -220,6 +226,19 @@ export function PiiReviewResolution({
                     {pendingId === artifact.id ? "Working…" : "Accept redacted copy"}
                   </button>
                 ) : null}
+                {/* The detector cannot tell an institution from a person, so a
+                    document quoting an agency is held on the very name it
+                    exists to cite. Redaction would delete that name and
+                    re-running the review finds it again, so neither existing
+                    action can clear it. */}
+                <button
+                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2 disabled:opacity-60"
+                  disabled={pendingId === artifact.id}
+                  onClick={() => runAction(artifact.id, api.declarePiiCitations)}
+                  type="button"
+                >
+                  {pendingId === artifact.id ? "Working…" : "These are citations"}
+                </button>
                 <button
                   className="inline-flex min-h-11 items-center justify-center rounded-xl border border-error/30 bg-error/5 px-5 text-sm font-semibold text-error transition-colors hover:bg-error/10 disabled:opacity-60"
                   disabled={pendingId === artifact.id}

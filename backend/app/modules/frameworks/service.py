@@ -2727,6 +2727,116 @@ async def resolve_pii_review_for_owner(
     return _artifact_to_response(artifact)
 
 
+async def declare_pii_citations(
+    db: AsyncSession,
+    contributor: User,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Declare a held Artifact's matches to be citations rather than PII.
+
+    Thin personal wrapper over :func:`declare_pii_citations_for_owner`; org
+    callers use the owner-aware function directly.
+    """
+    return await declare_pii_citations_for_owner(
+        db,
+        FrameworkOwner(
+            actor_id=contributor.id,
+            user_id=contributor.id,
+            org_id=None,
+            authoring_member_id=None,
+            can_manage_live_state=True,
+        ),
+        framework_id,
+        artifact_id,
+    )
+
+
+async def declare_pii_citations_for_owner(
+    db: AsyncSession,
+    owner: FrameworkOwner,
+    framework_id: UUID,
+    artifact_id: UUID,
+) -> ArtifactResponse:
+    """Clear a PII hold the owner says is citations, keeping the original file.
+
+    The detector cannot tell an institution from a person, so a document whose
+    purpose is quoting an agency is held on the very name it exists to cite,
+    and the only route through — redaction — removes that name. Neither a
+    fixed allowlist nor a looser detector can make that call: whether a name
+    is a cited body or a private individual is a judgement about one document,
+    which only its author can make.
+
+    So the author makes it, on the record. The file is published unchanged,
+    the scan's findings are kept, and the claim is written to the audit log
+    against the person who made it.
+
+    Args:
+        db: Async SQLAlchemy session.
+        owner: Authenticated Framework owner, personal or organization.
+        framework_id: UUID of the Framework being published.
+        artifact_id: UUID of the held Artifact.
+
+    Returns:
+        The Artifact, now reprocessing without the hold.
+
+    Raises:
+        HTTPException(404): Framework or Artifact not found or not owned.
+        HTTPException(409): The Artifact is not currently held for PII review.
+    """
+    framework = await _load_owned_framework_by_owner(db, owner, framework_id)
+    artifact = await _load_owned_artifact(db, framework, artifact_id)
+    if not artifact.pii_review_needed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This artifact is not held for PII review.",
+        )
+
+    metadata = dict(artifact.metadata_vector or {})
+    declared_types = [str(t) for t in (metadata.get("pii_review_types") or [])]
+    metadata["pii_override"] = {
+        "accepted": True,
+        "accepted_at": datetime.now(UTC).isoformat(),
+        "accepted_by": str(owner.actor_id),
+        "reason": "citations",
+        "types": declared_types,
+    }
+    artifact.metadata_vector = metadata
+    # The original file is kept: redacting it is exactly what the owner is
+    # declining to do.
+    artifact.pii_review_needed = False
+    artifact.processing_status = "processing"
+    framework.status = "processing"
+    framework.pipeline_failure_reasons = {}
+
+    audit_row = await db.scalar(
+        select(ArtifactPiiAudit).where(ArtifactPiiAudit.artifact_id == artifact.id)
+    )
+    if audit_row is None:
+        audit_row = ArtifactPiiAudit(artifact_id=artifact.id)
+        db.add(audit_row)
+    audit_row.flagged_for_review = False
+    audit_row.reviewed_by = owner.actor_id
+    audit_row.reviewed_at = datetime.now(UTC)
+
+    await write_audit(
+        db=db,
+        actor_id=owner.actor_id,
+        action="artifact_pii_citations_declared",
+        target_type="artifact",
+        target_id=artifact.id,
+        metadata={
+            "framework_id": str(framework.id),
+            "pii_types_found": declared_types,
+            "file_kept_unredacted": True,
+        },
+    )
+    await db.commit()
+    process_artifact.delay(str(artifact.id))
+    await db.refresh(artifact)
+    return _artifact_to_response(artifact)
+
+
 async def accept_redaction(
     db: AsyncSession,
     contributor: User,
