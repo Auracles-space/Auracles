@@ -109,6 +109,29 @@ resource "aws_iam_role_policy" "github_actions" {
           "arn:aws:ecs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:service/auracles-production/*",
         ]
       },
+      {
+        # ListApps has no resource-level scoping in IAM, so it cannot be
+        # narrowed. It only reveals app names and ids, which are not secrets,
+        # and release.yml uses it to find the production app by name rather
+        # than hardcoding an id that a rebuild would change.
+        Sid      = "AmplifyFindAppByName"
+        Effect   = "Allow"
+        Action   = "amplify:ListApps"
+        Resource = "*"
+      },
+      {
+        # Starting and watching a build on the PRODUCTION frontend's main
+        # branch, and nothing else. The staging app is deliberately excluded:
+        # it builds through Amplify's own git integration and CI never touches
+        # it, so a compromised workflow token cannot redeploy staging.
+        Sid    = "AmplifyReleaseProductionFrontend"
+        Effect = "Allow"
+        Action = [
+          "amplify:StartJob",
+          "amplify:GetJob",
+        ]
+        Resource = "arn:aws:amplify:${var.aws_region}:${data.aws_caller_identity.current.account_id}:apps/${module.production_frontend.app_id}/branches/main/jobs/*"
+      },
     ]
   })
 }

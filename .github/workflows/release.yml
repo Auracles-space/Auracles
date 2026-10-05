@@ -84,3 +84,39 @@ jobs:
           aws ecs wait services-stable \
             --cluster auracles-production \
             --services api worker beat
+
+      # Frontend last, and only once the backend is healthy. The production
+      # Amplify app has auto-build off precisely so this is the only thing that
+      # ships it: a build on every merge to main could put a frontend live
+      # against an API that was never promoted.
+      #
+      # Pinned to the tagged commit, not the branch head, so a merge landing
+      # between the tag and this step cannot ship a frontend ahead of the
+      # backend it was built against.
+      - name: Release the production frontend
+        run: |
+          set -euo pipefail
+          app=$(aws amplify list-apps \
+            --query "apps[?name=='auracles-production'].appId | [0]" --output text)
+          if [ "$app" = "None" ] || [ -z "$app" ]; then
+            echo "::error::No auracles-production Amplify app found — apply infra/shared first."
+            exit 1
+          fi
+          job=$(aws amplify start-job \
+            --app-id "$app" \
+            --branch-name main \
+            --job-type RELEASE \
+            --commit-id "$GITHUB_SHA" \
+            --query 'jobSummary.jobId' --output text)
+          echo "amplify job $job for ${GITHUB_SHA}"
+          # Poll to a terminal state so a failed frontend build is a red
+          # release rather than a green one with an old site still serving.
+          while true; do
+            st=$(aws amplify get-job --app-id "$app" --branch-name main \
+              --job-id "$job" --query 'job.summary.status' --output text)
+            case "$st" in
+              SUCCEED) echo "frontend released"; break;;
+              FAILED|CANCELLED) echo "::error::frontend build $st"; exit 1;;
+              *) sleep 20;;
+            esac
+          done

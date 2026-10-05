@@ -146,7 +146,7 @@ resource "aws_amplify_branch" "this" {
   framework = "Next.js - SSR"
   stage     = var.stage
 
-  enable_auto_build = true
+  enable_auto_build = var.enable_auto_build
 
   # Values specific to this branch — the API origin above all. These are what
   # let a second branch later serve production from the same app without the

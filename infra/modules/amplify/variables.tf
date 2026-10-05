@@ -35,6 +35,12 @@ variable "stage" {
   }
 }
 
+variable "enable_auto_build" {
+  description = "Build this branch on every push. True for staging, where a merge to main should refresh the environment immediately. False for production, because the backend only ships on a `git tag v*` and a frontend that auto-deployed on merge could go live calling an API that has not been promoted yet. When false, `release.yml` starts the build itself, pinned to the tagged commit."
+  type        = bool
+  default     = true
+}
+
 variable "environment_variables" {
   description = "App-wide build environment. NEXT_PUBLIC_* values are inlined into the client bundle by `next build`; server-side values additionally need forwarding in amplify.yml, because Amplify exposes these at build time only."
   type        = map(string)
