@@ -254,7 +254,7 @@ logger.info("Framework submitted for review")
 | Environment | Format | Sink |
 |-------------|--------|------|
 | Dev (local) | Colored, human-readable — `{time} | {level} | {module}.{action} | {message}` | stdout |
-| Staging/Prod | JSON structured | stdout → Render log drain |
+| Staging/Prod | JSON structured | stdout → CloudWatch Logs (`/ecs/auracles-{env}/{service}`, 30-day retention) |
 
 Controlled by `LOG_FORMAT=json` env var in production. Dev defaults to colored.
 

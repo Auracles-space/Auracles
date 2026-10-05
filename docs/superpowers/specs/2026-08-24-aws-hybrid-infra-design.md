@@ -213,6 +213,16 @@ Cheapest lever if burn must drop: fold worker to 0.5 vCPU / 3 GB (~$31) and acce
 
 ## 8. Cutover order
 
+> **Status 2026-10-05: complete, and this section is now history.** Production
+> went live at `auracles.space` on 2026-10-05. The steps below were written for
+> the Render→AWS migration and describe a world that no longer exists: Render is
+> retired, `deploy.yml` became `backend-build.yml` plus `release.yml`, and step 7's
+> two-Amplify-app launch is done. What actually happened, including the four
+> failures during the apply and two mistakes in the domain cutover, is recorded in
+> `docs/superpowers/plans/2026-10-05-production-launch-state.md`. Kept here
+> unedited because the reasoning behind the ordering is still the reasoning.
+
+
 1. **Human:** create/verify AWS account, enable MFA on root, create the Terraform state bucket with versioning enabled (one-time, manual by design — no lock table needed, see §3), apply for Activate credits.
 2. Terraform bootstrap: networking, ECR, secrets (values entered by human, never committed), IAM/OIDC.
 3. Build + push backend image to ECR manually once; stand up ECS cluster + services with `desired_count=0→1`; confirm `/health` green through the ALB.
