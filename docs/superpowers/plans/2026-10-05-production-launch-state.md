@@ -57,9 +57,10 @@ Amplify build pinned to the same commit. One tag moves both halves.
 2. **The backup has never been restored.** 14 days of PITR now covers real user
    data and nobody has checked it produces a working database. Open risk in the
    infra design doc since the Neon era.
-3. **No alarm has been proven to arrive.** The SNS topic's subscription was
-   confirmed for staging and production publishes to the same topic, but a green
-   apply is not evidence of delivery.
+3. ~~No alarm has been proven to arrive.~~ **Proven 2026-10-05**: a forced
+   alarm reached `dev@auracles.space`. Note that this address is also
+   `ADMIN_EMAIL`, so it is the password-reset path for the only admin account —
+   losing access to that mailbox costs more than alerts.
 4. **Stripe is dummied, deliberately.** Both Stripe secrets hold non-placeholder
    dummies to satisfy the boot validator. Stripe carries no pilot traffic, so a
    stray webhook would fail signature verification and be refused — correct for
@@ -142,8 +143,10 @@ From the stack plan's Task 10, in the order worth doing:
 
 - [ ] One small **real purchase** end to end (not in the original plan; the most
       important item here).
-- [ ] Force one alarm into `ALARM` with `aws cloudwatch set-alarm-state` and
-      confirm the mail arrives.
+- [x] **Alert path proven 2026-10-05.** `auracles-production-beat-crashing`
+      forced to `ALARM`; the mail arrived at `dev@auracles.space` and the
+      alarm was reset. This was worth doing precisely because SNS reports a
+      successful publish whether or not the mail lands.
 - [ ] Point-in-time **restore drill** into a throwaway instance, then delete it.
 - [ ] Resend: confirm `auracles.space` is a verified sending domain for live
       traffic.

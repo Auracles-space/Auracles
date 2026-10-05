@@ -305,9 +305,10 @@ Applying before it does means three services crash-looping on image pull.
 - [ ] Run one point-in-time restore into a throwaway instance. The design doc has
       carried "RDS restore has never been exercised" as an open risk since the
       Neon era. An untested backup is not a backup.
-- [ ] Prove the alert path with `aws cloudwatch set-alarm-state` on a production
-      alarm and confirm the mail arrives.
-- [ ] Update `CLAUDE.md`'s tech-stack table and this plan's parent design doc
+- [x] Alert path proven 2026-10-05: forced alarm, mail received at
+      `dev@auracles.space`, alarm reset. All seven production alarms `OK`.
+- [x] Updated `CLAUDE.md`'s logging sink (it claimed Render; it is CloudWatch)
+      and marked §8 of the design doc as history. Was: update `CLAUDE.md` and
       (`docs/superpowers/specs/2026-08-24-aws-hybrid-infra-design.md` §8 still
       describes the Render cutover, which is history).
 
