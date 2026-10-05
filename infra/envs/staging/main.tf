@@ -244,6 +244,19 @@ module "ecs" {
       REDIS_URL    = aws_secretsmanager_secret.redis_url.arn
     },
   )
+
+  # The task definitions reference these secrets by ARN, and an ARN exists as
+  # soon as the empty shell does — so without this, Terraform is free to start
+  # the services before the composed URLs have been written. That is not
+  # theoretical: on production's first apply, worker and beat launched against
+  # a valueless DATABASE_URL, failed with ResourceInitializationError, and
+  # their circuit breakers rolled them back to nothing. The api happened to
+  # start late enough to win the race, which is exactly how a bug like this
+  # hides in staging.
+  depends_on = [
+    aws_secretsmanager_secret_version.database_url,
+    aws_secretsmanager_secret_version.redis_url,
+  ]
 }
 
 # api.staging.auracles.space → ALB, inside the delegated zone. Recreated
