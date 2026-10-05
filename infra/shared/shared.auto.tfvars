@@ -17,3 +17,9 @@ stripe_publishable_key = "pk_test_51TiLS9Pob42GNkA63DVRkXejrFaLN2uc4tMOESFBVPOxi
 # The staging frontend starts on its amplifyapp.com URL. Flip to true and
 # re-apply once it builds cleanly, to serve it at staging.auracles.space.
 staging_frontend_custom_domain = true
+
+# The four NS records for host `api` went live at Namecheap on 2026-10-05
+# (verified: `dig NS api.auracles.space` returns the Route 53 set on Google,
+# Cloudflare and the local resolver). The variable's default stays false so a
+# rebuild in a fresh account starts back at pass one.
+production_dns_delegation_complete = true
