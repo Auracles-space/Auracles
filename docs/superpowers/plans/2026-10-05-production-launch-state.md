@@ -153,13 +153,45 @@ From the stack plan's Task 10, in the order worth doing:
 - [ ] `CLAUDE.md`'s tech-stack table and §8 of
       `2026-08-24-aws-hybrid-infra-design.md` still describe the Render cutover,
       which is history.
-- [ ] `config.py`'s `production_provider_secrets_are_not_placeholders` demands
-      the two **Stripe** secrets and ignores **Paystack**, the only live rail.
-      Production could boot with no Paystack key and fail at the first charge
-      rather than at startup. Needs a decision: it is a boot-blocking validator.
+- [x] **Live-rail boot validator, shipped in `v1.0.0`.** The validator now
+      demands whichever provider `select_provider` returns for
+      `PLATFORM_CURRENCY` — Paystack here — by calling that function rather
+      than restating its rule, so it cannot drift. The idle provider may be
+      absent (a payer routed to it fails at checkout; no money moves) but may
+      not hold the placeholder string. `PAYSTACK_WEBHOOK_SECRET` is
+      deliberately *not* required: Paystack signs with the integration secret
+      key and that value only overrides it, so demanding it would have refused
+      to boot the live configuration, which does not set it.
 - [ ] Apply for AWS Activate Founders credits if still unapplied — roughly eight
       months of runway at this burn.
 - [ ] Delete the waitlist Amplify app, **a week after launch at the earliest**.
+
+## First tagged release — v1.0.0, 2026-10-05
+
+Production launched on a manually promoted image (`make prod-promote-image`),
+so `release.yml` had never run. `v1.0.0` is the first tag to travel it, and it
+is now proven end to end: `:production` re-pointed at the tagged commit's
+image, all three services rolled and stable, then the Amplify frontend built
+pinned to the same commit. Run `37335767143`, green.
+
+Carried two changes:
+
+- The live-rail boot validator above. This release was the test of it: if
+  `PAYSTACK_SECRET_KEY` had been absent, the api would have refused to start
+  here rather than failing at the first charge. `/api/v1/health` through the
+  apex returned `api/database/redis` all `ok` afterwards.
+- The api **deployment circuit breaker**, applied to infrastructure just
+  before the tag. Worker and beat had one since the 44-hour crash-loop of
+  2026-09-27; the api did not, though §5 of the infra design says it should.
+  It is safe next to migration-on-boot because of the existing 120s health
+  check grace period — failures are not counted until it elapses, so a
+  migration that outruns that becomes a rollback rather than an unreachable
+  api with no signal. Live values confirmed on the service: `enable: true`,
+  `rollback: true`.
+
+Note that the task definitions stay at revision `:1`. `release.yml` re-points
+a tag and forces a new deployment rather than registering a new revision, so
+"revision unchanged" is not evidence that a release did not land.
 
 ## Cost
 
