@@ -430,26 +430,75 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def production_provider_secrets_are_not_placeholders(self) -> Self:
-        """Reject missing or placeholder payment secrets outside local.
+        """Reject missing or placeholder secrets for the rail that settles money.
 
-        Phase 3 runs Stripe-only after the 2026-06-09 payment-scope decision.
-        Staging/production should not boot with placeholder Stripe keys because
-        webhook spoofing or failed settlement would become a financial integrity
-        risk.
+        The provider demanded is the one `select_provider` would choose for the
+        platform currency — asked by calling it, so this can never drift from
+        the routing rule it is protecting. For the Nigerian pilot that is
+        Paystack.
+
+        Demanding both providers would be wrong in either direction: the pilot
+        deliberately holds no real Stripe credentials, and a dollar platform has
+        no use for Paystack ones. Demanding neither is worse than either, because
+        the process then boots happily and fails at the first charge instead of
+        at startup.
+
+        The unused provider is still rejected if it carries the placeholder
+        string, since a half-filled key is a configuration mistake rather than a
+        deliberate omission. Leaving it unset is fine: a payer routed to an
+        unconfigured provider fails loudly at checkout and no money moves.
         """
         if self.environment == "local":
             return self
 
-        provider_secrets = [
-            self.stripe_secret_key,
-            self.stripe_webhook_secret,
-        ]
-        if any(
-            secret is None
-            or secret.get_secret_value().strip() in {"", PLACEHOLDER_PROVIDER_SECRET}
-            for secret in provider_secrets
+        # Imported here, not at module scope: config is the lowest layer in the
+        # app and must not pull app.integrations in at import time.
+        from app.integrations.payment_router import select_provider
+
+        stripe_secrets = {
+            "STRIPE_SECRET_KEY": self.stripe_secret_key,
+            # Stripe signs with its own whsec_ value, so this is a second
+            # credential rather than a restatement of the first.
+            "STRIPE_WEBHOOK_SECRET": self.stripe_webhook_secret,
+        }
+        paystack_secrets = {"PAYSTACK_SECRET_KEY": self.paystack_secret_key}
+        # Never required: Paystack signs webhook bodies with the integration
+        # secret key, and PAYSTACK_WEBHOOK_SECRET only overrides that. Demanding
+        # it would reject a correct configuration.
+        paystack_override = {"PAYSTACK_WEBHOOK_SECRET": self.paystack_webhook_secret}
+
+        if select_provider(user_country=None, currency=self.platform_currency) == (
+            "paystack"
         ):
-            raise ValueError("Payment provider secrets must be set outside local.")
+            required = paystack_secrets
+            unused = stripe_secrets | paystack_override
+        else:
+            required = stripe_secrets
+            unused = paystack_secrets | paystack_override
+
+        missing = [
+            name
+            for name, secret in required.items()
+            if secret is None
+            or secret.get_secret_value().strip() in {"", PLACEHOLDER_PROVIDER_SECRET}
+        ]
+        if missing:
+            raise ValueError(
+                "Payment provider secrets must be set outside local: "
+                f"{', '.join(missing)}."
+            )
+
+        placeholders = [
+            name
+            for name, secret in unused.items()
+            if secret is not None
+            and secret.get_secret_value().strip() == PLACEHOLDER_PROVIDER_SECRET
+        ]
+        if placeholders:
+            raise ValueError(
+                "Placeholder payment provider secrets must be replaced or "
+                f"removed: {', '.join(placeholders)}."
+            )
         return self
 
     @property

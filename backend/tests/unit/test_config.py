@@ -245,6 +245,103 @@ def test_settings_rejects_placeholder_provider_secrets_outside_local() -> None:
         raise AssertionError("Expected provider secret validation to fail.")
 
 
+_PRODUCTION_BASE = {
+    "ENVIRONMENT": "production",
+    "SECRET_KEY": "a-real-openssl-rand-hex-32-value-with-entropy",
+    "TOTP_ENCRYPTION_KEY": _VALID_TOTP_KEY,
+    "PAYOUT_ACCOUNT_ENCRYPTION_KEY": _VALID_PAYOUT_ACCOUNT_KEY,
+    "PARTNER_WEBHOOK_ENCRYPTION_KEY": _VALID_PARTNER_WEBHOOK_KEY,
+    "CONNECTOR_TOKEN_ENCRYPTION_KEY": _VALID_CONNECTOR_TOKEN_KEY,
+}
+"""Everything a production Settings needs apart from the payment secrets.
+
+Every provider variable is passed explicitly by the tests below rather than
+inherited, because the repository `.env` supplies some of them and a test that
+reads an unset value from disk proves nothing.
+"""
+
+
+def test_settings_rejects_missing_paystack_secrets_when_currency_is_naira() -> None:
+    """A naira platform must hold Paystack secrets, not merely Stripe ones.
+
+    select_provider settles every NGN charge on Paystack, so booting without a
+    Paystack key defers the failure to the first purchase instead of to startup.
+    """
+    from pydantic import ValidationError
+
+    try:
+        Settings(
+            **_PRODUCTION_BASE,
+            PLATFORM_CURRENCY="NGN",
+            STRIPE_SECRET_KEY="sk_live_real",
+            STRIPE_WEBHOOK_SECRET="whsec_real",
+            PAYSTACK_SECRET_KEY="",
+            PAYSTACK_WEBHOOK_SECRET="",
+        )
+    except ValidationError as exc:
+        assert "PAYSTACK_SECRET_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected the missing Paystack secret to fail.")
+
+
+def test_settings_allows_naira_production_without_stripe_secrets() -> None:
+    """Stripe may be absent on a naira platform — it settles nothing there.
+
+    The Nigerian pilot deliberately holds no real Stripe credentials, so
+    demanding them would block a correct configuration from booting.
+    """
+    settings = Settings(
+        **_PRODUCTION_BASE,
+        PLATFORM_CURRENCY="NGN",
+        STRIPE_SECRET_KEY="",
+        STRIPE_WEBHOOK_SECRET="",
+        PAYSTACK_SECRET_KEY="sk_live_paystack",
+        # Left empty on purpose: Paystack signs with the secret key, so this
+        # override is not a credential the platform is missing.
+        PAYSTACK_WEBHOOK_SECRET="",
+    )
+
+    assert settings.platform_currency == "NGN"
+
+
+def test_settings_rejects_missing_stripe_secrets_when_currency_is_not_naira() -> None:
+    """A dollar platform settles on Stripe, so Stripe is the required rail."""
+    from pydantic import ValidationError
+
+    try:
+        Settings(
+            **_PRODUCTION_BASE,
+            PLATFORM_CURRENCY="USD",
+            STRIPE_SECRET_KEY="",
+            STRIPE_WEBHOOK_SECRET="",
+            PAYSTACK_SECRET_KEY="sk_live_paystack",
+            PAYSTACK_WEBHOOK_SECRET="paystack_hmac_secret",
+        )
+    except ValidationError as exc:
+        assert "STRIPE_SECRET_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected the missing Stripe secrets to fail.")
+
+
+def test_settings_rejects_placeholder_in_the_unused_provider() -> None:
+    """A half-filled key for the idle provider is a mistake, not an omission."""
+    from pydantic import ValidationError
+
+    try:
+        Settings(
+            **_PRODUCTION_BASE,
+            PLATFORM_CURRENCY="NGN",
+            STRIPE_SECRET_KEY="replace-in-local-env",
+            STRIPE_WEBHOOK_SECRET="",
+            PAYSTACK_SECRET_KEY="sk_live_paystack",
+            PAYSTACK_WEBHOOK_SECRET="paystack_hmac_secret",
+        )
+    except ValidationError as exc:
+        assert "STRIPE_SECRET_KEY" in str(exc)
+    else:
+        raise AssertionError("Expected the placeholder Stripe secret to fail.")
+
+
 def test_settings_rejects_dev_connector_token_key_outside_local() -> None:
     """Staging and production must override the dev connector token key."""
     from pydantic import ValidationError
