@@ -23,6 +23,23 @@ variable "staging_subdomain" {
   }
 }
 
+variable "api_subdomain" {
+  description = "Label delegated to Route 53 for production's API. Only this branch of the DNS tree is handed over; the apex serves the frontend from Namecheap and its mail records stay put. Separate from staging_subdomain because the two are delegated independently — staging.auracles.space and api.auracles.space are sibling zones, not nested ones."
+  type        = string
+  default     = "api"
+
+  validation {
+    condition     = can(regex("^[a-z0-9-]+$", var.api_subdomain))
+    error_message = "The subdomain label must be a single DNS label: lowercase letters, digits, and hyphens only."
+  }
+}
+
+variable "production_dns_delegation_complete" {
+  description = "Set true only after the four NS records from the `namecheap_api_ns_records` output are live at Namecheap on host `api`. Gates the ACM validation wait, which cannot succeed before the subtree is actually delegated. The production API half of this stack applies in two passes by design; see main.tf."
+  type        = bool
+  default     = false
+}
+
 variable "github_repository" {
   description = "GitHub org/repo whose Actions runs may assume the CI role. Part of the OIDC trust condition — a token from any other repository is refused before IAM permissions are even consulted."
   type        = string
