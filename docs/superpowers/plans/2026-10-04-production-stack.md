@@ -34,15 +34,19 @@ ACM certificate must sit in the ALB's own region.
 | `apply_immediately` (RDS) | `false` | Already keyed off `environment == "production"` in `modules/rds/main.tf`. |
 | ALB deletion protection | `true` | Already keyed off `environment == "production"` in `modules/alb/main.tf`. |
 
-### Still open — needs a human answer before Task 4
+### Settled 2026-10-05 — how the frontend ships
 
-**Which branch does the production Amplify app build?** Staging's app builds
-`main`, so every merge refreshes the staging frontend. If production also builds
-`main`, the frontend ships continuously while the backend ships on tags — and a
-frontend can go live against an API that has not been promoted yet.
-Recommendation: production builds a `production` branch, and `release.yml` gains
-`contents: write` plus a step that fast-forwards that branch on tag, so one tag
-promotes both halves together. Alternative: accept continuous frontend deploys.
+**Both apps build `main`; production's auto-build is off and `release.yml`
+starts its build.** Neither of the options originally offered here — a separate
+`production` branch, or accepting continuous deploys — was taken. The human
+pointed out that inverting the branch names changes nothing, which is correct:
+Amplify builds on push to its branch, merges are frequent and tags are rare, so
+the mismatch is auto-build, not the branch name. Turning auto-build off removes
+it without a new branch, without changing how anyone merges, and without the
+`contents: write` permission the branch plan would have needed. `release.yml`
+starts the build after the ECS roll succeeds, pinned with `--commit-id` to the
+tagged commit so a merge landing mid-release cannot ship a frontend ahead of
+its backend.
 
 ---
 
@@ -140,7 +144,7 @@ state is empty, the plan says "create 60 resources", and it proves nothing.
 - [x] **Human:** `terraform apply` in `infra/shared` (pass two — certificate
       validates, typically minutes).
 
-## Task 3 — Production secret shells — code written, apply pending
+## Task 3 — Production secret shells — DONE 2026-10-05 (`a6e09488`)
 
 - [x] `infra/shared/secrets.tf`: the name list is now one shared
       `local.secret_names` feeding both environments, so a new secret cannot
@@ -148,8 +152,8 @@ state is empty, the plan says "create 60 resources", and it proves nothing.
       `auracles/production/${each.key}`, `recovery_window_in_days = 7`.
 - [x] Output `production_secret_arns`.
 - [x] Plan: 14 to add, 0 to change, 0 to destroy.
-- [ ] **Human:** `terraform apply` in `infra/shared`.
-- [ ] **Human:** fill all 14 values with `aws secretsmanager put-secret-value`.
+- [x] **Human:** `terraform apply` in `infra/shared`.
+- [x] **Human:** fill all 14 values with `aws secretsmanager put-secret-value`.
       Freshly generated, never copied from staging:
       - `SECRET_KEY`, `TOTP_ENCRYPTION_KEY`, `PAYOUT_ACCOUNT_ENCRYPTION_KEY`,
         `PARTNER_WEBHOOK_ENCRYPTION_KEY`, `CONNECTOR_TOKEN_ENCRYPTION_KEY`
@@ -161,73 +165,83 @@ state is empty, the plan says "create 60 resources", and it proves nothing.
       - `GOOGLE_CLIENT_SECRET` — from the new production OAuth client (Task 6)
       - `BRAVE_SEARCH_API_KEY`
       - `ADMIN_PASSWORD` — strong and unique; consumed by `scripts.bootstrap_admin`
-- [ ] Verify none is empty. There are 14 hand-entered shells; `DATABASE_URL`
+- [x] Verify none is empty. There are 14 hand-entered shells; `DATABASE_URL`
       and `REDIS_URL` make 16 per environment but Terraform composes those in
       the environment stack from the live RDS and Redis.
-- [ ] `app/core/config.py` has validators that refuse to
+- [x] `app/core/config.py` has validators that refuse to
       boot production on a placeholder for the five keys and the provider
       secrets — a missing value is a `ResourceInitializationError` naming the
       secret, which is loud, not subtle.
 
-## Task 4 — Production Amplify app
+## Task 4 — Production Amplify app — DONE 2026-10-05 (`ef3b3e22`)
 
 > Blocked on the open decision above (which branch it builds).
 
-- [ ] `module "production_frontend"` in `infra/shared/amplify.tf`:
+- [x] `module "production_frontend"` in `infra/shared/amplify.tf`:
       `app_name = "auracles-production"`, `stage = "PRODUCTION"`, the
       repository's own `amplify.yml`, `AMPLIFY_MONOREPO_APP_ROOT = frontend`,
       `AMPLIFY_DIFF_DEPLOY = false`.
-- [ ] Branch env: `BACKEND_ORIGIN = https://api.auracles.space`,
+- [x] Branch env: `BACKEND_ORIGIN = https://api.auracles.space`,
       `NEXT_PUBLIC_API_URL = /api`, `NEXT_PUBLIC_WS_URL = wss://api.auracles.space`,
       `NEXT_PUBLIC_WAITLIST_MODE = false`, `NEXT_PUBLIC_PLATFORM_CURRENCY = NGN`,
       live `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, and `SESSION_HINT_SECRET` read
       from the **production** `SECRET_KEY` secret.
-- [ ] `custom_domain = null` for the first apply. The apex is not in Route 53, so
+- [x] `custom_domain = null` for the first apply. The apex is not in Route 53, so
       attaching it needs records at Namecheap — that is the launch switch
       (Task 9), not part of standing the app up.
-- [ ] **Human:** `terraform apply` in `infra/shared`, then confirm the app builds
+- [x] **Human:** `terraform apply` in `infra/shared`, then confirm the app builds
       and serves on its own `amplifyapp.com` URL.
 
-## Task 5 — The production environment stack
+## Task 5 — The production environment stack — DONE 2026-10-05 (`cca69c54`)
 
-- [ ] Write `infra/envs/production/` per the file structure above.
-- [ ] `vpc_cidr = "10.1.0.0/16"` — the range staging's variable doc already
+- [x] Write `infra/envs/production/` per the file structure above.
+- [x] `vpc_cidr = "10.1.0.0/16"` — the range staging's variable doc already
       reserves for production, so the two VPCs could be peered without renumbering.
-- [ ] RDS module: `multi_az = false`, `instance_class = "db.t4g.micro"`,
+- [x] RDS module: `multi_az = false`, `instance_class = "db.t4g.micro"`,
       `backup_retention_days = 14`, `deletion_protection = true`,
       `skip_final_snapshot = false`.
-- [ ] S3 module: `force_destroy = false`, `cors_allowed_origins = ["https://auracles.space", "https://www.auracles.space"]`.
-- [ ] ECS module: `backend_image = "<ecr>:production"`, `worker_use_spot = true`,
+- [x] S3 module: `force_destroy = false`, `cors_allowed_origins = ["https://auracles.space", "https://www.auracles.space"]`.
+- [x] ECS module: `backend_image = "<ecr>:production"`, `worker_use_spot = true`,
       `beat_use_spot = false`.
-- [ ] ECS env vars, differing from staging: `ENVIRONMENT = "production"`,
+- [x] ECS env vars, differing from staging: `ENVIRONMENT = "production"`,
       `CORS_ALLOWED_ORIGINS = "https://auracles.space,https://www.auracles.space"`,
       `TRUST_PROXY_HEADERS = "true"` (without it every per-IP rate limit
       collapses into one bucket keyed on the ALB), `EMAIL_SEND_ENABLED = "true"`,
       `PLATFORM_CURRENCY = "NGN"`, `ADMIN_EMAIL`, the production Google OAuth
       client id and its two redirect URIs on `https://auracles.space`. No
       `PERSONA_*` config.
-- [ ] Monitoring module: same wiring as staging — api excluded from the
+- [x] Monitoring module: same wiring as staging — api excluded from the
       log-crash filter (FastAPI prints a traceback for any unhandled 500, so that
       filter would fire on ordinary bugs), every service included in the
       not-running alarm, ALB 5xx and unhealthy-target alarms on. Publishes to the
       existing shared SNS topic, already confirmed, so no new email click.
-- [ ] `aws_route53_record.api`: A-alias at the `api.auracles.space` zone apex
+- [x] `aws_route53_record.api`: A-alias at the `api.auracles.space` zone apex
       pointing at the ALB.
-- [ ] `terraform fmt`, `validate`, and `init` with the production backend config.
-- [ ] **Human:** `make prod-plan` and read it. Expect ~60 resources, zero
+- [x] `terraform fmt`, `validate`, and `init` with the production backend config.
+- [x] **Human:** `make prod-plan` and read it. Expect ~60 resources, zero
       destroys, zero changes to anything named `staging`.
 
 ## Task 6 — Human prerequisites outside Terraform
 
-- [ ] New Google OAuth client for production. The staging config's own note:
-      production should get its own, so a staging misconfiguration cannot affect
-      real sign-ins. Authorized redirect URIs, byte for byte:
-      `https://auracles.space/api/v1/auth/google/callback` and
-      `https://auracles.space/api/v1/integrations/connectors/google-drive/callback`.
-- [ ] Stripe live webhook endpoint → `https://api.auracles.space/v1/webhooks/stripe`.
-      Copy its signing secret into `STRIPE_WEBHOOK_SECRET`.
+- [x] Google OAuth. The staging client is reused rather than given a twin
+      (human decision 2026-10-05): one client holds several redirect URIs, so
+      localhost, staging and production coexist. The accepted cost is that a
+      misconfiguration on that client reaches real sign-ins.
+      `https://auracles.space/api/v1/auth/google/callback` added to its
+      authorized redirect URIs, and the secret copied into the production
+      shell.
+- [x] ~~Stripe live webhook endpoint.~~ **Descoped 2026-10-05.** Stripe carries
+      no pilot traffic: `PLATFORM_CURRENCY` is NGN and `select_provider` sends
+      every NGN transaction to Paystack. The two Stripe secrets hold
+      non-placeholder dummies purely to satisfy
+      `production_provider_secrets_are_not_placeholders`, which refuses to boot
+      without them. A stray Stripe webhook would fail signature verification and
+      be rejected with a 400 plus an audit row, which is the correct outcome for
+      a provider that is not in use. Create the real endpoint if Stripe ever
+      comes into scope, and replace both dummies at the same time.
 - [ ] Paystack live webhook URL → `https://api.auracles.space/v1/webhooks/paystack`.
-      Paystack allows one URL per mode; set the live one.
+      Paystack allows one URL per mode; set the live one. This is the rail that
+      actually matters.
 - [ ] Paystack: confirm **transfer OTP is disabled** on the live account.
       OTP-held transfers are abandoned after about an hour with no webhook,
       which strands a beneficiary's balance.
@@ -235,6 +249,15 @@ state is empty, the plan says "create 60 resources", and it proves nothing.
       traffic.
 - [ ] Apply for AWS Activate Founders credits if still unapplied — at this burn
       it is roughly eight months of runway.
+
+### Found while doing Task 6, not yet fixed
+
+`config.py`'s `production_provider_secrets_are_not_placeholders` checks the two
+**Stripe** secrets and not Paystack, and its docstring still says "Phase 3 runs
+Stripe-only after the 2026-06-09 payment-scope decision". That is backwards for
+a Nigeria pilot: production would boot happily with an empty
+`PAYSTACK_SECRET_KEY` and fail at the first real charge instead of at startup.
+Small fix, needs a human yes because it is a boot-blocking validator.
 
 ## Task 7 — First image, then first apply
 
