@@ -13,7 +13,7 @@
 # ResourceInitializationError naming the secret — loud, not subtle.
 
 locals {
-  staging_secret_names = [
+  secret_names = [
     "SECRET_KEY",
     "TOTP_ENCRYPTION_KEY",
     "PAYOUT_ACCOUNT_ENCRYPTION_KEY",
@@ -37,7 +37,7 @@ locals {
 }
 
 resource "aws_secretsmanager_secret" "staging" {
-  for_each = toset(local.staging_secret_names)
+  for_each = toset(local.secret_names)
 
   name = "auracles/staging/${each.key}"
   # 7-day recovery, unlike staging's composed secrets: these hold values a
@@ -47,6 +47,25 @@ resource "aws_secretsmanager_secret" "staging" {
   tags = {
     Name = "auracles/staging/${each.key}"
   }
+}
+
+resource "aws_secretsmanager_secret" "production" {
+  for_each = toset(local.secret_names)
+
+  name = "auracles/production/${each.key}"
+  # 7-day recovery, like staging's hand-entered shells. These hold live
+  # provider keys and freshly generated encryption keys, so an accidental
+  # shared-stack destroy must be recoverable rather than final.
+  recovery_window_in_days = 7
+
+  tags = {
+    Name = "auracles/production/${each.key}"
+  }
+}
+
+output "production_secret_arns" {
+  description = "name => ARN for the production task definitions' secret references. Terraform creates the shells and never knows the values; fill each once with `aws secretsmanager put-secret-value`."
+  value       = { for name, secret in aws_secretsmanager_secret.production : name => secret.arn }
 }
 
 output "staging_secret_arns" {

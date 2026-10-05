@@ -124,29 +124,32 @@ state is empty, the plan says "create 60 resources", and it proves nothing.
 - [x] `terraform plan` against live staging: **"No changes. Your
       infrastructure matches the configuration."**
 
-## Task 2 — Delegate `api.auracles.space` (two passes, human in the middle)
+## Task 2 — Delegate `api.auracles.space` — DONE 2026-10-05 (`c4270cd5`, `39701208`)
 
-- [ ] Add the zone, certificate, validation records and
+- [x] Add the zone, certificate, validation records and
       `production_dns_delegation_complete` gate to `infra/shared/main.tf`,
       copying the staging block's structure and its comments' reasoning.
-- [ ] Certificate covers `api.auracles.space` and `*.api.auracles.space`.
-- [ ] Add the `namecheap_api_ns_records` output.
-- [ ] **Human:** `terraform apply` in `infra/shared` (pass one — gate still false).
-- [ ] **Human:** add the four NS records at Namecheap, on host `api` of
+- [x] Certificate covers `api.auracles.space` and `*.api.auracles.space`.
+- [x] Add the `namecheap_api_ns_records` output.
+- [x] **Human:** `terraform apply` in `infra/shared` (pass one — gate still false).
+- [x] **Human:** add the four NS records at Namecheap, on host `api` of
       `auracles.space`. Change nothing else there — the apex ALIAS, the `www`
       CNAME, `MX → smtp.google.com` and the SPF TXT all stay.
-- [ ] Confirm with `dig NS api.auracles.space` returning the Route 53 set.
-- [ ] Set `production_dns_delegation_complete = true` in `shared.auto.tfvars`.
-- [ ] **Human:** `terraform apply` in `infra/shared` (pass two — certificate
+- [x] Confirm with `dig NS api.auracles.space` returning the Route 53 set.
+- [x] Set `production_dns_delegation_complete = true` in `shared.auto.tfvars`.
+- [x] **Human:** `terraform apply` in `infra/shared` (pass two — certificate
       validates, typically minutes).
 
-## Task 3 — Production secret shells
+## Task 3 — Production secret shells — code written, apply pending
 
-- [ ] `infra/shared/secrets.tf`: second `for_each` over `local.secret_names` at
+- [x] `infra/shared/secrets.tf`: the name list is now one shared
+      `local.secret_names` feeding both environments, so a new secret cannot
+      land in one and be forgotten in the other. Production shells at
       `auracles/production/${each.key}`, `recovery_window_in_days = 7`.
-- [ ] Output `production_secret_arns`.
+- [x] Output `production_secret_arns`.
+- [x] Plan: 14 to add, 0 to change, 0 to destroy.
 - [ ] **Human:** `terraform apply` in `infra/shared`.
-- [ ] **Human:** fill all 16 values with `aws secretsmanager put-secret-value`.
+- [ ] **Human:** fill all 14 values with `aws secretsmanager put-secret-value`.
       Freshly generated, never copied from staging:
       - `SECRET_KEY`, `TOTP_ENCRYPTION_KEY`, `PAYOUT_ACCOUNT_ENCRYPTION_KEY`,
         `PARTNER_WEBHOOK_ENCRYPTION_KEY`, `CONNECTOR_TOKEN_ENCRYPTION_KEY`
@@ -158,7 +161,10 @@ state is empty, the plan says "create 60 resources", and it proves nothing.
       - `GOOGLE_CLIENT_SECRET` — from the new production OAuth client (Task 6)
       - `BRAVE_SEARCH_API_KEY`
       - `ADMIN_PASSWORD` — strong and unique; consumed by `scripts.bootstrap_admin`
-- [ ] Verify none is empty. `app/core/config.py` has validators that refuse to
+- [ ] Verify none is empty. There are 14 hand-entered shells; `DATABASE_URL`
+      and `REDIS_URL` make 16 per environment but Terraform composes those in
+      the environment stack from the live RDS and Redis.
+- [ ] `app/core/config.py` has validators that refuse to
       boot production on a placeholder for the five keys and the provider
       secrets — a missing value is a `ResourceInitializationError` naming the
       secret, which is loud, not subtle.
@@ -309,7 +315,7 @@ Production, monthly, `eu-west-2`. Verify in the calculator before applying.
 | RDS Postgres | `db.t4g.micro`, 20 GB gp3, single-AZ, 14-day backups | 14 |
 | ElastiCache Redis | `cache.t4g.micro`, single node | 13 |
 | Amplify Hosting | low traffic | 1–10 |
-| Secrets Manager | 16 secrets at $0.40 | 6.40 |
+| Secrets Manager | 16 secrets at $0.40 (14 hand-entered + 2 composed) | 6.40 |
 | Route 53 | second hosted zone | 0.50 |
 | CloudWatch logs, ECR, data transfer, ALB access logs | | 8–12 |
 | **Total** | | **≈ 105–135** |

@@ -140,7 +140,7 @@ Usually irrelevant in practice: set values first, bring staging up second, and
 fresh tasks read fresh values.
 
 **Add a brand-new secret** — three steps across two directories:
-1. Add its name to `staging_secret_names` in `shared/secrets.tf`; plan + apply
+1. Add its name to `secret_names` in `shared/secrets.tf` — one list feeds both environments, so a new secret gets a shell in each; plan + apply
    in `shared/` (creates an empty shell with an ARN).
 2. Put the value in (previous recipe).
 3. Plan + apply in `envs/staging/` — task definitions pick the new reference up
