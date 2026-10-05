@@ -39,6 +39,20 @@ resource "aws_ecs_service" "api" {
   # the ALB starts counting health-check failures against the task.
   health_check_grace_period_seconds = 120
 
+  # Same reasoning as worker and beat, and required by §5 of the infra design:
+  # a deploy that cannot produce a task passing the ALB health check reverts to
+  # the task definition that was serving, rather than leaving the old tasks
+  # draining against a replacement that never arrives.
+  #
+  # The grace period above is what makes this safe alongside migration-on-boot:
+  # failures are not counted until it elapses. A migration that outruns 120s
+  # therefore becomes a rollback instead of a stall — which is the outcome to
+  # want, since the alternative is an unreachable api and no clear signal.
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   tags = {
     Name = "auracles-${var.environment}-api"
   }
