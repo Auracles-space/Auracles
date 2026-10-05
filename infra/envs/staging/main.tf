@@ -22,6 +22,15 @@ module "networking" {
 
   environment = "staging"
   vpc_cidr    = var.vpc_cidr
+
+  # All four AZs in the region, not the two an ALB and a subnet group
+  # minimally require. RDS refused to create a db.t4g.micro on gp3 because
+  # neither 2a nor 2b had capacity for that combination — AWS named eu-west-2d
+  # as the only one that did. A subnet group spanning every AZ lets RDS place
+  # the instance wherever capacity exists instead of failing the apply, and
+  # subnets themselves cost nothing. This is placement latitude, not an HA
+  # posture: desired_count is still 1 and the database is still single-AZ.
+  az_count = 4
 }
 
 module "rds" {
