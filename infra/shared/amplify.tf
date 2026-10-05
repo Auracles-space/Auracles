@@ -160,10 +160,20 @@ module "production_frontend" {
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = var.stripe_publishable_key
   }
 
-  # The apex is not in Route 53, so Amplify cannot write its own records for it.
-  # Attaching auracles.space is the launch switch — done by hand at Namecheap,
-  # with moving it back as the rollback — so it stays null here.
-  custom_domain = null
+  # The launch switch. Amplify cannot write records for auracles.space — its
+  # DNS is at Namecheap — so attaching the domain here only creates the
+  # association and hands back the records to enter there. Nothing moves until
+  # those records are changed, and moving them back is the rollback.
+  #
+  # Both prefixes, matching what the waitlist app serves today: the apex and
+  # www point at the same branch.
+  custom_domain          = "auracles.space"
+  custom_domain_prefixes = ["", "www"]
+
+  # Must be false here: the verification records are a manual step, so an apply
+  # that waited for them would fail on work nobody has done yet. Create the
+  # association, read the records out, enter them at Namecheap.
+  custom_domain_wait_for_verification = false
 }
 
 output "production_frontend_url" {

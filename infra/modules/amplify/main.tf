@@ -164,15 +164,22 @@ resource "aws_amplify_domain_association" "this" {
   app_id      = aws_amplify_app.this.id
   domain_name = var.custom_domain
 
-  # Serve the branch at the domain root. `prefix = ""` is the apex of the
-  # delegated subtree (staging.auracles.space), not of auracles.space, which
-  # stays at Namecheap and is not touched by any of this.
-  sub_domain {
-    branch_name = aws_amplify_branch.this.branch_name
-    prefix      = ""
+  # One entry per prefix. "" is the root of whatever custom_domain is — the
+  # delegated subtree for staging, the registered domain itself for production.
+  dynamic "sub_domain" {
+    for_each = toset(var.custom_domain_prefixes)
+    content {
+      branch_name = aws_amplify_branch.this.branch_name
+      prefix      = sub_domain.value
+    }
   }
 
-  # Let Amplify create the verification and CNAME records in Route 53 rather
-  # than requiring a human to copy them somewhere.
+  # False for a domain Amplify cannot write records for: the verification and
+  # CNAME entries go in by hand wherever that domain's DNS actually lives, and
+  # an apply that waited would fail on a step nobody has performed yet.
+  wait_for_verification = var.custom_domain_wait_for_verification
+
+  # Amplify does not invent subdomains on its own; the list above is the whole
+  # set it will serve.
   enable_auto_sub_domain = false
 }

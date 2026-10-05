@@ -239,10 +239,10 @@ state is empty, the plan says "create 60 resources", and it proves nothing.
       be rejected with a 400 plus an audit row, which is the correct outcome for
       a provider that is not in use. Create the real endpoint if Stripe ever
       comes into scope, and replace both dummies at the same time.
-- [ ] Paystack live webhook URL → `https://api.auracles.space/v1/webhooks/paystack`.
-      Paystack allows one URL per mode; set the live one. This is the rail that
-      actually matters.
-- [ ] Paystack: confirm **transfer OTP is disabled** on the live account.
+- [x] Paystack live webhook URL → `https://api.auracles.space/v1/webhooks/paystack`,
+      set 2026-10-05. Verified from outside: an unsigned POST to it returns
+      400, so the endpoint is reachable and a spoofed payload cannot get in.
+- [x] Paystack: transfer OTP confirmed disabled on the live account, 2026-10-05.
       OTP-held transfers are abandoned after about an hour with no webhook,
       which strands a beneficiary's balance.
 - [ ] Resend: confirm `auracles.space` is a verified sending domain for live

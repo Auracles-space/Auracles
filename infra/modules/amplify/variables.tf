@@ -59,6 +59,18 @@ variable "custom_domain" {
   default     = null
 }
 
+variable "custom_domain_prefixes" {
+  description = "Subdomain prefixes to serve the branch at, under custom_domain. [\"\"] is the domain root alone. Production passes [\"\", \"www\"] so both auracles.space and www.auracles.space serve, matching what the waitlist app does today. Amplify maps a prefix to a branch; it does not redirect one to the other."
+  type        = list(string)
+  default     = [""]
+}
+
+variable "custom_domain_wait_for_verification" {
+  description = "Block the apply until Amplify reports the domain verified. True is right when the domain's hosted zone is in this account, because Amplify writes the validation records itself and finishes in minutes. False is required for a domain whose DNS lives elsewhere — auracles.space is at Namecheap, so the records have to be copied over by hand, and an apply that waits would sit there failing on a step a human has not done yet."
+  type        = bool
+  default     = true
+}
+
 variable "build_spec" {
   description = "Contents of the Amplify build spec. Pass the repository's own amplify.yml so the app-level copy — which Amplify falls back to if that file ever disappears — cannot drift into something older than the build it is meant to reproduce."
   type        = string
