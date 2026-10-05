@@ -1,13 +1,20 @@
 .PHONY: dev datastores api worker beat migrate test-db down logs frontend \
         staging-plan staging-up staging-down staging-status staging-logs \
         staging-bootstrap-admin staging-frontend-build staging-frontend-logs \
-        staging-run staging-seed
+        staging-run staging-seed \
+        prod-plan prod-up prod-status prod-logs prod-run \
+        prod-bootstrap-admin prod-promote-image
 
 # Staging lives in eu-west-2 and is deliberately ephemeral: bring it up for a
 # QA pass, tear it down after. See infra/README.md.
 STAGING_DIR := infra/envs/staging
 AWS_REGION  := eu-west-2
 ECR_REPO    := auracles-backend
+
+# Production is PERMANENT. There is deliberately no `prod-down`: tearing
+# production down is not a routine operation and must not be one keystroke
+# away from `prod-up` in the same file.
+PRODUCTION_DIR := infra/envs/production
 
 # One-command local bootstrap: datastores in Docker + migrations on the host.
 # After this, run the backend processes locally: `make api`, `make worker`,
@@ -246,3 +253,105 @@ staging-seed:
 	  --query 'tasks[0].containers[0].exitCode' --output text); \
 	echo "exit code: $$code"; \
 	[ "$$code" = "0" ]
+
+# ---------------------------------------------------------------------------
+# Production. Note the absence of a `down` target — see PRODUCTION_DIR above.
+# ---------------------------------------------------------------------------
+
+# Review what a prod-up would build, without building it.
+prod-plan:
+	cd $(PRODUCTION_DIR) && terraform plan -var-file=production.tfvars
+
+# Copy an existing image to the :production tag, for the FIRST apply only.
+#
+# The task definitions pull :production, so applying before that tag exists
+# means three services crash-looping on image pull. Afterwards release.yml
+# owns every promotion and this target is not used again.
+#
+# batch-get-image + put-image copies the manifest inside the registry: no
+# bytes travel, the multi-arch manifest survives intact, and no version number
+# is burned on a release that only exists to create a tag.
+prod-promote-image:
+	@set -e; \
+	test -n "$(COMMIT)" || { echo 'usage: make prod-promote-image COMMIT=<full-sha>'; exit 1; }; \
+	manifest=$$(aws ecr batch-get-image --region $(AWS_REGION) --repository-name $(ECR_REPO) \
+	  --image-ids imageTag=sha-$(COMMIT) --query 'images[0].imageManifest' --output text); \
+	if [ "$$manifest" = "None" ] || [ -z "$$manifest" ]; then \
+	  echo "ERROR: no sha-$(COMMIT) image in ECR. The commit must be on main with a finished 'Backend build' run."; exit 1; \
+	fi; \
+	aws ecr put-image --region $(AWS_REGION) --repository-name $(ECR_REPO) \
+	  --image-tag production --image-manifest "$$manifest" \
+	  --query 'image.imageId.imageTag' --output text; \
+	echo "sha-$(COMMIT) is now also :production"
+
+# Bring production up. Terraform shows the plan and waits for confirmation.
+#
+# The image check is not paranoia: all three services pull :production, and a
+# missing tag is a crash loop rather than a clear error.
+prod-up:
+	@aws ecr describe-images --region $(AWS_REGION) --repository-name $(ECR_REPO) \
+	  --image-ids imageTag=production >/dev/null 2>&1 \
+	  || { echo "ERROR: no :production image in ECR. Run: make prod-promote-image COMMIT=<sha>"; exit 1; }
+	cd $(PRODUCTION_DIR) && terraform apply -var-file=production.tfvars
+	@echo "Health: https://api.auracles.space/v1/health"
+
+# "Is production healthy?" Safe to run any time. Reports rolloutState rather
+# than just counts, because ACTIVE 1/1 is not proof a deploy succeeded.
+prod-status:
+	@aws ecs describe-services --region $(AWS_REGION) --cluster auracles-production \
+	  --services api worker beat \
+	  --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,rollout:deployments[0].rolloutState}' \
+	  --output table 2>/dev/null \
+	  || echo "production is not up. Bring it up with: make prod-up"
+	@echo "Health: https://api.auracles.space/v1/health"
+
+# Tail one production service's logs. SERVICE=api|worker|beat.
+prod-logs:
+	aws logs tail /ecs/auracles-production/$(SERVICE) --region $(AWS_REGION) --follow
+
+# Create the initial admin account on a fresh production database. Idempotent.
+# Reads ADMIN_EMAIL from the task definition and ADMIN_PASSWORD from Secrets
+# Manager, so neither value passes through this command line or CloudTrail.
+prod-bootstrap-admin:
+	@set -e; \
+	net=$$(aws ecs describe-services --region $(AWS_REGION) --cluster auracles-production \
+	  --services api --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json); \
+	if [ "$$net" = "null" ] || [ -z "$$net" ]; then \
+	  echo "production is not running — bring it up first with: make prod-up"; exit 1; \
+	fi; \
+	subnets=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["subnets"]))'); \
+	sgs=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["securityGroups"]))'); \
+	arn=$$(aws ecs run-task --region $(AWS_REGION) --cluster auracles-production \
+	  --task-definition auracles-production-api --launch-type FARGATE \
+	  --network-configuration "awsvpcConfiguration={subnets=[$$subnets],securityGroups=[$$sgs],assignPublicIp=ENABLED}" \
+	  --overrides '{"containerOverrides":[{"name":"api","command":["python","-m","scripts.bootstrap_admin"]}]}' \
+	  --query 'tasks[0].taskArn' --output text); \
+	echo "bootstrap task: $$arn"; \
+	aws ecs wait tasks-stopped --region $(AWS_REGION) --cluster auracles-production --tasks "$$arn"; \
+	code=$$(aws ecs describe-tasks --region $(AWS_REGION) --cluster auracles-production --tasks "$$arn" \
+	  --query 'tasks[0].containers[0].exitCode' --output text); \
+	echo "exit code: $$code"; \
+	[ "$$code" = "0" ]
+
+# Run one Python statement inside a throwaway production task, for operational
+# work the UI cannot reach. Use sparingly and read it twice before running: this
+# is real user data, not a QA cycle.
+prod-run:
+	@set -e; \
+	test -n "$(CMD)" || { echo 'usage: make prod-run CMD="<python statements>"'; exit 1; }; \
+	net=$$(aws ecs describe-services --region $(AWS_REGION) --cluster auracles-production \
+	  --services api --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json); \
+	if [ "$$net" = "null" ] || [ -z "$$net" ]; then \
+	  echo "production is not running"; exit 1; \
+	fi; \
+	subnets=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["subnets"]))'); \
+	sgs=$$(echo "$$net" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["securityGroups"]))'); \
+	overrides=$$(CMD="$(CMD)" python3 -c 'import json,os; print(json.dumps({"containerOverrides":[{"name":"api","command":["python","-c",os.environ["CMD"]]}]}))'); \
+	arn=$$(aws ecs run-task --region $(AWS_REGION) --cluster auracles-production \
+	  --task-definition auracles-production-api --launch-type FARGATE \
+	  --network-configuration "awsvpcConfiguration={subnets=[$$subnets],securityGroups=[$$sgs],assignPublicIp=ENABLED}" \
+	  --overrides "$$overrides" --query 'tasks[0].taskArn' --output text); \
+	echo "task: $$arn"; \
+	aws ecs wait tasks-stopped --region $(AWS_REGION) --cluster auracles-production --tasks "$$arn"; \
+	aws ecs describe-tasks --region $(AWS_REGION) --cluster auracles-production --tasks "$$arn" \
+	  --query 'tasks[0].containers[0].exitCode' --output text
