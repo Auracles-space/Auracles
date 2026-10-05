@@ -15,7 +15,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, select
 
 from app.core.config import get_settings
-from app.core.database import async_session_factory
+from app.core.database import async_session_factory, engine
 from app.modules.attestation.models import (
     AttestorTrial,
     AttestorTrialAnswerKey,
@@ -47,6 +47,14 @@ def migrated_database() -> Iterator[None]:
 @pytest.mark.asyncio
 async def test_new_schema_objects_exist(migrated_database: None) -> None:
     """New columns, enum value, and tables are queryable after migration."""
+    # The shared async engine is a module-level singleton with a real pool,
+    # while pytest-asyncio gives each test its own event loop. A connection
+    # pooled by an earlier test is bound to that test's dead loop, and
+    # pool_pre_ping normally recycles it — but the ping runs on this loop and
+    # can itself raise "got Future attached to a different loop" from inside
+    # asyncpg. Disposing first guarantees a pool built on the current loop.
+    # Same defence as test_organizations_service.py's fixture.
+    await engine.dispose()
     async with async_session_factory() as session:
         await session.execute(select(Framework.is_calibration).limit(1))
         await session.execute(
