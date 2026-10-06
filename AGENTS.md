@@ -55,7 +55,7 @@ Two-phase deployment. Code is identical in both phases — only env vars and dep
 | Virus scan         | Celery task (ClamAV in worker image)        |
 | Payments (global)  | Stripe + Stripe Connect                     |
 | Payments (Nigeria) | Paystack                                    |
-| Email              | Resend (`noreply@auracles.space`)           |
+| Email              | Resend (`no-reply@auracles.space`)           |
 | API contract       | OpenAPI spec (`contracts/openapi.yaml`)     |
 | Migrations         | Alembic                                     |
 | ORM                | SQLAlchemy (async)                          |

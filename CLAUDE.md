@@ -59,7 +59,7 @@ earlier Render/Vercel/Neon/Upstash arrangement. Authoritative deployment design:
 | Virus scan         | Celery task (ClamAV in worker image)               |
 | Payments (global)  | Stripe + Stripe Connect                            |
 | Payments (Nigeria) | Paystack                                           |
-| Email              | Resend (`noreply@auracles.space`)                  |
+| Email              | Resend (`no-reply@auracles.space`)                  |
 | Error tracking     | Sentry (backend wired; inert without `SENTRY_DSN`) |
 | API contract       | OpenAPI spec (`contracts/openapi.yaml`)            |
 | Migrations         | Alembic                                            |

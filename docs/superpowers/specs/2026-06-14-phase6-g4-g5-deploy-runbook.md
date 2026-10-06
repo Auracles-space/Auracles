@@ -40,7 +40,7 @@ Do in order. Nothing here the agent can do.
 
 ### 4. Resend (email)
 - [ ] Verify domain `auracles.space` (add SPF `include:_spf.resend.com`, DKIM CNAME, DMARC — see infra doc §3.4).
-- [ ] API key → `RESEND_API_KEY`. Sender `noreply@auracles.space` → `RESEND_FROM_ADDRESS`.
+- [ ] API key → `RESEND_API_KEY`. Sender `no-reply@auracles.space` → `RESEND_FROM_ADDRESS`.
 
 ### 5. Stripe
 - [ ] Live secret key → `STRIPE_SECRET_KEY`.
@@ -94,7 +94,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | secret | AWS IAM | least-privilege |
 | `AWS_DEFAULT_REGION` | secret | AWS | e.g. `us-east-1` |
 | `S3_ARTIFACTS_BUCKET` / `S3_AVATARS_BUCKET` / `S3_REPORTS_BUCKET` / `S3_THUMBNAILS_BUCKET` | secret | AWS | 4 private buckets |
-| `RESEND_API_KEY` / `RESEND_FROM_ADDRESS` | secret | Resend | `noreply@auracles.space` |
+| `RESEND_API_KEY` / `RESEND_FROM_ADDRESS` | secret | Resend | `no-reply@auracles.space` |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | secret | Stripe | webhook secret per endpoint |
 | `BRAVE_SEARCH_API_KEY` | secret | Brave | plagiarism/search integration |
 | `CORS_ALLOWED_ORIGINS` | secret | chosen | prod Vercel origin, no `*` |

@@ -98,7 +98,7 @@ S3_THUMBNAILS_BUCKET=auracles-thumbnails-prod
 
 ```
 RESEND_API_KEY=<key>
-RESEND_FROM_ADDRESS=noreply@auracles.space
+RESEND_FROM_ADDRESS=no-reply@auracles.space
 ```
 
 ## 5. Stripe → 3 values
