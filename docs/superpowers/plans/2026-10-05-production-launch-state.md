@@ -193,6 +193,57 @@ Note that the task definitions stay at revision `:1`. `release.yml` re-points
 a tag and forces a new deployment rather than registering a new revision, so
 "revision unchanged" is not evidence that a release did not land.
 
+## Second tagged release — v1.0.1, 2026-10-08
+
+Two QA findings, both shipped and verified live (apex 200, health
+`api/database/redis` all `ok`, all three services 1/1 `COMPLETED`, Amplify
+`SUCCEED` on the same commit `cdc9bf8f`).
+
+- **A citation-cleared file could never be the public preview.** The citation
+  override writes `metadata.pii_override.accepted`; preview eligibility only
+  ever read `metadata.redaction.accepted`. So the control was hidden, with no
+  reason given, on a file that publishes to buyers unchanged. **Nine of the
+  fifteen artifacts in production were in that state** — which is why the
+  Fundraising framework showed `DD-checklist.pdf` while the file actually named
+  `Preview-...pdf` could not be selected. Architect's decision 2026-10-08: the
+  owner's audited declaration resolves the hold as fully as a redaction does.
+  Both `_artifact_preview_eligible` and the frontend `canBePreview` now accept
+  either, and `pii_override_accepted` is carried on `ArtifactResponse` so they
+  cannot drift apart again. No data fix was needed.
+- **A submitted identity document reached no admin.** `confirm_kyc_document`
+  moved the account to `pending`, which only changes a column: nothing called
+  `notify_admins_review_pending` and `ADMIN_REVIEW_QUEUES` had no
+  `/admin/users` entry, so a submission waited until an admin opened the user
+  directory for an unrelated reason. The notice is keyed on the **document**,
+  not the applicant — a resubmission after a rejection always creates a new
+  document, and a user-keyed dedupe would go permanently silent on that
+  account. The badge counts **users** at `kyc_status = pending`, so it reads as
+  people awaiting a decision rather than files uploaded.
+
+Two further fixes were found on the way:
+
+- **`main` had been red since `03214e74`.** `test_realtime_websocket.py` failed
+  on CI with "got Future ... attached to a different loop" while every local
+  ordering passed. The traceback is `pool/base.py:_checkout` ->
+  `_do_ping_w_event` -> asyncpg `execute`: the shared async engine is a
+  module-level singleton, so a previous module's asyncpg connections sit in its
+  pool bound to a loop that has since closed, and `pool_pre_ping` pings one of
+  them. Reproduced deterministically by leaving one pooled connection behind
+  from an `asyncio.run` in a module collected just before it. Fixed in
+  `_isolate_test_module`, which already gives every module an empty database
+  and now empties that pool too. The module's own
+  `_reset_cached_redis_client` fixture guards a different mechanism and could
+  never have caught it.
+- **KYB resubmission notified nobody.** Admin notices dedupe permanently on
+  their key and `submit_for_verification` keyed on the organization id, but a
+  rejection is explicitly not terminal. `notify_admins_review_pending` now
+  takes an optional `dedupe_scope` folded into the key; KYB passes
+  `kyb_submitted_at`.
+
+Still open in the same shape: `credential` and `org_attestor_application` key
+on their own record id and may also be reviewed more than once. One argument
+each to fix, once someone confirms those flows allow resubmission.
+
 ## Cost
 
 Roughly **$105–135/month** at pilot scale, by the stack plan's table. Staging
