@@ -101,6 +101,11 @@ async def upload_context(
 
     dispatched: list[str] = []
     stored_keys: set[str] = set()
+    notified: list[dict[str, Any]] = []
+
+    def fake_notify_admins(**kwargs: Any) -> None:
+        """Record the admin-review fan-out instead of enqueuing it."""
+        notified.append(kwargs)
 
     def fake_presigned_post(
         bucket: str,
@@ -127,12 +132,17 @@ async def upload_context(
     monkeypatch.setattr(
         settings_service.s3.storage, "object_exists", fake_object_exists
     )
+    monkeypatch.setattr(settings_service, "scan_kyc_document", FakeScanTask(dispatched))
     monkeypatch.setattr(
-        settings_service, "scan_kyc_document", FakeScanTask(dispatched)
+        settings_service, "notify_admins_review_pending", fake_notify_admins
     )
     app.dependency_overrides[get_redis] = lambda: FakeRateLimitRedis()
     try:
-        yield {"dispatched": dispatched, "stored_keys": stored_keys}
+        yield {
+            "dispatched": dispatched,
+            "stored_keys": stored_keys,
+            "notified": notified,
+        }
     finally:
         app.dependency_overrides.pop(get_redis, None)
         await cleanup()
@@ -359,6 +369,53 @@ async def test_confirm_marks_pending_and_dispatches_scan(
     documents = listed.json()["documents"]
     assert len(documents) == 1
     assert documents[0]["doc_type"] == "national_id"
+
+
+async def test_confirm_notifies_admins_that_a_review_is_waiting(
+    client: AsyncClient,
+    migrated_database: None,
+    upload_context: dict[str, Any],
+) -> None:
+    """A confirmed document tells every admin there is an identity to review.
+
+    Moving the account to ``pending`` only changes a column: nothing reached an
+    admin's notification list and the nav gave no sign, so a submission sat
+    unseen until somebody happened to open the user directory. QA found exactly
+    that.
+    """
+    user_id = await _create_user("notify-admins@auracles.space")
+    payload = await _request_upload(client, user_id)
+    upload_context["stored_keys"].add(payload["fields"]["key"])
+
+    response = await client.post(
+        f"/v1/settings/kyc/documents/{payload['document_id']}/confirm",
+        headers=_auth_headers(user_id),
+    )
+
+    assert response.status_code == 200
+    assert len(upload_context["notified"]) == 1
+    notice = upload_context["notified"][0]
+    assert notice["domain"] == "kyc"
+    assert notice["target_id"] == UUID(payload["document_id"])
+    assert notice["link"] == "/admin/users"
+
+
+async def test_confirm_does_not_renotify_on_a_repeated_confirm(
+    client: AsyncClient,
+    migrated_database: None,
+    upload_context: dict[str, Any],
+) -> None:
+    """The second confirm of one document adds no second admin notice."""
+    user_id = await _create_user("notify-once@auracles.space")
+    payload = await _request_upload(client, user_id)
+    upload_context["stored_keys"].add(payload["fields"]["key"])
+    confirm_url = f"/v1/settings/kyc/documents/{payload['document_id']}/confirm"
+
+    first = await client.post(confirm_url, headers=_auth_headers(user_id))
+    second = await client.post(confirm_url, headers=_auth_headers(user_id))
+
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert len(upload_context["notified"]) == 1
 
 
 async def test_confirm_rejects_document_never_uploaded(

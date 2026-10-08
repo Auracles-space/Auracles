@@ -19,6 +19,7 @@ from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.security import generate_opaque_token, hash_token, verify_password
 from app.integrations import persona, s3
 from app.integrations.persona import PersonaProviderError
+from app.modules.admin.notifications import notify_admins_review_pending
 from app.modules.auth import service as auth_service
 from app.modules.auth.models import IdentityVerification, KycDocument, User
 from app.modules.settings.schemas import (
@@ -505,6 +506,18 @@ async def confirm_kyc_document(
     await db.commit()
     await db.refresh(document)
     scan_kyc_document.delay(str(document.id))
+    # Moving the account to ``pending`` only changes a column, so without this
+    # the submission reached no admin's notification list and lit no nav badge
+    # — it waited until somebody opened the user directory for another reason.
+    # Keyed on the document rather than the applicant: a re-submission after a
+    # rejection always creates a new document, so the notice can never go
+    # permanently silent on one account the way a user-keyed dedupe would.
+    notify_admins_review_pending(
+        domain="kyc",
+        target_id=document.id,
+        body=f"{user.display_name or user.email} submitted an identity document.",
+        link="/admin/users",
+    )
     log.info("kyc_document_uploaded")
     return KycDocumentResponse.model_validate(document)
 

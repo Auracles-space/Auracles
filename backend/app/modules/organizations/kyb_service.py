@@ -350,6 +350,13 @@ async def submit_for_verification(
             "verification."
         ),
         link="/admin/organizations",
+        # Scoped to this submission, not the organization. A rejection is
+        # explicitly not terminal — the org fixes the problem and submits
+        # again — and an org-keyed dedupe is permanent, so every round after
+        # the first reached no admin at all. `kyb_submitted_at` is rewritten
+        # on each submit and the `pending` guard above means one submission
+        # cannot be in flight twice, so it identifies the round exactly.
+        dedupe_scope=profile.kyb_submitted_at.isoformat(),
     )
     logger.bind(
         module="organizations",

@@ -351,6 +351,7 @@ async def mark_artifact_pipeline_state(
     pii_review_needed: bool = False,
     internal_rarity: Decimal | None = Decimal("1.0000"),
     external_rarity: Decimal | None = Decimal("1.0000"),
+    metadata_vector: dict[str, Any] | None = None,
 ) -> None:
     """Persist pipeline fields that normally come from Celery workers."""
     async with async_session_factory() as session:
@@ -360,6 +361,8 @@ async def mark_artifact_pipeline_state(
         artifact.processing_status = processing_status
         artifact.pii_detected = pii_detected
         artifact.pii_review_needed = pii_review_needed
+        if metadata_vector is not None:
+            artifact.metadata_vector = metadata_vector
         artifact.internal_rarity = internal_rarity
         artifact.external_rarity = external_rarity
         artifact.rarity_score = internal_rarity
@@ -1082,6 +1085,51 @@ async def test_publish_requires_preview_when_an_eligible_artifact_exists(
         f"/v1/frameworks/{framework_id}/publish", headers=headers
     )
 
+    assert response.status_code == 422
+    assert "preview" in response.json()["detail"].lower()
+
+
+async def test_citation_cleared_artifact_counts_as_preview_eligible(
+    client: AsyncClient,
+    migrated_database: None,
+    framework_test_context: dict[str, Any],
+) -> None:
+    """A PII hold cleared by declaring citations leaves the file showable.
+
+    The owner has declared on the record that the detected names are cited
+    institutions and the file publishes to buyers unchanged, so it is also
+    eligible to be the public preview. Treating it as ineligible left a
+    Framework whose every file was citation-cleared publishable with no
+    preview at all, and the Contributor with no control to set one.
+    """
+    contributor_id = await create_user_with_roles(
+        "publish-citation-preview@auracles.space",
+        ["contributor"],
+    )
+    framework_id = await create_draft_framework(client, contributor_id)
+    artifact_id = await create_artifact_for_framework(
+        client, contributor_id, framework_id
+    )
+    await mark_artifact_pipeline_state(
+        framework_id,
+        artifact_id,
+        pii_detected=True,
+        metadata_vector={"pii_override": {"accepted": True, "reason": "citations"}},
+    )
+    headers = auth_headers(contributor_id, ["contributor"])
+    submitted = await client.post(
+        f"/v1/frameworks/{framework_id}/submit", headers=headers
+    )
+    assert submitted.json()["status"] == "pipeline_passed"
+
+    listed = await client.get(
+        f"/v1/frameworks/{framework_id}/artifacts", headers=headers
+    )
+    response = await client.post(
+        f"/v1/frameworks/{framework_id}/publish", headers=headers
+    )
+
+    assert listed.json()[0]["pii_override_accepted"] is True
     assert response.status_code == 422
     assert "preview" in response.json()["detail"].lower()
 

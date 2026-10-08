@@ -24,6 +24,7 @@ _DOMAIN_TITLES = {
     "attestation_dispute": "Attestation dispute raised",
     "credential": "Credential awaiting verification",
     "developer_application": "Developer application submitted",
+    "kyc": "Identity verification submitted",
     "org_attestor_application": "Attestor application submitted",
     "org_kyb": "Business verification submitted",
     "payout": "Payout needs attention",
@@ -43,6 +44,7 @@ def notify_admins_review_pending(
     body: str,
     link: str,
     title: str | None = None,
+    dedupe_scope: str | None = None,
 ) -> None:
     """Queue one admin-review notification, fanned out to every admin account.
 
@@ -56,6 +58,13 @@ def notify_admins_review_pending(
         link: Deep link to the admin surface that resolves the item.
         title: Optional notification title; defaults to the domain's title, or
             a generic review prompt for a domain without one.
+        dedupe_scope: Optional marker for *which round* of review this is,
+            folded into the dedupe key. Needed wherever one record is reviewed
+            more than once: deduping on ``target_id`` alone is permanent, so a
+            resubmission after a rejection is dropped and no admin is told to
+            look again. Pass something that changes per submission (a
+            submitted-at timestamp, a revision) — not a value that changes on
+            every call, which would defeat deduping altogether.
     """
     try:
         dispatch_admin_notification.delay(
@@ -64,7 +73,10 @@ def notify_admins_review_pending(
             body=body,
             payload={"domain": domain, "target_id": str(target_id)},
             link=link,
-            dedupe_key=f"admin_review_pending:{domain}:{target_id}",
+            dedupe_key=(
+                f"admin_review_pending:{domain}:{target_id}"
+                + (f":{dedupe_scope}" if dedupe_scope is not None else "")
+            ),
         )
     except Exception as exc:
         # A broker hiccup must never roll back the committed domain action that

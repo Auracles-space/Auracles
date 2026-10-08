@@ -1680,6 +1680,7 @@ export type ArtifactResponse = {
     name: string;
     near_duplicate_blocked?: boolean;
     pii_detected: boolean;
+    pii_override_accepted?: boolean;
     pii_review_needed: boolean;
     pii_types_found?: Array<(string)>;
     processing_status: string;

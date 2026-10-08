@@ -309,6 +309,11 @@ class ArtifactResponse(BaseModel):
     redaction_available: bool
     redaction_status: str | None
     redaction_accepted: bool
+    # True when the owner cleared a PII hold by declaring the matches to be
+    # citations rather than by redacting. Carried separately from
+    # ``redaction_accepted`` because the file is deliberately kept unchanged,
+    # yet it resolves the hold just as fully for preview eligibility.
+    pii_override_accepted: bool = False
     rarity_score: Decimal | None
     near_duplicate_blocked: bool = False
     similarity_notice: SimilarityNotice | None = None

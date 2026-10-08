@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pyotp
@@ -392,6 +393,56 @@ async def test_admin_cannot_verify_documents_that_were_never_uploaded(
 
     assert res.status_code == 422
     assert "never uploaded" in res.json()["detail"]
+
+
+async def test_resubmission_after_a_rejection_pings_admins_again(
+    client: AsyncClient, clean_state: FakeRedis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A corrected resubmission reaches admins instead of being deduped away.
+
+    Admin notifications dedupe permanently on their key, and the key was
+    domain plus organization id — so the second review round of the same org
+    was silently dropped and nobody was told to look at it again. The dedupe
+    has to scope to the submission, not the organization, because the whole
+    point of a rejection is that another submission follows.
+    """
+    from app.modules.admin import notifications as _notifications
+
+    sent: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        _notifications,
+        "dispatch_admin_notification",
+        SimpleNamespace(delay=lambda **kwargs: sent.append(kwargs)),
+    )
+    owner_id = await _user("owner", totp_secret=pyotp.random_base32())
+    await open_step_up_window(clean_state, owner_id)
+    admin_secret = pyotp.random_base32()
+    admin_id = await _user("admin", totp_secret=admin_secret)
+    await open_step_up_window(clean_state, admin_id)
+    org_id = await _org(owner_id)
+    await _profile(org_id, kyb_status="unverified")
+    submit_path = f"/v1/orgs/{org_id}/kyb/submit"
+
+    first = await client.post(submit_path, headers=_auth(owner_id))
+    rejected = await client.post(
+        f"/v1/admin/orgs/{org_id}/kyb/review",
+        json={"verdict": "rejected", "notes": "The certificate is unreadable."},
+        headers=_auth(admin_id, ["admin"]),
+    )
+    second = await client.post(submit_path, headers=_auth(owner_id))
+
+    assert (first.status_code, rejected.status_code, second.status_code) == (
+        200,
+        200,
+        200,
+    )
+    keys = [
+        notice["dedupe_key"]
+        for notice in sent
+        if notice["payload"]["domain"] == "org_kyb"
+    ]
+    assert len(keys) == 2
+    assert keys[0] != keys[1]
 
 
 async def test_submit_pings_admins_for_review(

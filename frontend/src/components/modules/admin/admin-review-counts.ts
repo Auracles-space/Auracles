@@ -15,12 +15,17 @@
  * `/admin/money` is deliberately absent: refund intents notify admins, but no
  * endpoint exposes "refunds needing attention", so there is nothing to count
  * yet. Adding one is a backend change, not a key in this list.
+ *
+ * `/admin/users` was the second round of the same miss: identity verification
+ * notified nobody at all and counted nothing, so a submitted document waited
+ * until an admin opened the directory for an unrelated reason.
  */
 import {
   adminListOrgsV1AdminOrgsGet,
   listAdminAttestationDisputes,
   listAdminAttestations,
   listAdminDeletionRequestsV1AdminGdprDeletionRequestsGet,
+  listAdminUsersV1AdminUsersGet,
   countStuckPayoutsV1AdminPayoutsStuckCountGet,
   listAdminProjectDisputes,
   listCredentialReviewQueueV1AdminCredentialsGet,
@@ -150,6 +155,21 @@ export const ADMIN_REVIEW_QUEUES: AdminReviewQueue[] = [
       const result = await adminListOrgsV1AdminOrgsGet({
         headers,
         query: { kyb_status: "pending", page: 1, page_size: 1 },
+      });
+      return totalOf(result);
+    },
+  },
+  {
+    href: "/admin/users",
+    load: async (headers) => {
+      // The review queue is the user directory filtered to accounts whose
+      // identity documents are waiting, which is the same filter the page's
+      // own KYC tab uses. Counting pending users rather than documents keeps
+      // the badge at the number of people an admin has to decide about, not
+      // the number of files they uploaded.
+      const result = await listAdminUsersV1AdminUsersGet({
+        headers,
+        query: { status: "kyc_pending", page: 1, page_size: 1 },
       });
       return totalOf(result);
     },
