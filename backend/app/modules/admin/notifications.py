@@ -24,6 +24,7 @@ _DOMAIN_TITLES = {
     "attestation_dispute": "Attestation dispute raised",
     "credential": "Credential awaiting verification",
     "developer_application": "Developer application submitted",
+    "kyc": "Identity verification submitted",
     "org_attestor_application": "Attestor application submitted",
     "org_kyb": "Business verification submitted",
     "payout": "Payout needs attention",

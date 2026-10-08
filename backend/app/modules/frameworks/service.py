@@ -88,6 +88,7 @@ def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
     """Map an Artifact row to the contributor-facing status response."""
     metadata = artifact.metadata_vector or {}
     redaction = metadata.get("redaction") or {}
+    pii_override = metadata.get("pii_override") or {}
     raw_similarity_notice = metadata.get("similarity_notice")
     similarity_notice = (
         SimilarityNotice.model_validate(raw_similarity_notice)
@@ -112,6 +113,7 @@ def _artifact_to_response(artifact: Artifact) -> ArtifactResponse:
             str(redaction.get("status")) if redaction.get("status") else None
         ),
         redaction_accepted=bool(redaction.get("accepted")),
+        pii_override_accepted=bool(pii_override.get("accepted")),
         rarity_score=artifact.rarity_score,
         near_duplicate_blocked=bool(metadata.get("near_duplicate_blocked")),
         similarity_notice=similarity_notice,
@@ -375,9 +377,13 @@ def _artifact_preview_eligible(artifact: Artifact) -> bool:
     """Report whether an Artifact may be exposed as the public preview.
 
     The preview is publicly downloadable, so it must have cleared processing
-    and carry no unresolved PII — a redacted-and-accepted file qualifies, an
-    unresolved PII flag does not. Mirrors the frontend ``canBePreview`` rule so
-    the publish-time requirement and the manifest's UI stay in agreement.
+    and carry no unresolved PII. Two owner actions resolve a hold and both
+    count here: accepting the generated redaction, and declaring the matches
+    to be citations. The second is the one QA found missing — a file the owner
+    had declared on the record, and which publishes to buyers unchanged, could
+    never be chosen as the preview, and the control was simply absent with no
+    reason given. Mirrors the frontend ``canBePreview`` rule so the
+    publish-time requirement and the manifest's UI stay in agreement.
 
     Args:
         artifact: The current Artifact to evaluate.
@@ -389,8 +395,10 @@ def _artifact_preview_eligible(artifact: Artifact) -> bool:
         return False
     if not artifact.pii_detected:
         return True
-    redaction = (artifact.metadata_vector or {}).get("redaction") or {}
-    return bool(redaction.get("accepted"))
+    metadata = artifact.metadata_vector or {}
+    redaction = metadata.get("redaction") or {}
+    pii_override = metadata.get("pii_override") or {}
+    return bool(redaction.get("accepted")) or bool(pii_override.get("accepted"))
 
 
 # Statuses whose listing metadata (title, price, description, tags, taxonomy)

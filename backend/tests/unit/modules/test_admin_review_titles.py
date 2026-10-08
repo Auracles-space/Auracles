@@ -25,6 +25,7 @@ def test_admin_review_titles_name_the_item(monkeypatch: pytest.MonkeyPatch) -> N
         "org_attestor_application",
         "project_dispute",
         "org_kyb",
+        "kyc",
         "brand_new",
     ):
         notifications.notify_admins_review_pending(
@@ -35,5 +36,6 @@ def test_admin_review_titles_name_the_item(monkeypatch: pytest.MonkeyPatch) -> N
         "Attestor application submitted",
         "Project dispute raised",
         "Business verification submitted",
+        "Identity verification submitted",
         "Item awaiting admin review",
     ]

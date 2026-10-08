@@ -4712,6 +4712,10 @@ components:
         pii_detected:
           title: Pii Detected
           type: boolean
+        pii_override_accepted:
+          default: false
+          title: Pii Override Accepted
+          type: boolean
         pii_review_needed:
           title: Pii Review Needed
           type: boolean

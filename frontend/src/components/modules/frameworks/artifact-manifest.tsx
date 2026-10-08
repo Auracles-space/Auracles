@@ -49,8 +49,14 @@ const IN_FLIGHT_PROCESSING = new Set(["processing"]);
  * Decide whether an artifact is safe to expose as the public preview.
  *
  * The preview is publicly downloadable, so it must have cleared processing and
- * carry no unresolved PII. A file whose PII was redacted and accepted is
- * allowed; an unresolved PII flag is not.
+ * carry no unresolved PII. Either owner action resolves a hold: accepting the
+ * generated redaction, or declaring the matches to be cited institutions. The
+ * second was missing, so a declared file — one that publishes to buyers
+ * unchanged — showed no control at all and no reason why.
+ *
+ * Mirrors `_artifact_preview_eligible` in the frameworks service, which gates
+ * the publish-time requirement; the two must agree or publish demands a
+ * preview the UI gives no way to set.
  *
  * @param artifact - Artifact to evaluate.
  * @returns True when the artifact may be designated as preview.
@@ -59,7 +65,9 @@ function canBePreview(artifact: ArtifactResponse): boolean {
   return (
     artifact.processing_status === "processed" &&
     !artifact.pii_review_needed &&
-    (!artifact.pii_detected || artifact.redaction_accepted)
+    (!artifact.pii_detected ||
+      artifact.redaction_accepted ||
+      artifact.pii_override_accepted === true)
   );
 }
 
@@ -206,8 +214,8 @@ export function ArtifactManifest({
                     {artifact.name}
                   </p>
                   <p className="text-foreground-muted">
-                    {formatFileSize(artifact.file_size)} · {artifact.scan_status}{" "}
-                    · {artifact.processing_status}
+                    {formatFileSize(artifact.file_size)} ·{" "}
+                    {artifact.scan_status} · {artifact.processing_status}
                   </p>
                   {canSetPreview && artifact.source_kind === "google_drive" ? (
                     <SourcePreviewBadge
