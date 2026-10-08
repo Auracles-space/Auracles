@@ -102,6 +102,7 @@ from app.main import app  # noqa: E402
 # accepts the publish and nothing consumes it, matching CI where no worker runs.
 from app.workers.celery_app import app as _celery_app  # noqa: E402
 from tests._guard import assert_local_datastores  # noqa: E402
+from tests.support.engine_pool import dispose_shared_async_engine  # noqa: E402
 from tests.support.rate_limit import InMemoryRateCounter  # noqa: E402
 
 _celery_app.conf.broker_url = "memory://"
@@ -199,7 +200,16 @@ def _isolate_test_module() -> None:
     foreign-key ordering, so this stays correct as tables are added.
 
     Migration-owned reference data is preserved — see `_MIGRATION_OWNED_TABLES`.
+
+    The shared async engine's pool is emptied for the same reason, one layer
+    down. It is a module-level singleton, so a previous module's asyncpg
+    connections sit in it bound to a loop that has since closed, and
+    `pool_pre_ping` raises "got Future ... attached to a different loop" on the
+    next checkout. That is what took the realtime WebSocket tests red on CI
+    while every local ordering passed — xdist decides which module precedes
+    which, so a clean slate has to include the pool, not just the rows.
     """
+    dispose_shared_async_engine()
     settings = get_settings()
     engine = sa.create_engine(settings.sync_database_url, pool_pre_ping=True)
     try:
