@@ -240,6 +240,14 @@ module "ecs" {
   secret_arns = merge(
     data.terraform_remote_state.shared.outputs.staging_secret_arns,
     {
+      # Earns our own server-side renderer a separate rate-limit bucket. Not in
+      # the hand-entered set above: Terraform generates it so the API and
+      # Amplify cannot be given different values, and so the first apply does
+      # not have to read a secret version it is creating in the same graph.
+      INTERNAL_API_SECRET = (
+        data.terraform_remote_state.shared.outputs.internal_api_secret_arns["staging"]
+      )
+
       DATABASE_URL = aws_secretsmanager_secret.database_url.arn
       REDIS_URL    = aws_secretsmanager_secret.redis_url.arn
     },
