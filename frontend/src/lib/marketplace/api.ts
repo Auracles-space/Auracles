@@ -28,9 +28,16 @@ const API_BASE_URL = resolveApiBaseUrl();
  * from a server-only variable, so it is never bundled into browser code; when
  * it is unset the renderer simply shares the public bucket as before.
  *
+ * Exported because it must be passed **per call**, not left on the shared
+ * client config. The generated client is a module-level singleton and
+ * `setConfig` replaces the whole object, so any other caller — `getHealth`
+ * does exactly this — blanks these headers for every SSR render in flight.
+ * Next serves concurrent renders from one process, so that is a race, and it
+ * is what left 17% of catalog reads still rate-limited after the first fix.
+ *
  * @returns The internal-caller header, or nothing when unconfigured.
  */
-function internalCallerHeaders(): Record<string, string> {
+export function internalCallerHeaders(): Record<string, string> {
   const secret = process.env.INTERNAL_API_SECRET;
   return secret ? { "X-Internal-Caller": secret } : {};
 }
