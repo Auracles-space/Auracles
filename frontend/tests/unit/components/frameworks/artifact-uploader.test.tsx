@@ -55,8 +55,10 @@ describe("ArtifactUploader", () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     expect(
-      await screen.findByText(/file type is not supported/i),
+      await screen.findByText(/unsupported file type/i),
     ).toBeInTheDocument();
+    // The useful half of a type rejection is what IS accepted.
+    expect(await screen.findByText(/Supported types:/i)).toBeInTheDocument();
     expect(api.createArtifactUpload).not.toHaveBeenCalled();
   });
 
@@ -95,6 +97,176 @@ describe("ArtifactUploader", () => {
       expect(await screen.findByText(/upload failed/i)).toBeInTheDocument();
       expect(screen.queryByText(/uploading/i)).not.toBeInTheDocument();
       expect(api.confirmArtifact).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("accepts more than one file from the picker", () => {
+    // The control said "Upload files" while the input took one. The team
+    // pushed 56 files through production one at a time before reporting it.
+    const { container } = render(
+      <ArtifactUploader
+        api={api}
+        artifactCount={0}
+        existingBytes={0}
+        frameworkId="fw_1"
+        onUploaded={() => undefined}
+      />,
+    );
+
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    expect(input.multiple).toBe(true);
+  });
+
+  it("uploads every selected file, not just the first", async () => {
+    vi.mocked(api.createArtifactUpload).mockReset();
+    vi.mocked(api.confirmArtifact).mockReset();
+    let issued = 0;
+    vi.mocked(api.createArtifactUpload).mockImplementation(async () => {
+      issued += 1;
+      return {
+        artifact_id: `art_${issued}`,
+        upload_url: "https://s3.example.com/bucket",
+        fields: { key: `artifacts/art_${issued}` },
+      } as never;
+    });
+    vi.mocked(api.confirmArtifact).mockImplementation(
+      async (_fw, artifactId) => ({ id: artifactId }) as never,
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+
+    try {
+      const { container } = render(
+        <ArtifactUploader
+          api={api}
+          artifactCount={0}
+          existingBytes={0}
+          frameworkId="fw_1"
+          onUploaded={() => undefined}
+        />,
+      );
+
+      const input = container.querySelector(
+        'input[type="file"]',
+      ) as HTMLInputElement;
+      fireEvent.change(input, {
+        target: {
+          files: [
+            new File(["x"], "a.pdf", { type: "application/pdf" }),
+            new File(["x"], "b.pdf", { type: "application/pdf" }),
+            new File(["x"], "c.pdf", { type: "application/pdf" }),
+          ],
+        },
+      });
+
+      expect(
+        await screen.findByText(/3 artifacts uploaded/i),
+      ).toBeInTheDocument();
+      expect(api.confirmArtifact).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("uploads the good files in a batch and names the ones it skipped", async () => {
+    // One bad file must not abandon the rest — the point of a batch is that
+    // the contributor does not have to babysit it — and a silently dropped
+    // file is worse than a named one.
+    vi.mocked(api.createArtifactUpload).mockReset();
+    vi.mocked(api.confirmArtifact).mockReset();
+    vi.mocked(api.createArtifactUpload).mockResolvedValue({
+      artifact_id: "art_1",
+      upload_url: "https://s3.example.com/bucket",
+      fields: { key: "artifacts/art_1" },
+    } as never);
+    vi.mocked(api.confirmArtifact).mockResolvedValue({ id: "art_1" } as never);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+
+    try {
+      const { container } = render(
+        <ArtifactUploader
+          api={api}
+          artifactCount={0}
+          existingBytes={0}
+          frameworkId="fw_1"
+          onUploaded={() => undefined}
+        />,
+      );
+
+      const input = container.querySelector(
+        'input[type="file"]',
+      ) as HTMLInputElement;
+      fireEvent.change(input, {
+        target: {
+          files: [
+            new File(["x"], "good.pdf", { type: "application/pdf" }),
+            new File(["x"], "payload.exe", {
+              type: "application/x-msdownload",
+            }),
+          ],
+        },
+      });
+
+      expect(
+        await screen.findByText(/1 artifact uploaded/i),
+      ).toBeInTheDocument();
+      expect(await screen.findByText(/payload\.exe/)).toBeInTheDocument();
+      expect(api.confirmArtifact).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("counts a batch against the byte cap as it goes", async () => {
+    // Two 300MB files each fit under the 500MB cap alone but not together, so
+    // checking every file against the pre-batch total would admit both.
+    vi.mocked(api.createArtifactUpload).mockReset();
+    vi.mocked(api.confirmArtifact).mockReset();
+    vi.mocked(api.createArtifactUpload).mockResolvedValue({
+      artifact_id: "art_1",
+      upload_url: "https://s3.example.com/bucket",
+      fields: { key: "artifacts/art_1" },
+    } as never);
+    vi.mocked(api.confirmArtifact).mockResolvedValue({ id: "art_1" } as never);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true } as Response));
+
+    /** A PDF reporting the given byte size. */
+    function sized(name: string, size: number): File {
+      const file = new File(["x"], name, { type: "application/pdf" });
+      Object.defineProperty(file, "size", { value: size });
+      return file;
+    }
+
+    try {
+      const { container } = render(
+        <ArtifactUploader
+          api={api}
+          artifactCount={0}
+          existingBytes={0}
+          frameworkId="fw_1"
+          onUploaded={() => undefined}
+        />,
+      );
+
+      const input = container.querySelector(
+        'input[type="file"]',
+      ) as HTMLInputElement;
+      fireEvent.change(input, {
+        target: {
+          files: [
+            sized("first.pdf", 300 * 1024 * 1024),
+            sized("second.pdf", 300 * 1024 * 1024),
+          ],
+        },
+      });
+
+      expect(
+        await screen.findByText(/exceed the 500 ?MB limit/i),
+      ).toBeInTheDocument();
+      expect(api.confirmArtifact).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
     }

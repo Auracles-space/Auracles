@@ -31,16 +31,32 @@ async def _truncate() -> None:
 
 
 async def _seed_framework(session) -> Framework:
-    contributor = User(email=f"{uuid4()}@a.space", display_name="R",
-                       email_verified=True, password_hash=None)
+    contributor = User(
+        email=f"{uuid4()}@a.space",
+        display_name="R",
+        email_verified=True,
+        password_hash=None,
+    )
     framework = Framework(
-        contributor_id=uuid4(), title="Reaper FW", description="reaper test fw",
-        category="framework", sector="financial_services", industry="fund_management",
-        business_function="risk_management", tags=["r"], tags_text="r",
-        jurisdiction="us", complexity=3, org_size="mid_market",
-        lifecycle_stage="scale", price=Decimal("1.00"), currency="USD",
-        license_types=["single_user"], commercial_rights="x",
-        usage_restrictions="x", status="draft",
+        contributor_id=uuid4(),
+        title="Reaper FW",
+        description="reaper test fw",
+        category="framework",
+        sector="financial_services",
+        industry="fund_management",
+        business_function="risk_management",
+        tags=["r"],
+        tags_text="r",
+        jurisdiction="us",
+        complexity=3,
+        org_size="mid_market",
+        lifecycle_stage="scale",
+        price=Decimal("1.00"),
+        currency="USD",
+        license_types=["single_user"],
+        commercial_rights="x",
+        usage_restrictions="x",
+        status="draft",
     )
     session.add(contributor)
     await session.flush()
@@ -57,28 +73,38 @@ async def test_reaper_fails_stale_processing_rows(monkeypatch):
     from app.workers.tasks import artifacts_beat
 
     monkeypatch.setattr(
-        artifacts_beat, "get_settings",
-        lambda: SimpleNamespace(s3_artifacts_bucket="bucket",
-                                artifact_processing_lease_minutes=30,
-                                artifact_orphan_sweep_minutes=60),
+        artifacts_beat,
+        "get_settings",
+        lambda: SimpleNamespace(
+            s3_artifacts_bucket="bucket",
+            artifact_processing_lease_minutes=30,
+            artifact_orphan_sweep_minutes=60,
+        ),
     )
     # No S3 orphans in this test.
-    monkeypatch.setattr(artifacts_beat.s3.storage, "list_keys",
-                        lambda bucket, prefix: [], raising=False)
+    monkeypatch.setattr(
+        artifacts_beat.s3.storage, "list_keys", lambda bucket, prefix: [], raising=False
+    )
 
     async with async_session_factory() as session:
         async with session.begin():
             framework = await _seed_framework(session)
             stale = Artifact(
-                framework_id=framework.id, name="s.pdf",
-                file_key="frameworks/x/artifacts/s.pdf", file_size=1,
-                mime_type="application/pdf", processing_status="processing",
+                framework_id=framework.id,
+                name="s.pdf",
+                file_key="frameworks/x/artifacts/s.pdf",
+                file_size=1,
+                mime_type="application/pdf",
+                processing_status="processing",
                 processing_started_at=datetime.now(UTC) - timedelta(minutes=31),
             )
             fresh = Artifact(
-                framework_id=framework.id, name="f.pdf",
-                file_key="frameworks/x/artifacts/f.pdf", file_size=1,
-                mime_type="application/pdf", processing_status="processing",
+                framework_id=framework.id,
+                name="f.pdf",
+                file_key="frameworks/x/artifacts/f.pdf",
+                file_size=1,
+                mime_type="application/pdf",
+                processing_status="processing",
                 processing_started_at=datetime.now(UTC),
             )
             session.add_all([stale, fresh])
@@ -95,6 +121,87 @@ async def test_reaper_fails_stale_processing_rows(monkeypatch):
     await engine.dispose()
 
 
+async def test_reaper_fails_pending_rows_whose_scan_never_started(monkeypatch):
+    """A row that was never dispatched is reaped like a stalled one.
+
+    `request_artifact_upload_url` commits the Artifact row before the browser
+    uploads anything, so an upload abandoned between the presigned POST and
+    the confirm call leaves a row at `pending` with a null
+    `processing_started_at`. The reaper matched only `processing` rows with a
+    non-null start time, so nothing ever touched it — and the pipeline gate
+    counts `pending` as in flight, which held the whole Framework at
+    `processing` indefinitely. One production Framework sat frozen for two and
+    a half days exactly this way.
+
+    A fresh pending row is spared: it belongs to an upload that is probably
+    still in the browser's hands.
+    """
+    await engine.dispose()
+    await _truncate()
+    from app.workers.tasks import artifacts_beat
+
+    monkeypatch.setattr(
+        artifacts_beat,
+        "get_settings",
+        lambda: SimpleNamespace(
+            s3_artifacts_bucket="bucket",
+            artifact_processing_lease_minutes=30,
+            artifact_orphan_sweep_minutes=60,
+        ),
+    )
+    monkeypatch.setattr(
+        artifacts_beat.s3.storage, "list_keys", lambda bucket, prefix: [], raising=False
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await _seed_framework(session)
+            abandoned = Artifact(
+                framework_id=framework.id,
+                name="abandoned.pdf",
+                file_key="frameworks/x/artifacts/abandoned.pdf",
+                file_size=1,
+                mime_type="application/pdf",
+                processing_status="pending",
+                processing_started_at=None,
+            )
+            in_flight = Artifact(
+                framework_id=framework.id,
+                name="in-flight.pdf",
+                file_key="frameworks/x/artifacts/in-flight.pdf",
+                file_size=1,
+                mime_type="application/pdf",
+                processing_status="pending",
+                processing_started_at=None,
+            )
+            session.add_all([abandoned, in_flight])
+            await session.flush()
+            abandoned_id, in_flight_id = abandoned.id, in_flight.id
+        # `created_at` carries a server default, so age it afterwards: this is
+        # the only clock a never-started row has.
+        await session.execute(
+            text(
+                f"UPDATE {Artifact.__tablename__} "
+                "SET created_at = now() - interval '31 minutes' WHERE id = :id"
+            ),
+            {"id": abandoned_id},
+        )
+        await session.commit()
+
+    result = await artifacts_beat._reap_stalled_artifacts_impl()
+
+    async with async_session_factory() as session:
+        assert (await session.get(Artifact, abandoned_id)).processing_status == (
+            "failed"
+        )
+        assert (await session.get(Artifact, in_flight_id)).processing_status == (
+            "pending"
+        )
+    assert result["reaped"] == 1
+    await _truncate()
+    await engine.dispose()
+
+
 async def test_orphan_sweep_deletes_unreferenced_keys(monkeypatch):
     """Only the orphaned, aged key is deleted; live and source-preview keys survive."""
     await engine.dispose()
@@ -102,14 +209,18 @@ async def test_orphan_sweep_deletes_unreferenced_keys(monkeypatch):
     from app.workers.tasks import artifacts_beat
 
     monkeypatch.setattr(
-        artifacts_beat, "get_settings",
-        lambda: SimpleNamespace(s3_artifacts_bucket="bucket",
-                                artifact_processing_lease_minutes=30,
-                                artifact_orphan_sweep_minutes=60),
+        artifacts_beat,
+        "get_settings",
+        lambda: SimpleNamespace(
+            s3_artifacts_bucket="bucket",
+            artifact_processing_lease_minutes=30,
+            artifact_orphan_sweep_minutes=60,
+        ),
     )
     old_timestamp = datetime.now(UTC) - timedelta(minutes=120)
     monkeypatch.setattr(
-        artifacts_beat.s3.storage, "list_keys",
+        artifacts_beat.s3.storage,
+        "list_keys",
         lambda bucket, prefix: [
             (old_timestamp, "frameworks/x/artifacts/live.pdf"),
             (old_timestamp, "frameworks/x/artifacts/orphan.pdf"),
@@ -119,7 +230,8 @@ async def test_orphan_sweep_deletes_unreferenced_keys(monkeypatch):
     )
     deleted: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        artifacts_beat.s3.storage, "delete_object",
+        artifacts_beat.s3.storage,
+        "delete_object",
         lambda bucket, key: deleted.append((bucket, key)),
         raising=False,
     )
@@ -128,9 +240,12 @@ async def test_orphan_sweep_deletes_unreferenced_keys(monkeypatch):
         async with session.begin():
             framework = await _seed_framework(session)
             live = Artifact(
-                framework_id=framework.id, name="live.pdf",
-                file_key="frameworks/x/artifacts/live.pdf", file_size=1,
-                mime_type="application/pdf", processing_status="processed",
+                framework_id=framework.id,
+                name="live.pdf",
+                file_key="frameworks/x/artifacts/live.pdf",
+                file_size=1,
+                mime_type="application/pdf",
+                processing_status="processed",
             )
             session.add(live)
 
@@ -155,14 +270,18 @@ async def test_orphan_sweep_spares_recent_objects(monkeypatch):
     from app.workers.tasks import artifacts_beat
 
     monkeypatch.setattr(
-        artifacts_beat, "get_settings",
-        lambda: SimpleNamespace(s3_artifacts_bucket="bucket",
-                                artifact_processing_lease_minutes=30,
-                                artifact_orphan_sweep_minutes=60),
+        artifacts_beat,
+        "get_settings",
+        lambda: SimpleNamespace(
+            s3_artifacts_bucket="bucket",
+            artifact_processing_lease_minutes=30,
+            artifact_orphan_sweep_minutes=60,
+        ),
     )
     recent_timestamp = datetime.now(UTC)
     monkeypatch.setattr(
-        artifacts_beat.s3.storage, "list_keys",
+        artifacts_beat.s3.storage,
+        "list_keys",
         lambda bucket, prefix: [
             (recent_timestamp, "frameworks/x/artifacts/orphan.pdf"),
         ],
@@ -170,7 +289,8 @@ async def test_orphan_sweep_spares_recent_objects(monkeypatch):
     )
     deleted: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        artifacts_beat.s3.storage, "delete_object",
+        artifacts_beat.s3.storage,
+        "delete_object",
         lambda bucket, key: deleted.append((bucket, key)),
         raising=False,
     )
@@ -195,15 +315,19 @@ async def test_orphan_sweep_spares_clean_file_key(monkeypatch):
     from app.workers.tasks import artifacts_beat
 
     monkeypatch.setattr(
-        artifacts_beat, "get_settings",
-        lambda: SimpleNamespace(s3_artifacts_bucket="bucket",
-                                artifact_processing_lease_minutes=30,
-                                artifact_orphan_sweep_minutes=60),
+        artifacts_beat,
+        "get_settings",
+        lambda: SimpleNamespace(
+            s3_artifacts_bucket="bucket",
+            artifact_processing_lease_minutes=30,
+            artifact_orphan_sweep_minutes=60,
+        ),
     )
     old_timestamp = datetime.now(UTC) - timedelta(minutes=120)
     redacted_key = "frameworks/x/artifacts/a/redacted/r.pdf"
     monkeypatch.setattr(
-        artifacts_beat.s3.storage, "list_keys",
+        artifacts_beat.s3.storage,
+        "list_keys",
         lambda bucket, prefix: [
             (old_timestamp, "frameworks/x/artifacts/live.pdf"),
             (old_timestamp, redacted_key),
@@ -213,7 +337,8 @@ async def test_orphan_sweep_spares_clean_file_key(monkeypatch):
     )
     deleted: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        artifacts_beat.s3.storage, "delete_object",
+        artifacts_beat.s3.storage,
+        "delete_object",
         lambda bucket, key: deleted.append((bucket, key)),
         raising=False,
     )
@@ -222,9 +347,12 @@ async def test_orphan_sweep_spares_clean_file_key(monkeypatch):
         async with session.begin():
             framework = await _seed_framework(session)
             live = Artifact(
-                framework_id=framework.id, name="live.pdf",
-                file_key="frameworks/x/artifacts/live.pdf", file_size=1,
-                mime_type="application/pdf", processing_status="processed",
+                framework_id=framework.id,
+                name="live.pdf",
+                file_key="frameworks/x/artifacts/live.pdf",
+                file_size=1,
+                mime_type="application/pdf",
+                processing_status="processed",
                 clean_file_key=redacted_key,
             )
             session.add(live)
