@@ -104,10 +104,18 @@ describe("ReportEvidenceUploader", () => {
       }),
     );
     // The parent is handed the storage key only once the file is clean.
-    expect(onChange).toHaveBeenLastCalledWith({
-      fileKeys: ["attestations/a1/evidence/site-visit.pdf"],
-      settled: true,
-    });
+    //
+    // Waited on rather than asserted directly: the status text and the
+    // `onChange` call come from different effects, so the text can be on screen
+    // a tick before the parent is told. Asserting straight after the text
+    // caught the initial `{fileKeys: [], settled: false}` instead and took
+    // main red once, only under coverage on a CI runner.
+    await waitFor(() =>
+      expect(onChange).toHaveBeenLastCalledWith({
+        fileKeys: ["attestations/a1/evidence/site-visit.pdf"],
+        settled: true,
+      }),
+    );
   });
 
   it("holds the report back while a file is still being checked", async () => {
@@ -155,7 +163,9 @@ describe("ReportEvidenceUploader", () => {
     await selectFile();
 
     await waitFor(() =>
-      expect(screen.getByText(/did not pass the virus check/i)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/did not pass the virus check/i),
+      ).toBeInTheDocument(),
     );
     expect(onChange).toHaveBeenLastCalledWith({ fileKeys: [], settled: false });
   });
@@ -179,13 +189,18 @@ describe("ReportEvidenceUploader", () => {
     );
     await selectFile();
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /remove/i })).toBeInTheDocument(),
+      expect(
+        screen.getByRole("button", { name: /remove/i }),
+      ).toBeInTheDocument(),
     );
 
     fireEvent.click(screen.getByRole("button", { name: /remove/i }));
 
     await waitFor(() =>
-      expect(onChange).toHaveBeenLastCalledWith({ fileKeys: [], settled: true }),
+      expect(onChange).toHaveBeenLastCalledWith({
+        fileKeys: [],
+        settled: true,
+      }),
     );
     expect(screen.queryByText("site-visit.pdf")).toBeNull();
   });

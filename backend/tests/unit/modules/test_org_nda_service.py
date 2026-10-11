@@ -18,6 +18,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, delete, select
 
+from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.security import hash_password
 from app.main import app
@@ -210,6 +211,27 @@ async def test_sign_creates_row_and_reports_signed(nda_state: None) -> None:
     assert status.signed_at is not None
 
 
+def _bump_nda_version(monkeypatch: pytest.MonkeyPatch, version: str) -> None:
+    """Make `nda_service` read a different configured NDA version.
+
+    Patches the cached Settings object the service actually reads, rather than
+    `app.state.settings`. Those are the same object only until something calls
+    `get_settings.cache_clear()` — which twelve other test modules do — and
+    after that, patching `app.state.settings` silently changes nothing and the
+    assertion fails with the *old* version. That is how these two tests went
+    red on main while passing on their own and on the PR: xdist distributes
+    files per worker, so whether a cache-clearing module ran first on the same
+    worker was luck.
+
+    Args:
+        monkeypatch: Test monkeypatch fixture.
+        version: The NDA version the service should see.
+    """
+    monkeypatch.setattr(
+        get_settings(), "org_member_nda_version", version, raising=False
+    )
+
+
 async def test_resign_after_version_bump_updates_row(
     nda_state: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -219,7 +241,7 @@ async def test_resign_after_version_bump_updates_row(
         first = await nda_service.sign_nda(session, org_id=org_id, user_id=user_id)
         first_signed_at = first.signed_at
 
-    monkeypatch.setattr(app.state.settings, "org_member_nda_version", "2.0")
+    _bump_nda_version(monkeypatch, "2.0")
     async with async_session_factory() as session:
         second = await nda_service.sign_nda(session, org_id=org_id, user_id=user_id)
         assert second.nda_version == "2.0"
@@ -250,7 +272,7 @@ async def test_member_is_assignable_requires_current_version(
             is True
         )
 
-    monkeypatch.setattr(app.state.settings, "org_member_nda_version", "2.0")
+    _bump_nda_version(monkeypatch, "2.0")
     async with async_session_factory() as session:
         assert (
             await nda_service.member_is_assignable(session, member_id=member_id)
