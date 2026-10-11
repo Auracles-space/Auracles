@@ -193,6 +193,60 @@ Note that the task definitions stay at revision `:1`. `release.yml` re-points
 a tag and forces a new deployment rather than registering a new revision, so
 "revision unchanged" is not evidence that a release did not land.
 
+## Third release — 2026-10-11, the team's first real publishing run
+
+Three findings, all from the team publishing Frameworks for the first time at
+volume. Worth reading together, because two of them were invisible precisely
+because the third forced slow, serial work.
+
+- **Artifact upload took one file at a time.** The input carried no `multiple`
+  and both the picker and drop handlers read `files[0]`, while the control
+  said "Upload files" and "Drop files here". The team pushed **56 files
+  through production individually, every 6-12 seconds**, before mentioning it.
+  Uploads now cover the whole selection, sequentially — each file needs its
+  own presigned target and the 500MB cap must be checked against the running
+  batch total, which a parallel batch cannot do without over-admitting. A
+  failed file no longer abandons the ones after it, and every skipped file is
+  named with its reason.
+- **An abandoned upload froze its Framework permanently.**
+  `request_artifact_upload_url` commits the Artifact row *before* the browser
+  uploads anything, so a run that dies between the presigned POST and the
+  confirm call leaves a row at `pending` with a null `processing_started_at`.
+  The reaper matched only `processing` rows with a non-null start time, so
+  nothing touched it — while `pipeline_gate` counts `pending` as in flight and
+  held the Framework at `processing`. The reaper's docstring already claimed to
+  recover a scan that was "never dispatched"; that was false for exactly that
+  case. "Startup Strategy & Planning Framework" sat frozen from 2026-10-08
+  until this shipped. The reaper now also covers never-started rows, aged from
+  `created_at` because that is the only clock such a row has.
+- **`robots.txt` and `sitemap.xml` did not exist**, so both returned the app's
+  404 page. An external verification scan (Spendbase, for AWS credits) flagged
+  it. Policy decision 2026-10-11: public pages crawlable, since `/explore` and
+  the Framework detail pages are SSR specifically to be indexed; auth-gated
+  areas disallowed; and token-bearing routes (`/org-invitations`,
+  `/reset-password`, `/verify-email`) disallowed for a different reason — one
+  of those URLs in a search index is a leaked credential, not a wasted fetch.
+  `/favicon.ico` still 404s, deliberately: the icons declared in the root
+  layout both serve, and shipping a PNG misnamed `.ico` would be worse.
+
+Two notes for whoever touches this next:
+
+- The sitemap's Framework list is fetched at build time and **degrades rather
+  than throws**, because a sitemap that throws fails the Amplify build and
+  takes the frontend release down over a file no visitor reads. The first
+  version of it asked for `page_size=200` against an endpoint capped at 100,
+  and that guard turned the 422 into a silently Framework-less sitemap. It now
+  warns on stderr when it degrades. Verify the built output by curling it, not
+  by reading the build log.
+- **The framework pipeline gate is not racy, though it looks it.** The gate
+  call is the last step of each Artifact's pipeline and the step before it
+  commits `processed`, so every evaluation happens strictly after its own
+  Artifact's commit. For two Artifacts committing at `tA < tB`, B's gate runs
+  after `tB > tA` and therefore sees both finished. Whichever commits last
+  always evaluates a complete picture; an earlier, stale evaluation can only
+  write `processing`, which is what the Framework already says. A row lock was
+  proposed here and is not needed.
+
 ## Cost
 
 Roughly **$105–135/month** at pilot scale, by the stack plan's table. Staging
