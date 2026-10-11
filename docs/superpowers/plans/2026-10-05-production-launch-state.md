@@ -216,9 +216,20 @@ because the third forced slow, serial work.
   nothing touched it — while `pipeline_gate` counts `pending` as in flight and
   held the Framework at `processing`. The reaper's docstring already claimed to
   recover a scan that was "never dispatched"; that was false for exactly that
-  case. "Startup Strategy & Planning Framework" sat frozen from 2026-10-08
-  until this shipped. The reaper now also covers never-started rows, aged from
-  `created_at` because that is the only clock such a row has.
+  case. "Startup Strategy & Planning Framework" sat frozen from 2026-10-08.
+  The reaper now also covers never-started rows, aged from `created_at`
+  because that is the only clock such a row has.
+
+  **That fix was only half the recovery, and production said so.** Within
+  minutes of `v1.0.3` the reaper moved the stranded row to `failed` and the
+  Framework stayed at `processing`, because `pipeline_gate` derives Framework
+  status from its Artifacts and nothing else re-derives it — the gate runs at
+  the end of an Artifact's pipeline or on submit with `force`, neither of
+  which a reap triggers. The reaper now re-evaluates each reaped row's parent
+  Framework, once per Framework rather than per row and with `force=True`, so
+  the Framework self-heals to `pipeline_failed` naming the failed file. The
+  lesson worth keeping: freeing the row a gate is waiting on is not the same
+  as releasing the gate.
 - **`robots.txt` and `sitemap.xml` did not exist**, so both returned the app's
   404 page. An external verification scan (Spendbase, for AWS credits) flagged
   it. Policy decision 2026-10-11: public pages crawlable, since `/explore` and
@@ -246,6 +257,19 @@ Two notes for whoever touches this next:
   always evaluates a complete picture; an earlier, stale evaluation can only
   write `processing`, which is what the Framework already says. A row lock was
   proposed here and is not needed.
+
+### Releases
+
+- **v1.0.1** (2026-10-08) — preview eligibility and KYC admin notices.
+- **v1.0.2** — *failed, nothing deployed.* The tag was cut while the working
+  tree sat on a docs branch, so it pointed at a commit with no image.
+  `release.yml` refused at the promote step rather than deploying anything,
+  which is the guard working. The tag was deleted and `v1.0.3` cut from
+  `main`. Worth knowing: `git rev-parse <tag>` on an annotated tag returns the
+  *tag object*, so check `<tag>^{commit}` against `main` before trusting it.
+- **v1.0.3** (2026-10-11) — the three fixes above. Verified live: `robots.txt`
+  and `sitemap.xml` both 200, 7 static pages and 6 Frameworks in the sitemap,
+  health `api/database/redis` all `ok`.
 
 ## Cost
 
