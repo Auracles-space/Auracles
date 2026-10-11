@@ -258,6 +258,72 @@ Two notes for whoever touches this next:
   write `processing`, which is what the Framework already says. A row lock was
   proposed here and is not needed.
 
+## Incident — GPTBot vs the shared rate-limit bucket, 2026-10-10/11
+
+The `auracles-production-alb-5xx` alarm fired three times on 2026-10-10
+morning and recovered each time, so it read as noise. It was not.
+`HTTPCode_Target_5XX_Count` was **zero** throughout — the api never erred. The
+5xx were ALB-generated, and the real signal was beside them: `RequestCount` at
+2,300-6,700 per five minutes, roughly 8-22 requests a second, against a
+platform with four users.
+
+**What it was.** GPTBot/1.4 enumerating `/explore`'s faceted query space.
+36,396 requests in 2.5 hours from two IPs; 36,361 of 36,396 were CloudFront
+**misses**, because every filter combination is a distinct URL. Each miss cost
+a server render and a `/v1/explore/catalog` query. Found in the Amplify access
+logs (`aws amplify generate-access-logs`), after the ALB logs narrowed it to
+`/v1/explore/catalog` with user agent `node` — i.e. our own renderer, not the
+crawler, talking to the api.
+
+**Why it hurt.** `/v1/explore/catalog` is rate-limited at 60 requests a minute
+**per IP**. Every SSR render fetches from the frontend host, so the api sees one
+address for every visitor's page load and per-IP limiting cannot separate them.
+GPTBot drained the bucket that every render depends on, `loadExploreCatalog`
+turned the 429 into `unavailable`, and the marketplace page told real visitors
+the catalog was unavailable — on roughly three of four loads, for over a day,
+before anyone connected it to the alarm.
+
+**Fixed in v1.0.4**, two parts, because either alone would recur:
+
+- `robots.txt` disallows `/explore?*`. The facet space is unbounded;
+  `/explore` and `/explore/<id>` stay crawlable because they are finite and are
+  the pages rendered SSR to be indexed. Note the `Allow: /` that invited this
+  shipped in `v1.0.3` a few hours earlier — adding a `robots.txt` where there
+  was none is not automatically an improvement.
+- The renderer presents a Terraform-generated `INTERNAL_API_SECRET` and gets
+  its own 1200/minute bucket. Finite on purpose: our own code looping is the
+  other thing that has happened here (2026-09-29), and an unlimited internal
+  caller turns that into unbounded load on one api task. A wrong or absent
+  secret falls back to the public bucket, so an unconfigured deployment trusts
+  nobody rather than everybody.
+
+**Three traps found while fixing it**, each worth more than the fix:
+
+1. **A `data "aws_secretsmanager_secret_version"` cannot read a shell created
+   in the same apply.** The first version of the Terraform would have failed on
+   its first run. Terraform now generates the value, which also removes the
+   chance of the api and Amplify being given different strings — a mismatch
+   fails silently by falling back to the public bucket, i.e. straight back into
+   the incident.
+2. **The execution-role policy and the task definitions both derive from
+   `var.secret_arns` but did not depend on each other**, so Terraform could
+   roll the services onto a revision naming a secret the role could not yet
+   read. Same shape as the valueless-`DATABASE_URL` race on the first
+   production apply, same fix: explicit `depends_on`.
+3. **The generated API client is a module-level singleton and `setConfig`
+   replaces the whole config.** Putting the header there meant `getHealth`
+   blanked it on every call — 113 times in seven minutes — and Next serves
+   concurrent SSR renders from one process, so renders in flight lost the
+   header and fell back to the public bucket. 17% of catalog reads were still
+   429 after `v1.0.4`. The header now travels per call.
+
+**What to take from it.** The alarm was correct and the dashboard reading was
+wrong: an ALB 5xx with zero target 5xx means the load balancer could not get a
+healthy answer, so look at load and targets, not application errors. And
+`RequestCount` is worth a glance whenever anything looks odd — 4.5 requests a
+second holding to within 0.5% for an hour is a machine, and that constancy was
+visible long before the cause was.
+
 ### Releases
 
 - **v1.0.1** (2026-10-08) — preview eligibility and KYC admin notices.
@@ -270,6 +336,13 @@ Two notes for whoever touches this next:
 - **v1.0.3** (2026-10-11) — the three fixes above. Verified live: `robots.txt`
   and `sitemap.xml` both 200, 7 static pages and 6 Frameworks in the sitemap,
   health `api/database/redis` all `ok`.
+- **v1.0.4** (2026-10-11) — the crawl limit and the SSR rate-limit bucket, plus
+  the reaper finally releasing the Framework it reaped for. `/explore` went
+  from roughly one load in four serving the catalog to eight out of eight.
+  Needed a `terraform apply` on both `infra/shared` and
+  `infra/envs/production` before the tag; the applies were run from the feature
+  branch, so `main` carried drift until the merge closed it. Plan from `main`
+  afterwards: "No changes" on both stacks.
 
 ## Cost
 
