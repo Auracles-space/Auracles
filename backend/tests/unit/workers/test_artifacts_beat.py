@@ -202,6 +202,74 @@ async def test_reaper_fails_pending_rows_whose_scan_never_started(monkeypatch):
     await engine.dispose()
 
 
+async def test_reaper_unsticks_the_framework_it_reaped_for(monkeypatch):
+    """Reaping an Artifact must also release the Framework it was holding.
+
+    Flipping the row to `failed` is only half the recovery: `pipeline_gate`
+    derives Framework status from its Artifacts, and nothing re-derives it
+    after a reap. So the Framework stayed at `processing` — the exact state the
+    reap was supposed to end — until its owner happened to press "Run checks".
+    Verified on production: the stranded row was reaped and the Framework did
+    not move.
+    """
+    await engine.dispose()
+    await _truncate()
+    from app.workers.tasks import artifacts_beat
+
+    monkeypatch.setattr(
+        artifacts_beat,
+        "get_settings",
+        lambda: SimpleNamespace(
+            s3_artifacts_bucket="bucket",
+            artifact_processing_lease_minutes=30,
+            artifact_orphan_sweep_minutes=60,
+        ),
+    )
+    monkeypatch.setattr(
+        artifacts_beat.s3.storage, "list_keys", lambda bucket, prefix: [], raising=False
+    )
+
+    async with async_session_factory() as session:
+        async with session.begin():
+            framework = await _seed_framework(session)
+            # The state an abandoned upload leaves behind: the gate counts
+            # `pending` as in flight, so the Framework waits on it forever.
+            framework.status = "processing"
+            abandoned = Artifact(
+                framework_id=framework.id,
+                name="abandoned.pdf",
+                file_key="frameworks/x/artifacts/abandoned.pdf",
+                file_size=1,
+                mime_type="application/pdf",
+                processing_status="pending",
+                processing_started_at=None,
+                current_for_framework=True,
+            )
+            session.add(abandoned)
+            await session.flush()
+            framework_id, abandoned_id = framework.id, abandoned.id
+        await session.execute(
+            text(
+                f"UPDATE {Artifact.__tablename__} "
+                "SET created_at = now() - interval '31 minutes' WHERE id = :id"
+            ),
+            {"id": abandoned_id},
+        )
+        await session.commit()
+
+    await artifacts_beat._reap_stalled_artifacts_impl()
+
+    async with async_session_factory() as session:
+        reaped = await session.get(Artifact, abandoned_id)
+        unstuck = await session.get(Framework, framework_id)
+        assert reaped is not None and reaped.processing_status == "failed"
+        # Not `processing`: the owner can now see why and act on it.
+        assert unstuck is not None and unstuck.status == "pipeline_failed"
+        assert "processing" in (unstuck.pipeline_failure_reasons or {})
+    await _truncate()
+    await engine.dispose()
+
+
 async def test_orphan_sweep_deletes_unreferenced_keys(monkeypatch):
     """Only the orphaned, aged key is deleted; live and source-preview keys survive."""
     await engine.dispose()
