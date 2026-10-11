@@ -19,6 +19,7 @@ from alembic.config import Config
 from httpx import AsyncClient
 from sqlalchemy import create_engine, delete, update
 
+from app.core.config import get_settings
 from app.core.database import async_session_factory, engine
 from app.core.redis import get_redis
 from app.core.security import create_access_token, hash_password
@@ -1217,6 +1218,50 @@ async def test_preview_url_rate_limit_returns_429_on_sixty_first_request(
 
     assert last_response is not None
     assert last_response.status_code == 429
+
+
+async def test_internal_caller_has_its_own_rate_limit_bucket(
+    client: AsyncClient,
+    migrated_database: None,
+    explore_test_context: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A trusted server-side caller must not share the public per-IP bucket.
+
+    Every SSR render of `/explore` fetches the catalog from the frontend's own
+    server, so the API sees one Amplify IP for all of them however many real
+    visitors there are. GPTBot crawling the filter facets exhausted that single
+    60/minute bucket on 2026-10-11 and real visitors got "Catalog is
+    temporarily unavailable" on the main marketplace page.
+
+    The internal caller still gets a bucket, just a much larger one: a runaway
+    loop in our own code is the other thing that has happened here, so
+    "unlimited" would trade one failure for a worse one.
+    """
+    monkeypatch.setenv("INTERNAL_API_SECRET", "a-real-internal-secret-value")
+    get_settings.cache_clear()
+    try:
+        exhausted = None
+        for _ in range(61):
+            exhausted = await client.get("/v1/explore/catalog")
+        assert exhausted is not None
+        assert exhausted.status_code == 429
+
+        # Same IP, same window, but presenting the internal secret.
+        internal = await client.get(
+            "/v1/explore/catalog",
+            headers={"X-Internal-Caller": "a-real-internal-secret-value"},
+        )
+        # A wrong secret must fall back to the public bucket, not be trusted.
+        forged = await client.get(
+            "/v1/explore/catalog",
+            headers={"X-Internal-Caller": "not-the-secret"},
+        )
+    finally:
+        get_settings.cache_clear()
+
+    assert internal.status_code == 200
+    assert forged.status_code == 429
 
 
 async def test_related_frameworks_use_tag_category_and_sector_overlap(

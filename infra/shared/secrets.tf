@@ -72,3 +72,61 @@ output "staging_secret_arns" {
   description = "name => ARN for the staging task definitions' secret references."
   value       = { for name, secret in aws_secretsmanager_secret.staging : name => secret.arn }
 }
+
+
+# ---------------------------------------------------------------------------
+# INTERNAL_API_SECRET — generated here, not hand-entered.
+#
+# It proves a request came from our own server-side renderer, which earns that
+# renderer a separate rate-limit bucket and nothing else. It is needed because
+# every SSR render reaches the API from the frontend host, so per-IP limiting
+# cannot tell one visitor's page load from another's: GPTBot crawling
+# /explore's filter facets drained the shared bucket on 2026-10-11 and real
+# visitors were shown "Catalog is temporarily unavailable".
+#
+# Unlike every secret above, Terraform owns this value. Two reasons:
+#
+#   1. Both halves must present the same string, and the API and Amplify read
+#      it from different stacks. A hand-entered value is a value somebody
+#      pastes twice, and a mismatch fails silently — the renderer simply drops
+#      back to the public bucket, which is the incident this exists to prevent.
+#   2. A hand-entered shell cannot be read in the same apply that creates it,
+#      because `aws_secretsmanager_secret_version` as a *data* source needs a
+#      version that does not exist yet. Generating the value removes that
+#      ordering trap rather than documenting it.
+#
+# The value therefore lives in Terraform state. That is acceptable precisely
+# because it grants a rate-limit bucket and no data access — do not reuse this
+# pattern for a credential that authorizes anything.
+# ---------------------------------------------------------------------------
+
+resource "random_password" "internal_api_secret" {
+  length = 48
+  # Alphanumeric only: it travels as an HTTP header value and through an
+  # Amplify environment variable, so punctuation buys nothing and risks
+  # quoting surprises in either.
+  special = false
+}
+
+resource "aws_secretsmanager_secret" "internal_api" {
+  for_each = toset(["staging", "production"])
+
+  name                    = "auracles/${each.key}/INTERNAL_API_SECRET"
+  recovery_window_in_days = 7
+
+  tags = {
+    Name = "auracles/${each.key}/INTERNAL_API_SECRET"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "internal_api" {
+  for_each = aws_secretsmanager_secret.internal_api
+
+  secret_id     = each.value.id
+  secret_string = random_password.internal_api_secret.result
+}
+
+output "internal_api_secret_arns" {
+  description = "environment => ARN of the generated internal-caller secret, for the task definitions."
+  value       = { for env, secret in aws_secretsmanager_secret.internal_api : env => secret.arn }
+}

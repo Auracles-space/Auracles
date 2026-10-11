@@ -11,6 +11,16 @@
 # to X86_64.
 
 resource "aws_ecs_task_definition" "api" {
+  # Ordering, not permission: the execution role's policy and these task
+  # definitions are both derived from `var.secret_arns` but neither references
+  # the other, so Terraform is free to roll the services onto a revision that
+  # names a secret the role cannot yet read. The task then fails with
+  # ResourceInitializationError and the circuit breaker rolls it back — the
+  # same shape as the valueless-DATABASE_URL race on production's first apply.
+  # Making the dependency explicit turns a failed rollout into a non-event; it
+  # is graph ordering, so an unchanged stack shows no diff.
+  depends_on = [aws_iam_role_policy.execution_secrets]
+
   family                   = "auracles-${var.environment}-api"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -50,6 +60,16 @@ resource "aws_ecs_task_definition" "api" {
 }
 
 resource "aws_ecs_task_definition" "worker" {
+  # Ordering, not permission: the execution role's policy and these task
+  # definitions are both derived from `var.secret_arns` but neither references
+  # the other, so Terraform is free to roll the services onto a revision that
+  # names a secret the role cannot yet read. The task then fails with
+  # ResourceInitializationError and the circuit breaker rolls it back — the
+  # same shape as the valueless-DATABASE_URL race on production's first apply.
+  # Making the dependency explicit turns a failed rollout into a non-event; it
+  # is graph ordering, so an unchanged stack shows no diff.
+  depends_on = [aws_iam_role_policy.execution_secrets]
+
   family                   = "auracles-${var.environment}-worker"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
@@ -146,6 +166,16 @@ resource "aws_ecs_task_definition" "worker" {
 }
 
 resource "aws_ecs_task_definition" "beat" {
+  # Ordering, not permission: the execution role's policy and these task
+  # definitions are both derived from `var.secret_arns` but neither references
+  # the other, so Terraform is free to roll the services onto a revision that
+  # names a secret the role cannot yet read. The task then fails with
+  # ResourceInitializationError and the circuit breaker rolls it back — the
+  # same shape as the valueless-DATABASE_URL race on production's first apply.
+  # Making the dependency explicit turns a failed rollout into a non-event; it
+  # is graph ordering, so an unchanged stack shows no diff.
+  depends_on = [aws_iam_role_policy.execution_secrets]
+
   family                   = "auracles-${var.environment}-beat"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"

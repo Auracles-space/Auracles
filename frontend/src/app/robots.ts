@@ -18,6 +18,21 @@ import type { MetadataRoute } from "next";
 
 import { siteUrl } from "@/lib/site-url";
 
+/**
+ * Faceted filter URLs on Explore.
+ *
+ * `/explore` takes thirteen filters plus paging and sorting, so its
+ * query-string space is effectively unbounded — and every distinct combination
+ * is a fresh cache miss that costs a server render and a catalog query.
+ * GPTBot enumerated it on 2026-10-11 at roughly 4.5 requests a second, drained
+ * the API's public rate-limit bucket, and real visitors were shown "Catalog is
+ * temporarily unavailable" on the marketplace page.
+ *
+ * `/explore` itself and every `/explore/<id>` detail page stay crawlable: they
+ * are the pages rendered SSR to be indexed, and they are finite.
+ */
+const FACETED_FILTER_URLS = ["/explore?*"];
+
 /** Auth-gated areas: nothing useful to a crawler behind any of them. */
 const PRIVATE_AREAS = [
   "/admin",
@@ -52,7 +67,11 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: [...PRIVATE_AREAS, ...TOKEN_BEARING_ROUTES],
+        disallow: [
+          ...FACETED_FILTER_URLS,
+          ...PRIVATE_AREAS,
+          ...TOKEN_BEARING_ROUTES,
+        ],
       },
     ],
     sitemap: `${siteUrl()}/sitemap.xml`,
