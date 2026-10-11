@@ -15,7 +15,7 @@ import type {
   ListMixedCatalogV1ExploreCatalogGetData,
 } from "@/lib/generated/types.gen";
 
-import { configureServerMarketplaceClient } from "./api";
+import { configureServerMarketplaceClient, internalCallerHeaders } from "./api";
 
 type ExploreCatalogReadModel = {
   catalog: ExploreCatalogResponse | null;
@@ -34,7 +34,13 @@ export async function loadExploreCatalog(
   configureServerMarketplaceClient();
 
   try {
-    const result = await listExploreMixedCatalog({ query });
+    // Headers per call, not on the shared client: `setConfig` replaces the
+    // whole config on a module-level singleton, so a concurrent `getHealth`
+    // strips them mid-render. See `internalCallerHeaders`.
+    const result = await listExploreMixedCatalog({
+      headers: internalCallerHeaders(),
+      query,
+    });
 
     if (!result.response.ok || !result.data) {
       return { catalog: null, unavailable: true };
@@ -63,7 +69,9 @@ export async function loadDemandMap(): Promise<DemandReadModel> {
   configureServerMarketplaceClient();
 
   try {
-    const result = await readDemandMapV1ExploreDemandGet();
+    const result = await readDemandMapV1ExploreDemandGet({
+      headers: internalCallerHeaders(),
+    });
 
     if (!result.response.ok || !result.data) {
       return { demand: null };

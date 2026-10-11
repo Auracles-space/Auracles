@@ -16,7 +16,10 @@ import {
 } from "@/lib/generated/sdk.gen";
 import type { HealthResponse } from "@/lib/generated/types.gen";
 
-export type { ComponentHealth, HealthResponse } from "@/lib/generated/types.gen";
+export type {
+  ComponentHealth,
+  HealthResponse,
+} from "@/lib/generated/types.gen";
 
 export type HealthResult = {
   ok: boolean;
@@ -33,7 +36,14 @@ const API_BASE_URL = resolveApiBaseUrl();
  * @throws Error when the API returns no payload (data or error).
  */
 export async function getHealth(): Promise<HealthResult> {
+  // Headers are preserved deliberately. `setConfig` replaces the whole config
+  // on a module-level singleton shared by every concurrent SSR render, so
+  // dropping them here blanked the internal-caller header mid-render and sent
+  // catalog reads back to the public rate-limit bucket. Callers that need a
+  // header pass it per call too, so this is belt and braces rather than the
+  // only guard.
   client.setConfig({
+    ...client.getConfig(),
     baseUrl: API_BASE_URL,
     cache: "no-store",
   });
