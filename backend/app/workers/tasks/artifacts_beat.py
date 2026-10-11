@@ -19,7 +19,9 @@ from sqlalchemy import and_, or_, select, update
 from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.integrations import s3
+from app.modules.frameworks.models import Framework
 from app.modules.frameworks.models_artifact import Artifact
+from app.modules.frameworks.pipeline_gate import evaluate_framework_pipeline
 from app.workers.celery_app import app
 
 _ARTIFACT_PREFIX = "frameworks/"
@@ -58,6 +60,13 @@ async def _reap_stalled_artifacts_impl() -> dict[str, int]:
        here — they have their own lifecycle (deleted on re-sync/detach/
        publish), not an Artifact row.
 
+    Each reaped row's parent Framework is then re-evaluated. Flipping the row
+    alone is only half the recovery: `pipeline_gate` derives Framework status
+    from its Artifacts and nothing else re-derives it, so a reaped Framework
+    stayed at `processing` — the very state the reap exists to end — until its
+    owner happened to press "Run checks". Confirmed in production on
+    2026-10-11: the stranded row was reaped and the Framework did not move.
+
     Returns:
         Counts of rows reaped and S3 objects swept, for logging/monitoring.
     """
@@ -89,9 +98,25 @@ async def _reap_stalled_artifacts_impl() -> dict[str, int]:
                     )
                 )
                 .values(processing_status="failed")
-                .returning(Artifact.id)
+                .returning(Artifact.id, Artifact.framework_id)
             )
-            reaped = len(result.all())
+            reaped_rows = result.all()
+            reaped = len(reaped_rows)
+            # Distinct: a batch upload can strand several Artifacts on one
+            # Framework, and the gate reads every current Artifact anyway, so
+            # one evaluation per Framework is both sufficient and cheaper.
+            reaped_framework_ids = {row[1] for row in reaped_rows}
+
+        for framework_id in reaped_framework_ids:
+            framework = await db.get(Framework, framework_id)
+            if framework is None:
+                continue
+            # force=True because the Framework may already have left the gated
+            # statuses (an owner who edited around it), and a reaped row still
+            # has to be reflected rather than silently ignored.
+            await evaluate_framework_pipeline(db, framework, force=True)
+        if reaped_framework_ids:
+            await db.commit()
 
         # Live keys include BOTH the artifact bytes and the redacted PII-safe
         # review copy (clean_file_key). Both live under the swept frameworks/
