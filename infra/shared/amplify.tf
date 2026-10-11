@@ -51,6 +51,11 @@ module "staging_frontend" {
     BACKEND_ORIGIN      = "https://api.staging.auracles.space"
     SESSION_HINT_SECRET = data.aws_secretsmanager_secret_version.session_hint.secret_string
 
+    # Parity with production: staging renders server-side too, so without this
+    # its SSR shares the public per-IP bucket and a QA cycle driving the
+    # Explore page could reproduce the 2026-10-11 degradation there.
+    INTERNAL_API_SECRET = random_password.internal_api_secret.result
+
     # Relative on purpose: the browser calls /api/* on the frontend's own
     # origin and next.config.ts rewrites it to BACKEND_ORIGIN, so auth cookies
     # stay first-party. An absolute URL here would make them third-party and
@@ -110,6 +115,7 @@ data "aws_secretsmanager_secret_version" "production_session_hint" {
   secret_id = aws_secretsmanager_secret.production["SECRET_KEY"].id
 }
 
+
 module "production_frontend" {
   source = "../modules/amplify"
 
@@ -139,6 +145,13 @@ module "production_frontend" {
     # Amplify exposes env vars to SSR at build time only.
     BACKEND_ORIGIN      = "https://${local.production_api_domain}"
     SESSION_HINT_SECRET = data.aws_secretsmanager_secret_version.production_session_hint.secret_string
+
+    # Server-only, and must match the API's INTERNAL_API_SECRET. Never prefixed
+    # NEXT_PUBLIC_: that would inline it into the browser bundle and hand every
+    # visitor the renderer's rate-limit bucket.
+    # The generated value itself, not a lookup: Terraform owns it (secrets.tf)
+    # precisely so both halves cannot drift apart.
+    INTERNAL_API_SECRET = random_password.internal_api_secret.result
 
     # Relative on purpose: the browser calls /api/* on the frontend's own
     # origin and next.config.ts rewrites it to BACKEND_ORIGIN, keeping auth

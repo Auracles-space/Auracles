@@ -18,6 +18,11 @@
 #   BACKEND_ORIGIN       server-side fetches fall back to the retired Render
 #                        origin (next.config.ts), so pages render empty.
 #   RESEND_*             the waitlist signup route cannot reach Resend.
+#   INTERNAL_API_SECRET  server-side fetches share the public per-IP rate-limit
+#                        bucket, so one crawler enumerating /explore's filters
+#                        makes the marketplace page tell real visitors the
+#                        catalog is unavailable. That is the 2026-10-11
+#                        incident, not a hypothetical.
 # Adding a var the app needs at runtime? Add it to this pattern too.
 version: 1
 applications:
@@ -32,7 +37,7 @@ applications:
             - pnpm install --frozen-lockfile
         build:
           commands:
-            - env | grep -E '^(SESSION_HINT_SECRET|BACKEND_ORIGIN|RESEND_API_KEY|RESEND_AUDIENCE_ID)=' >> .env.production || true
+            - env | grep -E '^(SESSION_HINT_SECRET|BACKEND_ORIGIN|RESEND_API_KEY|RESEND_AUDIENCE_ID|INTERNAL_API_SECRET)=' >> .env.production || true
             - pnpm build
       artifacts:
         baseDirectory: .next

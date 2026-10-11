@@ -215,6 +215,15 @@ class Settings(BaseSettings):
     stripe_webhook_secret: SecretStr | None = Field(
         default=None, alias="STRIPE_WEBHOOK_SECRET"
     )
+    # Shared secret proving a request came from our own server-side renderer
+    # rather than a browser. Not an authorization credential: it grants a
+    # separate rate-limit bucket and nothing else, because every SSR fetch
+    # reaches the API from the frontend host's IP and so cannot be told apart
+    # from any other SSR fetch by address. Unset means no caller is trusted,
+    # which is the old behaviour rather than an open door.
+    internal_api_secret: SecretStr | None = Field(
+        default=None, alias="INTERNAL_API_SECRET"
+    )
     paystack_secret_key: SecretStr | None = Field(
         default=None, alias="PAYSTACK_SECRET_KEY"
     )
