@@ -14,6 +14,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.internal_caller import is_internal_caller
 from app.core.network import client_ip
 from app.core.rate_limit import RateLimiter, RedisCounter
 from app.core.redis import get_redis
@@ -45,6 +46,21 @@ RedisClient = Annotated[Redis, Depends(get_redis)]
 # browsing, which rarely passes 30 even while someone is actively filtering.
 SEARCH_RATE_LIMITER = RateLimiter(namespace="explore_search", limit=60, window=60)
 
+# Our own server-side renderer gets its own, far larger bucket. It needs one at
+# all because every SSR render fetches from the frontend host, so the API sees a
+# single address for every visitor's page load — GPTBot crawling the filter
+# facets drained the public bucket on 2026-10-11 and real visitors were told the
+# catalog was unavailable.
+#
+# Large but finite, deliberately. The other thing that has happened here is our
+# own code looping (the search box, 2026-09-29), and an unlimited internal
+# caller would turn that from a throttled annoyance into an unbounded load on
+# one api task. 1200/minute is roughly 20 renders a second, far above anything
+# this pilot will serve and far below what a runaway loop would reach.
+INTERNAL_SEARCH_RATE_LIMITER = RateLimiter(
+    namespace="explore_search_internal", limit=1200, window=60
+)
+
 
 async def enforce_search_rate_limit(request: Request, redis: RedisClient) -> None:
     """Rate-limit one public search request by client IP.
@@ -63,8 +79,13 @@ async def enforce_search_rate_limit(request: Request, redis: RedisClient) -> Non
         redis: Injected Redis client backing the counter.
 
     Raises:
-        HTTPException(429): If this IP has exhausted its window.
+        HTTPException(429): If this caller has exhausted its window.
     """
+    if is_internal_caller(request):
+        # Keyed on a constant, not the address: the point is that every SSR
+        # render shares one address, so the address carries no information here.
+        await INTERNAL_SEARCH_RATE_LIMITER.check(cast(RedisCounter, redis), "ssr")
+        return
     await SEARCH_RATE_LIMITER.check(
         cast(RedisCounter, redis), client_ip(request) or "unknown"
     )

@@ -33,6 +33,17 @@ locals {
     # inject plain environment values but not Secrets Manager references — and
     # passing a password as an override would put it in CloudTrail.
     "ADMIN_PASSWORD",
+    # Proves a request came from our own server-side renderer, which earns a
+    # separate rate-limit bucket and nothing else. It is needed because every
+    # SSR render reaches the API from the frontend host, so per-IP limiting
+    # cannot tell one visitor's page load from another's: GPTBot crawling
+    # /explore's filter facets drained the shared bucket on 2026-10-11 and real
+    # visitors were shown "Catalog is temporarily unavailable".
+    #
+    # Unlike the others, leaving this empty does not fail a task — the API
+    # simply trusts nobody and the renderer shares the public bucket, which is
+    # the behaviour that caused the incident. Fill it.
+    "INTERNAL_API_SECRET",
   ]
 }
 

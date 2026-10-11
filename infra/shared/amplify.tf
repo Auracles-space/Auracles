@@ -110,6 +110,13 @@ data "aws_secretsmanager_secret_version" "production_session_hint" {
   secret_id = aws_secretsmanager_secret.production["SECRET_KEY"].id
 }
 
+# Read for the same reason as the session hint: both halves must present the
+# same value, and pasting it twice is how they drift. This one earns the
+# renderer its own rate-limit bucket — see the note in secrets.tf.
+data "aws_secretsmanager_secret_version" "production_internal_api" {
+  secret_id = aws_secretsmanager_secret.production["INTERNAL_API_SECRET"].id
+}
+
 module "production_frontend" {
   source = "../modules/amplify"
 
@@ -139,6 +146,11 @@ module "production_frontend" {
     # Amplify exposes env vars to SSR at build time only.
     BACKEND_ORIGIN      = "https://${local.production_api_domain}"
     SESSION_HINT_SECRET = data.aws_secretsmanager_secret_version.production_session_hint.secret_string
+
+    # Server-only, and must match the API's INTERNAL_API_SECRET. Never prefixed
+    # NEXT_PUBLIC_: that would inline it into the browser bundle and hand every
+    # visitor the renderer's rate-limit bucket.
+    INTERNAL_API_SECRET = data.aws_secretsmanager_secret_version.production_internal_api.secret_string
 
     # Relative on purpose: the browser calls /api/* on the frontend's own
     # origin and next.config.ts rewrites it to BACKEND_ORIGIN, keeping auth
