@@ -193,6 +193,157 @@ Note that the task definitions stay at revision `:1`. `release.yml` re-points
 a tag and forces a new deployment rather than registering a new revision, so
 "revision unchanged" is not evidence that a release did not land.
 
+## Third release — 2026-10-11, the team's first real publishing run
+
+Three findings, all from the team publishing Frameworks for the first time at
+volume. Worth reading together, because two of them were invisible precisely
+because the third forced slow, serial work.
+
+- **Artifact upload took one file at a time.** The input carried no `multiple`
+  and both the picker and drop handlers read `files[0]`, while the control
+  said "Upload files" and "Drop files here". The team pushed **56 files
+  through production individually, every 6-12 seconds**, before mentioning it.
+  Uploads now cover the whole selection, sequentially — each file needs its
+  own presigned target and the 500MB cap must be checked against the running
+  batch total, which a parallel batch cannot do without over-admitting. A
+  failed file no longer abandons the ones after it, and every skipped file is
+  named with its reason.
+- **An abandoned upload froze its Framework permanently.**
+  `request_artifact_upload_url` commits the Artifact row *before* the browser
+  uploads anything, so a run that dies between the presigned POST and the
+  confirm call leaves a row at `pending` with a null `processing_started_at`.
+  The reaper matched only `processing` rows with a non-null start time, so
+  nothing touched it — while `pipeline_gate` counts `pending` as in flight and
+  held the Framework at `processing`. The reaper's docstring already claimed to
+  recover a scan that was "never dispatched"; that was false for exactly that
+  case. "Startup Strategy & Planning Framework" sat frozen from 2026-10-08.
+  The reaper now also covers never-started rows, aged from `created_at`
+  because that is the only clock such a row has.
+
+  **That fix was only half the recovery, and production said so.** Within
+  minutes of `v1.0.3` the reaper moved the stranded row to `failed` and the
+  Framework stayed at `processing`, because `pipeline_gate` derives Framework
+  status from its Artifacts and nothing else re-derives it — the gate runs at
+  the end of an Artifact's pipeline or on submit with `force`, neither of
+  which a reap triggers. The reaper now re-evaluates each reaped row's parent
+  Framework, once per Framework rather than per row and with `force=True`, so
+  the Framework self-heals to `pipeline_failed` naming the failed file. The
+  lesson worth keeping: freeing the row a gate is waiting on is not the same
+  as releasing the gate.
+- **`robots.txt` and `sitemap.xml` did not exist**, so both returned the app's
+  404 page. An external verification scan (Spendbase, for AWS credits) flagged
+  it. Policy decision 2026-10-11: public pages crawlable, since `/explore` and
+  the Framework detail pages are SSR specifically to be indexed; auth-gated
+  areas disallowed; and token-bearing routes (`/org-invitations`,
+  `/reset-password`, `/verify-email`) disallowed for a different reason — one
+  of those URLs in a search index is a leaked credential, not a wasted fetch.
+  `/favicon.ico` still 404s, deliberately: the icons declared in the root
+  layout both serve, and shipping a PNG misnamed `.ico` would be worse.
+
+Two notes for whoever touches this next:
+
+- The sitemap's Framework list is fetched at build time and **degrades rather
+  than throws**, because a sitemap that throws fails the Amplify build and
+  takes the frontend release down over a file no visitor reads. The first
+  version of it asked for `page_size=200` against an endpoint capped at 100,
+  and that guard turned the 422 into a silently Framework-less sitemap. It now
+  warns on stderr when it degrades. Verify the built output by curling it, not
+  by reading the build log.
+- **The framework pipeline gate is not racy, though it looks it.** The gate
+  call is the last step of each Artifact's pipeline and the step before it
+  commits `processed`, so every evaluation happens strictly after its own
+  Artifact's commit. For two Artifacts committing at `tA < tB`, B's gate runs
+  after `tB > tA` and therefore sees both finished. Whichever commits last
+  always evaluates a complete picture; an earlier, stale evaluation can only
+  write `processing`, which is what the Framework already says. A row lock was
+  proposed here and is not needed.
+
+## Incident — GPTBot vs the shared rate-limit bucket, 2026-10-10/11
+
+The `auracles-production-alb-5xx` alarm fired three times on 2026-10-10
+morning and recovered each time, so it read as noise. It was not.
+`HTTPCode_Target_5XX_Count` was **zero** throughout — the api never erred. The
+5xx were ALB-generated, and the real signal was beside them: `RequestCount` at
+2,300-6,700 per five minutes, roughly 8-22 requests a second, against a
+platform with four users.
+
+**What it was.** GPTBot/1.4 enumerating `/explore`'s faceted query space.
+36,396 requests in 2.5 hours from two IPs; 36,361 of 36,396 were CloudFront
+**misses**, because every filter combination is a distinct URL. Each miss cost
+a server render and a `/v1/explore/catalog` query. Found in the Amplify access
+logs (`aws amplify generate-access-logs`), after the ALB logs narrowed it to
+`/v1/explore/catalog` with user agent `node` — i.e. our own renderer, not the
+crawler, talking to the api.
+
+**Why it hurt.** `/v1/explore/catalog` is rate-limited at 60 requests a minute
+**per IP**. Every SSR render fetches from the frontend host, so the api sees one
+address for every visitor's page load and per-IP limiting cannot separate them.
+GPTBot drained the bucket that every render depends on, `loadExploreCatalog`
+turned the 429 into `unavailable`, and the marketplace page told real visitors
+the catalog was unavailable — on roughly three of four loads, for over a day,
+before anyone connected it to the alarm.
+
+**Fixed in v1.0.4**, two parts, because either alone would recur:
+
+- `robots.txt` disallows `/explore?*`. The facet space is unbounded;
+  `/explore` and `/explore/<id>` stay crawlable because they are finite and are
+  the pages rendered SSR to be indexed. Note the `Allow: /` that invited this
+  shipped in `v1.0.3` a few hours earlier — adding a `robots.txt` where there
+  was none is not automatically an improvement.
+- The renderer presents a Terraform-generated `INTERNAL_API_SECRET` and gets
+  its own 1200/minute bucket. Finite on purpose: our own code looping is the
+  other thing that has happened here (2026-09-29), and an unlimited internal
+  caller turns that into unbounded load on one api task. A wrong or absent
+  secret falls back to the public bucket, so an unconfigured deployment trusts
+  nobody rather than everybody.
+
+**Three traps found while fixing it**, each worth more than the fix:
+
+1. **A `data "aws_secretsmanager_secret_version"` cannot read a shell created
+   in the same apply.** The first version of the Terraform would have failed on
+   its first run. Terraform now generates the value, which also removes the
+   chance of the api and Amplify being given different strings — a mismatch
+   fails silently by falling back to the public bucket, i.e. straight back into
+   the incident.
+2. **The execution-role policy and the task definitions both derive from
+   `var.secret_arns` but did not depend on each other**, so Terraform could
+   roll the services onto a revision naming a secret the role could not yet
+   read. Same shape as the valueless-`DATABASE_URL` race on the first
+   production apply, same fix: explicit `depends_on`.
+3. **The generated API client is a module-level singleton and `setConfig`
+   replaces the whole config.** Putting the header there meant `getHealth`
+   blanked it on every call — 113 times in seven minutes — and Next serves
+   concurrent SSR renders from one process, so renders in flight lost the
+   header and fell back to the public bucket. 17% of catalog reads were still
+   429 after `v1.0.4`. The header now travels per call.
+
+**What to take from it.** The alarm was correct and the dashboard reading was
+wrong: an ALB 5xx with zero target 5xx means the load balancer could not get a
+healthy answer, so look at load and targets, not application errors. And
+`RequestCount` is worth a glance whenever anything looks odd — 4.5 requests a
+second holding to within 0.5% for an hour is a machine, and that constancy was
+visible long before the cause was.
+
+### Releases
+
+- **v1.0.1** (2026-10-08) — preview eligibility and KYC admin notices.
+- **v1.0.2** — *failed, nothing deployed.* The tag was cut while the working
+  tree sat on a docs branch, so it pointed at a commit with no image.
+  `release.yml` refused at the promote step rather than deploying anything,
+  which is the guard working. The tag was deleted and `v1.0.3` cut from
+  `main`. Worth knowing: `git rev-parse <tag>` on an annotated tag returns the
+  *tag object*, so check `<tag>^{commit}` against `main` before trusting it.
+- **v1.0.3** (2026-10-11) — the three fixes above. Verified live: `robots.txt`
+  and `sitemap.xml` both 200, 7 static pages and 6 Frameworks in the sitemap,
+  health `api/database/redis` all `ok`.
+- **v1.0.4** (2026-10-11) — the crawl limit and the SSR rate-limit bucket, plus
+  the reaper finally releasing the Framework it reaped for. `/explore` went
+  from roughly one load in four serving the catalog to eight out of eight.
+  Needed a `terraform apply` on both `infra/shared` and
+  `infra/envs/production` before the tag; the applies were run from the feature
+  branch, so `main` carried drift until the merge closed it. Plan from `main`
+  afterwards: "No changes" on both stacks.
+
 ## Cost
 
 Roughly **$105–135/month** at pilot scale, by the stack plan's table. Staging
