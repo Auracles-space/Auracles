@@ -28,7 +28,7 @@ import {
 } from "@/lib/auth/form-client";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { formatLabel, formatMoney } from "@/lib/marketplace/format";
-import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
+import { currencySymbol, PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 type CollectionFormState = {
   title: string;
@@ -261,6 +261,7 @@ export function CollectionBuilder() {
             value={form.description}
           />
           <input
+            aria-label="Bundle price"
             className="min-h-12 rounded-xl border border-border-default bg-surface-2 px-4 text-sm text-foreground outline-none transition-colors focus-visible:border-accent focus-visible:ring-1 focus-visible:ring-accent"
             inputMode="decimal"
             onChange={(event) =>
@@ -269,7 +270,7 @@ export function CollectionBuilder() {
                 bundlePrice: event.target.value,
               }))
             }
-            placeholder="Bundle price, USD"
+            placeholder={`Bundle price (${currencySymbol(PLATFORM_CURRENCY)})`}
             value={form.bundlePrice}
           />
           <button

@@ -9794,6 +9794,18 @@ export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetResponse = (ProjectRespo
 
 export type GetOrgProjectV1OrgsOrgIdProjectsProjectIdGetError = (HTTPValidationError);
 
+export type UpdateOrgProjectV1OrgsOrgIdProjectsProjectIdPatchData = {
+    body: ProjectUpdateRequest;
+    path: {
+        org_id: string;
+        project_id: string;
+    };
+};
+
+export type UpdateOrgProjectV1OrgsOrgIdProjectsProjectIdPatchResponse = (ProjectResponse);
+
+export type UpdateOrgProjectV1OrgsOrgIdProjectsProjectIdPatchError = (HTTPValidationError);
+
 export type CancelOrgAcceptanceV1OrgsOrgIdProjectsProjectIdCancelAcceptancePostData = {
     path: {
         org_id: string;

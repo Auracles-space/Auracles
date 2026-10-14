@@ -13,6 +13,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   listProjectProposals: vi.fn(), listOrgProjectProposals: vi.fn(),
   cancelAcceptance: vi.fn(), cancelOrgAcceptance: vi.fn(),
   deleteProject: vi.fn(), deleteOrgProject: vi.fn(),
+  updateProject: vi.fn(), updateOrgProject: vi.fn(),
   acceptProposal: vi.fn(), acceptOrgProposal: vi.fn(),
   fundMilestone: vi.fn(), fundOrgMilestone: vi.fn(),
   approveDeliverable: vi.fn(), approveOrgDeliverable: vi.fn(),
@@ -24,6 +25,15 @@ describe("projectApi self mode", () => {
   it("createProject calls the self SDK with body only", async () => {
     await projectApi({ kind: "self" }).createProject({ title: "P" } as never);
     expect(sdk.createProject).toHaveBeenCalledWith(expect.objectContaining({ body: { title: "P" } }));
+  });
+});
+
+describe("projectApi self mode edits", () => {
+  it("updateProject sends the body to the self SDK with the project path", async () => {
+    await projectApi({ kind: "self" }).updateProject("proj-1", { title: "P2" });
+    expect(sdk.updateProject).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { project_id: "proj-1" }, body: { title: "P2" } }),
+    );
   });
 });
 
@@ -58,6 +68,13 @@ describe("projectApi org mode", () => {
     await projectApi({ kind: "org", orgId: "org-1" }).deleteProject("proj-1");
     expect(sdk.deleteOrgProject).toHaveBeenCalledWith(
       expect.objectContaining({ path: { org_id: "org-1", project_id: "proj-1" } }),
+    );
+  });
+
+  it("updateProject binds org_id and project_id", async () => {
+    await projectApi({ kind: "org", orgId: "org-1" }).updateProject("proj-1", { title: "P2" });
+    expect(sdk.updateOrgProject).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { org_id: "org-1", project_id: "proj-1" }, body: { title: "P2" } }),
     );
   });
 

@@ -11,6 +11,7 @@ import {
   listProjectProposals, listOrgProjectProposals,
   cancelAcceptance, cancelOrgAcceptance,
   deleteProject, deleteOrgProject,
+  updateProject, updateOrgProject,
   acceptProposal, acceptOrgProposal,
   fundMilestone, fundOrgMilestone,
   approveDeliverable, approveOrgDeliverable,
@@ -40,6 +41,12 @@ export function projectApi(mode: ProjectApiMode) {
       return mode.kind === "org"
         ? getOrgProject({ headers: headers(), path })
         : getProject({ headers: headers(), path });
+    },
+    updateProject: (projectId: string, body: unknown) => {
+      const path = orgPath({ project_id: projectId }) as never;
+      return mode.kind === "org"
+        ? updateOrgProject({ body: body as never, headers: headers(), path })
+        : updateProject({ body: body as never, headers: headers(), path });
     },
     listProjectProposals: (projectId: string) => {
       const path = orgPath({ project_id: projectId }) as never;

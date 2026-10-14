@@ -194,6 +194,95 @@ describe("ProjectWorkspace", () => {
     expect(listWorkspaceMessages).toHaveBeenCalledTimes(1);
   });
 
+  it("labels the milestone budget in the Project's own currency", async () => {
+    // The milestone edit field was labelled "Budget (USD)" outright, so the
+    // assigned Contributor planning an NGN Project was asked for dollars.
+    vi.mocked(loadCurrentUserSession).mockResolvedValue({
+      avatar_url: null,
+      deactivated_at: null,
+      display_name: "Contributor User",
+      email: "contributor@example.com",
+      email_verified: true,
+      id: "contributor-1",
+      kyc_status: "verified",
+      pending_roles: [],
+      roles: ["contributor"],
+    });
+    vi.mocked(getProject).mockResolvedValue({
+      data: { ...projectResponse(), currency: "NGN" },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listProjectProposals).mockResolvedValue({
+      data: undefined,
+      error: { detail: "Forbidden" },
+      response: forbiddenResponse,
+    });
+    vi.mocked(listMyProjectProposals).mockResolvedValue({
+      data: {
+        proposals: [
+          {
+            accepted_at: "2026-06-20T12:00:00Z",
+            budget: "1500.00",
+            contributor_id: "contributor-1",
+            created_at: "2026-06-20T11:00:00Z",
+            currency: "NGN",
+            deliverables: [],
+            id: "proposal-1",
+            project_id: "project-1",
+            scope: "I will deliver the procurement model.",
+            status: "accepted",
+            timeline_days: 21,
+            withdrawn_at: null,
+          },
+        ],
+      },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listMilestones).mockResolvedValue({
+      data: {
+        milestones: [
+          {
+            approved_at: null,
+            budget: "1500.00",
+            created_at: "2026-06-20T11:00:00Z",
+            currency: "NGN",
+            description: "Build the model.",
+            due_date: null,
+            escrow_id: null,
+            funded_at: null,
+            id: "milestone-1",
+            name: "Implementation",
+            project_id: "project-1",
+            sequence: 1,
+            status: "pending",
+            submitted_at: null,
+          },
+        ],
+      },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listWorkspaceMessages).mockResolvedValue({
+      data: { messages: [] },
+      error: undefined,
+      response: okResponse,
+    });
+    vi.mocked(listDisputes).mockResolvedValue({
+      data: { disputes: [] },
+      error: undefined,
+      response: okResponse,
+    });
+
+    render(<ProjectWorkspace projectId="project-1" />);
+
+    fireEvent.click(await screen.findByLabelText(/edit milestone/i));
+
+    expect(await screen.findByText(/^Budget \(₦\)$/)).toBeInTheDocument();
+    expect(screen.queryByText(/Budget \(USD\)/)).not.toBeInTheDocument();
+  });
+
   it("loads an org-owned workspace and exposes operator controls to its admin", async () => {
     vi.mocked(loadCurrentUserSession).mockResolvedValue({
       avatar_url: null,
@@ -257,6 +346,12 @@ describe("ProjectWorkspace", () => {
     expect(screen.getByRole("link", { name: /back to projects/i })).toHaveAttribute(
       "href",
       "/dashboard/organizations/org-1/projects",
+    );
+    // An owner could delete this Project but had no way to correct it, so the
+    // edit route needs an entry point beside the destructive one.
+    expect(screen.getByRole("link", { name: /^edit project$/i })).toHaveAttribute(
+      "href",
+      "/dashboard/organizations/org-1/projects/project-1/edit",
     );
   });
 

@@ -270,6 +270,7 @@ Operators post custom framework creation or customization requests. Contributors
 | FR-PROJ-011 | The system shall allow either party to raise a Dispute on a Milestone, pausing Escrow release. |
 | FR-PROJ-012 | The system shall route Disputes to an Admin for resolution. |
 | FR-PROJ-013 | The system shall allow a Contributor to optionally publish a completed Project deliverable as a Framework. |
+| FR-PROJ-014 | The system shall allow the Operator to edit a Project it owns while the Project is still `open`: title, description, category, budget range, deadline, and required deliverables. Available to both Operator identities — an individual (`PATCH /v1/projects/{id}`) and an organization (`PATCH /v1/orgs/{org_id}/projects/{id}`). |
 
 ### Business Rules
 
@@ -280,6 +281,7 @@ Operators post custom framework creation or customization requests. Contributors
 | BR-PROJ-003 | A Dispute auto-escalates to Admin if unresolved by both parties within 7 days. |
 | BR-PROJ-004 | An Operator may have a maximum of 5 active Projects concurrently at MVP. An Admin may raise this ceiling for one individual Operator account (`users.max_active_projects`, audited); the organization path has no exception and is held to 5. |
 | BR-PROJ-005 | A Project with no Proposal accepted within 30 days auto-closes unless the Operator extends it. |
+| BR-PROJ-006 | A Project may only be edited while `open`. Once any Proposal against it is `pending`, its budget range and required deliverables are frozen — those are the terms the Contributor priced against — while title, description, category and deadline stay editable. Lifting the freeze means declining the outstanding Proposals. Enforced inside the row lock the edit already takes, so a Proposal cannot arrive between the check and the write. |
 
 ### Error States
 
@@ -605,7 +607,7 @@ Enables third-party platforms to integrate with Auracles via API keys — readin
 | FR-AUTH-001–011 | Auth & Identity | §11 Access Control | Draft |
 | FR-EXP-001–011 | Explore | §6 Core Platform Modules | Draft |
 | FR-FWK-001–014 | Frameworks | §6, §8, §9 | Draft |
-| FR-PROJ-001–013 | Projects | §6 Core Platform Modules | Draft |
+| FR-PROJ-001–014 | Projects | §6 Core Platform Modules | Draft |
 | FR-ATT-001–011 | Attestation | §6, §10 Trust Layer | Draft |
 | FR-FIN-001–014 | Financials | §6, Economic Layer | Draft |
 | FR-SET-001–011 | Settings | §11 Access Control | Draft |

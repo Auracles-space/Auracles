@@ -57,7 +57,7 @@ import {
 import { formatMoney } from "@/lib/marketplace/format";
 import { useProjectRealtime } from "@/lib/projects/realtime";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
-import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
+import { currencySymbol, PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 type ProjectWorkspaceProps = {
   projectId: string;
@@ -739,12 +739,20 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
               Realtime {realtime.connected ? "connected" : "offline"}
             </span>
             {isProjectOwner && project?.status === "open" ? (
-              <ProjectDeleteAction
-                mode={mode}
-                onDeleted={() => router.replace(projectListPath)}
-                projectId={project.id}
-                projectTitle={project.title}
-              />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Link
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
+                  href={`${projectWorkspacePath}/edit`}
+                >
+                  Edit project
+                </Link>
+                <ProjectDeleteAction
+                  mode={mode}
+                  onDeleted={() => router.replace(projectListPath)}
+                  projectId={project.id}
+                  projectTitle={project.title}
+                />
+              </div>
             ) : null}
           </div>
         </div>
@@ -940,7 +948,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                     }));
                   }}
                   pattern="[0-9]*[.]?[0-9]*"
-                  placeholder="Budget (e.g. 1500.00)"
+                  placeholder={`Budget (e.g. ${currencySymbol(PLATFORM_CURRENCY)}1500.00)`}
                   type="text"
                   value={milestoneForm.budget}
                 />
@@ -1109,7 +1117,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                         </label>
                         <label className="grid gap-1 text-sm">
                           <span className="font-medium text-foreground">
-                            Budget (USD)
+                            Budget ({currencySymbol(milestone.currency)})
                           </span>
                           <input
                             className="min-h-12 rounded-xl border border-border-default bg-surface-1 px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-accent"

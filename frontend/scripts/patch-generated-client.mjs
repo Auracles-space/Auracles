@@ -154,6 +154,8 @@ const compatibilityAliases = {
   updateFramework: "updateFrameworkV1FrameworksFrameworkIdPatch",
   updateMilestone: "updateMilestoneV1ProjectsProjectIdMilestonesMilestoneIdPatch",
   updateMyFrameworkReview: "updateMyFrameworkReviewV1FrameworksFrameworkIdReviewsMePatch",
+  updateProject: "updateProjectV1ProjectsProjectIdPatch",
+  updateOrgProject: "updateOrgProjectV1OrgsOrgIdProjectsProjectIdPatch",
   verifyEmail: "verifyEmailV1AuthVerifyEmailPost",
   verifyTotp: "verifyTotpV1Auth2FaVerifyPost",
   verifyTotpLogin: "verifyTotpLoginV1Auth2FaVerifyLoginPost",
