@@ -84,6 +84,18 @@ describe("ProjectCreateForm", () => {
     });
   });
 
+  it("marks the budget fields with the settlement currency", async () => {
+    // The two budget inputs carried no currency mark at all, so an Operator
+    // typing "1000" had nothing on screen telling them the unit — and the
+    // Project card they landed on afterwards printed a dollar sign.
+    render(<ProjectCreateForm />);
+
+    const marks = screen.getAllByText("₦");
+
+    expect(marks).toHaveLength(2);
+    expect(screen.queryByText(/USD|\$/)).not.toBeInTheDocument();
+  });
+
   it("disables submit until all required fields are filled", () => {
     render(<ProjectCreateForm />);
 

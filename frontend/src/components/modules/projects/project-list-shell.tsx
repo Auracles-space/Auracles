@@ -8,6 +8,7 @@
  * Proposal, which have left the open feed. All lists use the generated OpenAPI
  * client.
  */
+import { Pencil1Icon } from "@radix-ui/react-icons";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +23,7 @@ import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { ProjectDeleteAction } from "@/components/modules/projects/project-delete-action";
 import { Tabs, tabId, tabPanelId, type TabItem } from "@/components/ui/tabs";
 import { listOrgProjects, listProjects } from "@/lib/generated/sdk.gen";
+import { formatMoney } from "@/lib/marketplace/format";
 import type { ProjectResponse } from "@/lib/generated/types.gen";
 import type { ProjectApiMode } from "@/lib/projects/project-api-mode";
 
@@ -76,7 +78,8 @@ function ProjectCard({
           <div>
             <dt className="text-xs uppercase tracking-[0.05em]">Budget</dt>
             <dd className="font-semibold text-foreground">
-              ${project.budget_min} - ${project.budget_max}
+              {formatMoney(project.budget_min, project.currency)} –{" "}
+              {formatMoney(project.budget_max, project.currency)}
             </dd>
           </div>
           <div>
@@ -92,7 +95,15 @@ function ProjectCard({
         </dl>
       </Link>
       {canDelete && project.status === "open" ? (
-        <div className="absolute bottom-4 right-4">
+        <div className="absolute bottom-4 right-4 flex items-center gap-2">
+          {/* Outside the card's Link, because a link cannot nest in a link. */}
+          <Link
+            aria-label={`Edit ${project.title}`}
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-border-default bg-surface-1 text-foreground-muted outline-none transition-colors hover:bg-surface-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+            href={`${basePath}/${project.id}/edit`}
+          >
+            <Pencil1Icon className="h-4 w-4" />
+          </Link>
           <ProjectDeleteAction
             mode={mode}
             onDeleted={onDeleted}

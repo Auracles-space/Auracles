@@ -308,7 +308,8 @@ Operator posts + funds; **Dual** is the bidding Contributor side.
 
 | # | Flow | As | Inputs | Expect |
 |---|------|----|--------|--------|
-| PR-1 | Post project | Operator | title `Migrate billing to Stripe`, desc, category, budget min `500` / max `2000` | Posted; min<max enforced; budgets > 0. |
+| PR-1 | Post project | Operator | title `Migrate billing to Stripe`, desc, category, budget min `500000` / max `2000000` | Posted; min<max enforced; budgets > 0; budget fields marked ₦, and the Project card prices in ₦ not $. |
+| PR-1b | Edit project | Operator | "Edit project" from the card or the workspace header, change the title, Save changes | Only the changed field is sent; workspace shows the new title. Repeat after a Proposal lands: budget and deliverables are disabled with the reason shown, title still editable. Same flow for an organization-operated Project. |
 | PR-2 | Active-project cap | Operator | post 6 open projects | 6th rejected (409) — cap 5 active, unless an Admin has raised this account's ceiling. |
 | PR-3 | Proposal | Dual | scope text, bid `1500` | Bid recorded; operator sees it. |
 | PR-4 | Proposal withdraw | Dual | withdraw own proposal (on a second project) | Withdrawn; no longer acceptable. |

@@ -29698,6 +29698,51 @@ paths:
       summary: Get an organization Project
       tags:
       - Projects
+    patch:
+      description: 'Update an organization-operated Project while it remains open,
+        as an organization owner or admin with the operator capability active. Budget
+        and required deliverables are refused while any Proposal is pending, because
+        those are the terms a bidder priced against.'
+      operationId: update_org_project_v1_orgs__org_id__projects__project_id__patch
+      parameters:
+      - in: path
+        name: org_id
+        required: true
+        schema:
+          format: uuid
+          title: Org Id
+          type: string
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          format: uuid
+          title: Project Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdateRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Edit an open organization Project
+      tags:
+      - Projects
   /v1/orgs/{org_id}/projects/{project_id}/cancel-acceptance:
     post:
       description: Reopen an assigned organization Project before any Milestone is
@@ -31363,7 +31408,9 @@ paths:
       tags:
       - Projects
     patch:
-      description: Update an Operator-owned Project while it remains open.
+      description: 'Update an Operator-owned Project while it remains open. Budget
+        and required deliverables are refused while any Proposal is pending, because
+        those are the terms a bidder priced against.'
       operationId: update_project_v1_projects__project_id__patch
       parameters:
       - in: path
@@ -31394,7 +31441,7 @@ paths:
           description: Validation Error
       security:
       - HTTPBearer: []
-      summary: Update Project
+      summary: Edit an open Project
       tags:
       - Projects
   /v1/projects/{project_id}/cancel-acceptance:

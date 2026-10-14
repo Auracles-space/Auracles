@@ -7,7 +7,7 @@
  * workspace shell once the backend accepts it.
  */
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import {
   configureBrowserClient,
@@ -17,7 +17,7 @@ import { allValid, isNonEmpty, isPositiveNumber } from "@/lib/forms/validators";
 import { projectApi, type ProjectApiMode } from "@/lib/projects/project-api-mode";
 import type { ProjectCreateRequest } from "@/lib/generated/types.gen";
 import { FUNCTION_OPTIONS } from "@/lib/marketplace/taxonomy";
-import { PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
+import { currencySymbol, PLATFORM_CURRENCY } from "@/lib/marketplace/currency";
 
 type ProjectFormState = {
   budgetMax: string;
@@ -43,12 +43,17 @@ const initialState: ProjectFormState = {
 
 /**
  * Render a compact label and input pair.
+ *
+ * `prefix` renders a leading adornment inside the field — the currency symbol
+ * on the budget inputs, so the unit sits where the number is typed rather than
+ * in the label, which keeps the label stable for screen readers and tests.
  */
 function TextField({
   label,
   min,
   onChange,
   placeholder,
+  prefix,
   required = false,
   type = "text",
   value,
@@ -57,25 +62,43 @@ function TextField({
   min?: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  prefix?: string;
   required?: boolean;
   type?: string;
   value: string;
 }) {
+  // Associated by id rather than by wrapping, because a wrapping label absorbs
+  // the adornment into the field's accessible name — "Minimum budget ₦"
+  // instead of "Minimum budget".
+  const fieldId = useId();
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-semibold text-foreground">
+    <div className="block">
+      <label
+        className="mb-1.5 block text-sm font-semibold text-foreground"
+        htmlFor={fieldId}
+      >
         {label}
-      </span>
-      <input
-        className="min-h-12 w-full rounded-xl border border-border-default bg-surface-2 px-4 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50"
-        min={min}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        required={required}
-        type={type}
-        value={value}
-      />
-    </label>
+      </label>
+      <div className="relative">
+        {prefix ? (
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-foreground-muted">
+            {prefix}
+          </span>
+        ) : null}
+        <input
+          className={`min-h-12 w-full rounded-xl border border-border-default bg-surface-2 text-sm text-foreground outline-none transition-all focus:border-accent focus:ring-0 placeholder:text-foreground-muted/50 ${
+            prefix ? "pl-10 pr-4" : "px-4"
+          }`}
+          id={fieldId}
+          min={min}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          required={required}
+          type={type}
+          value={value}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -195,7 +218,8 @@ export function ProjectCreateForm({ mode = { kind: "self" } }: { mode?: ProjectA
           onChange={(budgetMin) =>
             setForm((current) => ({ ...current, budgetMin }))
           }
-          placeholder="e.g. 500"
+          placeholder="e.g. 500000"
+          prefix={currencySymbol(PLATFORM_CURRENCY)}
           required
           value={form.budgetMin}
         />
@@ -204,7 +228,8 @@ export function ProjectCreateForm({ mode = { kind: "self" } }: { mode?: ProjectA
           onChange={(budgetMax) =>
             setForm((current) => ({ ...current, budgetMax }))
           }
-          placeholder="e.g. 2000"
+          placeholder="e.g. 2000000"
+          prefix={currencySymbol(PLATFORM_CURRENCY)}
           required
           value={form.budgetMax}
         />

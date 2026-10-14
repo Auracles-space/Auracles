@@ -135,7 +135,16 @@ async def get_project(
     return response
 
 
-@router.patch("/{project_id}", response_model=ProjectResponse)
+@router.patch(
+    "/{project_id}",
+    response_model=ProjectResponse,
+    summary="Edit an open Project",
+    description=(
+        "Update an Operator-owned Project while it remains open. Budget and "
+        "required deliverables are refused while any Proposal is pending, "
+        "because those are the terms a bidder priced against."
+    ),
+)
 async def update_project(
     project_id: UUID,
     payload: ProjectUpdateRequest,
@@ -267,6 +276,37 @@ async def get_org_project(
         project_id=project_id,
         org_name=context.org.name,
     )
+
+
+@org_router.patch(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+    summary="Edit an open organization Project",
+    description=(
+        "Update an organization-operated Project while it remains open, as an "
+        "organization owner or admin with the operator capability active. "
+        "Budget and required deliverables are refused while any Proposal is "
+        "pending, because those are the terms a bidder priced against."
+    ),
+)
+async def update_org_project(
+    org_id: UUID,
+    project_id: UUID,
+    payload: ProjectUpdateRequest,
+    context: OrgAdminContext,
+    _: Annotated[None, Depends(require_org_capability("operator"))],
+    db: DatabaseSession,
+) -> ProjectResponse:
+    """Update an organization-owned Project while it is still open."""
+    del org_id
+    project = await service.update_org_project(
+        db=db,
+        org_id=context.org.id,
+        actor_id=context.user.id,
+        project_id=project_id,
+        payload=payload,
+    )
+    return ProjectResponse.model_validate(project)
 
 
 @org_router.delete(

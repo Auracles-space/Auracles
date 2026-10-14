@@ -563,28 +563,60 @@ async def get_project(
     )
 
 
-async def update_project(
+# Fields a Contributor reads before pricing a bid. Once a Proposal is pending
+# these are the terms it answers, so editing them would move the goalposts under
+# someone who has already committed a number — which is why they freeze while a
+# bid is outstanding rather than for the whole open window.
+_BID_SENSITIVE_FIELDS = frozenset({"budget_min", "budget_max", "required_deliverables"})
+
+
+async def _update_project(
     *,
     db: AsyncSession,
-    operator: User,
+    actor_id: UUID,
     project_id: UUID,
     payload: ProjectUpdateRequest,
+    operator_org_id: UUID | None,
 ) -> Project:
-    """Update an Operator-owned Project while it is still open."""
-    operator_id = operator.id
+    """Update one open Project for either Operator identity.
+
+    Shared by the individual and organization paths, which differ only in how
+    ownership is proven: an individual owns the row through ``operator_id``, an
+    organization through ``operator_org_id``. Same shape as
+    :func:`_delete_project`.
+
+    Args:
+        db: Async session.
+        actor_id: User performing the edit, recorded in the audit entry. Also
+            the ownership filter on the individual path.
+        project_id: Project to edit.
+        payload: Sparse update; only fields the caller set are applied.
+        operator_org_id: Owning organization, or None for an individual.
+
+    Returns:
+        The updated Project.
+
+    Raises:
+        HTTPException(404): No such Project under this Operator identity.
+        HTTPException(409): Project has left `open`, or the edit touches
+            bid-sensitive terms while a Proposal is pending.
+        HTTPException(422): Resulting budget range is inverted.
+    """
     if db.in_transaction():
         await db.rollback()
 
     async with db.begin():
-        project = await db.scalar(
-            select(Project)
-            .where(
-                Project.id == project_id,
-                Project.operator_id == operator_id,
-                Project.deleted_at.is_(None),
-            )
-            .with_for_update()
+        project_query = select(Project).where(
+            Project.id == project_id,
+            Project.deleted_at.is_(None),
         )
+        if operator_org_id is None:
+            project_query = project_query.where(Project.operator_id == actor_id)
+        else:
+            project_query = project_query.where(
+                Project.operator_org_id == operator_org_id
+            )
+        project = await db.scalar(project_query.with_for_update())
         if project is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -597,6 +629,26 @@ async def update_project(
             )
 
         updates = payload.model_dump(exclude_unset=True)
+        # Read inside the row lock, so a Proposal cannot arrive between this
+        # check and the write and have its terms edited out from under it.
+        if _BID_SENSITIVE_FIELDS & updates.keys():
+            pending_proposal_id = await db.scalar(
+                select(Proposal.id)
+                .where(
+                    Proposal.project_id == project.id,
+                    Proposal.status == "pending",
+                )
+                .limit(1)
+            )
+            if pending_proposal_id is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Budget and deliverables cannot change while a Proposal "
+                        "is pending. Decline the outstanding Proposals first, or "
+                        "edit the title, description, category or deadline."
+                    ),
+                )
         if "required_deliverables" in updates:
             updates["required_deliverables"] = _serialize_deliverables(
                 payload.required_deliverables or []
@@ -613,7 +665,7 @@ async def update_project(
             setattr(project, key, value)
         await write_audit(
             db=db,
-            actor_id=operator_id,
+            actor_id=actor_id,
             action="project_extended" if "deadline" in updates else "project_updated",
             target_type="project",
             target_id=project.id,
@@ -622,6 +674,41 @@ async def update_project(
         await db.flush()
         await db.refresh(project)
     return project
+
+
+async def update_project(
+    *,
+    db: AsyncSession,
+    operator: User,
+    project_id: UUID,
+    payload: ProjectUpdateRequest,
+) -> Project:
+    """Update an open Project owned by an individual Operator."""
+    return await _update_project(
+        db=db,
+        actor_id=operator.id,
+        project_id=project_id,
+        payload=payload,
+        operator_org_id=None,
+    )
+
+
+async def update_org_project(
+    *,
+    db: AsyncSession,
+    org_id: UUID,
+    actor_id: UUID,
+    project_id: UUID,
+    payload: ProjectUpdateRequest,
+) -> Project:
+    """Update an open Project owned by an organization."""
+    return await _update_project(
+        db=db,
+        actor_id=actor_id,
+        project_id=project_id,
+        payload=payload,
+        operator_org_id=org_id,
+    )
 
 
 async def _delete_project(

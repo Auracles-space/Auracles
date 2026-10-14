@@ -4183,6 +4183,69 @@ async def test_operator_edits_open_project_and_validates_budget_and_status(
     assert edit_after_assign.status_code == 409
 
 
+async def test_project_terms_lock_once_a_proposal_is_pending(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """A pending Proposal freezes budget and deliverables, not the whole Project.
+
+    Contributors price a bid against the posted budget and the deliverables
+    asked for, so editing either after a bid lands changes the terms underneath
+    someone who has already answered them. Deletion already refuses while a
+    Proposal is pending; editing the money did not, which left the Operator
+    able to post high, collect bids, and revise the budget down.
+
+    Descriptive fields carry no such weight, so a typo in the title stays
+    fixable for as long as the Project is open.
+    """
+    operator_id = await create_user("terms-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "terms-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+
+    created = await client.post(
+        "/v1/projects", headers=operator_headers, json=project_payload()
+    )
+    project_id = created.json()["id"]
+    await client.post(
+        f"/v1/projects/{project_id}/proposals",
+        headers=auth_headers(contributor_id, ["contributor"]),
+        json=proposal_payload(),
+    )
+
+    descriptive_edit = await client.patch(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+        json={"title": "Procurement Playbook (revised scope note)"},
+    )
+    budget_edit = await client.patch(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+        json={"budget_max": "500.00", "budget_min": "400.00"},
+    )
+    deliverables_edit = await client.patch(
+        f"/v1/projects/{project_id}",
+        headers=operator_headers,
+        json={
+            "required_deliverables": [
+                {"name": "Something else", "description": "Different ask"}
+            ]
+        },
+    )
+    after = await client.get(f"/v1/projects/{project_id}", headers=operator_headers)
+
+    assert descriptive_edit.status_code == 200
+    assert descriptive_edit.json()["title"].endswith("(revised scope note)")
+    assert budget_edit.status_code == 409
+    assert deliverables_edit.status_code == 409
+    # The refusals must leave the posted terms exactly as the bidder read them.
+    assert after.json()["budget_min"] == "1000.00"
+    assert after.json()["budget_max"] == "2000.00"
+    assert after.json()["required_deliverables"][0]["name"] == "Playbook"
+
+
 async def test_operator_lists_all_proposals_and_contributor_lists_own(
     client: AsyncClient,
     migrated_database: None,

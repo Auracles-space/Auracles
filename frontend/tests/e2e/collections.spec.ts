@@ -424,7 +424,7 @@ test("Contributor builds a Collection and Operator sees/refunds collection licen
   await page.goto("/dashboard/collections");
   await page.getByPlaceholder("Collection title").fill("Overpriced Collection");
   await page.getByPlaceholder("Describe the bundle").fill("Invalid bundle.");
-  await page.getByPlaceholder("Bundle price, USD").fill("1000.00");
+  await page.getByLabel("Bundle price").fill("1000.00");
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(
     page.getByRole("heading", { name: "Overpriced Collection" }),
@@ -444,7 +444,7 @@ test("Contributor builds a Collection and Operator sees/refunds collection licen
   await page
     .getByPlaceholder("Describe the bundle")
     .fill("Discounted diligence controls.");
-  await page.getByPlaceholder("Bundle price, USD").fill("700.00");
+  await page.getByLabel("Bundle price").fill("700.00");
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(
     page.getByRole("heading", { name: "Diligence Control Collection" }),

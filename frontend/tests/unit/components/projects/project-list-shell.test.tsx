@@ -116,13 +116,21 @@ describe("ProjectListShell", () => {
 
     render(<ProjectListShell mode={{ kind: "org", orgId: "org-1" }} />);
 
-    expect(await screen.findByRole("link", { name: /controls rollout/i })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: /^controls rollout/i })).toHaveAttribute(
       "href",
       "/dashboard/organizations/org-1/projects/proj-1",
     );
     expect(screen.getByRole("link", { name: /post project/i })).toHaveAttribute(
       "href",
       "/dashboard/organizations/org-1/projects?view=create",
+    );
+    // Reaching the edit form only from inside the workspace hid it behind a
+    // navigation nobody had a reason to make, so the card offers it too.
+    expect(
+      screen.getByRole("link", { name: /edit controls rollout/i }),
+    ).toHaveAttribute(
+      "href",
+      "/dashboard/organizations/org-1/projects/proj-1/edit",
     );
   });
 
@@ -164,6 +172,37 @@ describe("ProjectListShell", () => {
     expect(
       screen.queryByRole("link", { name: /controls rollout/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("prices a Project in the currency it was posted in", async () => {
+    // The card hardcoded a "$" prefix and ignored project.currency, so every
+    // naira budget on an NGN deployment read as dollars.
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: {
+        projects: [
+          {
+            id: "proj-1",
+            title: "Controls rollout",
+            description: "Deploy the control framework.",
+            status: "open",
+            budget_min: "1000.00",
+            budget_max: "2000.00",
+            currency: "NGN",
+            category: "governance",
+            milestone_plan_status: "draft",
+          },
+        ],
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    const budget = await screen.findByText(/1,000/);
+    expect(budget).toHaveTextContent("₦1,000 – ₦2,000");
+    expect(budget.textContent).not.toContain("$");
   });
 
   it("calls listProjects when mode is self", async () => {
