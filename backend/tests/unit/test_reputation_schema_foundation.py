@@ -20,6 +20,32 @@ from app.core.config import get_settings
 from app.modules.reputation.models import ReputationScore
 
 PHASE_5D_HEAD = "2026_06_12_0024"
+
+# The config keys migration 2026_06_13_0025 seeds, and therefore the only ones
+# its downgrade is responsible for removing.
+#
+# Asserting on this set rather than on the `reputation_%` prefix is the whole
+# point. `reputation_weights_attestor` matches that prefix but belongs to no
+# migration — an admin writes it at runtime through
+# `admin.service.set_reputation_weights`. Under xdist the workers share a
+# database per worker, so an admin test landing on this worker first left that
+# row behind and this test blamed the downgrade for not deleting something it
+# never seeded. It failed on one PR and passed on the next depending only on
+# how pytest sharded the suite.
+_MIGRATION_SEEDED_KEYS = frozenset(
+    {
+        "reputation_decay_halflife_days",
+        "reputation_dispute_penalty",
+        "reputation_min_activity_contributor",
+        "reputation_min_activity_framework",
+        "reputation_min_activity_operator",
+        "reputation_prior",
+        "reputation_prior_strength_k",
+        "reputation_weights_contributor",
+        "reputation_weights_framework",
+        "reputation_weights_operator",
+    }
+)
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
@@ -88,7 +114,9 @@ def test_reputation_migration_downgrade_removes_slice_one_schema() -> None:
         seeded = _platform_config_rows(engine)
 
         assert "reputation_scores" not in table_names
-        assert seeded == {}
+        # Every key the migration seeded is gone. Rows the application wrote
+        # are not its to delete, so their survival is correct, not a leak.
+        assert _MIGRATION_SEEDED_KEYS.isdisjoint(seeded)
     finally:
         command.upgrade(alembic_config, "head")
         engine.dispose()
