@@ -5,22 +5,48 @@
  * Every page nested under `app/` inherits this layout.
  */
 import type { Metadata } from "next";
-import { Inter, Poppins } from "next/font/google";
+import localFont from "next/font/local";
 
 import "./globals.css";
 
-const headingFont = Inter({
+// Self-hosted rather than fetched from Google at build time.
+//
+// `next/font/google` downloads each face while compiling, which made every
+// build depend on fonts.googleapis.com answering. It failed three builds out
+// of four on 2026-10-14 with `next/font: Cannot read properties of null
+// (reading '1')` — the loader regex-parsing a CSS response it never received.
+// The same code runs in the Amplify production build, so a Google hiccup could
+// fail a release, not just a PR.
+//
+// These are the latin subset only, at exactly the weights the brand book pins
+// (Inter 600/700/800 for headings, Poppins 400/500/600 for body) — 74 KB in
+// total. Both families are SIL Open Font License, which permits redistribution.
+//
+// Inter is one variable file carrying the whole weight axis, declared over the
+// range the brand book uses. Google returns the same bytes for 600, 700 and
+// 800, so listing it three times would ship the file three times. Poppins is
+// static, hence one file per weight; adding a Poppins weight means adding its
+// file here rather than editing a string.
+const headingFont = localFont({
   display: "swap",
-  subsets: ["latin"],
+  src: [
+    {
+      path: "./fonts/inter-variable.woff2",
+      style: "normal",
+      weight: "600 800",
+    },
+  ],
   variable: "--font-heading",
-  weight: ["600", "700", "800"],
 });
 
-const bodyFont = Poppins({
+const bodyFont = localFont({
   display: "swap",
-  subsets: ["latin"],
+  src: [
+    { path: "./fonts/poppins-400.woff2", style: "normal", weight: "400" },
+    { path: "./fonts/poppins-500.woff2", style: "normal", weight: "500" },
+    { path: "./fonts/poppins-600.woff2", style: "normal", weight: "600" },
+  ],
   variable: "--font-body",
-  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
