@@ -12,6 +12,7 @@ import {
   listAdminUsersV1AdminUsersGet,
   listUserKycDocumentsV1AdminUsersUserIdKycDocumentsGet,
   reviewKycV1AdminUsersUserIdKycPatch,
+  setUserProjectCapV1AdminUsersUserIdProjectCapPatch,
   suspendUserV1AdminUsersUserIdSuspendPost,
 } from "@/lib/generated/sdk.gen";
 
@@ -29,6 +30,7 @@ vi.mock("@/lib/generated/sdk.gen", () => ({
   // open; without this the panel's own tests fail on an unmocked export.
   listUserKycDocumentsV1AdminUsersUserIdKycDocumentsGet: vi.fn(),
   reviewKycV1AdminUsersUserIdKycPatch: vi.fn(),
+  setUserProjectCapV1AdminUsersUserIdProjectCapPatch: vi.fn(),
   suspendUserV1AdminUsersUserIdSuspendPost: vi.fn(),
   unsuspendUserV1AdminUsersUserIdUnsuspendPost: vi.fn(),
 }));
@@ -57,6 +59,7 @@ describe("AdminUserDirectoryPanel", () => {
             suspended_at: null,
             user_id: "user-1",
             kyc_status: "pending",
+            max_active_projects: null,
           },
         ],
         page: 1,
@@ -143,5 +146,119 @@ describe("AdminUserDirectoryPanel", () => {
     expect(
       await within(userCard).findByText(/KYC: verified/i),
     ).toBeInTheDocument();
+  });
+  it("raises one Operator's active-Project ceiling with a reason", async () => {
+    vi.mocked(
+      setUserProjectCapV1AdminUsersUserIdProjectCapPatch,
+    ).mockResolvedValue({
+      data: {
+        user_id: "user-1",
+        max_active_projects: 25,
+        default_max_active_projects: 5,
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<AdminUserDirectoryPanel />);
+    const userCard = await screen.findByRole("article", {
+      name: /ada contributor/i,
+    });
+
+    fireEvent.click(
+      within(userCard).getByRole("button", { name: /project limit/i }),
+    );
+    fireEvent.change(within(userCard).getByLabelText(/concurrent active/i), {
+      target: { value: "25" },
+    });
+    fireEvent.change(within(userCard).getByLabelText(/why this account/i), {
+      target: { value: "Pilot operator running the launch cohort." },
+    });
+    fireEvent.click(
+      within(userCard).getByRole("button", { name: /save limit/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        setUserProjectCapV1AdminUsersUserIdProjectCapPatch,
+      ).toHaveBeenCalledWith({
+        body: {
+          max_active_projects: 25,
+          reason: "Pilot operator running the launch cohort.",
+        },
+        headers: { Authorization: "Bearer admin-token" },
+        path: { user_id: "user-1" },
+      });
+    });
+
+    // The exception is visible on the row afterwards, so an admin scanning the
+    // directory can see who is not on the default.
+    expect(await within(userCard).findByText(/25 projects/i)).toBeInTheDocument();
+  });
+
+  it("clears the ceiling by sending null rather than the default number", async () => {
+    // Writing 5 would pin the account to today's value of BR-PROJ-004; null
+    // returns it to following the rule.
+    vi.mocked(listAdminUsersV1AdminUsersGet).mockResolvedValue({
+      data: {
+        items: [
+          {
+            created_at: "2026-06-10T09:00:00Z",
+            display_name: "Ada Contributor",
+            email: "ada@example.com",
+            roles: ["contributor"],
+            suspended: false,
+            suspended_at: null,
+            user_id: "user-1",
+            kyc_status: "verified",
+            max_active_projects: 25,
+          },
+        ],
+        page: 1,
+        page_size: 20,
+        total: 1,
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    vi.mocked(
+      setUserProjectCapV1AdminUsersUserIdProjectCapPatch,
+    ).mockResolvedValue({
+      data: {
+        user_id: "user-1",
+        max_active_projects: null,
+        default_max_active_projects: 5,
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+
+    render(<AdminUserDirectoryPanel />);
+    const userCard = await screen.findByRole("article", {
+      name: /ada contributor/i,
+    });
+
+    fireEvent.click(
+      within(userCard).getByRole("button", { name: /project limit/i }),
+    );
+    fireEvent.change(within(userCard).getByLabelText(/why this account/i), {
+      target: { value: "Pilot cohort finished." },
+    });
+    fireEvent.click(
+      within(userCard).getByRole("button", { name: /remove exception/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        setUserProjectCapV1AdminUsersUserIdProjectCapPatch,
+      ).toHaveBeenCalledWith({
+        body: {
+          max_active_projects: null,
+          reason: "Pilot cohort finished.",
+        },
+        headers: { Authorization: "Bearer admin-token" },
+        path: { user_id: "user-1" },
+      });
+    });
   });
 });

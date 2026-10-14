@@ -4,14 +4,15 @@
  * Admin user directory panel.
  *
  * Allows administrators to search users, filter by suspension state, and run
- * the suspend, unsuspend, and KYC-review mutations. Each is a sensitive
- * action: the API requires a step-up 2FA window, which the global step-up
- * prompt handles when the call is refused.
+ * the suspend, unsuspend, KYC-review, and per-account Project-ceiling
+ * mutations. Each is a sensitive action: the API requires a step-up 2FA
+ * window, which the global step-up prompt handles when the call is refused.
  * Styled as a responsive grid directory that functions as a table on desktop.
  */
 import React, { useEffect, useMemo, useState } from "react";
 
 import { AdminKycDocumentList } from "@/components/modules/admin/admin-kyc-document-list";
+import { AdminUserProjectCapForm } from "@/components/modules/admin/admin-user-project-cap-form";
 import { Button } from "@/components/ui/button";
 import { authTokenStore } from "@/lib/auth/token-store";
 import {
@@ -88,6 +89,7 @@ export function AdminUserDirectoryPanel() {
   const [kycReviewUserId, setKycReviewUserId] = useState<string | null>(null);
   const [kycNotes, setKycNotes] = useState("");
   const [kycBusy, setKycBusy] = useState(false);
+  const [capUserId, setCapUserId] = useState<string | null>(null);
 
   useEffect(() => {
     setCurrentUserId(authTokenStore.getState().userId);
@@ -344,6 +346,14 @@ export function AdminUserDirectoryPanel() {
                 >
                   KYC: {item.kyc_status}
                 </span>
+                {/* Only shown when the account is off the default, so the
+                    directory reads as "everyone follows BR-PROJ-004 except
+                    these". */}
+                {item.max_active_projects != null ? (
+                  <span className="mt-1 inline-flex w-fit items-center rounded-md border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-accent">
+                    Limit: {item.max_active_projects} projects
+                  </span>
+                ) : null}
               </div>
 
               {/* Joined Date cell */}
@@ -396,6 +406,17 @@ export function AdminUserDirectoryPanel() {
                     Review KYC
                   </Button>
                 ) : null}
+                <Button
+                  onClick={() =>
+                    setCapUserId(
+                      capUserId === item.user_id ? null : item.user_id,
+                    )
+                  }
+                  className="min-h-10 px-4"
+                  variant="secondary"
+                >
+                  Project limit
+                </Button>
                 {item.is_superadmin ? (
                   <span className="inline-flex items-center rounded-badge border border-accent/30 bg-accent/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">
                     Super admin
@@ -420,6 +441,24 @@ export function AdminUserDirectoryPanel() {
                   </Button>
                 )}
               </div>
+
+              {/* Expandable per-account Project ceiling form */}
+              {capUserId === item.user_id ? (
+                <AdminUserProjectCapForm
+                  current={item.max_active_projects ?? null}
+                  onCancel={() => setCapUserId(null)}
+                  onSaved={(maxActiveProjects) => {
+                    setDirectory((current) =>
+                      replaceDirectoryRow(current, {
+                        ...item,
+                        max_active_projects: maxActiveProjects,
+                      }),
+                    );
+                    setCapUserId(null);
+                  }}
+                  userId={item.user_id}
+                />
+              ) : null}
 
               {/* Expandable KYC review form */}
               {kycReviewUserId === item.user_id ? (

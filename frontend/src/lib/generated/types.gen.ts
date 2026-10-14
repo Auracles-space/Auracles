@@ -1225,6 +1225,27 @@ export type provider = 'stripe' | 'paystack';
 export type status5 = 'pending' | 'processing' | 'completed' | 'failed';
 
 /**
+ * Request body for setting one Operator's active-Project ceiling.
+ *
+ * ``max_active_projects`` is nullable on purpose: ``None`` removes the
+ * override and returns the account to BR-PROJ-004's default, which is not the
+ * same as writing today's default into the row and freezing it there.
+ */
+export type AdminProjectCapRequest = {
+    max_active_projects?: (number | null);
+    reason: string;
+};
+
+/**
+ * Response body describing an Operator's active-Project ceiling.
+ */
+export type AdminProjectCapResponse = {
+    default_max_active_projects: number;
+    max_active_projects: (number | null);
+    user_id: string;
+};
+
+/**
  * Request body for overriding a near-duplicate rarity hard block.
  */
 export type AdminRarityBlockOverrideRequest = {
@@ -1425,6 +1446,7 @@ export type AdminUserDirectoryItem = {
     email: string;
     is_superadmin?: boolean;
     kyc_status: string;
+    max_active_projects?: (number | null);
     roles: Array<(string)>;
     suspended: boolean;
     suspended_at: (string | null);
@@ -7128,6 +7150,17 @@ export type AssignRoleV1AdminUsersUserIdRolesPatchData = {
 export type AssignRoleV1AdminUsersUserIdRolesPatchResponse = (AdminRoleAssignmentResponse);
 
 export type AssignRoleV1AdminUsersUserIdRolesPatchError = (HTTPValidationError);
+
+export type SetUserProjectCapV1AdminUsersUserIdProjectCapPatchData = {
+    body: AdminProjectCapRequest;
+    path: {
+        user_id: string;
+    };
+};
+
+export type SetUserProjectCapV1AdminUsersUserIdProjectCapPatchResponse = (AdminProjectCapResponse);
+
+export type SetUserProjectCapV1AdminUsersUserIdProjectCapPatchError = (HTTPValidationError);
 
 export type SuspendUserV1AdminUsersUserIdSuspendPostData = {
     body: AdminUserSuspendRequest;

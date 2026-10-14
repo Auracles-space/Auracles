@@ -309,7 +309,7 @@ Operator posts + funds; **Dual** is the bidding Contributor side.
 | # | Flow | As | Inputs | Expect |
 |---|------|----|--------|--------|
 | PR-1 | Post project | Operator | title `Migrate billing to Stripe`, desc, category, budget min `500` / max `2000` | Posted; min<max enforced; budgets > 0. |
-| PR-2 | Active-project cap | Operator | post 6 open projects | 6th rejected (409) — cap 5 active. |
+| PR-2 | Active-project cap | Operator | post 6 open projects | 6th rejected (409) — cap 5 active, unless an Admin has raised this account's ceiling. |
 | PR-3 | Proposal | Dual | scope text, bid `1500` | Bid recorded; operator sees it. |
 | PR-4 | Proposal withdraw | Dual | withdraw own proposal (on a second project) | Withdrawn; no longer acceptable. |
 | PR-5 | Accept proposal | Operator | accept Dual's proposal | Workspace created; membership set; other proposals closed. |

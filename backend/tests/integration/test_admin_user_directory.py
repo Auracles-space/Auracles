@@ -213,6 +213,8 @@ async def test_admin_can_search_and_filter_user_directory(
             "user_id": str(suspended.id),
             "is_superadmin": False,
             "kyc_status": "verified",
+            # None means the account follows BR-PROJ-004's default ceiling.
+            "max_active_projects": None,
         }
     finally:
         await _cleanup_admin_user_directory_state()

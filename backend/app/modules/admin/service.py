@@ -1280,6 +1280,7 @@ async def list_admin_users(
                 "suspended_at": user.suspended_at,
                 "is_superadmin": user.is_superadmin,
                 "kyc_status": user.kyc_status,
+                "max_active_projects": user.max_active_projects,
             }
             for user in users
         ],
@@ -2835,6 +2836,70 @@ async def suspend_user(
                 },
             )
     await auth_service.revoke_all_user_sessions(redis, target)
+    return target
+
+
+async def set_user_project_cap(
+    db: AsyncSession,
+    admin: User,
+    target_user_id: UUID,
+    max_active_projects: int | None,
+    reason: str,
+) -> User:
+    """Set or clear one Operator's active-Project ceiling.
+
+    BR-PROJ-004 caps an Operator at five concurrent active Projects. That
+    number bounds how much escrow one account can have in flight, so it is
+    lifted per account rather than amended for everyone: the account carries
+    its own ceiling and every other Operator keeps the rule.
+
+    Passing ``None`` removes the override, which is deliberately not the same
+    as writing the current default into the row — the account goes back to
+    following the business rule, including any later change to it.
+
+    The ceiling is advisory over existing rows: it is enforced when a Project
+    is created, so lowering it below an account's current load strands nothing
+    and simply stops the next post until the account comes back under.
+
+    Args:
+        db: Async SQLAlchemy session; any open transaction is rolled back.
+        admin: The acting admin, recorded on the audit entry.
+        target_user_id: UUID of the Operator whose ceiling is changing.
+        max_active_projects: The new ceiling, or ``None`` to follow the default.
+        reason: Why the exception was granted; recorded in the audit trail.
+
+    Returns:
+        The updated User.
+
+    Raises:
+        HTTPException(404): If no such user exists.
+    """
+    admin_id = admin.id
+    normalized_reason = reason.strip()
+    if db.in_transaction():
+        await db.rollback()
+    async with db.begin():
+        target = await db.get(User, target_user_id, with_for_update=True)
+        if target is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found.",
+            )
+        previous = target.max_active_projects
+        target.max_active_projects = max_active_projects
+        await write_audit(
+            db=db,
+            actor_id=admin_id,
+            action="project_cap_override_set",
+            target_type="user",
+            target_id=target.id,
+            # Both values, so the change is reversible from the log alone.
+            metadata={
+                "previous": previous,
+                "max_active_projects": max_active_projects,
+                "reason": normalized_reason,
+            },
+        )
     return target
 
 

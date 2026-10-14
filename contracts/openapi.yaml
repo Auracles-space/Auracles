@@ -3983,6 +3983,53 @@ components:
       - tolerance
       title: AdminTrialGradeRow
       type: object
+    AdminProjectCapRequest:
+      description: 'Request body for setting one Operator''s active-Project ceiling.
+
+
+        ``max_active_projects`` is nullable on purpose: ``None`` removes the
+
+        override and returns the account to BR-PROJ-004''s default, which is not the
+
+        same as writing today''s default into the row and freezing it there.'
+      properties:
+        max_active_projects:
+          anyOf:
+          - maximum: 500.0
+            minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Max Active Projects
+        reason:
+          maxLength: 1000
+          minLength: 1
+          title: Reason
+          type: string
+      required:
+      - reason
+      title: AdminProjectCapRequest
+      type: object
+    AdminProjectCapResponse:
+      description: Response body describing an Operator's active-Project ceiling.
+      properties:
+        default_max_active_projects:
+          title: Default Max Active Projects
+          type: integer
+        max_active_projects:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Active Projects
+        user_id:
+          format: uuid
+          title: User Id
+          type: string
+      required:
+      - user_id
+      - max_active_projects
+      - default_max_active_projects
+      title: AdminProjectCapResponse
+      type: object
     AdminUserDirectoryItem:
       description: One user row visible in the admin account directory.
       properties:
@@ -4003,6 +4050,12 @@ components:
         kyc_status:
           title: Kyc Status
           type: string
+        max_active_projects:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Max Active Projects
         roles:
           items:
             type: string
@@ -20464,6 +20517,46 @@ paths:
       security:
       - HTTPBearer: []
       summary: Assign Role
+      tags:
+      - Admin
+  /v1/admin/users/{user_id}/project-cap:
+    patch:
+      description: 'Raise or clear a single Operator''s concurrent active-Project
+        limit. BR-PROJ-004 caps an Operator at five; this grants one account an exception
+        without amending the rule for everyone else. Send `max_active_projects: null`
+        to remove the exception. Audited, and step-up gated because the ceiling bounds
+        concurrent escrow exposure.'
+      operationId: set_user_project_cap_v1_admin_users__user_id__project_cap_patch
+      parameters:
+      - in: path
+        name: user_id
+        required: true
+        schema:
+          format: uuid
+          title: User Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminProjectCapRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminProjectCapResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - HTTPBearer: []
+      summary: Set one Operator's active-Project ceiling
       tags:
       - Admin
   /v1/admin/users/{user_id}/suspend:

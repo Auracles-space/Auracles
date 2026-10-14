@@ -278,7 +278,7 @@ Operators post custom framework creation or customization requests. Contributors
 | BR-PROJ-001 | The Operator must fund Escrow for a Milestone before the Workspace for that Milestone activates. |
 | BR-PROJ-002 | A Contributor may not modify scope, budget, or timeline of an accepted Proposal without the Operator's written agreement (amendment flow required). |
 | BR-PROJ-003 | A Dispute auto-escalates to Admin if unresolved by both parties within 7 days. |
-| BR-PROJ-004 | An Operator may have a maximum of 5 active Projects concurrently at MVP. |
+| BR-PROJ-004 | An Operator may have a maximum of 5 active Projects concurrently at MVP. An Admin may raise this ceiling for one individual Operator account (`users.max_active_projects`, audited); the organization path has no exception and is held to 5. |
 | BR-PROJ-005 | A Project with no Proposal accepted within 30 days auto-closes unless the Operator extends it. |
 
 ### Error States
