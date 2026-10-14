@@ -164,6 +164,26 @@ class AdminUserSuspensionResponse(BaseModel):
     suspension_reason: str | None
 
 
+class AdminProjectCapRequest(BaseModel):
+    """Request body for setting one Operator's active-Project ceiling.
+
+    ``max_active_projects`` is nullable on purpose: ``None`` removes the
+    override and returns the account to BR-PROJ-004's default, which is not the
+    same as writing today's default into the row and freezing it there.
+    """
+
+    max_active_projects: int | None = Field(default=None, ge=1, le=500)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class AdminProjectCapResponse(BaseModel):
+    """Response body describing an Operator's active-Project ceiling."""
+
+    user_id: UUID
+    max_active_projects: int | None
+    default_max_active_projects: int
+
+
 class AdminUserDirectoryItem(BaseModel):
     """One user row visible in the admin account directory."""
 
@@ -176,6 +196,10 @@ class AdminUserDirectoryItem(BaseModel):
     suspended_at: datetime | None
     is_superadmin: bool = False
     kyc_status: str
+    # None means the account follows BR-PROJ-004's default ceiling. Surfaced in
+    # the directory so an admin can see who has been granted an exception
+    # without opening each account.
+    max_active_projects: int | None = None
 
 
 class AdminUserDirectoryResponse(BaseModel):

@@ -48,6 +48,8 @@ from app.modules.admin.schemas import (
     AdminPayoutDestinationAllowanceRequest,
     AdminPayoutDestinationAllowanceResponse,
     AdminPayoutDirectoryResponse,
+    AdminProjectCapRequest,
+    AdminProjectCapResponse,
     AdminRarityBlockOverrideRequest,
     AdminReputationRecomputeRequest,
     AdminReputationRecomputeResponse,
@@ -77,6 +79,7 @@ from app.modules.auth.models import User
 from app.modules.financials.models import Escrow, PlatformConfig
 from app.modules.projects import dispute_service
 from app.modules.projects.schemas import AdminDisputesResponse, DisputeResponse
+from app.modules.projects.service import MAX_ACTIVE_PROJECTS
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db)]
@@ -576,6 +579,40 @@ async def unsuspend_user(
         suspended_at=user.suspended_at,
         suspended_by=user.suspended_by,
         suspension_reason=user.suspension_reason,
+    )
+
+
+@router.patch(
+    "/users/{user_id}/project-cap",
+    response_model=AdminProjectCapResponse,
+    dependencies=[Depends(require_step_up_after(require_role("admin")))],
+    summary="Set one Operator's active-Project ceiling",
+    description=(
+        "Raise or clear a single Operator's concurrent active-Project limit. "
+        "BR-PROJ-004 caps an Operator at five; this grants one account an "
+        "exception without amending the rule for everyone else. Send "
+        "`max_active_projects: null` to remove the exception. Audited, and "
+        "step-up gated because the ceiling bounds concurrent escrow exposure."
+    ),
+)
+async def set_user_project_cap(
+    user_id: UUID,
+    payload: AdminProjectCapRequest,
+    admin: AdminUser,
+    db: DatabaseSession,
+) -> AdminProjectCapResponse:
+    """Set or clear one Operator's active-Project ceiling."""
+    user = await service.set_user_project_cap(
+        db=db,
+        admin=admin,
+        target_user_id=user_id,
+        max_active_projects=payload.max_active_projects,
+        reason=payload.reason,
+    )
+    return AdminProjectCapResponse(
+        user_id=user.id,
+        max_active_projects=user.max_active_projects,
+        default_max_active_projects=MAX_ACTIVE_PROJECTS,
     )
 
 

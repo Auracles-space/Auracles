@@ -55,6 +55,10 @@ ACTIVE_PROJECT_STATUSES = {
     "delivered",
     "disputed",
 }
+# BR-PROJ-004's default ceiling, not the only possible one: an individual
+# Operator may carry its own `users.max_active_projects`, which an admin raises
+# for an account that has outgrown the MVP limit. The organization branch has no
+# equivalent and is held to this number.
 MAX_ACTIVE_PROJECTS = 5
 
 
@@ -237,9 +241,12 @@ async def _insert_project(
         The persisted open Project.
 
     Raises:
-        HTTPException(409): If the operator already has 5 active Projects.
+        HTTPException(409): If the operator is already at its active-Project
+            ceiling: ``MAX_ACTIVE_PROJECTS`` (BR-PROJ-004), or the operating
+            user's own ``max_active_projects`` where an admin has raised it.
     """
     now = datetime.now(UTC)
+    cap = MAX_ACTIVE_PROJECTS
     async with db.begin():
         if operator.kind == "org":
             # Local import avoids a circular import: organizations imports
@@ -260,9 +267,16 @@ async def _insert_project(
             )
         else:
             # Lock the Operator row so concurrent creates serialize per account.
-            await db.scalar(
+            # The row is kept rather than discarded: it carries this account's
+            # own ceiling, and reading it inside the lock means a concurrent
+            # admin change cannot land between the count and the comparison.
+            operating_user = await db.scalar(
                 select(User).where(User.id == operator.user_id).with_for_update()
             )
+            if operating_user is not None and (
+                operating_user.max_active_projects is not None
+            ):
+                cap = operating_user.max_active_projects
             active_count = await db.scalar(
                 select(func.count(Project.id)).where(
                     Project.operator_id == operator.user_id,
@@ -270,10 +284,10 @@ async def _insert_project(
                     Project.deleted_at.is_(None),
                 )
             )
-        if int(active_count or 0) >= MAX_ACTIVE_PROJECTS:
+        if int(active_count or 0) >= cap:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Operator has reached the maximum of 5 active Projects.",
+                detail=f"Operator has reached the maximum of {cap} active Projects.",
             )
 
         project = Project(

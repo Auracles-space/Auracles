@@ -486,3 +486,90 @@ async def test_org_project_cap_is_isolated_from_owner_individual_projects(
         )
     assert response.operator_org_id == org.id
     assert response.operator_id is None
+
+
+async def test_individual_cap_honours_a_per_account_override(
+    migrated_database: None,
+    operator_ownership_state: None,
+) -> None:
+    """An Operator with a raised personal ceiling can post past the default.
+
+    BR-PROJ-004's five is the default, not the only possible answer: an admin
+    can lift one account's ceiling without amending the rule for everyone.
+    Proves the override is read, and that it raises rather than replaces the
+    count — the sixth Project is the sixth, not a reset to one.
+    """
+    del migrated_database, operator_ownership_state
+    operator = await _create_user("cap-override")
+    async with async_session_factory() as session:
+        async with session.begin():
+            target = await session.get(User, operator.id)
+            assert target is not None
+            target.max_active_projects = project_service.MAX_ACTIVE_PROJECTS + 1
+
+    for index in range(project_service.MAX_ACTIVE_PROJECTS):
+        async with async_session_factory() as session:
+            await project_service.create_project(
+                db=session,
+                operator=operator,
+                payload=_payload(title=f"Override Project {index}"),
+            )
+
+    async with async_session_factory() as session:
+        response = await project_service.create_project(
+            db=session,
+            operator=operator,
+            payload=_payload(title="Override Project six"),
+        )
+    assert response.operator_id == operator.id
+
+    async with async_session_factory() as session:
+        active_count = await session.scalar(
+            select(func.count(Project.id)).where(Project.operator_id == operator.id)
+        )
+    assert active_count == project_service.MAX_ACTIVE_PROJECTS + 1
+
+    # The raised ceiling is still a ceiling.
+    async with async_session_factory() as session:
+        with pytest.raises(Exception) as exc_info:
+            await project_service.create_project(
+                db=session,
+                operator=operator,
+                payload=_payload(title="Override Project seven"),
+            )
+    assert getattr(exc_info.value, "status_code", None) == 409
+
+
+async def test_individual_cap_falls_back_to_the_business_rule(
+    migrated_database: None,
+    operator_ownership_state: None,
+) -> None:
+    """An Operator with no override is still held to BR-PROJ-004's five.
+
+    Guards the default path: a null override must read as the business rule,
+    not as "no limit".
+    """
+    del migrated_database, operator_ownership_state
+    operator = await _create_user("cap-default")
+
+    async with async_session_factory() as session:
+        target = await session.get(User, operator.id)
+        assert target is not None
+        assert target.max_active_projects is None
+
+    for index in range(project_service.MAX_ACTIVE_PROJECTS):
+        async with async_session_factory() as session:
+            await project_service.create_project(
+                db=session,
+                operator=operator,
+                payload=_payload(title=f"Default Project {index}"),
+            )
+
+    async with async_session_factory() as session:
+        with pytest.raises(Exception) as exc_info:
+            await project_service.create_project(
+                db=session,
+                operator=operator,
+                payload=_payload(title="Default Project overflow"),
+            )
+    assert getattr(exc_info.value, "status_code", None) == 409

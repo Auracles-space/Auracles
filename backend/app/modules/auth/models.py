@@ -161,6 +161,13 @@ class User(UpdatedAtMixin, Base):
         nullable=True,
     )
     suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-account override of BR-PROJ-004's five-concurrent-Project ceiling.
+    # NULL is the normal state and means "use the business rule's default", so
+    # the default lives in one place and can be changed without touching rows.
+    max_active_projects: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
 
     roles: Mapped[list[UserRole]] = relationship(
         back_populates="user",
