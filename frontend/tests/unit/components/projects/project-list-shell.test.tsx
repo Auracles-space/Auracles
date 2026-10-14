@@ -152,6 +152,9 @@ describe("ProjectListShell", () => {
             milestone_plan_status: "draft",
           },
         ],
+        total: 1,
+        page: 1,
+        page_size: 20,
       },
       error: undefined,
       response: new Response(null, { status: 200 }),
@@ -171,6 +174,11 @@ describe("ProjectListShell", () => {
     await waitFor(() => expect(deleteOrgProject).toHaveBeenCalledTimes(1));
     expect(
       screen.queryByRole("link", { name: /controls rollout/i }),
+    ).not.toBeInTheDocument();
+    // The count has to follow the row out, or the pager keeps describing a
+    // Project that is no longer there.
+    expect(
+      screen.queryByRole("navigation", { name: /project list pages/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -205,6 +213,97 @@ describe("ProjectListShell", () => {
     expect(budget.textContent).not.toContain("$");
   });
 
+  it("pages through a list longer than one response", async () => {
+    // The shell asked for no page at all, so it took the backend default of 20
+    // and rendered exactly one page with no way to reach the rest.
+    tokenRoles.current = ["operator"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    const page = (start: number) => ({
+      data: {
+        projects: [
+          {
+            id: `proj-${start}`,
+            title: `Project ${start}`,
+            description: "Deploy the control framework.",
+            status: "open",
+            budget_min: "1000.00",
+            budget_max: "2000.00",
+            currency: "NGN",
+            category: "governance",
+            milestone_plan_status: "draft",
+          },
+        ],
+        total: 57,
+        page: start,
+        page_size: 20,
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+    vi.mocked(listProjects).mockResolvedValue(page(1) as never);
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    const pager = await screen.findByRole("navigation", {
+      name: /project list pages/i,
+    });
+    expect(pager).toHaveTextContent("Showing 1 to 20 of 57");
+    expect(screen.getByRole("button", { name: /previous/i })).toBeDisabled();
+    expect(vi.mocked(listProjects).mock.calls[0][0]).toMatchObject({
+      query: { role: "operator", page: 1, page_size: 20 },
+    });
+
+    vi.mocked(listProjects).mockResolvedValue(page(2) as never);
+    fireEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    await waitFor(() =>
+      expect(
+        vi
+          .mocked(listProjects)
+          .mock.calls.some((call) => call[0]?.query?.page === 2),
+      ).toBe(true),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: /project list pages/i }),
+      ).toHaveTextContent("Showing 21 to 40 of 57"),
+    );
+  });
+
+  it("counts the whole list in the tab badge, not just the page", async () => {
+    // The badge read openProjects.length, so a 57-Project Operator saw "20".
+    // Both roles, because the tab bar only renders when there is more than one.
+    tokenRoles.current = ["operator", "contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 57, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    const tab = await screen.findByRole("tab", { name: /posted/i });
+    expect(tab).toHaveTextContent("57");
+  });
+
+  it("disables Next on the final page", async () => {
+    tokenRoles.current = ["operator"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 12, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    expect(
+      await screen.findByRole("navigation", { name: /project list pages/i }),
+    ).toHaveTextContent("Showing 1 to 12 of 12");
+    expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
+  });
+
   it("calls listProjects when mode is self", async () => {
     const { listProjects } = await import("@/lib/generated/sdk.gen");
     vi.mocked(listProjects).mockResolvedValue({
@@ -217,7 +316,9 @@ describe("ProjectListShell", () => {
 
     await waitFor(() => {
       expect(listProjects).toHaveBeenCalledWith(
-        expect.objectContaining({ query: { role: "operator" } })
+        expect.objectContaining({
+          query: { page: 1, page_size: 20, role: "operator" },
+        })
       );
     });
   });

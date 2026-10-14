@@ -28,6 +28,15 @@ import type { ProjectResponse } from "@/lib/generated/types.gen";
 import type { ProjectApiMode } from "@/lib/projects/project-api-mode";
 
 /**
+ * Projects fetched per page.
+ *
+ * Matches the API's own default so the first request is the one the backend
+ * would have served anyway. The list used to send no page at all, which took
+ * that default and then offered no way to reach anything beyond it.
+ */
+const PAGE_SIZE = 20;
+
+/**
  * Render status text in a compact operational label.
  */
 function statusLabel(status: string): string {
@@ -174,6 +183,13 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
   const [operatorProjects, setOperatorProjects] = useState<ProjectResponse[]>([]);
   const [openProjects, setOpenProjects] = useState<ProjectResponse[]>([]);
   const [assignedProjects, setAssignedProjects] = useState<ProjectResponse[]>([]);
+  // Server totals, kept apart from the rendered arrays. The tab badges used to
+  // count the arrays, which are one page long, so an Operator with 57 Projects
+  // saw a badge reading 20.
+  const [operatorTotal, setOperatorTotal] = useState(0);
+  const [openTotal, setOpenTotal] = useState(0);
+  const [assignedTotal, setAssignedTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -190,25 +206,25 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
   const tabItems = useMemo<TabItem[]>(() => {
     const items: TabItem[] = [];
     if (showContributor) {
-      items.push({ id: "open", label: "Open", count: openProjects.length });
+      items.push({ id: "open", label: "Open", count: openTotal });
     }
     if (showOperator) {
-      items.push({ id: "posted", label: "Posted", count: operatorProjects.length });
+      items.push({ id: "posted", label: "Posted", count: operatorTotal });
     }
     if (showContributor) {
       items.push({
         id: "engagements",
         label: "My engagements",
-        count: assignedProjects.length,
+        count: assignedTotal,
       });
     }
     return items;
   }, [
     showContributor,
     showOperator,
-    openProjects.length,
-    operatorProjects.length,
-    assignedProjects.length,
+    openTotal,
+    operatorTotal,
+    assignedTotal,
   ]);
 
   const requestedTab = searchParams.get("tab");
@@ -218,6 +234,8 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     "open";
 
   function selectTab(id: string): void {
+    // Page 4 of "Posted" means nothing in "Open", so a tab change restarts it.
+    setPage(1);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", id);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
@@ -230,10 +248,25 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
       ? `/dashboard/organizations/${mode.orgId}/projects`
       : "/projects";
 
+  // The footer describes the tab on screen, so every figure comes from that
+  // list's own total rather than a shared counter.
+  const activeTotal =
+    activeTab === "posted"
+      ? operatorTotal
+      : activeTab === "engagements"
+        ? assignedTotal
+        : openTotal;
+  const totalPages = Math.max(1, Math.ceil(activeTotal / PAGE_SIZE));
+  const rangeStart = activeTotal === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, activeTotal);
+
   function removeDeletedProject(projectId: string): void {
     setOperatorProjects((current) =>
       current.filter((project) => project.id !== projectId),
     );
+    // The total drives the badge and the page range, so it has to follow the
+    // row out rather than keep counting something that is gone.
+    setOperatorTotal((current) => Math.max(0, current - 1));
   }
 
   useEffect(() => {
@@ -247,23 +280,47 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
       const shouldLoadOperator = roles.length === 0 || roles.includes("operator") || modeKind === "org";
       const shouldLoadContributor =
         modeKind === "self" && (roles.length === 0 || roles.includes("contributor"));
+      // Only the tab on screen is paged; the other two are fetched at page 1
+      // purely so their badges can show a total.
+      const pageFor = (tab: string) => (activeTab === tab ? page : 1);
       const [operatorResult, contributorResult, assignedResult] =
         await Promise.all([
           shouldLoadOperator
             ? modeKind === "org" && modeOrgId !== undefined
-              ? listOrgProjects({ headers, path: { org_id: modeOrgId } })
-              : listProjects({ headers, query: { role: "operator" } })
+              ? listOrgProjects({
+                  headers,
+                  path: { org_id: modeOrgId },
+                  query: { page: pageFor("posted"), page_size: PAGE_SIZE },
+                })
+              : listProjects({
+                  headers,
+                  query: {
+                    page: pageFor("posted"),
+                    page_size: PAGE_SIZE,
+                    role: "operator",
+                  },
+                })
             : Promise.resolve(null),
           shouldLoadContributor
             ? listProjects({
                 headers,
-                query: { role: "contributor", scope: "open" },
+                query: {
+                  page: pageFor("open"),
+                  page_size: PAGE_SIZE,
+                  role: "contributor",
+                  scope: "open",
+                },
               })
             : Promise.resolve(null),
           shouldLoadContributor
             ? listProjects({
                 headers,
-                query: { role: "contributor", scope: "assigned" },
+                query: {
+                  page: pageFor("engagements"),
+                  page_size: PAGE_SIZE,
+                  role: "contributor",
+                  scope: "assigned",
+                },
               })
             : Promise.resolve(null),
         ]);
@@ -272,12 +329,15 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
       }
       if (operatorResult?.response.ok && operatorResult.data) {
         setOperatorProjects(operatorResult.data.projects);
+        setOperatorTotal(operatorResult.data.total ?? 0);
       }
       if (contributorResult?.response.ok && contributorResult.data) {
         setOpenProjects(contributorResult.data.projects);
+        setOpenTotal(contributorResult.data.total ?? 0);
       }
       if (assignedResult?.response.ok && assignedResult.data) {
         setAssignedProjects(assignedResult.data.projects);
+        setAssignedTotal(assignedResult.data.total ?? 0);
       }
       const failedResults = [
         operatorResult,
@@ -298,7 +358,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     return () => {
       mounted = false;
     };
-  }, [modeKind, modeOrgId]);
+  }, [activeTab, modeKind, modeOrgId, page]);
 
   return (
     <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 md:px-8">
@@ -382,6 +442,43 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
               onDeleted={removeDeletedProject}
               projects={assignedProjects}
             />
+          ) : null}
+          {activeTotal > 0 ? (
+            <nav
+              aria-label="Project list pages"
+              className="mt-4 flex flex-col gap-3 rounded-xl border border-border-default bg-surface-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <p className="text-sm text-foreground-muted">
+                Showing{" "}
+                <span className="font-semibold text-foreground">
+                  {rangeStart}
+                </span>{" "}
+                to{" "}
+                <span className="font-semibold text-foreground">{rangeEnd}</span>{" "}
+                of{" "}
+                <span className="font-semibold text-foreground">
+                  {activeTotal}
+                </span>
+              </p>
+              <div className="flex gap-2">
+                <button
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  type="button"
+                >
+                  Previous
+                </button>
+                <button
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={page >= totalPages || loading}
+                  onClick={() => setPage((current) => current + 1)}
+                  type="button"
+                >
+                  Next
+                </button>
+              </div>
+            </nav>
           ) : null}
         </div>
       </div>
