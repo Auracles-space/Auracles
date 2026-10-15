@@ -4183,6 +4183,141 @@ async def test_operator_edits_open_project_and_validates_budget_and_status(
     assert edit_after_assign.status_code == 409
 
 
+async def test_contributor_feed_searches_filters_and_sorts(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """The open feed narrows by query text, category and budget, and reorders.
+
+    The endpoint took only role, scope and paging, so a Contributor's only way
+    through the marketplace was to read every page. Search matches title and
+    description through the shared tsquery, so it stems the same way Explore
+    does — "operations" finds "operating model".
+    """
+    operator_id = await create_user("feed-operator@auracles.space", ["operator"])
+    contributor_id = await create_user(
+        "feed-contributor@auracles.space", ["contributor"]
+    )
+    operator_headers = auth_headers(operator_id, ["operator"])
+    contributor_headers = auth_headers(contributor_id, ["contributor"])
+
+    async def post(title: str, description: str, category: str, high: str) -> str:
+        payload = {
+            **project_payload(),
+            "budget_max": high,
+            "budget_min": "100.00",
+            "category": category,
+            "description": description,
+            "title": title,
+        }
+        created = await client.post(
+            "/v1/projects", headers=operator_headers, json=payload
+        )
+        assert created.status_code == 201, created.text
+        return created.json()["id"]
+
+    procurement = await post(
+        "Procurement operating model",
+        "Design a procurement operating model for regional rollout.",
+        "operations",
+        "500.00",
+    )
+    payroll = await post(
+        "Payroll compliance review",
+        "Audit payroll against statutory filing duties.",
+        "compliance",
+        "9000.00",
+    )
+
+    searched = await client.get(
+        "/v1/projects",
+        headers=contributor_headers,
+        params={"role": "contributor", "scope": "open", "q": "operations"},
+    )
+    by_category = await client.get(
+        "/v1/projects",
+        headers=contributor_headers,
+        params={"role": "contributor", "scope": "open", "category": "compliance"},
+    )
+    by_budget = await client.get(
+        "/v1/projects",
+        headers=contributor_headers,
+        params={"role": "contributor", "scope": "open", "budget_at_least": "1000.00"},
+    )
+    by_budget_desc = await client.get(
+        "/v1/projects",
+        headers=contributor_headers,
+        params={"role": "contributor", "scope": "open", "sort": "budget_desc"},
+    )
+
+    # Stemming, not substring: the posting says "operating", the query says
+    # "operations", and Explore would match it too.
+    assert [row["id"] for row in searched.json()["projects"]] == [procurement]
+    assert [row["id"] for row in by_category.json()["projects"]] == [payroll]
+    # "Pays at least" reads against the top of the posted range, not the floor.
+    assert [row["id"] for row in by_budget.json()["projects"]] == [payroll]
+    assert [row["id"] for row in by_budget_desc.json()["projects"]] == [
+        payroll,
+        procurement,
+    ]
+    # A narrowed feed must report the narrowed total, or the pager offers pages
+    # of a result set that no longer exists.
+    assert by_category.json()["total"] == 1
+
+
+async def test_operator_narrows_their_own_list_by_status(
+    client: AsyncClient,
+    migrated_database: None,
+    project_context: dict[str, Any],
+) -> None:
+    """An Operator can hide finished work from their own list.
+
+    BR-PROJ-004 bounds how many Projects can be *active*, not how many
+    accumulate, so completed and cancelled postings pile up in this list
+    forever. The status is set directly here: the filter does not care how a
+    Project reached that state, and driving a full delivery would test the
+    delivery flow instead of the filter.
+    """
+    operator_id = await create_user("status-operator@auracles.space", ["operator"])
+    operator_headers = auth_headers(operator_id, ["operator"])
+
+    live = await client.post(
+        "/v1/projects", headers=operator_headers, json=project_payload()
+    )
+    finished = await client.post(
+        "/v1/projects",
+        headers=operator_headers,
+        json={**project_payload(), "title": "Finished engagement"},
+    )
+    assert finished.status_code == 201, finished.text
+    finished_id = finished.json()["id"]
+    async with async_session_factory() as session:
+        project = await session.get(Project, UUID(finished_id))
+        assert project is not None
+        project.status = "closed"
+        await session.commit()
+
+    open_only = await client.get(
+        "/v1/projects",
+        headers=operator_headers,
+        params={"role": "operator", "status": "open"},
+    )
+    closed_only = await client.get(
+        "/v1/projects",
+        headers=operator_headers,
+        params={"role": "operator", "status": "closed"},
+    )
+    unfiltered = await client.get(
+        "/v1/projects", headers=operator_headers, params={"role": "operator"}
+    )
+
+    assert [row["id"] for row in open_only.json()["projects"]] == [live.json()["id"]]
+    assert open_only.json()["total"] == 1
+    assert [row["id"] for row in closed_only.json()["projects"]] == [finished_id]
+    assert unfiltered.json()["total"] == 2
+
+
 async def test_project_terms_lock_once_a_proposal_is_pending(
     client: AsyncClient,
     migrated_database: None,

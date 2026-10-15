@@ -9,7 +9,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
 
-import { SearchInput } from "./search-input";
+import { SearchInput } from "@/components/ui/search-input";
 
 type SearchPanelProps = {
   initialValue?: string;

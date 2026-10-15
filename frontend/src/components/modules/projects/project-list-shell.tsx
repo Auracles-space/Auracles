@@ -22,6 +22,12 @@ import { authTokenStore } from "@/lib/auth/token-store";
 import { CardSkeleton } from "@/components/ui/skeletons/card-skeleton";
 import { ProjectDeleteAction } from "@/components/modules/projects/project-delete-action";
 import { Tabs, tabId, tabPanelId, type TabItem } from "@/components/ui/tabs";
+import {
+  ProjectListFilters,
+  projectBudgetParam,
+  projectSortParam,
+  type ProjectFilterValues,
+} from "@/components/modules/projects/project-list-filters";
 import { listOrgProjects, listProjects } from "@/lib/generated/sdk.gen";
 import { formatMoney } from "@/lib/marketplace/format";
 import type { ProjectResponse } from "@/lib/generated/types.gen";
@@ -189,7 +195,15 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
   const [operatorTotal, setOperatorTotal] = useState(0);
   const [openTotal, setOpenTotal] = useState(0);
   const [assignedTotal, setAssignedTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  // A page per tab, not one shared counter. Keeping them apart is what lets a
+  // tab change be a pure re-render: the fetch depends on these positions, so
+  // moving between tabs touches no dependency and reissues no request. It also
+  // means leaving a tab and coming back does not lose your place in it.
+  const [pages, setPages] = useState<Record<string, number>>({
+    engagements: 1,
+    open: 1,
+    posted: 1,
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -227,15 +241,48 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     assignedTotal,
   ]);
 
+  const filters: ProjectFilterValues = {
+    budgetAtLeast: searchParams.get("budget_at_least") ?? "",
+    category: searchParams.get("category") ?? "",
+    q: searchParams.get("q") ?? "",
+    sort: projectSortParam(searchParams.get("sort")),
+    status: searchParams.get("status") ?? "",
+  };
+
   const requestedTab = searchParams.get("tab");
   const activeTab =
     tabItems.find((tab) => tab.id === requestedTab)?.id ??
     tabItems[0]?.id ??
     "open";
 
+  /** Write one filter change to the URL and restart paging. */
+  function applyFilters(next: Partial<ProjectFilterValues>): void {
+    const params = new URLSearchParams(searchParams.toString());
+    const keys: Record<keyof ProjectFilterValues, string> = {
+      budgetAtLeast: "budget_at_least",
+      category: "category",
+      q: "q",
+      sort: "sort",
+      status: "status",
+    };
+    for (const [field, value] of Object.entries(next)) {
+      const key = keys[field as keyof ProjectFilterValues];
+      // An empty control means "no constraint", which is the absence of the
+      // param rather than an empty one — otherwise every cleared filter leaves
+      // litter in a URL people are meant to share.
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
+      }
+    }
+    // Narrowing changes what the result set is, so page 3 of the old one is
+    // meaningless and usually empty.
+    setPages({ engagements: 1, open: 1, posted: 1 });
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
   function selectTab(id: string): void {
-    // Page 4 of "Posted" means nothing in "Open", so a tab change restarts it.
-    setPage(1);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", id);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
@@ -257,8 +304,14 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
         ? assignedTotal
         : openTotal;
   const totalPages = Math.max(1, Math.ceil(activeTotal / PAGE_SIZE));
+  const page = pages[activeTab] ?? 1;
   const rangeStart = activeTotal === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(page * PAGE_SIZE, activeTotal);
+
+  /** Move the tab on screen to another page, leaving the other tabs alone. */
+  function setActivePage(next: number): void {
+    setPages((current) => ({ ...current, [activeTab]: next }));
+  }
 
   function removeDeletedProject(projectId: string): void {
     setOperatorProjects((current) =>
@@ -282,7 +335,17 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
         modeKind === "self" && (roles.length === 0 || roles.includes("contributor"));
       // Only the tab on screen is paged; the other two are fetched at page 1
       // purely so their badges can show a total.
-      const pageFor = (tab: string) => (activeTab === tab ? page : 1);
+      const pageFor = (tab: string) => pages[tab] ?? 1;
+      // Only the feed takes the marketplace filters; a person's own list takes
+      // the status filter. Sending either to the wrong one would narrow a tab
+      // by a control it does not show.
+      const feedFilters = {
+        budget_at_least: projectBudgetParam(filters.budgetAtLeast),
+        category: filters.category || undefined,
+        q: filters.q || undefined,
+        sort: projectSortParam(filters.sort),
+      };
+      const ownedFilters = { status: filters.status || undefined };
       const [operatorResult, contributorResult, assignedResult] =
         await Promise.all([
           shouldLoadOperator
@@ -290,11 +353,16 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
               ? listOrgProjects({
                   headers,
                   path: { org_id: modeOrgId },
-                  query: { page: pageFor("posted"), page_size: PAGE_SIZE },
+                  query: {
+                    ...ownedFilters,
+                    page: pageFor("posted"),
+                    page_size: PAGE_SIZE,
+                  },
                 })
               : listProjects({
                   headers,
                   query: {
+                    ...ownedFilters,
                     page: pageFor("posted"),
                     page_size: PAGE_SIZE,
                     role: "operator",
@@ -305,6 +373,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
             ? listProjects({
                 headers,
                 query: {
+                  ...feedFilters,
                   page: pageFor("open"),
                   page_size: PAGE_SIZE,
                   role: "contributor",
@@ -316,6 +385,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
             ? listProjects({
                 headers,
                 query: {
+                  ...ownedFilters,
                   page: pageFor("engagements"),
                   page_size: PAGE_SIZE,
                   role: "contributor",
@@ -358,7 +428,19 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     return () => {
       mounted = false;
     };
-  }, [activeTab, modeKind, modeOrgId, page]);
+    // Deliberately not keyed on `activeTab`: switching tabs must not refetch.
+    // Keyed on the filter values rather than the params object, whose identity
+    // changes on every navigation.
+  }, [
+    filters.budgetAtLeast,
+    filters.category,
+    filters.q,
+    filters.sort,
+    filters.status,
+    modeKind,
+    modeOrgId,
+    pages,
+  ]);
 
   return (
     <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 md:px-8">
@@ -405,6 +487,11 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
             tabs={tabItems}
           />
         ) : null}
+        <ProjectListFilters
+          onChange={applyFilters}
+          showFeedFilters={activeTab === "open"}
+          values={filters}
+        />
         <div
           aria-labelledby={tabId(activeTab)}
           className="outline-none"
@@ -464,7 +551,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
                 <button
                   className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={page <= 1 || loading}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  onClick={() => setActivePage(Math.max(1, page - 1))}
                   type="button"
                 >
                   Previous
@@ -472,7 +559,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
                 <button
                   className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={page >= totalPages || loading}
-                  onClick={() => setPage((current) => current + 1)}
+                  onClick={() => setActivePage(page + 1)}
                   type="button"
                 >
                   Next

@@ -3,16 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectListShell } from "@/components/modules/projects/project-list-shell";
 
-const { push, replace, tokenRoles } = vi.hoisted(() => ({
+const { push, replace, searchParams, tokenRoles } = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
+  // Mutable, because Next delivers a tab change as a new URL the component
+  // re-reads. A frozen value made every tab-switch test vacuous.
+  searchParams: { current: new URLSearchParams() },
   tokenRoles: { current: [] as string[] },
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/projects",
   useRouter: () => ({ push, replace }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParams.current,
 }));
 
 vi.mock("@/lib/auth/form-client", () => ({
@@ -38,6 +41,7 @@ describe("ProjectListShell", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     tokenRoles.current = [];
+    searchParams.current = new URLSearchParams();
   });
 
   it("sends a Contributor to the role page instead of a form they cannot submit", async () => {
@@ -211,6 +215,199 @@ describe("ProjectListShell", () => {
     const budget = await screen.findByText(/1,000/);
     expect(budget).toHaveTextContent("₦1,000 – ₦2,000");
     expect(budget.textContent).not.toContain("$");
+  });
+
+  it("sends the feed filters the URL carries", async () => {
+    tokenRoles.current = ["contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 0, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    searchParams.current = new URLSearchParams(
+      "tab=open&q=payroll&category=compliance&budget_at_least=1000&sort=budget_desc",
+    );
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    await waitFor(() => expect(listProjects).toHaveBeenCalled());
+    const feedCall = vi
+      .mocked(listProjects)
+      .mock.calls.find((call) => call[0]?.query?.scope === "open");
+    expect(feedCall?.[0].query).toMatchObject({
+      budget_at_least: "1000",
+      category: "compliance",
+      q: "payroll",
+      sort: "budget_desc",
+    });
+  });
+
+  it("refuses a sort the API does not accept", async () => {
+    // A query string is user input. Passing it through earned a 422 and broke
+    // the page on a value someone typed by hand.
+    tokenRoles.current = ["contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 0, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    searchParams.current = new URLSearchParams("tab=open&sort=cheapest");
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    await waitFor(() => expect(listProjects).toHaveBeenCalled());
+    const feedCall = vi
+      .mocked(listProjects)
+      .mock.calls.find((call) => call[0]?.query?.scope === "open");
+    expect(feedCall?.[0].query.sort).toBe("newest");
+  });
+
+  it("writes a chosen filter to the URL and drops a cleared one", async () => {
+    tokenRoles.current = ["contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 0, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    searchParams.current = new URLSearchParams("tab=open");
+
+    const first = render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    fireEvent.change(await screen.findByLabelText(/^category$/i), {
+      target: { value: "compliance" },
+    });
+    expect(replace).toHaveBeenCalledWith(
+      "/projects?tab=open&category=compliance",
+      { scroll: false },
+    );
+
+    // Clearing removes the param rather than leaving category= behind, because
+    // these URLs are meant to be shared. Unmounted first so the second render
+    // is the only shell on screen and the query below is unambiguous.
+    first.unmount();
+    searchParams.current = new URLSearchParams("tab=open&category=compliance");
+    replace.mockClear();
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    fireEvent.change(await screen.findByLabelText(/^category$/i), {
+      target: { value: "" },
+    });
+
+    expect(replace).toHaveBeenCalledWith("/projects?tab=open", {
+      scroll: false,
+    });
+  });
+
+  it("restarts paging when a filter narrows the result set", async () => {
+    // Page 3 of the old result set is meaningless once the set changes, and
+    // usually renders empty.
+    tokenRoles.current = ["contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 57, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    searchParams.current = new URLSearchParams("tab=open");
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: /next/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: /project list pages/i }),
+      ).toHaveTextContent("Showing 21 to 40 of 57"),
+    );
+
+    fireEvent.change(screen.getByLabelText(/^category$/i), {
+      target: { value: "compliance" },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: /project list pages/i }),
+      ).toHaveTextContent("Showing 1 to 20 of 57"),
+    );
+  });
+
+  it("offers a status filter on an owner's own list, not a search box", async () => {
+    tokenRoles.current = ["operator"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 0, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    searchParams.current = new URLSearchParams("tab=posted&status=closed");
+
+    render(<ProjectListShell mode={{ kind: "self" }} />);
+
+    expect(await screen.findByLabelText(/^status$/i)).toHaveValue("closed");
+    expect(screen.queryByLabelText(/search projects/i)).not.toBeInTheDocument();
+    const ownedCall = vi
+      .mocked(listProjects)
+      .mock.calls.find((call) => call[0]?.query?.role === "operator");
+    expect(ownedCall?.[0].query).toMatchObject({ status: "closed" });
+  });
+
+  it("switches tab without refetching anything", async () => {
+    // Paging made the active tab a fetch dependency, so every tab change tore
+    // the lists down, flashed skeletons and reissued three requests — the page
+    // used to switch tabs as a pure re-render, and it has to go back to that.
+    tokenRoles.current = ["operator", "contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 3, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    searchParams.current = new URLSearchParams("tab=open");
+
+    const { rerender } = render(<ProjectListShell mode={{ kind: "self" }} />);
+    await waitFor(() => expect(listProjects).toHaveBeenCalledTimes(3));
+    const callsAfterLoad = vi.mocked(listProjects).mock.calls.length;
+
+    // The tab moves the way a real navigation moves it: new URL, same instance.
+    searchParams.current = new URLSearchParams("tab=posted");
+    rerender(<ProjectListShell mode={{ kind: "self" }} />);
+    await screen.findByRole("tab", { name: /posted/i });
+
+    expect(vi.mocked(listProjects).mock.calls.length).toBe(callsAfterLoad);
+  });
+
+  it("remembers each tab's page instead of resetting it", async () => {
+    // Page 4 of Posted and page 1 of Open are independent positions; collapsing
+    // them to one counter meant leaving a tab lost your place in it.
+    tokenRoles.current = ["operator", "contributor"];
+    const { listProjects } = await import("@/lib/generated/sdk.gen");
+    vi.mocked(listProjects).mockResolvedValue({
+      data: { projects: [], total: 57, page: 1, page_size: 20 },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+    searchParams.current = new URLSearchParams("tab=posted");
+
+    const { rerender } = render(<ProjectListShell mode={{ kind: "self" }} />);
+    fireEvent.click(await screen.findByRole("button", { name: /next/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("navigation", { name: /project list pages/i }),
+      ).toHaveTextContent("Showing 21 to 40 of 57"),
+    );
+
+    searchParams.current = new URLSearchParams("tab=open");
+    rerender(<ProjectListShell mode={{ kind: "self" }} />);
+    expect(
+      screen.getByRole("navigation", { name: /project list pages/i }),
+    ).toHaveTextContent("Showing 1 to 20 of 57");
+
+    searchParams.current = new URLSearchParams("tab=posted");
+    rerender(<ProjectListShell mode={{ kind: "self" }} />);
+    expect(
+      screen.getByRole("navigation", { name: /project list pages/i }),
+    ).toHaveTextContent("Showing 21 to 40 of 57");
   });
 
   it("pages through a list longer than one response", async () => {

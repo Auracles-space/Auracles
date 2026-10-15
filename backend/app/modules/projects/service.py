@@ -17,6 +17,7 @@ from fastapi import HTTPException, status
 from loguru import logger
 from sqlalchemy import Select, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement, literal_column
 
 from app.core.audit import write_audit
 from app.core.currency import platform_currency
@@ -47,6 +48,7 @@ from app.modules.projects.schemas import (
 )
 from app.modules.projects.workspace import workspace_contributor_user_id
 from app.modules.workspace.models import WorkspaceMessage
+from app.shared.search import matches_search
 
 ACTIVE_PROJECT_STATUSES = {
     "open",
@@ -404,6 +406,7 @@ async def list_org_projects(
     org_name: str,
     page: int,
     page_size: int,
+    status_filter: str | None = None,
 ) -> ProjectsResponse:
     """List Projects operated by one organization for its owners and admins.
 
@@ -413,11 +416,18 @@ async def list_org_projects(
         org_name: The organization name surfaced as ``operator_name``.
         page: 1-indexed page number.
         page_size: Page size.
+        status_filter: Exact status match. An organization's own list keeps
+            ``closed`` Projects forever — BR-PROJ-004 bounds how many can be
+            *active*, not how many accumulate — so narrowing to live work is the
+            filter this list actually needs. It gets no search box: this is one
+            organization's own postings, not a marketplace.
 
     Returns:
         A paginated response of the organization's operated Projects.
     """
     query = _project_query().where(Project.operator_org_id == org_id)
+    if status_filter:
+        query = query.where(Project.status == status_filter)
     total = await db.scalar(select(func.count()).select_from(query.subquery()))
     rows = await db.execute(
         query.order_by(Project.created_at.desc())
@@ -467,6 +477,53 @@ def _project_with_operator_name(
     return response
 
 
+# Must stay textually identical to the expression the GIN index in migration
+# 2026_10_15_0128 is built on. Reconstructing it through the ORM emits bound
+# parameters for the ' ' separator, which silently reduces every search to a
+# sequential scan — the same trap documented on Explore's documents. Safe
+# without COALESCE: both columns are NOT NULL.
+_PROJECT_SEARCH_DOCUMENT: ColumnElement[object] = literal_column(
+    "to_tsvector('english', projects.title || ' ' || projects.description)"
+)
+
+
+def _narrow_projects(
+    query: Select[tuple[Project]],
+    *,
+    q: str | None,
+    category: str | None,
+    budget_at_least: Decimal | None,
+    status_filter: str | None,
+) -> Select[tuple[Project]]:
+    """Apply the caller's search and filters to a Project listing query.
+
+    Shared by every listing so the count and the page are narrowed by exactly
+    the same predicates; counting before filtering is how a pager ends up
+    offering pages that render empty.
+    """
+    if q and q.strip():
+        query = query.where(matches_search(_PROJECT_SEARCH_DOCUMENT, q.strip()))
+    if category:
+        query = query.where(Project.category == category)
+    if budget_at_least is not None:
+        query = query.where(Project.budget_max >= budget_at_least)
+    if status_filter:
+        query = query.where(Project.status == status_filter)
+    return query
+
+
+def _project_order(sort: str) -> tuple[ColumnElement[Any], ...]:
+    """Return the ORDER BY terms for a sort mode.
+
+    Every mode ends on ``created_at`` so paging is stable: two Projects sharing
+    a budget would otherwise be free to swap places between page 1 and page 2
+    and hide a row entirely.
+    """
+    if sort == "budget_desc":
+        return (Project.budget_max.desc(), Project.created_at.desc())
+    return (Project.created_at.desc(),)
+
+
 async def list_projects(
     *,
     db: AsyncSession,
@@ -476,13 +533,45 @@ async def list_projects(
     page: int,
     page_size: int,
     scope: Literal["open", "assigned"] = "open",
+    q: str | None = None,
+    category: str | None = None,
+    budget_at_least: Decimal | None = None,
+    status_filter: str | None = None,
+    sort: Literal["newest", "budget_desc"] = "newest",
 ) -> ProjectsResponse:
-    """List Projects for a role.
+    """List Projects for a role, narrowed and ordered by the caller.
 
     For Contributors, ``scope`` selects the open marketplace feed
     (``scope="open"``) or the Projects the Contributor has been assigned via an
     accepted Proposal (``scope="assigned"``). ``scope`` is ignored for
     Operators, who always see the Projects they own.
+
+    Args:
+        db: Async session.
+        user: Caller.
+        role: Which side of the marketplace the caller is asking as.
+        token_roles: Roles present in the caller's token, checked before use.
+        page: 1-based page number.
+        page_size: Rows per page.
+        scope: Contributor feed selector; ignored for Operators.
+        q: Free text matched against title and description through the shared
+            tsquery, so it stems exactly as Explore's search does.
+        category: Exact taxonomy match.
+        budget_at_least: Keeps Projects whose budget *ceiling* reaches this
+            figure. A Project posts a range, so "pays at least X" is a question
+            about the top of that range, not its floor — filtering on
+            ``budget_min`` would hide a 100–9000 Project from someone asking for
+            1000 and up.
+        status_filter: Exact status match, for an owner narrowing their own
+            list down to live work. Projects that reach ``closed`` stay in that
+            list forever, so this is how an Operator stops scrolling past
+            finished engagements. The open feed is already status-constrained,
+            so it has nothing to add there.
+        sort: ``newest`` (default) or ``budget_desc``, highest ceiling first.
+
+    Returns:
+        One page of Projects, with the total counted *after* narrowing so the
+        pager never offers pages of a result set that no longer exists.
     """
     if role not in token_roles:
         raise HTTPException(
@@ -509,6 +598,14 @@ async def list_projects(
     else:
         query = query.where(Project.operator_id == user.id)
 
+    query = _narrow_projects(
+        query,
+        q=q,
+        category=category,
+        budget_at_least=budget_at_least,
+        status_filter=status_filter,
+    )
+
     # Local import avoids a circular import: organizations imports project models.
     from app.modules.organizations.models import Organization
 
@@ -520,7 +617,7 @@ async def list_projects(
         query.add_columns(User.display_name, Organization.name)
         .outerjoin(User, User.id == Project.operator_id)
         .outerjoin(Organization, Organization.id == Project.operator_org_id)
-        .order_by(Project.created_at.desc())
+        .order_by(*_project_order(sort))
         .offset((page - 1) * page_size)
         .limit(page_size)
     )

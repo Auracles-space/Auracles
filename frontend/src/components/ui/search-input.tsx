@@ -1,25 +1,37 @@
 "use client";
 
 /**
- * Debounced marketplace search input.
+ * Debounced search input.
  *
  * The parent decides whether to mutate URL state or submit a request; this
- * component only captures the query and emits stable debounced values.
+ * component only captures the query and emits stable debounced values. Shared
+ * by the public Explore catalog and the authenticated Projects feed, so the
+ * self-navigation fix documented below exists once rather than on whichever
+ * page remembered it.
  */
 import { MagnifyingGlassIcon } from "@radix-ui/react-icons";
 import { useEffect, useRef, useState } from "react";
 
 type SearchInputProps = {
   initialValue?: string;
+  /** Visible label, and the field's accessible name. */
+  label?: string;
   onSearch?: (query: string) => void;
+  placeholder?: string;
 };
 
 /**
  * Render a Brand Book-aligned search input with debounce.
  *
- * @param props - Initial query and debounced callback.
+ * @param props - Initial query, labelling, and the debounced callback. The
+ *   label defaults to Explore's wording so its callers need no change.
  */
-export function SearchInput({ initialValue = "", onSearch }: SearchInputProps) {
+export function SearchInput({
+  initialValue = "",
+  label = "Search frameworks",
+  onSearch,
+  placeholder = "Risk, compliance, operating model",
+}: SearchInputProps) {
   const [query, setQuery] = useState(initialValue);
 
   // Held in a ref, not read from the closure. `SearchPanel` builds `onSearch`
@@ -55,14 +67,14 @@ export function SearchInput({ initialValue = "", onSearch }: SearchInputProps) {
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.05em] text-foreground-muted">
-        Search frameworks
+        {label}
       </span>
       <span className="flex min-h-12 items-center gap-3 rounded-xl border border-border-default bg-surface-2 px-3 focus-within:border-accent">
         <MagnifyingGlassIcon aria-hidden className="h-4 w-4 text-foreground-muted" />
         <input
           className="min-h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-foreground-subtle"
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Risk, compliance, operating model"
+          placeholder={placeholder}
           value={query}
         />
       </span>

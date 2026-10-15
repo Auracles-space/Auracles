@@ -702,8 +702,8 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
       </div>
 
       <div className="rounded-2xl border border-border-default bg-surface-1 p-6 shadow-sm sm:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-start">
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.05em] text-accent">
               Project workspace
             </p>
@@ -719,7 +719,7 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
               )}
             </div>
           </div>
-          <div className="grid justify-items-end gap-2 text-right">
+          <div className="grid justify-items-start gap-2 text-left md:justify-items-end md:text-right">
             {project ? <StatusBadge status={project.status} /> : null}
             {project?.operator_reputation ? (
               <div className="flex items-center gap-1.5">
@@ -735,11 +735,8 @@ export function ProjectWorkspace({ projectId, mode = { kind: "self" } }: Project
                 />
               </div>
             ) : null}
-            <span className="text-xs text-foreground-muted">
-              Realtime {realtime.connected ? "connected" : "offline"}
-            </span>
             {isProjectOwner && project?.status === "open" ? (
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center gap-2 md:justify-end">
                 <Link
                   className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-all hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent"
                   href={`${projectWorkspacePath}/edit`}

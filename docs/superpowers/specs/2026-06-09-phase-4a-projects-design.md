@@ -368,6 +368,7 @@ Redis key: `auracles:ws:{channel}`. JSON payloads. Gateway maintains an in-proce
 | POST | /v1/projects | operator + KYC |
 | GET | /v1/projects | contributor (open feed) / operator (own) — `?role=` |
 | GET | /v1/projects/{id} | project member or any contributor (open) |
+| GET | /v1/projects | role-gated; `q`, `category`, `budget_at_least`, `status`, `sort`, `page`, `page_size`. `q` runs the shared tsquery (`app/shared/search.py`) against the GIN index from migration 2026_10_15_0128; `budget_at_least` reads `budget_max`, since a Project posts a range. Totals counted after narrowing. |
 | PATCH | /v1/projects/{id} | project owner, status='open' only; budget + required_deliverables frozen while any Proposal is `pending` (BR-PROJ-006) |
 | PATCH | /v1/orgs/{org_id}/projects/{id} | org owner/admin + operator capability, status='open' only; same freeze (BR-PROJ-006) |
 | POST | /v1/projects/{id}/close | project owner, status='delivered' only (manual close, skips 7d grace) |

@@ -258,7 +258,7 @@ Operators post custom framework creation or customization requests. Contributors
 | ID | Requirement |
 |---|---|
 | FR-PROJ-001 | The system shall allow an Operator to create a Project with: title, description, category, budget range, deadline, and list of required deliverables. |
-| FR-PROJ-002 | The system shall display open Projects in a marketplace view visible only to authenticated Contributors. |
+| FR-PROJ-002 | The system shall display open Projects in a marketplace view visible only to authenticated Contributors, searchable by title and description and filterable by category and minimum budget, ordered by newest or highest budget. Search uses the same Postgres full-text query builder as Explore, so a term stems identically on both surfaces. An Operator's own list and a Contributor's engagements are filterable by status instead, since they are personal lists rather than a marketplace. |
 | FR-PROJ-003 | The system shall allow a Contributor to submit a Proposal against an open Project: scope, fixed budget, timeline (days), and deliverables list. |
 | FR-PROJ-004 | The system shall allow the Operator to accept one Proposal; status transitions to `assigned`. |
 | FR-PROJ-005 | The system shall create a Workspace upon project assignment, providing: real-time messaging, file sharing, milestone tracker, and deliverables board. |
