@@ -1,5 +1,6 @@
 """Projects API router."""
 
+from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -89,11 +90,21 @@ async def list_projects(
     scope: Literal["open", "assigned"] = Query(default="open"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=200),
+    category: str | None = Query(default=None, max_length=100),
+    budget_at_least: Annotated[Decimal | None, Query(ge=0)] = None,
+    status_filter: str | None = Query(default=None, alias="status", max_length=40),
+    sort: Literal["newest", "budget_desc"] = Query(default="newest"),
 ) -> ProjectsResponse:
-    """List Projects for a role.
+    """List Projects for a role, narrowed and ordered by the caller.
 
     Contributors get the open marketplace feed (``scope=open``) or their
     assigned Projects (``scope=assigned``); Operators always get owned Projects.
+
+    ``q`` searches title and description through the same tsquery Explore uses,
+    so a query stems identically on both surfaces. ``budget_at_least`` reads
+    against the top of a Project's posted range — a Project offering 100 to
+    9000 answers "pays at least 1000".
     """
     return await service.list_projects(
         db=db,
@@ -103,6 +114,11 @@ async def list_projects(
         page=page,
         page_size=page_size,
         scope=scope,
+        q=q,
+        category=category,
+        budget_at_least=budget_at_least,
+        status_filter=status_filter,
+        sort=sort,
     )
 
 
@@ -241,8 +257,9 @@ async def list_org_projects(
     db: DatabaseSession,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    status_filter: str | None = Query(default=None, alias="status", max_length=40),
 ) -> ProjectsResponse:
-    """List Projects operated by one organization."""
+    """List Projects operated by one organization, optionally by status."""
     del org_id
     return await service.list_org_projects(
         db=db,
@@ -250,6 +267,7 @@ async def list_org_projects(
         org_name=context.org.name,
         page=page,
         page_size=page_size,
+        status_filter=status_filter,
     )
 
 

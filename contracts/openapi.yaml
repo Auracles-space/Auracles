@@ -29573,6 +29573,15 @@ paths:
           minimum: 1
           title: Page Size
           type: integer
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 40
+            type: string
+          - type: 'null'
+          title: Status
       responses:
         '200':
           content:
@@ -31306,6 +31315,54 @@ paths:
           minimum: 1
           title: Page Size
           type: integer
+      - in: query
+        name: q
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 200
+            type: string
+          - type: 'null'
+          title: Q
+      - in: query
+        name: category
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 100
+            type: string
+          - type: 'null'
+          title: Category
+      - in: query
+        name: budget_at_least
+        required: false
+        schema:
+          anyOf:
+          - minimum: 0.0
+            type: number
+          - pattern: ^(?!^[-+.]*$)[+-]?0*\d*\.?\d*$
+            type: string
+          - type: 'null'
+          title: Budget At Least
+      - in: query
+        name: status
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 40
+            type: string
+          - type: 'null'
+          title: Status
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: newest
+          enum:
+          - newest
+          - budget_desc
+          title: Sort
+          type: string
       responses:
         '200':
           content:

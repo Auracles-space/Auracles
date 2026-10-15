@@ -9754,6 +9754,7 @@ export type ListOrgProjectsV1OrgsOrgIdProjectsGetData = {
     query?: {
         page?: number;
         page_size?: number;
+        status?: (string | null);
     };
 };
 
@@ -10232,10 +10233,15 @@ export type GetPublicProfileV1ProfilesUserIdGetError = (HTTPValidationError);
 
 export type ListProjectsV1ProjectsGetData = {
     query: {
+        budget_at_least?: (number | string | null);
+        category?: (string | null);
         page?: number;
         page_size?: number;
+        q?: (string | null);
         role: 'contributor' | 'operator';
         scope?: 'open' | 'assigned';
+        sort?: 'newest' | 'budget_desc';
+        status?: (string | null);
     };
 };
 

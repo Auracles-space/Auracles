@@ -418,6 +418,40 @@ async def test_org_project_terms_lock_once_a_proposal_is_pending(
     assert detail.json()["budget_max"] == "2000.00"
 
 
+async def test_org_project_list_narrows_by_status(
+    client: AsyncClient,
+    migrated_database: None,
+    org_project_context: None,
+) -> None:
+    """An org admin can hide closed Projects from the organization's list."""
+    del migrated_database, org_project_context
+    owner_id = await create_user("org-status-owner")
+    owner_token = create_access_token(owner_id, [])
+    org = await create_org(client, owner_token, "operator-org-status")
+    await _activate_operator_capability(str(org["id"]))
+    live = await _post_project(client, str(org["id"]), owner_token)
+    finished = await _post_project(client, str(org["id"]), owner_token)
+    finished_id = finished.json()["id"]
+    async with async_session_factory() as session:
+        project = await session.get(Project, UUID(finished_id))
+        assert project is not None
+        project.status = "closed"
+        await session.commit()
+
+    open_only = await client.get(
+        f"/v1/orgs/{org['id']}/projects",
+        headers=auth(owner_token),
+        params={"status": "open"},
+    )
+    unfiltered = await client.get(
+        f"/v1/orgs/{org['id']}/projects", headers=auth(owner_token)
+    )
+
+    assert [row["id"] for row in open_only.json()["projects"]] == [live.json()["id"]]
+    assert open_only.json()["total"] == 1
+    assert unfiltered.json()["total"] == 2
+
+
 async def test_org_project_list_forbidden_for_plain_member(
     client: AsyncClient,
     migrated_database: None,
