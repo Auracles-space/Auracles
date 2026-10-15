@@ -55,16 +55,34 @@ export function resolveApiBaseUrl(): string {
  *
  * @returns Absolute `ws(s)://.../v1/ws` URL.
  */
+/** Path the realtime gateway is mounted at (`gateway.py` under the /v1 prefix). */
+const WEBSOCKET_PATH = "/v1/ws";
+
 export function resolveWebsocketUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_WS_URL;
   if (explicit) {
+    // An origin with no path is the shape the deployment actually sets, and it
+    // used to be passed through untouched — so the browser opened the API root,
+    // which the gateway rejects with 403, and the Workspace never connected.
+    // A caller who names a path means it, so only a missing one is filled in.
+    try {
+      const url = new URL(explicit);
+      if (url.pathname === "" || url.pathname === "/") {
+        url.pathname = WEBSOCKET_PATH;
+        return url.toString();
+      }
+    } catch {
+      // Not parseable as a URL: hand it back as given rather than swallow a
+      // deployment's deliberate value behind a thrown error.
+      return explicit;
+    }
     return explicit;
   }
   const configured = configuredApiUrl();
   const base = configured.startsWith("http") ? configured : backendOrigin();
   const url = new URL(base);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.pathname = "/v1/ws";
+  url.pathname = WEBSOCKET_PATH;
   url.search = "";
   return url.toString();
 }

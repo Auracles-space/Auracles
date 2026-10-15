@@ -44,6 +44,27 @@ describe("resolveWebsocketUrl", () => {
     expect(resolveWebsocketUrl()).toBe("wss://rt.example.com/v1/ws");
   });
 
+  it("adds the gateway path when the explicit URL is only an origin", () => {
+    // What production actually sets (infra/shared/amplify.tf): the origin with
+    // no path. The value was used verbatim, so the browser opened
+    // wss://api.auracles.space/ — which the gateway rejects with 403 — and the
+    // workspace sat at "Realtime offline" from launch. The pre-existing test
+    // for this branch passed a URL that already contained /v1/ws, so it never
+    // exercised the shape the deployment uses.
+    process.env.NEXT_PUBLIC_WS_URL = "wss://api.auracles.space";
+    expect(resolveWebsocketUrl()).toBe("wss://api.auracles.space/v1/ws");
+  });
+
+  it("adds the gateway path when the explicit URL is a bare root", () => {
+    process.env.NEXT_PUBLIC_WS_URL = "wss://api.auracles.space/";
+    expect(resolveWebsocketUrl()).toBe("wss://api.auracles.space/v1/ws");
+  });
+
+  it("leaves an explicit URL that already names a path alone", () => {
+    process.env.NEXT_PUBLIC_WS_URL = "wss://rt.example.com/custom/socket";
+    expect(resolveWebsocketUrl()).toBe("wss://rt.example.com/custom/socket");
+  });
+
   it("derives wss from the backend origin when the API base is relative", () => {
     delete process.env.NEXT_PUBLIC_WS_URL;
     process.env.NEXT_PUBLIC_API_URL = "/api";

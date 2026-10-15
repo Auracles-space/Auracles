@@ -189,7 +189,15 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
   const [operatorTotal, setOperatorTotal] = useState(0);
   const [openTotal, setOpenTotal] = useState(0);
   const [assignedTotal, setAssignedTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  // A page per tab, not one shared counter. Keeping them apart is what lets a
+  // tab change be a pure re-render: the fetch depends on these positions, so
+  // moving between tabs touches no dependency and reissues no request. It also
+  // means leaving a tab and coming back does not lose your place in it.
+  const [pages, setPages] = useState<Record<string, number>>({
+    engagements: 1,
+    open: 1,
+    posted: 1,
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -234,8 +242,6 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     "open";
 
   function selectTab(id: string): void {
-    // Page 4 of "Posted" means nothing in "Open", so a tab change restarts it.
-    setPage(1);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", id);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
@@ -257,8 +263,14 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
         ? assignedTotal
         : openTotal;
   const totalPages = Math.max(1, Math.ceil(activeTotal / PAGE_SIZE));
+  const page = pages[activeTab] ?? 1;
   const rangeStart = activeTotal === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(page * PAGE_SIZE, activeTotal);
+
+  /** Move the tab on screen to another page, leaving the other tabs alone. */
+  function setActivePage(next: number): void {
+    setPages((current) => ({ ...current, [activeTab]: next }));
+  }
 
   function removeDeletedProject(projectId: string): void {
     setOperatorProjects((current) =>
@@ -282,7 +294,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
         modeKind === "self" && (roles.length === 0 || roles.includes("contributor"));
       // Only the tab on screen is paged; the other two are fetched at page 1
       // purely so their badges can show a total.
-      const pageFor = (tab: string) => (activeTab === tab ? page : 1);
+      const pageFor = (tab: string) => pages[tab] ?? 1;
       const [operatorResult, contributorResult, assignedResult] =
         await Promise.all([
           shouldLoadOperator
@@ -358,7 +370,8 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
     return () => {
       mounted = false;
     };
-  }, [activeTab, modeKind, modeOrgId, page]);
+    // Deliberately not keyed on `activeTab`: switching tabs must not refetch.
+  }, [modeKind, modeOrgId, pages]);
 
   return (
     <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 md:px-8">
@@ -464,7 +477,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
                 <button
                   className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={page <= 1 || loading}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  onClick={() => setActivePage(Math.max(1, page - 1))}
                   type="button"
                 >
                   Previous
@@ -472,7 +485,7 @@ export function ProjectListShell({ mode = { kind: "self" } }: { mode?: ProjectAp
                 <button
                   className="inline-flex min-h-12 items-center justify-center rounded-xl border border-border-default bg-surface-1 px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={page >= totalPages || loading}
-                  onClick={() => setPage((current) => current + 1)}
+                  onClick={() => setActivePage(page + 1)}
                   type="button"
                 >
                   Next
