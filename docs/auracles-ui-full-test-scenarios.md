@@ -309,6 +309,7 @@ Operator posts + funds; **Dual** is the bidding Contributor side.
 | # | Flow | As | Inputs | Expect |
 |---|------|----|--------|--------|
 | PR-1 | Post project | Operator | title `Migrate billing to Stripe`, desc, category, budget min `500000` / max `2000000` | Posted; min<max enforced; budgets > 0; budget fields marked ₦, and the Project card prices in ₦ not $. |
+| PR-1c | Search + filter the feed | Dual | on the Open tab: type `operations`, pick a category, set "Pays at least", switch sort to Highest budget | Each narrows the feed and the pager total follows; the URL carries q/category/budget_at_least/sort and survives a reload; clearing a control drops its param. Search stems — `operations` finds "operating model". On Posted, a Status filter appears instead of the search box, and switching tabs does not reload the lists. |
 | PR-1b | Edit project | Operator | "Edit project" from the card or the workspace header, change the title, Save changes | Only the changed field is sent; workspace shows the new title. Repeat after a Proposal lands: budget and deliverables are disabled with the reason shown, title still editable. Same flow for an organization-operated Project. |
 | PR-2 | Active-project cap | Operator | post 6 open projects | 6th rejected (409) — cap 5 active, unless an Admin has raised this account's ceiling. |
 | PR-3 | Proposal | Dual | scope text, bid `1500` | Bid recorded; operator sees it. |

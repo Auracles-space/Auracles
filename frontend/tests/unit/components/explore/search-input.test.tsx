@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { SearchInput } from "@/components/modules/explore/search-input";
+import { SearchInput } from "@/components/ui/search-input";
 
 describe("SearchInput", () => {
   it("debounces marketplace search submissions", async () => {
