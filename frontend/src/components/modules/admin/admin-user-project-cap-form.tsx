@@ -41,6 +41,9 @@ export type AdminUserProjectCapFormProps = {
  *
  * @param props - The target account, its current ceiling, and the callbacks.
  */
+/** Highest ceiling the API accepts; a typo guard, not a business rule. */
+const MAX_CEILING = 10000;
+
 export function AdminUserProjectCapForm({
   userId,
   current,
@@ -76,7 +79,10 @@ export function AdminUserProjectCapForm({
   }
 
   const parsed = Number.parseInt(limit, 10);
-  const limitIsValid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 500;
+  // Mirrors AdminProjectCapRequest's bounds, so the form refuses what the
+  // API would refuse rather than sending it and surfacing a 422.
+  const limitIsValid =
+    Number.isInteger(parsed) && parsed >= 1 && parsed <= MAX_CEILING;
   const reasonGiven = reason.trim().length > 0;
 
   return (
@@ -91,7 +97,7 @@ export function AdminUserProjectCapForm({
         <input
           className="min-h-12 rounded-xl border border-border-default bg-background px-4 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent"
           inputMode="numeric"
-          max={500}
+          max={MAX_CEILING}
           min={1}
           onChange={(event) => setLimit(event.target.value)}
           placeholder="5"

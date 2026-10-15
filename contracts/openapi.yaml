@@ -3995,7 +3995,7 @@ components:
       properties:
         max_active_projects:
           anyOf:
-          - maximum: 500.0
+          - maximum: 10000.0
             minimum: 1.0
             type: integer
           - type: 'null'

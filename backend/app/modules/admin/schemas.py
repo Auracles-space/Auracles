@@ -172,7 +172,12 @@ class AdminProjectCapRequest(BaseModel):
     same as writing today's default into the row and freezing it there.
     """
 
-    max_active_projects: int | None = Field(default=None, ge=1, le=500)
+    # The ceiling on the ceiling is a typo guard, not a business rule: this
+    # field bounds how much concurrent escrow exposure one account can create,
+    # so a mistyped digit should not quietly become a real limit. It sat at 500
+    # and refused a legitimate 1000, which is the wrong side of the trade — it
+    # now sits where nobody arrives on purpose.
+    max_active_projects: int | None = Field(default=None, ge=1, le=10000)
     reason: str = Field(min_length=1, max_length=1000)
 
 

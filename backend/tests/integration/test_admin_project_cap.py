@@ -291,6 +291,57 @@ async def test_project_cap_rejects_a_ceiling_below_one(
     assert response.status_code == 422
 
 
+async def test_project_cap_accepts_a_four_figure_ceiling_and_guards_a_typo(
+    client: AsyncClient,
+    migrated_database: None,
+    project_cap_context: FakeRedis,
+) -> None:
+    """A realistic high ceiling is allowed; an implausible one is still refused.
+
+    The original bound was 500, chosen as a typo guard and never asked about.
+    It refused a legitimate 1000 with a 422 and left the admin with no way
+    through. The guard is kept, because this field bounds how much concurrent
+    escrow exposure one account can create and a mistyped digit would otherwise
+    become a real ceiling — but it now sits somewhere nobody reaches on
+    purpose.
+    """
+    del migrated_database
+    admin_id = await _create_user(
+        email=f"admin-cap-high-{uuid4()}@auracles.space",
+        roles=["admin"],
+        enable_totp=True,
+    )
+    operator_id = await _create_user(
+        email=f"operator-cap-high-{uuid4()}@auracles.space",
+        roles=["operator"],
+    )
+    await open_step_up_window(project_cap_context, admin_id)
+    headers = _auth_headers(admin_id, ["admin"])
+
+    accepted = await client.patch(
+        f"/v1/admin/users/{operator_id}/project-cap",
+        headers=headers,
+        json={"max_active_projects": 1000, "reason": "High-volume Operator."},
+    )
+    implausible = await client.patch(
+        f"/v1/admin/users/{operator_id}/project-cap",
+        headers=headers,
+        json={"max_active_projects": 10001, "reason": "Fat-fingered."},
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.json()["max_active_projects"] == 1000
+    assert implausible.status_code == 422
+    # The refusal must not have overwritten the ceiling it refused to set.
+    still = await client.get("/v1/admin/users", headers=headers)
+    row = next(
+        item
+        for item in still.json()["items"]
+        if item["user_id"] == str(operator_id)
+    )
+    assert row["max_active_projects"] == 1000
+
+
 async def test_project_cap_requires_an_admin(
     client: AsyncClient,
     migrated_database: None,
