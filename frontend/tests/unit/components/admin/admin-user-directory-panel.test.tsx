@@ -196,6 +196,63 @@ describe("AdminUserDirectoryPanel", () => {
     expect(await within(userCard).findByText(/25 projects/i)).toBeInTheDocument();
   });
 
+  it("accepts a four-figure ceiling and refuses an implausible one", async () => {
+    // The form's own bound was 500, so Save stayed disabled on a legitimate
+    // 1000 and the admin had no way through and no message saying why. The
+    // guard is kept but moved to where nobody lands on purpose, and it has to
+    // match AdminProjectCapRequest or the form refuses what the API allows.
+    const { listAdminUsersV1AdminUsersGet } = await import(
+      "@/lib/generated/sdk.gen"
+    );
+    vi.mocked(listAdminUsersV1AdminUsersGet).mockResolvedValue({
+      data: {
+        items: [
+          {
+            created_at: "2026-06-10T09:00:00Z",
+            display_name: "Ada Contributor",
+            email: "ada@example.com",
+            roles: ["contributor", "developer"],
+            suspended: false,
+            suspended_at: null,
+            user_id: "user-1",
+            kyc_status: "pending",
+            max_active_projects: null,
+          },
+        ],
+        page: 1,
+        page_size: 20,
+        total: 1,
+      },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    } as never);
+
+    render(<AdminUserDirectoryPanel />);
+    const userCard = await screen.findByRole("article", {
+      name: /ada contributor/i,
+    });
+    fireEvent.click(
+      within(userCard).getByRole("button", { name: /project limit/i }),
+    );
+    fireEvent.change(within(userCard).getByLabelText(/why this account/i), {
+      target: { value: "High-volume Operator." },
+    });
+
+    fireEvent.change(within(userCard).getByLabelText(/concurrent active/i), {
+      target: { value: "1000" },
+    });
+    expect(
+      within(userCard).getByRole("button", { name: /save limit/i }),
+    ).toBeEnabled();
+
+    fireEvent.change(within(userCard).getByLabelText(/concurrent active/i), {
+      target: { value: "10001" },
+    });
+    expect(
+      within(userCard).getByRole("button", { name: /save limit/i }),
+    ).toBeDisabled();
+  });
+
   it("clears the ceiling by sending null rather than the default number", async () => {
     // Writing 5 would pin the account to today's value of BR-PROJ-004; null
     // returns it to following the rule.
